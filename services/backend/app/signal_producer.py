@@ -31,6 +31,11 @@ RUNTIME_LOCK = "python-3.13/pandas-2.3.3/numpy-2.3.3"
 MAX_JOB_BYTES = 32 * 1024 * 1024
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,127}$")
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+_SUBMISSION_ORIGIN_SCHEMA = "signal-job-submission-origin.v1"
+_SUBMISSION_ORIGIN_FIELDS = frozenset({
+    "schema_version", "kind", "user_id", "owner_principal", "workspace_id",
+    "task_id", "conversation_id",
+})
 _SECRET_FRAGMENTS = (
     "token", "password", "secret", "apikey", "accesskey", "privatekey",
     "credential", "authorization",
@@ -100,6 +105,52 @@ def _text(value: object, field: str, maximum: int) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
         raise ValueError(f"{field} must be a non-empty string of at most {maximum} characters")
     return value.strip()
+
+
+def _submission_origin(
+    value: object, *, owner: str, task: str, workspace: str | None = None,
+) -> dict[str, str] | None:
+    """Validate the closed, non-secret human admission fact stored on a Job."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != _SUBMISSION_ORIGIN_FIELDS:
+        raise ValueError("signal submission origin has invalid fields")
+    if value.get("schema_version") != _SUBMISSION_ORIGIN_SCHEMA or value.get("kind") != "authenticated_human":
+        raise ValueError("signal submission origin is unsupported")
+    normalized = {
+        "schema_version": _SUBMISSION_ORIGIN_SCHEMA,
+        "kind": "authenticated_human",
+        "user_id": _identifier(value.get("user_id"), "origin.user_id"),
+        "owner_principal": _text(value.get("owner_principal"), "origin.owner_principal", 128),
+        "workspace_id": _identifier(value.get("workspace_id"), "origin.workspace_id"),
+        "task_id": _identifier(value.get("task_id"), "origin.task_id"),
+        "conversation_id": _identifier(value.get("conversation_id"), "origin.conversation_id"),
+    }
+    if (normalized["owner_principal"] != owner or normalized["task_id"] != task
+            or (workspace is not None and normalized["workspace_id"] != workspace)):
+        raise ValueError("signal submission origin does not match the trusted Job scope")
+    return normalized
+
+
+def _assert_submission_origin_binding(connection, origin: dict[str, str] | None) -> None:
+    """Bind the immutable origin snapshot to the existing task/conversation graph."""
+    if origin is None:
+        return
+    row = fetch_one(connection, """SELECT t.task_id, t.owner_principal, t.workspace_id,
+            t.conversation_id, u.user_id
+        FROM research_tasks t
+        JOIN users u ON u.username=t.owner_principal
+        JOIN workspaces w ON w.workspace_id=t.workspace_id AND w.owner_user_id=u.user_id
+        JOIN product_conversations c ON c.conversation_id=t.conversation_id
+          AND c.owner_principal=t.owner_principal AND c.workspace_id=t.workspace_id
+        WHERE t.task_id=:task AND t.owner_principal=:owner AND t.workspace_id=:workspace
+          AND t.conversation_id=:conversation AND u.user_id=:user
+        FOR SHARE OF t, u, w, c""",
+        {"task": origin["task_id"], "owner": origin["owner_principal"],
+         "workspace": origin["workspace_id"], "conversation": origin["conversation_id"],
+         "user": origin["user_id"]})
+    if row is None:
+        raise ValueError("authenticated signal origin is not bound to the exact Product task")
 
 
 def prepare_signal_job_input(
@@ -210,6 +261,7 @@ class SignalJobStore(PgStoreMixin):
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS readiness_json JSONB""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS ready_input_sha256 TEXT""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS submission_hash TEXT""",
+        """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS submission_origin JSONB""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -233,6 +285,7 @@ class SignalJobStore(PgStoreMixin):
         input_document: dict[str, object],
         trace_id: object,
         idempotency_key: object,
+        submission_origin: object | None = None,
     ) -> dict[str, object]:
         owner = _text(owner_principal, "owner_principal", 128)
         task = _identifier(task_id, "task_id")
@@ -241,6 +294,7 @@ class SignalJobStore(PgStoreMixin):
         snapshot = _identifier(stock_pool_snapshot_id, "stock_pool_snapshot_id")
         trace = _text(trace_id, "trace_id", 128)
         idempotency = _text(idempotency_key, "idempotency_key", 128)
+        origin = _submission_origin(submission_origin, owner=owner, task=task)
         if input_document.get("schema_version") != SIGNAL_JOB_SCHEMA_VERSION:
             raise ValueError("unsupported signal producer input schema")
         _reject_secrets(input_document)
@@ -270,9 +324,11 @@ class SignalJobStore(PgStoreMixin):
                 {"owner": owner, "idempotency_key": idempotency},
             )
             if existing is not None:
-                if existing["request_hash"] != request_hash:
+                if (existing["request_hash"] != request_hash
+                        or existing.get("submission_origin") != origin):
                     raise SignalProducerConflict("signal job idempotency key was reused")
                 return self._public_row(existing)
+            _assert_submission_origin_binding(connection, origin)
             now = _now()
             job_id = f"signaljob_{uuid.uuid4().hex}"
             execute(
@@ -281,16 +337,17 @@ class SignalJobStore(PgStoreMixin):
                    (job_id, owner_principal, task_id, experiment_id,
                     strategy_version_artifact_id, stock_pool_snapshot_id, status,
                     input_json, input_sha256, trace_id, idempotency_key, request_hash,
-                    created_at, updated_at)
+                    created_at, updated_at, submission_origin)
                    VALUES (:job_id, :owner, :task_id, :experiment_id, :strategy,
                            :snapshot, 'queued', :input_json, :input_sha256, :trace_id,
-                           :idempotency_key, :request_hash, :created_at, :updated_at)""",
+                           :idempotency_key, :request_hash, :created_at, :updated_at, :submission_origin)""",
                 {
                     "job_id": job_id, "owner": owner, "task_id": task,
                     "experiment_id": experiment, "strategy": strategy, "snapshot": snapshot,
                     "input_json": input_document, "input_sha256": input_sha256,
                     "trace_id": trace, "idempotency_key": idempotency,
                     "request_hash": request_hash, "created_at": now, "updated_at": now,
+                    "submission_origin": origin,
                 },
             )
         return self.get(job_id, trusted_owner=owner)
@@ -298,7 +355,7 @@ class SignalJobStore(PgStoreMixin):
     def submit_waiting(
         self, *, command: dict[str, object], purpose: str, trusted_owner: str, trusted_workspace: str,
         trace_id: str, idempotency_key: object, prepare: Callable[[], dict[str, object]],
-        record_reference: Callable[..., object],
+        record_reference: Callable[..., object], submission_origin: object | None = None,
     ) -> dict[str, object]:
         """Serialize one original command; accept job and reference atomically."""
         owner = _text(trusted_owner, "owner_principal", 128)
@@ -306,6 +363,8 @@ class SignalJobStore(PgStoreMixin):
         key = _text(idempotency_key, "idempotency_key", 128)
         if purpose not in {"signal_producer", "backtest_task"}:
             raise ValueError("signal submission purpose is invalid")
+        origin = _submission_origin(submission_origin, owner=owner,
+            task=_identifier(command.get("task_id"), "task_id"), workspace=workspace)
         _reject_secrets(command)
         encoded = _canonical({"version": 1, "owner": owner, "workspace": workspace,
                               "purpose": purpose, "command": command})
@@ -318,10 +377,18 @@ class SignalJobStore(PgStoreMixin):
             existing = fetch_one(connection, """SELECT * FROM signal_producer_jobs
                 WHERE owner_principal=:owner AND idempotency_key=:key""", {"owner": owner, "key": key})
             if existing is not None:
-                if existing.get("workspace_id") != workspace or existing.get("submission_hash") != submission_hash:
+                if (existing.get("workspace_id") != workspace
+                        or existing.get("submission_hash") != submission_hash
+                        or existing.get("submission_origin") != origin):
                     raise SignalProducerConflict("signal submission identity conflicts; use original receipt lookup")
                 return self._public_row(existing)
             prepared = prepare()
+            prepared_task = prepared.get("task")
+            if (not isinstance(prepared_task, dict)
+                    or prepared_task.get("task_id") != command.get("task_id")
+                    or (origin is not None
+                        and prepared_task.get("conversation_id") != origin["conversation_id"])):
+                raise ValueError("signal submission origin does not match the prepared Product task")
             job = self.create_waiting(
                 owner_principal=owner, task_id=prepared["task"]["task_id"],
                 experiment_id=command.get("experiment_id"),
@@ -330,6 +397,7 @@ class SignalJobStore(PgStoreMixin):
                 preparation=prepared["preparation"], requirement=prepared["requirement"],
                 requirement_plan=prepared.get("requirement_plan"),
                 readiness=prepared["readiness"], trace_id=trace_id, idempotency_key=key, connection=connection,
+                submission_origin=origin,
             )
             record_reference(connection, prepared["pool_snapshot"]["snapshot_id"], domain="signal_producer",
                              reference_id=job["job_id"], trusted_owner=owner)
@@ -343,7 +411,7 @@ class SignalJobStore(PgStoreMixin):
         preparation: dict[str, object], requirement: dict[str, object],
         readiness: dict[str, object], trace_id: object, idempotency_key: object,
         requirement_plan: dict[str, object] | None = None,
-        connection=None,
+        connection=None, submission_origin: object | None = None,
     ) -> dict[str, object]:
         owner = _text(owner_principal, "owner_principal", 128)
         task = _identifier(task_id, "task_id")
@@ -352,6 +420,7 @@ class SignalJobStore(PgStoreMixin):
         snapshot = _identifier(stock_pool_snapshot_id, "stock_pool_snapshot_id")
         trace = _text(trace_id, "trace_id", 128)
         idempotency = _text(idempotency_key, "idempotency_key", 128)
+        origin = _submission_origin(submission_origin, owner=owner, task=task)
         if requirement_plan is not None and not isinstance(requirement_plan, dict):
             raise ValueError("signal requirement plan must be an object")
         _reject_secrets(preparation)
@@ -368,22 +437,25 @@ class SignalJobStore(PgStoreMixin):
                 WHERE owner_principal=:owner AND idempotency_key=:key""",
                 {"owner": owner, "key": idempotency})
             if existing is not None:
-                if existing["request_hash"] != request_hash:
+                if (existing["request_hash"] != request_hash
+                        or existing.get("submission_origin") != origin):
                     raise SignalProducerConflict("signal job idempotency key was reused")
                 return self._public_row(existing)
+            _assert_submission_origin_binding(connection, origin)
             now, job_id = _now(), f"signaljob_{uuid.uuid4().hex}"
             execute(connection, """INSERT INTO signal_producer_jobs
                 (job_id, owner_principal, task_id, experiment_id,
                  strategy_version_artifact_id, stock_pool_snapshot_id, status,
                  preparation_json, requirement_json, requirement_plan_json, readiness_json, trace_id,
-                 idempotency_key, request_hash, created_at, updated_at)
+                 idempotency_key, request_hash, created_at, updated_at, submission_origin)
                 VALUES (:job_id,:owner,:task,:experiment,:strategy,:snapshot,'waiting_for_data',
-                        :preparation,:requirement,:requirement_plan,:readiness,:trace,:key,:request_hash,:now,:now)""",
+                        :preparation,:requirement,:requirement_plan,:readiness,:trace,:key,:request_hash,:now,:now,:submission_origin)""",
                 {"job_id": job_id, "owner": owner, "task": task, "experiment": experiment,
                  "strategy": strategy, "snapshot": snapshot, "preparation": preparation,
                  "requirement": requirement, "requirement_plan": requirement_plan,
                  "readiness": readiness, "trace": trace,
-                 "key": idempotency, "request_hash": request_hash, "now": now})
+                 "key": idempotency, "request_hash": request_hash, "now": now,
+                 "submission_origin": origin})
             return self._public_row(fetch_one(connection, "SELECT * FROM signal_producer_jobs WHERE job_id=:id", {"id": job_id}))
 
     def list_waiting(self, *, limit: int = 20) -> list[dict[str, object]]:
@@ -589,6 +661,7 @@ class SignalJobStore(PgStoreMixin):
             bar_count = len(bars) if isinstance(bars, list) else 0
         value.pop("request_hash", None)
         value.pop("submission_hash", None)
+        value.pop("submission_origin", None)
         value.pop("preparation_json", None)
         value["requirement"] = value.pop("requirement_json", None)
         value["requirement_plan"] = value.pop("requirement_plan_json", None)
@@ -607,6 +680,7 @@ class SignalJobStore(PgStoreMixin):
         value = dict(row)
         value.pop("request_hash", None)
         value.pop("submission_hash", None)
+        value.pop("submission_origin", None)
         value["input"] = value.pop("input_json")
         return value
 

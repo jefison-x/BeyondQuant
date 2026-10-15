@@ -840,8 +840,19 @@ def authorize_continuation_tool(reservation_id: str, payload: dict[str, Any], re
 
 
 @app.post('/internal/task-continuation/{conversation_id}/claim')
-def claim_task_continuation(conversation_id: str, request: Request) -> dict:
+def claim_task_continuation(conversation_id: str, request: Request,
+        payload: dict[str, Any] | None = None) -> dict:
     context = _continuation_consumer_context(request)
+    if payload:
+        from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION_V3
+        if (set(payload) != {'reservation_schema_version', 'signal_job_id'}
+                or payload.get('reservation_schema_version') != RESERVATION_SCHEMA_VERSION_V3
+                or not isinstance(payload.get('signal_job_id'), str)):
+            raise HTTPException(status_code=422, detail='exact v3 SignalJob claim required')
+        return _research_call(lambda: research_store.claim_default_continuation_v3(
+            conversation_id, signal_job_id=payload['signal_job_id'], trusted_context=context))
+    # The empty-body form is the separately gated legacy F6/internal path. The
+    # default consumer enters through /peek and may claim only typed v3 work.
     return _research_call(lambda: research_store.claim_conversation_continuation(
         conversation_id, trusted_context=context))
 
@@ -849,8 +860,21 @@ def claim_task_continuation(conversation_id: str, request: Request) -> dict:
 @app.post('/internal/task-continuation/{conversation_id}/peek')
 def peek_task_continuation(conversation_id: str, request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    return _research_call(lambda: research_store.claim_conversation_continuation(
-        conversation_id, trusted_context=context, admit=False))
+    candidate = _research_call(lambda: research_store.peek_default_continuation_v3(
+        conversation_id, trusted_context=context))
+    # The default consumer is v3-only. Historical v1/v2 liabilities remain
+    # available through the explicitly gated claim path, but a missing or
+    # blocked v3 candidate must never fall back to a legacy eligible intent.
+    return candidate if candidate is not None else {'status': 'waiting'}
+
+
+@app.post('/internal/task-continuation/{conversation_id}/cancel')
+def cancel_task_continuation(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'reservation_id'}:
+        raise HTTPException(status_code=422, detail='exact v3 continuation reservation required')
+    return _research_call(lambda: research_store.cancel_default_continuation_v3(
+        conversation_id, payload['reservation_id'], trusted_context=context))
 
 
 @app.post('/internal/task-continuation/{task_id}/dispatch')
@@ -873,7 +897,8 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome', 'request_usage'}
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256',
+        'outcome', 'request_usage', 'idempotency_key'}
     if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
@@ -4891,8 +4916,54 @@ def _prepare_signal_producer(
     }
 
 
-def _submit_signal_component(data: dict[str, Any], context: dict[str, str], *, purpose: str) -> dict[str, object]:
-    _owned_research_entity("research_task", data.get("task_id"), context)
+def _authenticated_signal_submission_origin(
+    request: Request, context: dict[str, str], task: dict[str, object],
+) -> dict[str, str] | None:
+    """Snapshot a verified human source without persisting its auth session."""
+    session_id = request.headers.get("x-byq-session-id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    try:
+        user = user_store.get_session_user(session_id)
+    except (UserForbidden, ValueError):
+        # Product-token/bootstrap callers remain able to submit their existing
+        # business Job, but that Job has unknown origin and cannot auto-resume.
+        return None
+    except UserAuthPersistenceError as error:
+        raise HTTPException(status_code=503, detail="user storage is unavailable") from error
+
+    owner, workspace = context.get("owner_principal"), context.get("workspace_id")
+    if (not isinstance(owner, str) or not isinstance(workspace, str)
+            or user.get("username") != owner or context.get("actor_principal") != owner
+            or task.get("owner_principal") != owner or task.get("workspace_id") != workspace
+            or not isinstance(task.get("task_id"), str)
+            or not isinstance(task.get("conversation_id"), str)):
+        return None
+    try:
+        tenancy = workspace_tenancy_store.resolve_context(owner, workspace)
+    except ValueError:
+        return None
+    if (tenancy.get("owner_user_id") != user.get("user_id")
+            or tenancy.get("actor_principal") != owner
+            or tenancy.get("workspace_id") != workspace):
+        return None
+    # No cookie, auth-session ID, or credentials cross this storage boundary.
+    return {
+        "schema_version": "signal-job-submission-origin.v1",
+        "kind": "authenticated_human",
+        "user_id": str(user["user_id"]),
+        "owner_principal": owner,
+        "workspace_id": workspace,
+        "task_id": str(task["task_id"]),
+        "conversation_id": str(task["conversation_id"]),
+    }
+
+
+def _submit_signal_component(
+    data: dict[str, Any], context: dict[str, str], *, purpose: str, request: Request,
+) -> dict[str, object]:
+    task = _owned_research_entity("research_task", data.get("task_id"), context)
+    submission_origin = _authenticated_signal_submission_origin(request, context, task)
     command = {key: value for key, value in data.items() if key not in {"trace_id", "idempotency_key"}}
 
     def prepare() -> dict[str, object]:
@@ -4914,6 +4985,7 @@ def _submit_signal_component(data: dict[str, Any], context: dict[str, str], *, p
         trusted_workspace=context["workspace_id"], trace_id=str(data.get("trace_id") or context["trace_id"]),
         idempotency_key=data.get("idempotency_key"), prepare=prepare,
         record_reference=paper_store.record_pool_reference_in_transaction,
+        submission_origin=submission_origin,
     )
 
 
@@ -4931,7 +5003,7 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
                 "execution", "order_quantity", "trace_id", "idempotency_key",
             },
         )
-        job = _submit_signal_component(data, context, purpose="signal_producer")
+        job = _submit_signal_component(data, context, purpose="signal_producer", request=request)
         return {"job": job}
 
     return _signal_producer_call(operation)
@@ -5065,7 +5137,7 @@ def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str,
 
     def operation() -> dict[str, object]:
         data = _backtest_task_input(payload, include_idempotency=True)
-        job = _submit_signal_component(data, context, purpose="backtest_task")
+        job = _submit_signal_component(data, context, purpose="backtest_task", request=request)
         return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
 
     return _backtest_task_call(operation)

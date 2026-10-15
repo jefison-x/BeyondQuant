@@ -299,16 +299,33 @@ def continuation_qualification(session_id: str) -> dict:
     try:
         record = adapter._get(session_id)
     except KeyError:
-        return {'qualified': False, 'reason': 'session_missing'}
+        return {
+            'qualified': False,
+            'task_ready_qualified': False,
+            'reason': 'session_missing',
+        }
     with record.lock:
         qualified = adapter.continuation_qualified(record)
-        return {'qualified': qualified, 'reason': 'qualified' if qualified else 'model_or_executor_unqualified'}
+        task_ready_qualified = adapter.task_ready_qualified(record)
+        return {
+            'qualified': qualified,
+            'task_ready_qualified': task_ready_qualified,
+            'reason': 'qualified' if qualified else 'model_or_executor_unqualified',
+        }
 
 
 @app.post("/internal/runtime/sessions/{session_id}/cancel")
-def cancel_session(session_id: str, mode: str = Query("hard")) -> dict[str, object]:
+def cancel_session(
+    session_id: str,
+    mode: str = Query("hard"),
+    expected_root_run_id: str | None = Query(
+        default=None, min_length=32, max_length=32, pattern="^[0-9a-f]{32}$",
+    ),
+) -> dict[str, object]:
     try:
-        return adapter.cancel_session(session_id, mode)
+        return adapter.cancel_session(
+            session_id, mode, expected_root_run_id=expected_root_run_id,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:

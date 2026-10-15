@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentSession } from "./agent";
+import {
+  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentExecutionOptions,
+  getAgentSession, listAgentSessions, streamWorkflowEvents, submitTurn, updateAgentExecutionOptions, updateAgentSession,
+} from "./agent";
 
 describe("agent api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -53,6 +56,64 @@ describe("agent api client", () => {
     vi.stubGlobal("fetch", fetchMock);
     await cancelSession("s1", "soft", "test-token");
     expect(String(fetchMock.mock.calls[0][1]?.body)).not.toContain("deepseek");
+  });
+
+  it("reads authoritative conversation execution options through Product API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      schema_version: "agent-execution-options.v1", conversation_id: "conversation/1",
+      owner_principal: "alice", workspace_id: "workspace-a", revision: 0,
+      options: { auto_continue: true }, updated_at: null,
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAgentExecutionOptions("conversation/1", "test-token");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/agent/conversations/conversation%2F1/execution-options",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("updates the complete execution options at the expected revision", async () => {
+    const payload = {
+      schema_version: "agent-execution-options.v1" as const,
+      expected_revision: 4,
+      options: {
+        auto_continue: false,
+        max_provider_calls: 12,
+        max_provider_attempts: null,
+        max_tool_calls: null,
+        max_concurrent_provider_calls: null,
+        max_input_bytes_per_call: null,
+        max_input_bytes_total: null,
+        max_output_tokens_per_call: null,
+        max_output_tokens_total: null,
+        max_tool_payload_bytes_per_call: null,
+        max_tool_payload_bytes_total: null,
+        max_continuations: null,
+        max_runtime_seconds: null,
+        max_no_progress_seconds: null,
+        max_child_runtime_seconds: null,
+        max_child_no_progress_seconds: null,
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      schema_version: "agent-execution-options.v1", conversation_id: "conversation-1",
+      owner_principal: "alice", workspace_id: "workspace-a", revision: 5,
+      options: payload.options, updated_at: "2026-10-15T00:00:00Z",
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateAgentExecutionOptions("conversation-1", payload, "test-token");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/agent/conversations/conversation-1/execution-options",
+      expect.objectContaining({
+        method: "PUT",
+        credentials: "include",
+        body: JSON.stringify(payload),
+      }),
+    );
   });
 
   it("deletes a durable conversation instead of treating deletion as archive", async () => {

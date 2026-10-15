@@ -43,6 +43,9 @@ from packages.contracts.continuation_request import (
     ALLOWED_PROVIDER as CONTINUATION_PROVIDER,
     UPSTREAM_BASE_URL as CONTINUATION_UPSTREAM,
     exceeded_request_limits,
+    exceeded_request_limits_v2,
+    validate_request_usage_v2,
+    validate_reservation_v3,
 )
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
@@ -59,8 +62,10 @@ from .continuation_budget import (
     create_guard_patch,
     create_acp_guard_patch,
     create_acp_guard_overlay,
+    create_acp_task_ready_execution_overlay,
     create_acp_product_execution_overlay,
     read_request_guard,
+    read_task_ready_v2_guard,
 )
 from packages.contracts.product_turn_request import (
     product_turn_execution_output_cap,
@@ -71,6 +76,7 @@ from .continuation_budget import PRODUCT_TURN_PROVIDER, PRODUCT_TURN_MODEL
 from .research_request_gate import (
     KNOWN_BLOCKED, SETTLED_OK, UNKNOWN_OR_UNPAIRED,
     RequestGateProxy, build_continuation_request_gate, build_product_turn_request_gate,
+    build_task_ready_v2_request_gate,
 )
 from .normalization import NormalizationState, normalize_runtime_observation
 
@@ -78,6 +84,7 @@ from .normalization import NormalizationState, normalize_runtime_observation
 _PROCESS_BOOT_PID = os.getpid()
 _PROCESS_BOOT_ID = secrets.token_hex(16)
 _ACK_TOMBSTONE_LIMIT = 512
+_TASK_READY_IDEMPOTENCY_KEY_RE = re.compile(r'task-ready-event:([0-9a-f]{64})')
 
 
 def _process_boot_id() -> str:
@@ -149,6 +156,25 @@ def _continuation_route_qualified(model_resolution: dict, provider: str, model: 
     resolved_provider = str(model_resolution.get("provider") or provider)
     resolved_model = model_resolution.get("model", model)
     return resolved_provider == CONTINUATION_PROVIDER and resolved_model == CONTINUATION_MODEL
+
+
+def _task_ready_reservation_id(reservation_v3: object) -> str:
+    """Bind the separate ledger reservation ID to the v3 event identity."""
+
+    reservation = validate_reservation_v3(reservation_v3)
+    match = _TASK_READY_IDEMPOTENCY_KEY_RE.fullmatch(reservation['idempotency_key'])
+    if match is None:
+        raise ValueError('task-ready event idempotency identity is invalid')
+    digest = match[1]
+    if reservation['event_key'] != 'ready-v1:' + digest:
+        raise ValueError('task-ready event and reservation identities conflict')
+    return 'continuation_' + digest[:32]
+
+
+def _runtime_reservation_id(reservation: dict) -> str:
+    if reservation.get('schema_version') == 'task-continuation-reservation.v3':
+        return _task_ready_reservation_id(reservation)
+    return reservation['reservation_id']
 
 
 def _root_journal_path(session_root: Path, stem: str, root_run_id: str) -> Path:
@@ -1011,20 +1037,34 @@ class RuntimeAdapter:
             if (self._acp and record.domain_call_drained_sequence != record.domain_call_sequence):
                 raise SessionConflict("previous turn domain-call evidence is not yet acknowledged")
             budget = None
+            task_ready_budget = None
             if continuation_budget is not None:
-                if not self.continuation_qualified(record):
-                    raise ValueError('continuation executor is not enabled')
-                budget = validate_reservation(continuation_budget,
-                    owner=record.owner_principal, workspace=record.workspace_id)
-                if idempotency_key != budget['reservation_id']:
-                    raise ValueError('continuation requires its original reservation key')
-                if not _continuation_route_qualified(record.model_resolution, self._provider, self._model):
-                    raise ValueError('selected continuation model is unqualified')
+                if (isinstance(continuation_budget, dict)
+                        and continuation_budget.get('schema_version') == 'task-continuation-reservation.v3'):
+                    task_ready_budget = validate_reservation_v3(continuation_budget)
+                    if (task_ready_budget['owner_principal'] != record.owner_principal
+                            or task_ready_budget['workspace_id'] != record.workspace_id):
+                        raise ValueError('task-ready carrier does not match the Runtime owner/workspace')
+                    reservation_id = _task_ready_reservation_id(task_ready_budget)
+                    if idempotency_key != reservation_id:
+                        raise ValueError('task-ready reservation identity does not match the prompt key')
+                    if not self.task_ready_qualified(record):
+                        raise ValueError('task-ready executor is not qualified')
+                else:
+                    if not self.continuation_qualified(record):
+                        raise ValueError('continuation executor is not enabled')
+                    budget = validate_reservation(continuation_budget,
+                        owner=record.owner_principal, workspace=record.workspace_id)
+                    if idempotency_key != budget['reservation_id']:
+                        raise ValueError('continuation requires its original reservation key')
+                    if not _continuation_route_qualified(record.model_resolution, self._provider, self._model):
+                        raise ValueError('selected continuation model is unqualified')
             if record.status not in SessionStatus.PROMPTABLE or record.active_run is not None:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
-            if self._acp_product_slots and not record.process_used and budget is None:
+            if (self._acp_product_slots and not record.process_used
+                    and budget is None and task_ready_budget is None):
                 # ADR-0111: the first ordinary submit starts the ACP product slot.
                 # The create_session harness carries no provider budget. This ACP
                 # candidate qualifies ONLY the OpenCode Go / `deepseek-v4.1-flash`
@@ -1199,12 +1239,13 @@ class RuntimeAdapter:
             # A resumed ACP root already owns the complete native history.
             # Reinjecting Gateway's public projection would duplicate turns.
             effective_content = content if reuse_native else rehydrated_prompt(context, content)
-            if budget is not None and not record.process_used:
+            has_continuation = budget is not None or task_ready_budget is not None
+            if has_continuation and not record.process_used:
                 self._compatibility.close(record.harness)
                 record.process_closed = True
                 if self._acp and record.current_generation is not None:
                     record.current_generation.process_exit_confirmed = True
-            if self._root_scoped and (record.process_used or budget is not None):
+            if self._root_scoped and (record.process_used or has_continuation):
                 if record.workspace_id and conversation_context is None and not reuse_native:
                     raise SessionConflict("new root requires a fresh public conversation projection")
                 if (record.process_closing or not record.process_closed
@@ -1214,9 +1255,13 @@ class RuntimeAdapter:
                         and not record.current_generation.process_exit_confirmed):
                     raise SessionConflict("previous ACP process exit is not confirmed")
                 if record.continuation_budget is not None:
-                    old_id = record.continuation_budget['reservation_id']
+                    old_reservation = record.continuation_budget
+                    old_id = _runtime_reservation_id(old_reservation)
                     old_receipt = self._budget_receipt(record)
-                    if old_receipt.get('status') == 'settled':
+                    if (old_receipt.get('status') == 'settled'
+                            or (isinstance(old_reservation, dict)
+                                and old_reservation.get('schema_version') == 'task-continuation-reservation.v3'
+                                and old_receipt.get('status') == 'outcome_unknown')):
                         record.budget_receipts[old_id] = old_receipt
                     while len(record.budget_receipts) > 64:
                         del record.budget_receipts[next(iter(record.budget_receipts))]
@@ -1251,10 +1296,38 @@ class RuntimeAdapter:
                 request_proxy = None
                 tool_journal = None
                 product_turn_overlay_b64 = None
+                task_ready_overlay_b64 = None
                 product_execution_profile = None
                 self._require_group_admission(record, root_id)
                 try:
-                    if budget is not None:
+                    if task_ready_budget is not None:
+                        reservation_id = _task_ready_reservation_id(task_ready_budget)
+                        request_gate = build_task_ready_v2_request_gate(
+                            request_id=reservation_id,
+                            execution_profile=task_ready_budget['execution_profile'],
+                            journal=(_root_journal_path(
+                                session_root, 'continuation-provider-request', root_id)
+                                if self._acp else
+                                session_root / 'continuation-provider-request.jsonl'),
+                        )
+                        request_proxy = RequestGateProxy(
+                            request_gate, CONTINUATION_UPSTREAM,
+                            bind_host="0.0.0.0",
+                            advertise_host=_continuation_proxy_advertise_host(),
+                        )
+                        request_proxy.__enter__()
+                        tool_journal = _root_journal_path(
+                            session_root, 'continuation-tool-guard', root_id)
+                        provider_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                            "beyondquant:provider-session:" + record.session_id))
+                        task_ready_overlay_b64 = base64.b64encode(
+                            create_acp_task_ready_execution_overlay(
+                                proxy_base_url=request_proxy.base_url,
+                                provider_session_id=provider_session_id,
+                                reservation_v3=task_ready_budget,
+                                root_run_id=root_id,
+                            )).decode('ascii')
+                    elif budget is not None:
                         request_gate = build_continuation_request_gate(
                             request_id=budget['reservation_id'],
                             execution_profile=budget['execution_profile'],
@@ -1316,6 +1389,7 @@ class RuntimeAdapter:
                                 execution_profile=product_execution_profile)).decode('ascii')
                     search_api_key = None
                     if (self._acp_product_slots and budget is None
+                            and task_ready_budget is None
                             and product_turn_overlay_b64 is not None):
                         search_api_key = self._resolve_search_credential(
                             owner_principal=record.owner_principal,
@@ -1326,6 +1400,11 @@ class RuntimeAdapter:
                         trace_id=record.trace_id, owner_principal=record.owner_principal,
                         workspace_id=record.workspace_id, model_resolution=record.model_resolution,
                         runtime_generation=generation, root_run_id=root_id, continuation_budget=budget,
+                        task_ready_overlay_b64=task_ready_overlay_b64,
+                        task_ready_reservation_id=(
+                            _task_ready_reservation_id(task_ready_budget)
+                            if task_ready_budget is not None else None
+                        ),
                         continuation_proxy_url=request_proxy.base_url if request_proxy is not None else None,
                         continuation_deadline_epoch_ms=(
                             int(time.time() * 1000 + remaining_seconds * 1000)
@@ -1403,9 +1482,9 @@ class RuntimeAdapter:
                 record.settlement_receipt = None
                 record.cleanup_unconfirmed = False
                 record.cleanup_harness = None
-                installed.continuation_budget = budget
+                installed.continuation_budget = budget if budget is not None else task_ready_budget
                 installed.budget_journal = tool_journal
-                installed.budget_run_id = root_id if budget else None
+                installed.budget_run_id = root_id if has_continuation else None
                 installed.continuation_request_gate = request_gate
                 installed.continuation_request_proxy = request_proxy
                 installed.continuation_proxy_closed = request_proxy is None
@@ -1420,7 +1499,7 @@ class RuntimeAdapter:
                 execution_profile = validate_product_turn_execution_profile(
                     record.current_generation.ordinary_execution_profile)
                 run.ordinary_execution_options = dict(execution_profile['options'])
-            if budget:
+            if budget is not None:
                 # The monotonic one-request deadline includes prompt construction,
                 # provider retries/compaction, tool work and idle gaps. The
                 # business authorization expiry is validated separately above.
@@ -1525,7 +1604,7 @@ class RuntimeAdapter:
                     # Startup must demonstrate the guard registered before
                     # any model prompt is sent; a failed plugin cannot silently
                     # fall back to an unguarded runtime.
-                    read_request_guard(record.budget_journal, record.continuation_budget)
+                    self._read_continuation_tool_guard(record)
             try:
                 finish_reason = self._compatibility.run_prepared_prompt(
                     prepared, content,
@@ -1631,15 +1710,19 @@ class RuntimeAdapter:
             budget_blocked = False
             if record.continuation_budget:
                 try:
-                    tool_receipt = read_request_guard(
-                        record.budget_journal, record.continuation_budget, terminal=True)
+                    tool_receipt = self._read_continuation_tool_guard(record, terminal=True)
                     gate = record.continuation_request_gate
                     if gate is None:
                         raise ValueError('continuation provider gate is missing')
                     usage = gate.request_usage(tool_calls=tool_receipt['tool_calls'])
+                    if record.continuation_budget.get('schema_version') == 'task-continuation-reservation.v3':
+                        usage = validate_request_usage_v2(usage)
+                        violations = exceeded_request_limits_v2(usage)
+                    else:
+                        violations = exceeded_request_limits(usage)
                     budget_blocked = bool(
                         tool_receipt['blocked_reason'] or gate.has_blocked_request()
-                        or exceeded_request_limits(usage)
+                        or violations
                     )
                 except (OSError, ValueError, TypeError, KeyError):
                     budget_blocked = True
@@ -1722,12 +1805,25 @@ class RuntimeAdapter:
                 if self._root_scoped:
                     self._close_generation(record, generation_id, "completed")
 
-    def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
+    def cancel_session(
+            self, session_id: str, mode: str,
+            expected_root_run_id: str | None = None) -> dict[str, Any]:
         if mode not in {"soft", "hard"}:
             raise ValueError("cancel mode must be soft or hard")
+        if (expected_root_run_id is not None
+                and (not isinstance(expected_root_run_id, str)
+                     or re.fullmatch(r"[0-9a-f]{32}", expected_root_run_id) is None)):
+            raise ValueError("invalid expected root run id")
         record = self._get(session_id)
         with record.lock:
             run = record.active_run
+            if (expected_root_run_id is not None
+                    and (run is None or run.run_id != expected_root_run_id)):
+                raise SessionConflict("active prompt does not match expected root run id")
+            if (expected_root_run_id is not None and mode == "soft"
+                    and record.status == SessionStatus.CANCELLING):
+                raise SessionConflict(
+                    "root cancellation outcome is unconfirmed; reconcile terminal status")
             if run is None or record.status not in SessionStatus.ACTIVE_PROMPT:
                 raise SessionConflict(f"session {session_id} has no active prompt")
             if mode == "soft":
@@ -1806,7 +1902,10 @@ class RuntimeAdapter:
                 raise
             finally:
                 self._close_continuation_proxy(record, cancelled_generation, cancelled_harness)
-        return self.describe_session(record)
+        response = self.describe_session(record)
+        if expected_root_run_id is not None:
+            response["cancelled_root_run_id"] = expected_root_run_id
+        return response
 
     def domain_call_evidence(self, context: dict, after_sequence: int = 0) -> dict:
         """Private bounded control evidence, never a public trace/replay source."""
@@ -2823,6 +2922,35 @@ class RuntimeAdapter:
         # above; no Python SDK version can qualify this online continuation path.
         return self._compatibility.family == ACP_COMPATIBILITY_FAMILY
 
+    def task_ready_qualified(self, record: RuntimeSession) -> bool:
+        """Qualify the default task-ready profile on the ordinary Product ACP route."""
+
+        if (not self._root_scoped or not self._acp_product_slots
+                or not record.owner_principal or not record.workspace_id
+                or not bool(record.model_resolution.get('api_key'))
+                or not _continuation_route_qualified(
+                    record.model_resolution, self._provider, self._model)):
+            return False
+        return self._compatibility.family == ACP_COMPATIBILITY_FAMILY
+
+    @staticmethod
+    def _read_continuation_tool_guard(
+        record: RuntimeSession, *, terminal: bool = False,
+    ) -> dict:
+        reservation = record.continuation_budget
+        if (isinstance(reservation, dict)
+                and reservation.get('schema_version') == 'task-continuation-reservation.v3'):
+            if (not isinstance(record.budget_journal, Path)
+                    or record.budget_run_id is None):
+                raise ValueError('task-ready root identity is unavailable')
+            return read_task_ready_v2_guard(
+                record.budget_journal, reservation, record.budget_run_id,
+                terminal=terminal,
+            )
+        return read_request_guard(
+            record.budget_journal, reservation, terminal=terminal,
+        )
+
     def _close_continuation_proxy(
         self, record: RuntimeSession, generation_id: str, harness: Any,
     ) -> None:
@@ -2843,6 +2971,9 @@ class RuntimeAdapter:
 
     def _budget_receipt(self, record: RuntimeSession) -> dict:
         reservation = record.continuation_budget
+        if (isinstance(reservation, dict)
+                and reservation.get('schema_version') == 'task-continuation-reservation.v3'):
+            return self._task_ready_budget_receipt(record, reservation)
         reservation_id = reservation['reservation_id']
         cached = record.budget_receipts.get(reservation_id)
         if cached is not None:
@@ -2904,6 +3035,77 @@ class RuntimeAdapter:
         except (OSError, ValueError, TypeError, KeyError):
             return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
 
+    def _task_ready_budget_receipt(self, record: RuntimeSession, reservation_v3: dict) -> dict:
+        """Settle a task-ready receipt only after all exact close/ACK evidence."""
+
+        reservation_id = _task_ready_reservation_id(reservation_v3)
+        idempotency_key = reservation_v3['idempotency_key']
+        identity = {
+            'reservation_id': reservation_id,
+            'idempotency_key': idempotency_key,
+        }
+        cached = record.budget_receipts.get(reservation_id)
+        if cached is not None:
+            return cached
+        if record.active_run is not None:
+            return {**identity, 'status': 'accepted', 'run_id': record.budget_run_id}
+
+        generation = record.current_generation
+        if (record.cleanup_unconfirmed or not record.process_closed or record.process_closing
+                or not record.continuation_proxy_closed
+                or generation is None
+                or generation.process_root_id != record.budget_run_id
+                or not generation.process_exit_confirmed):
+            return {**identity, 'status': 'outcome_unknown'}
+        if (record.domain_call_drained_sequence != record.domain_call_sequence
+                or record.pending_terminal_receipts
+                or not isinstance(record.settlement_receipt, dict)
+                or record.settlement_receipt.get('root_run_id') != record.budget_run_id
+                or record.settlement_receipt != record.terminal_receipts.get(record.budget_run_id)):
+            return {**identity, 'status': 'outcome_unknown'}
+
+        gate = record.continuation_request_gate
+        if gate is None:
+            return {**identity, 'status': 'outcome_unknown'}
+        try:
+            state = gate.settlement_state()
+        except Exception:  # noqa: BLE001 — damaged receipts stay unresolved
+            return {**identity, 'status': 'outcome_unknown'}
+        if state == UNKNOWN_OR_UNPAIRED:
+            return {**identity, 'status': 'outcome_unknown'}
+        try:
+            tool_receipt = self._read_continuation_tool_guard(record, terminal=True)
+            request_usage = validate_request_usage_v2(
+                gate.request_usage(tool_calls=tool_receipt['tool_calls']))
+            if (request_usage['execution_profile'] != reservation_v3['execution_profile']
+                    or request_usage['request_limits'] != reservation_v3['request_limits']):
+                raise ValueError('task-ready request usage does not match its carrier')
+            violations = exceeded_request_limits_v2(request_usage)
+            completed = any(
+                event['kind'] == 'session.result'
+                and event['payload'].get('run_id') == record.budget_run_id
+                for event in record.history
+            )
+            needs_attention = bool(
+                not completed or tool_receipt['blocked_reason']
+                or state == KNOWN_BLOCKED or violations
+            )
+            receipt = {
+                **identity,
+                'status': 'settled',
+                'run_id': record.budget_run_id,
+                'outcome': 'needs_attention' if needs_attention else 'completed',
+                'request_usage': request_usage,
+            }
+            receipt['settlement_sha256'] = hashlib.sha256(json.dumps(
+                receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            record.budget_receipts[reservation_id] = receipt
+            while len(record.budget_receipts) > 64:
+                del record.budget_receipts[next(iter(record.budget_receipts))]
+            return receipt
+        except (OSError, ValueError, TypeError, KeyError):
+            return {**identity, 'status': 'outcome_unknown'}
+
     def continuation_receipt(self, session_id: str, reservation_id: str) -> dict:
         validate_identifier(session_id, field='session_id')
         try:
@@ -2911,8 +3113,13 @@ class RuntimeAdapter:
         except KeyError:
             return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         with record.lock:
-            if record.continuation_budget and record.continuation_budget['reservation_id'] == reservation_id:
-                return self._budget_receipt(record)
+            if record.continuation_budget:
+                try:
+                    current_id = _runtime_reservation_id(record.continuation_budget)
+                except (ValueError, TypeError, KeyError):
+                    current_id = None
+                if current_id == reservation_id:
+                    return self._budget_receipt(record)
             return record.budget_receipts.get(reservation_id) or {
                 'reservation_id': reservation_id, 'status': 'outcome_unknown'}
 
@@ -2929,6 +3136,8 @@ class RuntimeAdapter:
         root_run_id: str = "",
         native_root_session_id: str | None = None,
         continuation_budget: dict | None = None,
+        task_ready_overlay_b64: str | None = None,
+        task_ready_reservation_id: str | None = None,
         continuation_proxy_url: str | None = None,
         continuation_deadline_epoch_ms: int | None = None,
         product_turn_overlay_b64: str | None = None,
@@ -2990,7 +3199,21 @@ class RuntimeAdapter:
         composition = self._composition
         max_tokens = None
         guard_b64 = None
-        if continuation_budget is not None:
+        if task_ready_overlay_b64 is None and task_ready_reservation_id is not None:
+            raise ValueError('task-ready reservation identity requires its guard overlay')
+        if task_ready_overlay_b64 is not None:
+            if (continuation_budget is not None or not self._acp_product_slots
+                    or not isinstance(task_ready_reservation_id, str)
+                    or re.fullmatch(r'continuation_[0-9a-f]{32}', task_ready_reservation_id) is None
+                    or continuation_proxy_url is None or search_api_key is not None):
+                raise ValueError('task-ready Product ACP execution identity is invalid')
+            environment['BYQ_CONTINUATION_RESERVATION_ID'] = task_ready_reservation_id
+            environment['DEEPSEEK_SEARCH_BASE_URL'] = ''
+            environment['DEEPSEEK_SEARCH_API_KEY'] = ''
+            guard_b64 = task_ready_overlay_b64
+            # The task-ready overlay carries only output caps explicitly present
+            # in its trusted profile; no legacy/default max_tokens is injected.
+        elif continuation_budget is not None:
             if search_api_key is not None:
                 raise ValueError('search credentials cannot enter a continuation process')
             if continuation_proxy_url is None or continuation_deadline_epoch_ms is None:

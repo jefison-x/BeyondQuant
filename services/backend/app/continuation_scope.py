@@ -13,6 +13,7 @@ from packages.contracts.continuation_request import (
     validate_limits,
     validate_profile_binding,
 )
+from .backtest_task import task_id_from_signal_job
 
 logger = logging.getLogger("byq.research.continuation.scope")
 
@@ -64,7 +65,57 @@ def authorize(store, reservation_id, payload, context):
         if match is None:
             raise ValueError('continuation reservation is unavailable')
         task, conversation = store._continuation_task(connection, match['task_id'], context, human=False)
-        receipt = next(r for r in task['continuation_budget'] if r['reservation_id'] == reservation_id)
+        rows = task['continuation_budget']
+        row_index = next(index for index, row in enumerate(rows)
+            if row['reservation_id'] == reservation_id)
+        receipt = rows[row_index]
+        if receipt.get('schema_version') == 'task-continuation-ledger-entry.v1':
+            from .research_continuation import _validate_v3_ledger_entry
+            entry = _validate_v3_ledger_entry(receipt)
+            carrier = entry['reservation']
+            if (entry['status'] not in {'outcome_unknown', 'accepted'}
+                    or entry.get('cancel_requested_at') is not None
+                    or store._data_ready_blocked_reason(task, conversation) is not None
+                    or store._event_blocked_by_needs_attention(task, entry['event_key'])
+                    or context['session_id'] != conversation['runtime_session_id']
+                    or context['trace_id'] != conversation['trace_id']
+                    or (entry.get('run_id') is not None
+                        and entry['run_id'] != payload['root_run_id'])):
+                raise ValueError('continuation action is no longer admitted')
+            job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
+                    j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
+                    u.user_id AS owner_user_id
+                FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
+                WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
+                  AND j.workspace_id=:workspace FOR SHARE OF j, u''',
+                {'job': carrier['signal_job_id'], 'task': task['task_id'],
+                 'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+            if job is None:
+                raise ValueError('continuation action is no longer admitted')
+            store._assert_v3_source_binding(connection, task, conversation, job, carrier)
+            scope = Scope(connection, task, context)
+            args = payload['arguments']
+            derived_receipt = {'backtest_task_id': task_id_from_signal_job(carrier['signal_job_id'])}
+            try:
+                if payload['tool'] not in (ALLOWED_DOMAIN_TOOLS | ALLOWED_HARNESS_TOOLS):
+                    raise ValueError('continuation action is outside its scope')
+                if not _v2_tool_arguments_allowed(payload['tool'], args, task, derived_receipt, context):
+                    raise ValueError('continuation read target is outside the exact request scope')
+                scope.walk(args)
+            except ValueError:
+                execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event WHERE task_id=:task",
+                    {'event': entry['event_key'], 'task': task['task_id']})
+                logger.info("continuation scope violation blocked its event: task=%s event=%s reservation=%s",
+                    task['task_id'], entry['event_key'], reservation_id)
+                return {'schema_version': 'continuation-action-admission.v1', 'admitted': False,
+                    'reservation_id': reservation_id, 'task_id': task['task_id']}
+            entry.update(status='accepted', run_id=payload['root_run_id'])
+            rows[row_index] = entry
+            execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+                {'budget': rows, 'task': task['task_id']})
+            return {'schema_version': 'continuation-action-admission.v1', 'admitted': True,
+                'reservation_id': reservation_id, 'task_id': task['task_id']}
+
         profiled = receipt.get('schema_version') == RESERVATION_SCHEMA_VERSION
         if (store._continuation_blocked_reason(task, conversation, receipt) is not None
                 or not profiled

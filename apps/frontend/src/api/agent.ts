@@ -2,6 +2,44 @@ import type { AgentSession, AgentSessionReplay, WorkflowTraceEvent } from "./typ
 
 const AGENT_ROOT = "/v1/agent";
 const WORKFLOW_ROOT = "/v1/workflows";
+const PRODUCT_ROOT = "/api/product";
+
+export const AGENT_EXECUTION_OPTIONS_SCHEMA = "agent-execution-options.v1" as const;
+
+export interface AgentExecutionOptions {
+  auto_continue: boolean;
+  max_provider_calls: number | null;
+  max_provider_attempts: number | null;
+  max_tool_calls: number | null;
+  max_concurrent_provider_calls: number | null;
+  max_input_bytes_per_call: number | null;
+  max_input_bytes_total: number | null;
+  max_output_tokens_per_call: number | null;
+  max_output_tokens_total: number | null;
+  max_tool_payload_bytes_per_call: number | null;
+  max_tool_payload_bytes_total: number | null;
+  max_continuations: number | null;
+  max_runtime_seconds: number | null;
+  max_no_progress_seconds: number | null;
+  max_child_runtime_seconds: number | null;
+  max_child_no_progress_seconds: number | null;
+}
+
+export interface AgentExecutionOptionsRecord {
+  schema_version: typeof AGENT_EXECUTION_OPTIONS_SCHEMA;
+  conversation_id: string;
+  owner_principal: string;
+  workspace_id: string;
+  revision: number;
+  options: AgentExecutionOptions;
+  updated_at: string | null;
+}
+
+export interface AgentExecutionOptionsUpdate {
+  schema_version: typeof AGENT_EXECUTION_OPTIONS_SCHEMA;
+  expected_revision: number;
+  options: AgentExecutionOptions;
+}
 
 export class AgentRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
@@ -83,6 +121,28 @@ export function cancelSession(sessionId: string, mode: "soft" | "hard", token: s
     method: "POST",
     body: JSON.stringify({ mode }),
   });
+}
+
+export function getAgentExecutionOptions(
+  conversationId: string,
+  token: string,
+): Promise<AgentExecutionOptionsRecord> {
+  return jsonRequest<AgentExecutionOptionsRecord>(
+    `${PRODUCT_ROOT}/agent/conversations/${encodeURIComponent(conversationId)}/execution-options`,
+    token,
+  );
+}
+
+export function updateAgentExecutionOptions(
+  conversationId: string,
+  payload: AgentExecutionOptionsUpdate,
+  token: string,
+): Promise<AgentExecutionOptionsRecord> {
+  return jsonRequest<AgentExecutionOptionsRecord>(
+    `${PRODUCT_ROOT}/agent/conversations/${encodeURIComponent(conversationId)}/execution-options`,
+    token,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
 }
 
 export function deleteAgentSession(sessionId: string, token: string): Promise<{ status?: string }> {

@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import json
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -99,13 +100,25 @@ class SlotFakeCompatibility(FakeAcpCompatibility):
                 config = guard[4]["insert"][0]["config"]
                 journal = session_root / (
                     f"continuation-tool-guard-{environment['BYQ_ROOT_RUN_ID']}.jsonl")
-                journal.write_text(json.dumps({
-                    "schema_version": "continuation-tool-guard.v1",
-                    "reservation_id": config["reservationId"],
-                    "execution_profile": config["executionProfile"],
-                    "request_limits": config["requestLimits"],
-                    "ready": True,
-                }, sort_keys=True) + "\n", encoding="utf-8")
+                if config.get("guardMode") == "task-ready-options":
+                    header = {
+                        "schema_version": "task-ready-tool-guard.v2",
+                        "root_run_id": config["rootRunId"],
+                        "idempotency_key": config["idempotencyKey"],
+                        "source_fact_sha256": config["sourceFactSha256"],
+                        "execution_profile": config["executionProfile"],
+                        "request_limits": config["requestLimits"],
+                        "ready": True,
+                    }
+                else:
+                    header = {
+                        "schema_version": "continuation-tool-guard.v1",
+                        "reservation_id": config["reservationId"],
+                        "execution_profile": config["executionProfile"],
+                        "request_limits": config["requestLimits"],
+                        "ready": True,
+                    }
+                journal.write_text(json.dumps(header, sort_keys=True) + "\n", encoding="utf-8")
         return harness
 
     @staticmethod
@@ -473,6 +486,665 @@ def _f6_reservation(owner: str, workspace: str, suffix: str) -> dict:
         "request_limits": request_limits(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
     }
+
+
+def _task_ready_reservation(
+        owner: str, workspace: str, conversation: str,
+        *, identity_marker: str | None = None) -> dict:
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import continuation_reservation_v3
+
+    fields = {
+        "owner_principal": owner,
+        "workspace_id": workspace,
+        "conversation_id": conversation,
+        "task_id": "task_" + "1" * 32,
+        "signal_job_id": "signaljob_" + "2" * 32,
+        "result_artifact_id": "artifact_" + "3" * 32,
+        "result_artifact_content_sha256": "4" * 64,
+        "options": default_agent_execution_options(),
+        "options_revision": 4,
+    }
+    if identity_marker is not None:
+        fields.update(
+            task_id="task_" + identity_marker * 32,
+            signal_job_id="signaljob_" + identity_marker * 32,
+            result_artifact_id="artifact_" + identity_marker * 32,
+            result_artifact_content_sha256=identity_marker * 64,
+        )
+    probe = continuation_reservation_v3(
+        **fields, event_key="ready-v1:" + "0" * 64,
+    )
+    return continuation_reservation_v3(
+        **fields,
+        event_key="ready-v1:" + probe["idempotency_key"].removeprefix("task-ready-event:"),
+    )
+
+
+def _task_ready_reservation_id(reservation: dict) -> str:
+    digest = reservation["idempotency_key"].removeprefix("task-ready-event:")
+    return "continuation_" + digest[:32]
+
+
+def test_task_ready_v3_uses_ordinary_product_acp_without_f6_flag(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry = slot_runtime
+    monkeypatch.delenv("BYQ_F6_EXECUTOR_ENABLED", raising=False)
+    session_id = "task-ready-v3"
+    workspace = "workspace_slot_a"
+    conversation = "conversation-" + session_id
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation("slot-owner", workspace, conversation)
+    reservation_id = _task_ready_reservation_id(reservation)
+
+    root, terminal_receipt = _run_to_idle(runtime, session_id, "authoritative read-only instruction")
+    # The first ordinary root is intentionally separate; the task-ready carrier
+    # is admitted below after that root's exact terminal ACK.
+    runtime.acknowledge_terminal(session_id, terminal_receipt)
+    compatibility.prompt_started.clear()
+    compatibility.block_prompt = True
+    root = runtime.submit_prompt(
+        session_id, "authoritative read-only instruction", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    )
+    assert compatibility.prompt_started.wait(2)
+    active = runtime.continuation_receipt(session_id, reservation_id)
+    assert active == {
+        "reservation_id": reservation_id,
+        "idempotency_key": reservation["idempotency_key"],
+        "status": "accepted",
+        "run_id": root,
+    }
+    compatibility.allow_prompt_return.set()
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    record = runtime._get(session_id)
+    starts = len(compatibility.successful_starts)
+    assert runtime.submit_prompt(
+        session_id, "authoritative read-only instruction", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    ) == root
+    assert len(compatibility.successful_starts) == starts
+    harness = compatibility.successful_starts[-1]
+    assert harness.environment["BYQ_CONTINUATION_RESERVATION_ID"] == reservation_id
+    assert harness.environment["DEEPSEEK_SEARCH_API_KEY"] == ""
+    assert record.continuation_request_gate.task_ready_v2 is True
+    assert record.continuation_request_gate.deadline_monotonic is None
+    guard_header = json.loads(record.budget_journal.read_text(encoding="utf-8").splitlines()[0])
+    assert guard_header["root_run_id"] == root
+    assert guard_header["idempotency_key"] == reservation["idempotency_key"]
+    assert record.terminal_receipts[root]["schema_version"] == "agent-run-lifecycle-receipt.v1"
+    assert record.terminal_receipts[root]["root_run_id"] == root
+    pending = runtime.continuation_receipt(session_id, reservation_id)
+    assert pending == {
+        "reservation_id": reservation_id,
+        "idempotency_key": reservation["idempotency_key"],
+        "status": "outcome_unknown",
+    }
+
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[root])
+    settled = runtime.continuation_receipt(session_id, reservation_id)
+    assert settled["status"] == "settled"
+    assert settled["reservation_id"] == reservation_id
+    assert settled["idempotency_key"] == reservation["idempotency_key"]
+    assert settled["request_usage"]["execution_profile"] == reservation["execution_profile"]
+    assert settled["request_usage"]["request_limits"] == reservation["request_limits"]
+
+
+def test_task_ready_receipt_requires_each_close_ack_and_provider_fact(slot_runtime):
+    runtime, _compatibility, _registry = slot_runtime
+    session_id = "task-ready-closure-facts"
+    workspace = "workspace_slot_a"
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation(
+        "slot-owner", workspace, "conversation-" + session_id,
+    )
+    reservation_id = _task_ready_reservation_id(reservation)
+    root = runtime.submit_prompt(
+        session_id, "closure facts", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    )
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    record = runtime._get(session_id)
+    terminal = record.terminal_receipts[root]
+    runtime.acknowledge_terminal(session_id, terminal)
+    settled = runtime.continuation_receipt(session_id, reservation_id)
+    assert settled["status"] == "settled"
+    assert settled["outcome"] == "completed"
+
+    generation = record.current_generation
+    gate = record.continuation_request_gate
+    assert generation is not None and gate is not None
+    assert generation.process_root_id == root
+    assert generation.process_closed and generation.process_exit_confirmed
+    assert record.settlement_receipt == terminal
+    unknown = {
+        "reservation_id": reservation_id,
+        "idempotency_key": reservation["idempotency_key"],
+        "status": "outcome_unknown",
+    }
+
+    def assert_unknown_then_restore(name, withhold, restore):
+        with record.lock:
+            assert record.budget_receipts.pop(reservation_id, None) is not None
+            withhold()
+        assert runtime.continuation_receipt(session_id, reservation_id) == unknown, name
+        with record.lock:
+            restore()
+        repaired = runtime.continuation_receipt(session_id, reservation_id)
+        assert repaired["status"] == "settled", name
+        assert repaired["outcome"] == "completed", name
+        assert repaired["run_id"] == root, name
+
+    assert_unknown_then_restore(
+        "cleanup_unconfirmed",
+        lambda: setattr(record, "cleanup_unconfirmed", True),
+        lambda: setattr(record, "cleanup_unconfirmed", False),
+    )
+    assert_unknown_then_restore(
+        "process_closed",
+        lambda: setattr(generation, "process_closed", False),
+        lambda: setattr(generation, "process_closed", True),
+    )
+    assert_unknown_then_restore(
+        "process_closing",
+        lambda: setattr(generation, "process_closing", True),
+        lambda: setattr(generation, "process_closing", False),
+    )
+    assert_unknown_then_restore(
+        "proxy_close",
+        lambda: setattr(generation, "continuation_proxy_closed", False),
+        lambda: setattr(generation, "continuation_proxy_closed", True),
+    )
+    assert_unknown_then_restore(
+        "process_exit_confirmation",
+        lambda: setattr(generation, "process_exit_confirmed", False),
+        lambda: setattr(generation, "process_exit_confirmed", True),
+    )
+    assert_unknown_then_restore(
+        "root_binding",
+        lambda: setattr(generation, "process_root_id", "f" * 32),
+        lambda: setattr(generation, "process_root_id", root),
+    )
+
+    call_sequence = record.domain_call_sequence
+    drained = record.domain_call_drained_sequence
+    assert_unknown_then_restore(
+        "domain_call_drain",
+        lambda: setattr(record, "domain_call_sequence", call_sequence + 1),
+        lambda: setattr(record, "domain_call_sequence", call_sequence),
+    )
+
+    assert_unknown_then_restore(
+        "terminal_ack_pending",
+        lambda: record.pending_terminal_receipts.add(root),
+        lambda: record.pending_terminal_receipts.discard(root),
+    )
+    assert_unknown_then_restore(
+        "terminal_ack_missing",
+        lambda: setattr(record, "settlement_receipt", None),
+        lambda: setattr(record, "settlement_receipt", terminal),
+    )
+
+    with gate._lock:
+        original_gate = (gate._provider_calls, gate._attempts, gate._receipts)
+
+    def unpair_provider():
+        with gate._lock:
+            gate._provider_calls = 1
+            gate._attempts = 1
+            gate._receipts = [{
+                "schema_version": "continuation-request-gate.v1",
+                "phase": "admitted",
+                "request_id": gate.request_id,
+                "admitted": True,
+                "call": 1,
+                "attempt": 1,
+            }]
+
+    def restore_provider_pairing():
+        with gate._lock:
+            gate._provider_calls, gate._attempts, gate._receipts = original_gate
+
+    assert_unknown_then_restore(
+        "provider_admission_without_completion", unpair_provider, restore_provider_pairing,
+    )
+
+
+@pytest.mark.parametrize("mode", ["soft", "hard"])
+def test_task_ready_soft_and_hard_cancel_never_complete_or_reuse_root(
+        slot_runtime, monkeypatch, mode):
+    runtime, compatibility, _registry = slot_runtime
+    monkeypatch.delenv("BYQ_F6_EXECUTOR_ENABLED", raising=False)
+    session_id = f"task-ready-cancel-{mode}"
+    workspace = "workspace_slot_a"
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation(
+        "slot-owner", workspace, "conversation-" + session_id,
+    )
+    reservation_id = _task_ready_reservation_id(reservation)
+
+    prompt_returned = threading.Event()
+    run_prompt = compatibility.run_prepared_prompt
+
+    def track_prompt_return(prepared, content, on_notification):
+        try:
+            return run_prompt(prepared, content, on_notification)
+        finally:
+            prompt_returned.set()
+
+    monkeypatch.setattr(compatibility, "run_prepared_prompt", track_prompt_return)
+    compatibility.prompt_started.clear()
+    compatibility.allow_prompt_return.clear()
+    compatibility.block_prompt = True
+    root = runtime.submit_prompt(
+        session_id, "cancel this task-ready root", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    )
+    assert compatibility.prompt_started.wait(1)
+    assert runtime.continuation_receipt(session_id, reservation_id)["status"] == "accepted"
+
+    runtime.cancel_session(session_id, mode)
+    if mode == "hard":
+        compatibility.allow_prompt_return.set()
+    assert prompt_returned.wait(2)
+    if mode == "soft":
+        _wait_status(runtime, session_id, SessionStatus.IDLE)
+    else:
+        assert runtime._get(session_id).status == SessionStatus.INTERRUPTED
+
+    record = runtime._get(session_id)
+    terminal = record.terminal_receipts[root]
+    runtime.acknowledge_terminal(session_id, terminal)
+    receipt = runtime.continuation_receipt(session_id, reservation_id)
+    assert not (receipt.get("status") == "settled"
+                and receipt.get("outcome") == "completed")
+    assert not record.reuse_native_session_ready
+
+    starts = len(compatibility.successful_starts)
+    assert runtime.submit_prompt(
+        session_id, "cancel this task-ready root", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    ) == root
+    assert len(compatibility.successful_starts) == starts
+    assert not record.reuse_native_session_ready
+
+
+def test_cancel_with_mismatched_root_leaves_active_new_root_untouched(
+        slot_runtime, monkeypatch):
+    from fastapi import HTTPException
+    from app import main
+
+    runtime, compatibility, _registry = slot_runtime
+    monkeypatch.setattr(main, "adapter", runtime)
+    session_id = "task-ready-cancel-root-mismatch"
+    workspace = "workspace_slot_a"
+    conversation = "conversation-" + session_id
+    _create(runtime, session_id, workspace)
+
+    old_reservation = _task_ready_reservation("slot-owner", workspace, conversation)
+    old_reservation_id = _task_ready_reservation_id(old_reservation)
+    old_root = runtime.submit_prompt(
+        session_id, "first task-ready root", conversation_context=[],
+        idempotency_key=old_reservation_id, continuation_budget=old_reservation,
+    )
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    record = runtime._get(session_id)
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[old_root])
+    inactive_status = record.status
+    inactive_history = list(record.history)
+    inactive_gate = record.continuation_request_gate
+    assert inactive_gate is not None
+    with pytest.raises(SessionConflict, match="does not match expected root"):
+        runtime.cancel_session(
+            session_id, "soft", expected_root_run_id=old_root,
+        )
+    assert record.active_run is None
+    assert record.status == inactive_status
+    assert record.history == inactive_history
+    assert record.continuation_request_gate is inactive_gate
+    assert inactive_gate.cancelled is False
+
+    new_reservation = _task_ready_reservation(
+        "slot-owner", workspace, conversation, identity_marker="5",
+    )
+    new_reservation_id = _task_ready_reservation_id(new_reservation)
+    compatibility.prompt_started.clear()
+    compatibility.allow_prompt_return.clear()
+    compatibility.block_prompt = True
+    new_root = runtime.submit_prompt(
+        session_id, "second task-ready root", conversation_context=[],
+        idempotency_key=new_reservation_id, continuation_budget=new_reservation,
+    )
+    assert new_root != old_root
+    assert compatibility.prompt_started.wait(2)
+
+    active_run = record.active_run
+    assert active_run is not None
+    gate = record.continuation_request_gate
+    assert gate is not None
+    status = record.status
+    history = list(record.history)
+    try:
+        with pytest.raises(HTTPException) as conflict:
+            main.cancel_session(
+                session_id, mode="soft", expected_root_run_id=old_root,
+            )
+        assert conflict.value.status_code == 409
+
+        assert record.active_run is active_run
+        assert record.status == status
+        assert record.history == history
+        assert active_run.soft_cancel_requested is False
+        assert active_run.hard_cancelled is False
+        assert record.continuation_request_gate is gate
+        assert gate.cancelled is False
+    finally:
+        compatibility.allow_prompt_return.set()
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[new_root])
+
+
+def test_cancel_endpoint_exact_root_soft_cancels_only_that_prompt(
+        slot_runtime, monkeypatch):
+    from app import main
+
+    runtime, compatibility, _registry = slot_runtime
+    monkeypatch.setattr(main, "adapter", runtime)
+    session_id = "task-ready-cancel-root-exact"
+    workspace = "workspace_slot_a"
+    conversation = "conversation-" + session_id
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation("slot-owner", workspace, conversation)
+    reservation_id = _task_ready_reservation_id(reservation)
+
+    compatibility.prompt_started.clear()
+    compatibility.allow_prompt_return.clear()
+    compatibility.block_prompt = True
+    root = runtime.submit_prompt(
+        session_id, "cancel this exact task-ready root", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    )
+    assert compatibility.prompt_started.wait(2)
+    record = runtime._get(session_id)
+    active_run = record.active_run
+    assert active_run is not None
+    gate = record.continuation_request_gate
+    assert gate is not None
+    monkeypatch.setattr(compatibility, "cancel_session", lambda *_args: None)
+
+    try:
+        response = main.cancel_session(
+            session_id, mode="soft", expected_root_run_id=root,
+        )
+        assert response["session_id"] == session_id
+        assert response["status"] == SessionStatus.CANCELLING
+        assert response["active_prompt"] is True
+        assert response["cancelled_root_run_id"] == root
+        assert active_run.soft_cancel_requested is True
+        assert record.continuation_request_gate is gate
+        assert gate.cancelled is True
+    finally:
+        compatibility.allow_prompt_return.set()
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[root])
+
+
+def test_retry_cancel_for_terminal_old_root_cannot_cancel_new_root(slot_runtime):
+    runtime, compatibility, _registry = slot_runtime
+    session_id = "task-ready-cancel-root-retry"
+    workspace = "workspace_slot_a"
+    conversation = "conversation-" + session_id
+    _create(runtime, session_id, workspace)
+
+    old_reservation = _task_ready_reservation("slot-owner", workspace, conversation)
+    old_reservation_id = _task_ready_reservation_id(old_reservation)
+    compatibility.prompt_started.clear()
+    compatibility.allow_prompt_return.clear()
+    compatibility.block_prompt = True
+    old_root = runtime.submit_prompt(
+        session_id, "old root to cancel", conversation_context=[],
+        idempotency_key=old_reservation_id, continuation_budget=old_reservation,
+    )
+    assert compatibility.prompt_started.wait(2)
+    runtime.cancel_session(session_id, "soft", expected_root_run_id=old_root)
+    compatibility.allow_prompt_return.set()
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    record = runtime._get(session_id)
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[old_root])
+
+    new_reservation = _task_ready_reservation(
+        "slot-owner", workspace, conversation, identity_marker="6",
+    )
+    new_reservation_id = _task_ready_reservation_id(new_reservation)
+    compatibility.prompt_started.clear()
+    compatibility.allow_prompt_return.clear()
+    compatibility.block_prompt = True
+    new_root = runtime.submit_prompt(
+        session_id, "new root after old cancellation", conversation_context=[],
+        idempotency_key=new_reservation_id, continuation_budget=new_reservation,
+    )
+    assert new_root != old_root
+    assert compatibility.prompt_started.wait(2)
+
+    active_run = record.active_run
+    assert active_run is not None
+    gate = record.continuation_request_gate
+    assert gate is not None
+    status = record.status
+    history = list(record.history)
+    try:
+        with pytest.raises(SessionConflict, match="does not match expected root"):
+            runtime.cancel_session(
+                session_id, "soft", expected_root_run_id=old_root,
+            )
+
+        assert record.active_run is active_run
+        assert record.status == status
+        assert record.history == history
+        assert active_run.soft_cancel_requested is False
+        assert active_run.hard_cancelled is False
+        assert record.continuation_request_gate is gate
+        assert gate.cancelled is False
+    finally:
+        compatibility.allow_prompt_return.set()
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[new_root])
+
+
+def test_same_root_soft_cancel_retry_after_rpc_failure_stays_unconfirmed(
+        slot_runtime, monkeypatch):
+    runtime, compatibility, _registry = slot_runtime
+    session_id = "task-ready-cancel-rpc-retry"
+    workspace = "workspace_slot_a"
+    conversation = "conversation-" + session_id
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation("slot-owner", workspace, conversation)
+    reservation_id = _task_ready_reservation_id(reservation)
+    compatibility.prompt_started.clear()
+    compatibility.allow_prompt_return.clear()
+    compatibility.block_prompt = True
+    root = runtime.submit_prompt(
+        session_id, "cancel RPC retry root", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    )
+    assert compatibility.prompt_started.wait(2)
+
+    rpc_calls = []
+
+    def fail_cancel_rpc(*_args):
+        rpc_calls.append(root)
+        raise RuntimeError("synthetic ACP cancel RPC failure")
+
+    monkeypatch.setattr(compatibility, "cancel_session", fail_cancel_rpc)
+    record = runtime._get(session_id)
+    try:
+        with pytest.raises(RuntimeError, match="synthetic ACP cancel RPC failure"):
+            runtime.cancel_session(
+                session_id, "soft", expected_root_run_id=root,
+            )
+
+        first_history = list(record.history)
+        cancellation_events = [
+            item for item in first_history
+            if item.get("kind") == "session.cancelled"
+            and item.get("payload", {}).get("run_id") == root
+        ]
+        assert len(cancellation_events) == 1
+        assert record.status == SessionStatus.CANCELLING
+        assert record.active_run is not None
+        assert record.active_run.run_id == root
+        assert record.active_run.soft_cancel_requested is True
+        with pytest.raises(SessionConflict, match="outcome is unconfirmed"):
+            runtime.cancel_session(
+                session_id, "soft", expected_root_run_id=root,
+            )
+        assert rpc_calls == [root]
+        assert record.history == first_history
+        assert record.status == SessionStatus.CANCELLING
+    finally:
+        compatibility.allow_prompt_return.set()
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[root])
+
+
+def test_task_ready_guard_identity_tamper_stops_before_model_prompt(
+        slot_runtime, monkeypatch):
+    runtime, compatibility, _registry = slot_runtime
+    session_id = "task-ready-guard-tamper"
+    workspace = "workspace_slot_a"
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation(
+        "slot-owner", workspace, "conversation-" + session_id,
+    )
+    reservation_id = _task_ready_reservation_id(reservation)
+
+    original_start = compatibility.start
+    tampered_paths = []
+
+    def start_then_tamper(harness):
+        original_start(harness)
+        root_id = harness.environment["BYQ_ROOT_RUN_ID"]
+        journal = harness.session_root / f"continuation-tool-guard-{root_id}.jsonl"
+        header = json.loads(journal.read_text(encoding="utf-8"))
+        header["idempotency_key"] = "task-ready-event:" + "f" * 64
+        journal.write_text(json.dumps(header, sort_keys=True) + "\n", encoding="utf-8")
+        tampered_paths.append(journal)
+
+    prompt_calls = []
+    run_prompt = compatibility.run_prepared_prompt
+
+    def track_model_prompt(prepared, content, on_notification):
+        prompt_calls.append(content)
+        return run_prompt(prepared, content, on_notification)
+
+    monkeypatch.setattr(compatibility, "start", start_then_tamper)
+    monkeypatch.setattr(compatibility, "run_prepared_prompt", track_model_prompt)
+    root = runtime.submit_prompt(
+        session_id, "must not reach model", conversation_context=[],
+        idempotency_key=reservation_id, continuation_budget=reservation,
+    )
+    _wait_status(runtime, session_id, SessionStatus.FAILED)
+
+    record = runtime._get(session_id)
+    assert len(tampered_paths) == 1
+    assert record.terminal_receipts[root]["root_run_id"] == root
+    assert prompt_calls == []
+    assert compatibility.prompt_started.is_set() is False
+    assert compatibility.successful_starts[0].prompts == []
+    assert record.continuation_request_gate._provider_calls == 0
+    assert record.continuation_request_gate._attempts == 0
+
+
+def test_task_ready_unknown_receipt_survives_new_root_rotation(slot_runtime):
+    runtime, compatibility, _registry = slot_runtime
+    session_id = "task-ready-unknown-rotation"
+    workspace = "workspace_slot_a"
+    conversation = "conversation-" + session_id
+    _create(runtime, session_id, workspace)
+
+    first = _task_ready_reservation("slot-owner", workspace, conversation)
+    first_id = _task_ready_reservation_id(first)
+    first_root = runtime.submit_prompt(
+        session_id, "first signal job", conversation_context=[],
+        idempotency_key=first_id, continuation_budget=first,
+    )
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    record = runtime._get(session_id)
+    first_native_session = record.runtime_session_id
+    first_gate = record.continuation_request_gate
+    with first_gate._lock:
+        first_gate._outcome_unknown = True
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[first_root])
+    old_receipt = runtime.continuation_receipt(session_id, first_id)
+    assert old_receipt["status"] == "outcome_unknown"
+    assert old_receipt["idempotency_key"] == first["idempotency_key"]
+    assert not record.reuse_native_session_ready
+
+    second = _task_ready_reservation(
+        "slot-owner", workspace, conversation, identity_marker="5",
+    )
+    second_id = _task_ready_reservation_id(second)
+    assert second_id != first_id
+    second_root = runtime.submit_prompt(
+        session_id, "second signal job", conversation_context=[],
+        idempotency_key=second_id, continuation_budget=second,
+    )
+    assert second_root != first_root
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    assert compatibility.resumed == []
+    assert len(compatibility.successful_starts) == 2
+    assert len(compatibility.created) == 2
+    assert compatibility.created[0][1] == first_native_session
+    assert compatibility.created[1][1] != first_native_session
+    assert "BYQ_NATIVE_ROOT_SESSION_ID" not in compatibility.successful_starts[-1].environment
+
+    starts = len(compatibility.successful_starts)
+    assert runtime.submit_prompt(
+        session_id, "first signal job", conversation_context=[],
+        idempotency_key=first_id, continuation_budget=first,
+    ) == first_root
+    assert len(compatibility.successful_starts) == starts
+    assert runtime.continuation_receipt(session_id, first_id) == old_receipt
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[second_root])
+    assert runtime.continuation_receipt(session_id, first_id) == old_receipt
+
+
+@pytest.mark.parametrize("owner,workspace", [
+    ("another-owner", "workspace_slot_a"),
+    ("slot-owner", "workspace_slot_b"),
+])
+def test_task_ready_carrier_must_match_local_owner_and_workspace(
+        slot_runtime, owner, workspace):
+    runtime, compatibility, _registry = slot_runtime
+    session_id = f"task-ready-scope-{owner}-{workspace}"
+    local_workspace = "workspace_slot_a"
+    _create(runtime, session_id, local_workspace)
+    reservation = _task_ready_reservation(
+        owner, workspace, "conversation-" + session_id,
+    )
+    with pytest.raises(ValueError, match="owner/workspace"):
+        runtime.submit_prompt(
+            session_id, "instruction", conversation_context=[],
+            idempotency_key=_task_ready_reservation_id(reservation),
+            continuation_budget=reservation,
+        )
+    assert compatibility.start_attempts == []
+
+
+def test_task_ready_reservation_id_must_bind_to_prompt_idempotency_key(slot_runtime):
+    runtime, compatibility, _registry = slot_runtime
+    session_id = "task-ready-id-mismatch"
+    workspace = "workspace_slot_a"
+    _create(runtime, session_id, workspace)
+    reservation = _task_ready_reservation(
+        "slot-owner", workspace, "conversation-" + session_id,
+    )
+    with pytest.raises(ValueError, match="reservation identity"):
+        runtime.submit_prompt(
+            session_id, "instruction", conversation_context=[],
+            idempotency_key="continuation_" + "f" * 32,
+            continuation_budget=reservation,
+        )
+    assert compatibility.start_attempts == []
 
 
 def _guard_journal_path(home: Path) -> Path:

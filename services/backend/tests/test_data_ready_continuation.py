@@ -10,13 +10,19 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
 
 from app.conversation_catalog import ConversationCatalogStore
 from app.research import IdempotencyConflict, ResearchStore
 from packages.contracts.agent_execution_options import default_agent_execution_options
-from packages.contracts.continuation_request import continuation_reservation_v3
+from packages.contracts.continuation_request import (
+    continuation_request_usage_v2,
+    continuation_reservation_v3,
+    unknown_actual_usage_v2,
+    unknown_admission_usage_v2,
+)
 from tests.test_backtest_api import _strategy
 from tests.workspace_helpers import trusted_agent_context
 from tests.test_backtest_task_reconciliation import setup_creation
@@ -32,15 +38,39 @@ def setup_ready(monkeypatch, tmp_path, *, outcome='completed'):
     from tests import test_backtest_api
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     headers = trusted_agent_context('product-user', trace_id=TRACE, session_id=SESSION)
+    from app import main
+    login = main.user_store.login('product-user', 'test-password-123')
+    # Research-task creation is runtime-scoped and must bind to the original
+    # ProductConversation. The authenticated human session is used only for the
+    # separate signal-Job submission request below.
     monkeypatch.setattr(test_backtest_api, '_owner_headers', lambda principal: headers)
     context = {key.removeprefix('x-byq-').replace('-', '_'): value for key, value in headers.items()}
     catalog = ConversationCatalogStore()
     conversation = catalog.create('product-user', SESSION, TRACE)['conversation_id']
     catalog.close()
     store, backtests, jobs, client, payload = setup_creation(monkeypatch, tmp_path)
-    created = client.post('/v1/research/backtest-tasks', json=payload)
+    task_binding = store._fetch_one('SELECT conversation_id FROM research_tasks WHERE task_id=:task',
+        {'task': payload['task_id']})
+    assert task_binding['conversation_id'] == conversation
+    human_submission_headers = {**headers, 'x-byq-session-id': login['session_id']}
+    created = client.post('/v1/research/backtest-tasks', headers=human_submission_headers, json=payload)
     assert created.status_code == 202, created.text
+    public_job = created.json()
     job_id = created.json()['task']['references']['signal_producer_job_id']
+    human_user = main.user_store._fetch_one('SELECT user_id FROM users WHERE username=:owner',
+        {'owner': 'product-user'})
+    persisted_job = jobs._fetch_one(
+        'SELECT submission_origin FROM signal_producer_jobs WHERE job_id=:job', {'job': job_id})
+    assert persisted_job['submission_origin'] == {
+        'schema_version': 'signal-job-submission-origin.v1',
+        'kind': 'authenticated_human',
+        'user_id': str(human_user['user_id']),
+        'owner_principal': 'product-user',
+        'workspace_id': context['workspace_id'],
+        'task_id': payload['task_id'],
+        'conversation_id': conversation,
+    }
+    assert_session_not_exposed(login['session_id'], public_job, persisted_job['submission_origin'])
     artifact_id = None
     if outcome == 'completed':
         artifact = store.create_artifact({'task_id': payload['task_id'], 'kind': 'signal_snapshot',
@@ -61,7 +91,8 @@ def setup_ready(monkeypatch, tmp_path, *, outcome='completed'):
         jobs._execute("""UPDATE signal_producer_jobs SET status='failed', error_code='synthetic_failure',
             updated_at=now() WHERE job_id=:job""", {'job': job_id})
     return dict(store=store, backtests=backtests, jobs=jobs, client=client, payload=payload,
-                conversation=conversation, context=context, job_id=job_id, artifact_id=artifact_id)
+                conversation=conversation, context=context, job_id=job_id, artifact_id=artifact_id,
+                public_job=public_job, human_session_id=login['session_id'])
 
 
 def continuation_budget(store, task_id):
@@ -72,6 +103,12 @@ def continuation_budget(store, task_id):
 def continuation_block(store, task_id):
     return store._fetch_one("""SELECT continuation_blocked_reason, continuation_blocked_event_key
         FROM research_tasks WHERE task_id=:task""", {'task': task_id})
+
+
+def assert_session_not_exposed(session_id, *public_values):
+    encoded = json.dumps(public_values, sort_keys=True, default=str)
+    if session_id and session_id in encoded:
+        raise AssertionError('human auth session was exposed in a public projection or origin snapshot')
 
 
 def legacy_model_reservation(suffix, *, status='reserved'):
@@ -104,12 +141,12 @@ def add_ready_event(fixture, *, key, content):
     jobs._execute("""INSERT INTO signal_producer_jobs
         (job_id, owner_principal, task_id, experiment_id, strategy_version_artifact_id,
          stock_pool_snapshot_id, status, trace_id, idempotency_key, request_hash,
-         created_at, updated_at, result_artifact_id)
-        VALUES (:job,:owner,:task,:experiment,:strategy,:snapshot,'completed',:trace,:key,'retry',now(),now(),:artifact)""",
+         created_at, updated_at, result_artifact_id, submission_origin)
+        VALUES (:job,:owner,:task,:experiment,:strategy,:snapshot,'completed',:trace,:key,'retry',now(),now(),:artifact,:origin)""",
         {'job': job_id, 'owner': template['owner_principal'], 'task': task,
          'experiment': template['experiment_id'], 'strategy': template['strategy_version_artifact_id'],
          'snapshot': template['stock_pool_snapshot_id'], 'trace': TRACE, 'key': key,
-         'artifact': artifact['artifact_id']})
+         'artifact': artifact['artifact_id'], 'origin': template.get('submission_origin')})
     return job_id, artifact['artifact_id']
 
 
@@ -132,11 +169,92 @@ def settle_needs_attention(store, fixture, intent):
         outcome='needs_attention')
 
 
+def default_backend_peek(fixture, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main, 'research_store', fixture['store'])
+    owner = fixture['context']['owner_principal']
+    headers = {
+        'x-byq-owner-principal': owner,
+        'x-byq-actor-principal': owner,
+        'x-byq-workspace-id': fixture['context']['workspace_id'],
+    }
+    path = f"/internal/task-continuation/{fixture['conversation']}/peek"
+    return TestClient(main.app).post(path, headers=headers)
+
+
+def _v3_runtime_root(fixture, *, close=True, session_id=None, trace_id=None, outcome='completed'):
+    """Create a Backend-owned Runtime root for exact settlement evidence tests."""
+    from app import main
+
+    store = main.agent_store
+    authority = store.current_runtime_authority()
+    if authority is None:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+    conversation = fixture['store']._fetch_one('''SELECT runtime_session_id, trace_id
+        FROM product_conversations WHERE conversation_id=:conversation''',
+        {'conversation': fixture['conversation']})
+    root_id = uuid4().hex
+    root_session = session_id or conversation['runtime_session_id']
+    root_trace = trace_id or conversation['trace_id']
+    identity = {
+        'schema_version': 'agent-run-lifecycle.v1',
+        'root_run_id': root_id,
+        'sequence': 1,
+        'outcome': 'active',
+    }
+    scope = {
+        'trusted_owner': fixture['context']['owner_principal'],
+        'trusted_workspace': fixture['context']['workspace_id'],
+        'trusted_session_id': root_session,
+        'trusted_trace_id': root_trace,
+        'trusted_boot_id': authority['boot_id'],
+    }
+    store.consume_runtime_lifecycle_event(identity, **scope)
+    if close:
+        store.close_runtime_root(root_id, boot_id=authority['boot_id'], sequence=2,
+            outcome=outcome, event_sha256='d' * 64)
+    return root_id, store, authority['boot_id']
+
+
+def _v3_usage(carrier):
+    return continuation_request_usage_v2(
+        execution_profile=carrier['execution_profile'],
+        admission_usage=unknown_admission_usage_v2(),
+        actual_usage=unknown_actual_usage_v2())
+
+
+def _v3_settlement_sha256(reservation_id, carrier, run_id, outcome, usage):
+    runtime_receipt = {
+        'reservation_id': reservation_id,
+        'idempotency_key': carrier['idempotency_key'],
+        'status': 'settled',
+        'run_id': run_id,
+        'outcome': outcome,
+        'request_usage': usage,
+    }
+    return hashlib.sha256(json.dumps(
+        runtime_receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
 def reserve_v3(fixture, *, signal_job_id=None, conversation_id=None, context=None):
     return fixture['store'].reserve_default_continuation_v3(
         conversation_id or fixture['conversation'],
         signal_job_id=signal_job_id or fixture['job_id'],
         trusted_context=context or fixture['context'])
+
+
+def trusted_v3_tool_context(fixture):
+    runtime_identity = fixture['store']._fetch_one(
+        'SELECT runtime_session_id, trace_id FROM product_conversations WHERE conversation_id=:conversation',
+        {'conversation': fixture['conversation']})
+    context = {**fixture['context'], 'session_id': runtime_identity['runtime_session_id'],
+        'trace_id': runtime_identity['trace_id']}
+    assert context['session_id'] == fixture['context']['session_id']
+    if context['session_id'] == fixture['human_session_id']:
+        raise AssertionError('Runtime and authenticated-human session identities must be distinct')
+    return context
 
 
 def stable_v3_event_key(fixture, signal_job_id):
@@ -601,8 +719,21 @@ def test_v3_reservation_uses_exact_validated_signal_job_without_legacy_grant(mon
         assert reservation['result_artifact_kind'] == 'signal_snapshot'
         assert reservation['result_artifact_status'] == 'validated'
         job = fixture['jobs']._fetch_one('''SELECT job_id, task_id, owner_principal,
-            workspace_id, status, result_artifact_id FROM signal_producer_jobs WHERE job_id=:job''',
+            workspace_id, status, result_artifact_id, submission_origin FROM signal_producer_jobs WHERE job_id=:job''',
             {'job': fixture['job_id']})
+        assert job['submission_origin'] == {
+            'schema_version': 'signal-job-submission-origin.v1',
+            'kind': 'authenticated_human',
+            'user_id': str(fixture['jobs']._fetch_one(
+                'SELECT user_id FROM users WHERE username=:owner',
+                {'owner': fixture['context']['owner_principal']})['user_id']),
+            'owner_principal': fixture['context']['owner_principal'],
+            'workspace_id': fixture['context']['workspace_id'],
+            'task_id': job['task_id'],
+            'conversation_id': fixture['conversation'],
+        }
+        assert_session_not_exposed(fixture['human_session_id'],
+            fixture['public_job'], job['submission_origin'])
         artifact = store._fetch_one('''SELECT artifact_id, task_id, owner_principal,
             workspace_id, kind, status, content_sha256 FROM artifacts WHERE artifact_id=:artifact''',
             {'artifact': fixture['artifact_id']})
@@ -648,6 +779,146 @@ def test_v3_reservation_uses_exact_validated_signal_job_without_legacy_grant(mon
         assert 'grant_version' not in reservation and 'expires_at' not in reservation
         assert entry['reservation_id'].startswith('continuation_')
         assert continuation_budget(store, task) == [entry]
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_tool_authorization_admits_exact_reads_and_blocks_wrong_target(monkeypatch, tmp_path):
+    from app.continuation_scope import authorize
+    from app.backtest_task import task_id_from_signal_job
+
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    try:
+        entry = reserve_v3(fixture)
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        tool_context = trusted_v3_tool_context(fixture)
+        root_id = 'a' * 32
+
+        research_read = {'tool': 'byq_research_get',
+            'arguments': {'entity_type': 'research_task', 'entity_id': task},
+            'root_run_id': root_id}
+        expected = {'schema_version': 'continuation-action-admission.v1', 'admitted': True,
+            'reservation_id': entry['reservation_id'], 'task_id': task}
+        assert authorize(store, entry['reservation_id'], research_read, tool_context) == expected
+
+        backtest_read = {'tool': 'byq_backtest_task_get',
+            'arguments': {'backtest_task_id': task_id_from_signal_job(fixture['job_id'])},
+            'root_run_id': root_id}
+        assert authorize(store, entry['reservation_id'], backtest_read, tool_context) == expected
+
+        other = store.create_task({'owner_principal': context['owner_principal'],
+            'title': 'Other task', 'objective': 'Unrelated', 'trace_id': context['trace_id'],
+            'idempotency_key': 'v3-tool-wrong-target'}, trusted_context=context)
+        before = continuation_budget(store, task)
+        denied = authorize(store, entry['reservation_id'], {**research_read,
+            'arguments': {'entity_type': 'research_task', 'entity_id': other['task_id']}}, tool_context)
+        assert denied == {'schema_version': 'continuation-action-admission.v1', 'admitted': False,
+            'reservation_id': entry['reservation_id'], 'task_id': task}
+        block = continuation_block(store, task)
+        assert block['continuation_blocked_reason'] == 'continuation_needs_attention'
+        assert block['continuation_blocked_event_key'] == entry['event_key']
+        after = continuation_budget(store, task)
+        assert json.dumps(after, sort_keys=True, separators=(',', ':')).encode() == json.dumps(
+            before, sort_keys=True, separators=(',', ':')).encode()
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_tool_authorization_refuses_cancel_requested_accepted_reservation(monkeypatch, tmp_path):
+    from app.continuation_scope import authorize
+
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    try:
+        entry = reserve_v3(fixture)
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        tool_context = trusted_v3_tool_context(fixture)
+        call = {'tool': 'byq_research_get',
+            'arguments': {'entity_type': 'research_task', 'entity_id': task},
+            'root_run_id': 'b' * 32}
+        assert authorize(store, entry['reservation_id'], call, tool_context)['admitted'] is True
+
+        cancelled = store.cancel_default_continuation_v3(fixture['conversation'],
+            entry['reservation_id'], trusted_context=context)
+        assert cancelled == {'reservation_id': entry['reservation_id'],
+            'cancel_requested': True, 'status': 'accepted'}
+        before = continuation_budget(store, task)
+        assert before[0]['status'] == 'accepted'
+        assert before[0]['cancel_requested_at'] is not None
+        before_bytes = json.dumps(before, sort_keys=True, separators=(',', ':')).encode()
+        with pytest.raises(ValueError, match='continuation action is no longer admitted'):
+            authorize(store, entry['reservation_id'], call, tool_context)
+        after = continuation_budget(store, task)
+        assert json.dumps(after, sort_keys=True, separators=(',', ':')).encode() == before_bytes
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_signal_job_origin_requires_a_verified_human_session(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, client = fixture['store'], fixture['client']
+    base_headers = dict(client.headers)
+    try:
+        no_session_headers = {key: value for key, value in base_headers.items()
+            if key != 'x-byq-session-id'}
+        before = fixture['jobs']._fetch_one(
+            'SELECT count(*) AS count FROM signal_producer_jobs WHERE task_id=:task',
+            {'task': fixture['payload']['task_id']})['count']
+        denied = TestClient(main.app).post('/v1/research/backtest-tasks',
+            headers=no_session_headers,
+            json={**fixture['payload'], 'idempotency_key': 'origin-missing-context-session'})
+        assert denied.status_code == 401
+        assert fixture['jobs']._fetch_one(
+            'SELECT count(*) AS count FROM signal_producer_jobs WHERE task_id=:task',
+            {'task': fixture['payload']['task_id']})['count'] == before
+
+        other_context = trusted_agent_context('origin-other-human')
+        other_login = main.user_store.login('origin-other-human', 'test-password-123')
+        expired_login = main.user_store.login('product-user', 'test-password-123')
+        main.user_store._execute('''UPDATE auth_sessions SET expires_at=now()-interval '1 second'
+            WHERE session_id=:session''', {'session': expired_login['session_id']})
+        unknown_session_id = 'session_' + uuid4().hex
+        assert main.user_store._fetch_one(
+            'SELECT session_id FROM auth_sessions WHERE session_id=:session',
+            {'session': unknown_session_id}) is None
+
+        cases = [
+            ('runtime_session', fixture['context']['session_id'], {}),
+            ('unknown_session', unknown_session_id, {}),
+            ('expired_session', expired_login['session_id'], {}),
+            ('wrong_owner_session', other_login['session_id'], {}),
+            ('product_token_bootstrap', unknown_session_id, {
+                'authorization': 'Bearer synthetic-bootstrap-token',
+                'x-byq-product-token': 'synthetic-bootstrap-token',
+                'x-byq-product-human-actor': 'true',
+            }),
+        ]
+        assert other_context['x-byq-owner-principal'] != base_headers['x-byq-owner-principal']
+        for case, session_id, extra_headers in cases:
+            headers = {**base_headers, **extra_headers, 'x-byq-session-id': session_id}
+            response = client.post('/v1/research/backtest-tasks', headers=headers, json={
+                **fixture['payload'], 'idempotency_key': 'origin-' + case})
+            assert response.status_code == 202, response.text
+            public_projection = response.json()
+            assert 'submission_origin' not in json.dumps(public_projection, sort_keys=True)
+            assert_session_not_exposed(session_id, public_projection)
+            job_id = public_projection['task']['references']['signal_producer_job_id']
+            persisted = fixture['jobs']._fetch_one(
+                'SELECT submission_origin FROM signal_producer_jobs WHERE job_id=:job',
+                {'job': job_id})
+            assert persisted['submission_origin'] is None
     finally:
         store.close()
         fixture['backtests'].close()
@@ -704,13 +975,27 @@ def test_v3_reservation_rejects_wrong_scope_and_unvalidated_artifact(monkeypatch
             return task_row, version_response.json()['artifact']
 
         def create_completed_job(client, chain_task, version, key, trace_id):
-            created = client.post('/v1/research/backtest-tasks', json={
+            # The task was created under this conversation's Runtime identity;
+            # submit the Job as the authenticated human without rebinding it.
+            human_headers = {**dict(client.headers),
+                'x-byq-session-id': fixture['human_session_id']}
+            created = client.post('/v1/research/backtest-tasks', headers=human_headers, json={
                 **fixture['payload'], 'task_id': chain_task['task_id'],
                 'strategy_version_artifact_id': version['artifact_id'],
                 'idempotency_key': f'v3-scope-job-{key}',
             })
             assert created.status_code == 202, created.text
             job_id = created.json()['task']['references']['signal_producer_job_id']
+            task_binding = store._fetch_one(
+                'SELECT conversation_id FROM research_tasks WHERE task_id=:task',
+                {'task': chain_task['task_id']})
+            origin = fixture['jobs']._fetch_one(
+                'SELECT submission_origin FROM signal_producer_jobs WHERE job_id=:job',
+                {'job': job_id})['submission_origin']
+            assert origin['kind'] == 'authenticated_human'
+            assert origin['task_id'] == chain_task['task_id']
+            assert origin['conversation_id'] == task_binding['conversation_id']
+            assert_session_not_exposed(fixture['human_session_id'], origin)
             snapshot = store.create_artifact({
                 'task_id': chain_task['task_id'], 'kind': 'signal_snapshot',
                 'content': {'synthetic': f'v3-scope-{key}'}, 'lineage': [],
@@ -890,6 +1175,50 @@ def test_v3_auto_continue_disabled_blocks_new_reservation_only(monkeypatch, tmp_
         fixture['jobs'].close()
 
 
+@pytest.mark.parametrize('blocked_case', ['auto_continue_disabled', 'unknown_origin', 'needs_attention'])
+def test_default_peek_does_not_fall_back_to_f6_legacy_claim(monkeypatch, tmp_path, blocked_case):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task = fixture['store'], fixture['payload']['task_id']
+    catalog = None
+    try:
+        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+        grant_retry_permission(store, fixture, key='v3-default-fallback-' + blocked_case)
+        if blocked_case == 'auto_continue_disabled':
+            catalog = ConversationCatalogStore()
+            catalog.update_execution_options(fixture['context']['owner_principal'],
+                fixture['context']['workspace_id'], fixture['conversation'], {
+                    'schema_version': 'agent-execution-options.v1', 'expected_revision': 0,
+                    'options': {'auto_continue': False},
+                })
+        elif blocked_case == 'unknown_origin':
+            fixture['jobs']._execute(
+                'UPDATE signal_producer_jobs SET submission_origin=NULL WHERE job_id=:job',
+                {'job': fixture['job_id']})
+        else:
+            store._execute("""UPDATE research_tasks SET
+                continuation_blocked_reason='continuation_needs_attention',
+                continuation_blocked_event_key='*' WHERE task_id=:task""", {'task': task})
+
+        before = continuation_budget(store, task)
+        legacy_claims = []
+        original_claim = store.claim_conversation_continuation
+        monkeypatch.setattr(store, 'claim_conversation_continuation',
+            lambda *args, **kwargs: legacy_claims.append((args, kwargs))
+                or original_claim(*args, **kwargs))
+        response = default_backend_peek(fixture, monkeypatch)
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {'status': 'waiting'}
+        assert legacy_claims == []
+        assert continuation_budget(store, task) == before
+    finally:
+        if catalog is not None:
+            catalog.close()
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
 def test_v3_explicit_revoke_blocks_but_natural_expiry_does_not(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task = fixture['store'], fixture['payload']['task_id']
@@ -932,6 +1261,17 @@ def test_v3_old_pending_and_unknown_receipts_block_without_mutation(monkeypatch,
         reservation = intent['receipt']
         assert reservation['schema_version'] == 'task-continuation-reservation.v2'
         before_reserved = continuation_budget(store, task)
+        legacy_claims = []
+        original_claim = store.claim_conversation_continuation
+        monkeypatch.setattr(store, 'claim_conversation_continuation',
+            lambda *args, **kwargs: legacy_claims.append((args, kwargs))
+                or original_claim(*args, **kwargs))
+        response = default_backend_peek(fixture, monkeypatch)
+        assert response.status_code == 200, response.text
+        assert response.json() == {'status': 'waiting'}
+        assert legacy_claims == []
+        assert continuation_budget(store, task) == before_reserved
+        monkeypatch.setattr(store, 'claim_conversation_continuation', original_claim)
         with pytest.raises(ValueError, match='unresolved legacy'):
             reserve_v3(fixture)
         assert continuation_budget(store, task) == before_reserved
@@ -1070,7 +1410,22 @@ def test_v3_envelope_fails_closed_through_legacy_dispatch_and_settlement(monkeyp
     try:
         grant_retry_permission(store, fixture, key='v3-legacy-paths')
         entry = reserve_v3(fixture)
+        cancel = store.cancel_default_continuation_v3(conversation, entry['reservation_id'],
+            trusted_context=context)
+        assert cancel['status'] == 'cancelled'
         before = continuation_budget(store, task)
+        legacy_claims = []
+        original_claim = store.claim_conversation_continuation
+        monkeypatch.setattr(store, 'claim_conversation_continuation',
+            lambda *args, **kwargs: legacy_claims.append((args, kwargs))
+                or original_claim(*args, **kwargs))
+        response = default_backend_peek(fixture, monkeypatch)
+        assert response.status_code == 200, response.text
+        assert response.json()['status'] == 'waiting'
+        assert response.json()['may_dispatch'] is False
+        assert legacy_claims == []
+        assert continuation_budget(store, task) == before
+        monkeypatch.setattr(store, 'claim_conversation_continuation', original_claim)
         checked_before = store._fetch_one(
             'SELECT continuation_checked_at FROM research_tasks WHERE task_id=:task',
             {'task': task})['continuation_checked_at']
@@ -1089,6 +1444,249 @@ def test_v3_envelope_fails_closed_through_legacy_dispatch_and_settlement(monkeyp
             store.record_continuation_receipt(task, trusted_context=context,
                 reservation_id=entry['reservation_id'], status='outcome_unknown')
         assert continuation_budget(store, task) == before
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_unknown_dispatch_cannot_be_rejected_without_no_start_evidence(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    try:
+        entry = reserve_v3(fixture)
+        carrier = entry['reservation']
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        before = continuation_budget(store, task)
+        before_bytes = json.dumps(before, sort_keys=True, separators=(',', ':')).encode()
+        with pytest.raises(IdempotencyConflict, match='no-start evidence'):
+            store.record_continuation_receipt(task, trusted_context=context,
+                reservation_id=entry['reservation_id'],
+                idempotency_key=carrier['idempotency_key'], status='rejected')
+        after = continuation_budget(store, task)
+        assert after == before
+        assert json.dumps(after, sort_keys=True, separators=(',', ':')).encode() == before_bytes
+
+        root_id, _, _ = _v3_runtime_root(fixture)
+        accepted = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='accepted', run_id=root_id)
+        assert accepted['status'] == 'accepted'
+        usage = _v3_usage(carrier)
+        digest = _v3_settlement_sha256(
+            entry['reservation_id'], carrier, root_id, 'completed', usage)
+        settled = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='settled', request_usage=usage, settlement_sha256=digest,
+            outcome='completed')
+        assert settled['status'] == 'settled'
+        assert settled['run_id'] == root_id
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+@pytest.mark.parametrize('mutation', ['origin_before_accept', 'artifact_hash_before_settlement'])
+def test_v3_receipts_recheck_exact_source_facts_without_ledger_mutation(
+        monkeypatch, tmp_path, mutation):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, jobs = fixture['store'], fixture['jobs']
+    task, context = fixture['payload']['task_id'], fixture['context']
+    try:
+        entry = reserve_v3(fixture)
+        carrier = entry['reservation']
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        root_id = None
+        if mutation == 'origin_before_accept':
+            jobs._execute('UPDATE signal_producer_jobs SET submission_origin=NULL WHERE job_id=:job',
+                {'job': fixture['job_id']})
+            before = continuation_budget(store, task)
+            with pytest.raises(ValueError, match='origin is unknown'):
+                store.record_continuation_receipt(task, trusted_context=context,
+                    reservation_id=entry['reservation_id'],
+                    idempotency_key=carrier['idempotency_key'],
+                    status='accepted', run_id='a' * 32)
+        else:
+            root_id, _, _ = _v3_runtime_root(fixture)
+            store.record_continuation_receipt(task, trusted_context=context,
+                reservation_id=entry['reservation_id'],
+                idempotency_key=carrier['idempotency_key'],
+                status='accepted', run_id=root_id)
+            before = continuation_budget(store, task)
+            changed_hash = hashlib.sha256(b'mutated validated snapshot fixture').hexdigest()
+            store._execute('UPDATE artifacts SET content_sha256=:digest WHERE artifact_id=:artifact',
+                {'digest': changed_hash, 'artifact': fixture['artifact_id']})
+            usage = _v3_usage(carrier)
+            digest = _v3_settlement_sha256(
+                entry['reservation_id'], carrier, root_id, 'completed', usage)
+            with pytest.raises(ValueError, match='source facts changed'):
+                store.record_continuation_receipt(task, trusted_context=context,
+                    reservation_id=entry['reservation_id'],
+                    idempotency_key=carrier['idempotency_key'], status='settled',
+                    request_usage=usage, settlement_sha256=digest, outcome='completed')
+        after = continuation_budget(store, task)
+        assert after == before
+        assert json.dumps(after, sort_keys=True, separators=(',', ':')).encode() == json.dumps(
+            before, sort_keys=True, separators=(',', ':')).encode()
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_settlement_keeps_cancelled_snapshot_liability_after_option_change(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    catalog = None
+    try:
+        entry = reserve_v3(fixture)
+        carrier = entry['reservation']
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        root_id, _, _ = _v3_runtime_root(fixture)
+        store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='accepted', run_id=root_id)
+
+        catalog = ConversationCatalogStore()
+        changed = catalog.update_execution_options(context['owner_principal'],
+            context['workspace_id'], fixture['conversation'], {
+                'schema_version': 'agent-execution-options.v1', 'expected_revision': 0,
+                'options': {'auto_continue': False},
+            })
+        assert changed['revision'] == 1
+        cancelled = store.cancel_default_continuation_v3(fixture['conversation'],
+            entry['reservation_id'], trusted_context=context)
+        assert cancelled == {
+            'reservation_id': entry['reservation_id'],
+            'cancel_requested': True,
+            'status': 'accepted',
+        }
+
+        usage = _v3_usage(carrier)
+        digest = _v3_settlement_sha256(
+            entry['reservation_id'], carrier, root_id, 'completed', usage)
+        settled = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='settled', request_usage=usage, settlement_sha256=digest,
+            outcome='completed')
+        assert settled['status'] == 'settled'
+        assert settled['request_usage'] == usage
+        persisted = continuation_budget(store, task)[0]
+        assert persisted['status'] == 'settled'
+        assert persisted['cancel_requested_at'] is not None
+    finally:
+        if catalog is not None:
+            catalog.close()
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+@pytest.mark.parametrize('evidence_case', [
+    'missing_root', 'active_root', 'wrong_owner', 'wrong_workspace',
+    'wrong_session', 'wrong_trace', 'unknown_claim_count',
+])
+def test_v3_settlement_refuses_unclosed_or_mismatched_runtime_evidence(
+        monkeypatch, tmp_path, evidence_case):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    root_id = None
+    runtime_store = None
+    runtime_boot_id = None
+    try:
+        entry = reserve_v3(fixture)
+        carrier = entry['reservation']
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+
+        if evidence_case == 'missing_root':
+            root_id = uuid4().hex
+        elif evidence_case == 'active_root':
+            root_id, runtime_store, runtime_boot_id = _v3_runtime_root(fixture, close=False)
+        elif evidence_case == 'wrong_session':
+            root_id, runtime_store, runtime_boot_id = _v3_runtime_root(
+                fixture, session_id='wrong-runtime-session')
+        elif evidence_case == 'wrong_trace':
+            root_id, runtime_store, runtime_boot_id = _v3_runtime_root(
+                fixture, trace_id='wrong-runtime-trace')
+        else:
+            root_id, runtime_store, runtime_boot_id = _v3_runtime_root(fixture)
+            if evidence_case == 'wrong_owner':
+                runtime_store._execute('''UPDATE agent_runtime_turns
+                    SET owner_principal='other-owner' WHERE root_run_id=:root''', {'root': root_id})
+            elif evidence_case == 'wrong_workspace':
+                runtime_store._execute('''UPDATE agent_runtime_turns
+                    SET workspace_id='other-workspace' WHERE root_run_id=:root''', {'root': root_id})
+            else:
+                runtime_store._execute('''UPDATE agent_runtime_turns
+                    SET terminal_unknown_claim_count=1 WHERE root_run_id=:root''', {'root': root_id})
+
+        store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='accepted', run_id=root_id)
+        before = continuation_budget(store, task)
+        usage = _v3_usage(carrier)
+        digest = _v3_settlement_sha256(
+            entry['reservation_id'], carrier, root_id, 'completed', usage)
+        with pytest.raises(ValueError, match='closed Runtime root evidence'):
+            store.record_continuation_receipt(task, trusted_context=context,
+                reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+                status='settled', request_usage=usage, settlement_sha256=digest,
+                outcome='completed')
+        assert continuation_budget(store, task) == before
+    finally:
+        if root_id is not None and runtime_store is not None:
+            root = runtime_store._fetch_one(
+                'SELECT status FROM agent_runtime_turns WHERE root_run_id=:root', {'root': root_id})
+            if root and root['status'] == 'active':
+                runtime_store.close_runtime_root(root_id, boot_id=runtime_boot_id,
+                    sequence=2, outcome='interrupted', event_sha256='e' * 64)
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_settlement_recomputes_runtime_digest_and_requires_exact_closed_root(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    try:
+        entry = reserve_v3(fixture)
+        carrier = entry['reservation']
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        root_id, _, _ = _v3_runtime_root(fixture)
+        store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='accepted', run_id=root_id)
+
+        usage = _v3_usage(carrier)
+        digest = _v3_settlement_sha256(
+            entry['reservation_id'], carrier, root_id, 'completed', usage)
+        before = continuation_budget(store, task)
+        with pytest.raises(ValueError, match='digest does not match'):
+            store.record_continuation_receipt(task, trusted_context=context,
+                reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+                status='settled', request_usage=usage, settlement_sha256='0' * 64,
+                outcome='completed')
+        assert continuation_budget(store, task) == before
+
+        settled = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='settled', request_usage=usage, settlement_sha256=digest,
+            outcome='completed')
+        assert settled['status'] == 'settled'
+        assert settled['run_id'] == root_id
+        assert settled['request_usage'] == usage
+        assert settled['settlement_sha256'] == digest
+        assert continuation_budget(store, task)[0]['status'] == 'settled'
+        assert store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
+            status='settled', request_usage=usage, settlement_sha256=digest,
+            outcome='completed') == settled
     finally:
         store.close()
         fixture['backtests'].close()

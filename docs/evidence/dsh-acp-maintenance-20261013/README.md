@@ -132,6 +132,16 @@ V3 发现结算后等待文案残留，非阻断。最小修补已在 `8eb3ad384
 
 当前仍 NOT_READY。历史部署证据和本次新候选资格分别记录，不因当前未验收而改写旧生产部署成功记录。
 
+## 普通接续与业务结果触发
+
+普通会话下一轮、原生历史上下文、上下文压缩和子 Agent 生命周期由 DSH 负责。当前 ACP 接口直接调用 `session/new`、`session/resume` 和 `session/prompt`；复用原生会话时不重新注入公开历史。无需为 DSH 原生会话接续另设一项 BYQ 许可；用户身份、工作区隔离和实际业务动作审批仍按原合同核对。BYQ 不应新建通用会话或恢复管理器。
+
+本轮后台 SignalJob 补丁处理的是可信业务完成事件：BYQ 核对准确的 Job、Artifact、会话身份、取消及去重后，将事件交给 DSH 处理后续回合。它不恢复 DSH 私有上下文或原来的子 Agent。相关所有权以 [ADR-0111](../../architecture/adr/ADR-0111-automatic-continuation-execution-parameters.md) 和 [Clean Break ADR-002](../../clean-break/adr/ADR-002-dsh-boundary.md) 为准；后台路径须另行验收，不能用普通对话已通过的证据替代。
+
+### 2026-10-15 身份修正与当前验收边界
+
+后台跟进测试现将运行时会话用于任务绑定、登录会话仅用于用户的 Job 提交；登录凭据不持久化为来源事实。原会话绑定校验保持。独立 Sol 已审查该修正。实际隔离 PostgreSQL 定向测试为 **20 PASS / 1 FAIL / 7 NOT_RUN**：失败负例尝试修改既有 Runtime root 的 owner，被现有数据库身份 fence 拒绝；尚未验证该用例期望的结算层拒绝。完整 Backend 资格、真实后台自动跟进、发布和部署仍未通过，不能用其他组件的 PASS 抵消这一失败。原失败日志保留在私有 `.ci-artifacts/background-browser-20261015-v1/identity-test/`；没有真实模型、业务 Job 或生产操作。
+
 ## 浏览器窗口纪律
 
 验证复用当前已核对的浏览器标签。另开测试窗口前先检查旧测试窗口，关闭已废弃的测试窗口并确认已关闭；保留无关用户标签。2026-10-13复核仅剩当前普通双轮会话标签，没有再次开窗或发送提示词。
