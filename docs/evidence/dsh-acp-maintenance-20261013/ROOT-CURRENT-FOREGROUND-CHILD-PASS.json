@@ -1,0 +1,20 @@
+{
+  "status": "ROOT_PASS_SCOPED_CURRENT_HEAD_FOREGROUND_CHILD_BYQ_BUSINESS_EVIDENCE",
+  "utc": "2026-10-15T01:07:45.179265+00:00",
+  "source_head": "0be2f56c68382562c64f8624c8327779dd081390",
+  "result_sha256": "e9cf90f969fbcfd474cd24fa6cac1e8e27be9186a24c7b19d4aedcccced21a0e",
+  "independent_sol_sha256": "e665d4c268a3932b1ddd301bdb2a17cf77ee313ed2360962a21dbc19a3c84eb6",
+  "scope": "Real browser single foreground child, trusted exact parent lineage and read-only tool ingress/audit, current default-null guard, root-aggregate model accounting, exact terminal ACK and signed root process group cleanup.",
+  "not_qualified": [
+    "Individual child native close/resume and native file lineage/raw SDK runId; bounded accepted BYQ business contract does not require these fields.",
+    "Per-child model token allocation, raw provider bodies, official intrinsic model/service limits. Eight completions are root aggregate only; cache-read is not added to input, no cost inferred.",
+    "Unlimited duration/concurrency stress; default-null guard observed but this finite run does not alone establish every threshold.",
+    "Backend v3 automatic background producer still missing; no background/F6/crash/cancel/two-user/late-request/unknown-business-result or production pass.",
+    "Job check is exact eleven-table COUNT equality, not whole-row identity/hash comparison.",
+    "Browser was operated by Root; screenshot exists only in task, no standalone image link."
+  ],
+  "production": "NOT_TOUCHED",
+  "phase_advanced": false,
+  "retention": "Existing environment/page/identity/volumes remain open.",
+  "private_evidence": ".ci-artifacts/execution-options-20261014/delegate-current-20261015"
+}

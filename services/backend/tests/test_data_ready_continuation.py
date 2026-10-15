@@ -5,14 +5,19 @@ original conversation exactly once, without an inferred user token grant. The
 normal budgeted F6 permission continues to work unchanged.
 """
 import hashlib
+import json
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.conversation_catalog import ConversationCatalogStore
-from app.research import ResearchStore
+from app.research import IdempotencyConflict, ResearchStore
+from packages.contracts.agent_execution_options import default_agent_execution_options
+from packages.contracts.continuation_request import continuation_reservation_v3
+from tests.test_backtest_api import _strategy
 from tests.workspace_helpers import trusted_agent_context
 from tests.test_backtest_task_reconciliation import setup_creation
 from tests.continuation_request_fixtures import confirmed_request_usage
@@ -125,6 +130,33 @@ def settle_needs_attention(store, fixture, intent):
         status='settled', request_usage=confirmed_request_usage(),
         settlement_sha256='a' * 64,
         outcome='needs_attention')
+
+
+def reserve_v3(fixture, *, signal_job_id=None, conversation_id=None, context=None):
+    return fixture['store'].reserve_default_continuation_v3(
+        conversation_id or fixture['conversation'],
+        signal_job_id=signal_job_id or fixture['job_id'],
+        trusted_context=context or fixture['context'])
+
+
+def stable_v3_event_key(fixture, signal_job_id):
+    job = fixture['jobs']._fetch_one(
+        'SELECT result_artifact_id FROM signal_producer_jobs WHERE job_id=:job',
+        {'job': signal_job_id})
+    artifact = fixture['store']._fetch_one(
+        'SELECT content_sha256 FROM artifacts WHERE artifact_id=:artifact',
+        {'artifact': job['result_artifact_id']})
+    probe = continuation_reservation_v3(
+        owner_principal=fixture['context']['owner_principal'],
+        workspace_id=fixture['context']['workspace_id'],
+        conversation_id=fixture['conversation'],
+        task_id=fixture['payload']['task_id'],
+        signal_job_id=signal_job_id,
+        result_artifact_id=job['result_artifact_id'],
+        result_artifact_content_sha256=artifact['content_sha256'],
+        options=default_agent_execution_options(), options_revision=0,
+        event_key='ready-v1:' + '0' * 64)
+    return 'ready-v1:' + probe['idempotency_key'].removeprefix('task-ready-event:')
 
 
 def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypatch, tmp_path):
@@ -542,6 +574,521 @@ def test_data_ready_rearm_without_a_budget_permission(monkeypatch, tmp_path):
         assert intent['receipt']['grant_kind'] == 'data_ready_notification'
         assert intent['receipt']['event_key'] != first_key
         assert len(continuation_budget(store, task)) == 2
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_reservation_uses_exact_validated_signal_job_without_legacy_grant(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task = fixture['store'], fixture['payload']['task_id']
+    try:
+        entry = reserve_v3(fixture)
+        reservation = entry['reservation']
+        assert entry['schema_version'] == 'task-continuation-ledger-entry.v1'
+        assert entry['status'] == 'reserved'
+        assert entry['event_key'] == reservation['event_key']
+        assert entry['signal_job_id'] == fixture['job_id']
+        assert reservation['schema_version'] == 'task-continuation-reservation.v3'
+        assert reservation['owner_principal'] == fixture['context']['owner_principal']
+        assert reservation['workspace_id'] == fixture['context']['workspace_id']
+        assert reservation['conversation_id'] == fixture['conversation']
+        assert reservation['task_id'] == task
+        assert reservation['signal_job_id'] == fixture['job_id']
+        assert reservation['signal_job_status'] == 'completed'
+        assert reservation['result_artifact_id'] == fixture['artifact_id']
+        assert reservation['result_artifact_kind'] == 'signal_snapshot'
+        assert reservation['result_artifact_status'] == 'validated'
+        job = fixture['jobs']._fetch_one('''SELECT job_id, task_id, owner_principal,
+            workspace_id, status, result_artifact_id FROM signal_producer_jobs WHERE job_id=:job''',
+            {'job': fixture['job_id']})
+        artifact = store._fetch_one('''SELECT artifact_id, task_id, owner_principal,
+            workspace_id, kind, status, content_sha256 FROM artifacts WHERE artifact_id=:artifact''',
+            {'artifact': fixture['artifact_id']})
+        identity = {
+            'schema_version': 'task-ready-event-idempotency.v1',
+            'owner_principal': job['owner_principal'],
+            'workspace_id': job['workspace_id'],
+            'conversation_id': fixture['conversation'],
+            'task_id': job['task_id'],
+            'signal_job_id': job['job_id'],
+        }
+        event_digest = hashlib.sha256(json.dumps(
+            identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        expected_event_key = 'ready-v1:' + event_digest
+        assert reservation['event_key'] == expected_event_key
+        source_facts = {
+            'schema_version': 'task-ready-source-facts.v1',
+            'owner_principal': job['owner_principal'],
+            'workspace_id': job['workspace_id'],
+            'conversation_id': fixture['conversation'],
+            'task_id': job['task_id'],
+            'event_key': expected_event_key,
+            'signal_job_id': job['job_id'],
+            'signal_job_status': job['status'],
+            'result_artifact_id': artifact['artifact_id'],
+            'result_artifact_kind': artifact['kind'],
+            'result_artifact_status': artifact['status'],
+            'result_artifact_content_sha256': artifact['content_sha256'],
+        }
+        expected_source_sha = hashlib.sha256(json.dumps(
+            source_facts, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        assert reservation['source_fact_sha256'] == expected_source_sha
+        assert reservation['execution_profile']['options_revision'] == 0
+        assert reservation['execution_profile']['options']['auto_continue'] is True
+        expected_limit_fields = {
+            'max_provider_calls', 'max_attempts', 'max_concurrent', 'max_input_bytes',
+            'max_total_input_bytes', 'max_output_tokens', 'max_total_output_tokens',
+            'max_tool_payload_bytes', 'max_total_tool_payload_bytes', 'max_tool_calls',
+            'max_runtime_seconds',
+        }
+        assert set(reservation['request_limits']) == expected_limit_fields
+        assert all(reservation['request_limits'][key] is None for key in expected_limit_fields)
+        assert 'grant_version' not in reservation and 'expires_at' not in reservation
+        assert entry['reservation_id'].startswith('continuation_')
+        assert continuation_budget(store, task) == [entry]
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_reservation_rejects_wrong_scope_and_unvalidated_artifact(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path, outcome='draft')
+    store, task, conversation = (
+        fixture['store'], fixture['payload']['task_id'], fixture['conversation'])
+    try:
+        foreign = {**fixture['context'], 'owner_principal': 'foreign-user'}
+        with pytest.raises(ValueError):
+            reserve_v3(fixture, context=foreign)
+        foreign_workspace = {**fixture['context'], 'workspace_id': 'workspace_' + '0' * 32}
+        with pytest.raises(ValueError):
+            reserve_v3(fixture, context=foreign_workspace)
+        with pytest.raises(ValueError, match='original bound conversation'):
+            reserve_v3(fixture, conversation_id='conversation_' + '0' * 32)
+        with pytest.raises(ValueError, match='not validated'):
+            reserve_v3(fixture)
+        fixture['jobs']._execute('UPDATE signal_producer_jobs SET result_artifact_id=:artifact WHERE job_id=:job',
+            {'artifact': fixture['payload']['strategy_version_artifact_id'], 'job': fixture['job_id']})
+        with pytest.raises(ValueError, match='not validated'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) in (None, [])
+
+        def create_task_chain(client, key, trace_id):
+            created_task = client.post('/v1/research/tasks', json={
+                'owner_principal': 'product-user', 'title': f'v3 scope {key}',
+                'objective': 'Create a scoped signal fixture', 'trace_id': trace_id,
+                'idempotency_key': f'v3-scope-task-{key}',
+            })
+            assert created_task.status_code == 201, created_task.text
+            task_row = created_task.json()
+            draft_response = client.post('/v1/research/strategies/validate', json={
+                'task_id': task_row['task_id'], 'strategy': _strategy(), 'trace_id': trace_id,
+                'idempotency_key': f'v3-scope-draft-{key}',
+            })
+            assert draft_response.status_code == 201, draft_response.text
+            version_response = client.post('/v1/research/strategies/versions', json={
+                'task_id': task_row['task_id'],
+                'draft_artifact_id': draft_response.json()['artifact']['artifact_id'],
+                'trace_id': trace_id, 'idempotency_key': f'v3-scope-version-{key}',
+            })
+            assert version_response.status_code == 201, version_response.text
+            approval_response = client.post('/v1/research/strategies/approvals', json={
+                'task_id': task_row['task_id'],
+                'strategy_version_artifact_id': version_response.json()['artifact']['artifact_id'],
+                'reviewer_principal': 'product-user', 'decision': 'approved',
+                'trace_id': trace_id, 'idempotency_key': f'v3-scope-approval-{key}',
+            })
+            assert approval_response.status_code == 201, approval_response.text
+            return task_row, version_response.json()['artifact']
+
+        def create_completed_job(client, chain_task, version, key, trace_id):
+            created = client.post('/v1/research/backtest-tasks', json={
+                **fixture['payload'], 'task_id': chain_task['task_id'],
+                'strategy_version_artifact_id': version['artifact_id'],
+                'idempotency_key': f'v3-scope-job-{key}',
+            })
+            assert created.status_code == 202, created.text
+            job_id = created.json()['task']['references']['signal_producer_job_id']
+            snapshot = store.create_artifact({
+                'task_id': chain_task['task_id'], 'kind': 'signal_snapshot',
+                'content': {'synthetic': f'v3-scope-{key}'}, 'lineage': [],
+                'trace_id': trace_id, 'idempotency_key': f'v3-scope-snapshot-{key}',
+            })
+            store.transition('artifact', snapshot['artifact_id'], 'validated',
+                f'v3-scope-validate-{key}')
+            fixture['jobs']._execute("""UPDATE signal_producer_jobs
+                SET status='completed', result_artifact_id=:artifact, updated_at=now()
+                WHERE job_id=:job""", {'artifact': snapshot['artifact_id'], 'job': job_id})
+            return job_id, snapshot['artifact_id']
+
+        def assert_valid_job_lineage(job_id, *, expected_task, expected_conversation, expected_artifact):
+            lineage = fixture['jobs']._fetch_one("""SELECT j.task_id, j.owner_principal,
+                    j.workspace_id, j.status, j.result_artifact_id, t.conversation_id,
+                    a.task_id AS artifact_task_id, a.owner_principal AS artifact_owner,
+                    a.workspace_id AS artifact_workspace, a.kind AS artifact_kind,
+                    a.status AS artifact_status
+                FROM signal_producer_jobs j
+                JOIN research_tasks t ON t.task_id=j.task_id
+                JOIN artifacts a ON a.artifact_id=j.result_artifact_id
+                WHERE j.job_id=:job""", {'job': job_id})
+            assert lineage == {
+                'task_id': expected_task,
+                'owner_principal': fixture['context']['owner_principal'],
+                'workspace_id': fixture['context']['workspace_id'],
+                'status': 'completed',
+                'result_artifact_id': expected_artifact,
+                'conversation_id': expected_conversation,
+                'artifact_task_id': expected_task,
+                'artifact_owner': fixture['context']['owner_principal'],
+                'artifact_workspace': fixture['context']['workspace_id'],
+                'artifact_kind': 'signal_snapshot',
+                'artifact_status': 'validated',
+            }
+
+        client = fixture['client']
+        original_headers = dict(client.headers)
+        cross_session = 'byq-session-v3-cross-conversation'
+        cross_trace = 'byq-trace-v3-cross-conversation'
+        catalog = ConversationCatalogStore()
+        cross_conversation = catalog.create('product-user', cross_session, cross_trace)['conversation_id']
+        catalog.close()
+        client.headers.update({
+            'x-byq-session-id': cross_session, 'x-byq-trace-id': cross_trace,
+            'x-byq-dsh-run-id': 'byq-run-v3-cross-conversation',
+        })
+        try:
+            cross_task, cross_version = create_task_chain(client, 'cross-conversation', cross_trace)
+            cross_job, cross_artifact = create_completed_job(
+                client, cross_task, cross_version, 'cross-conversation', cross_trace)
+            assert_valid_job_lineage(cross_job, expected_task=cross_task['task_id'],
+                expected_conversation=cross_conversation, expected_artifact=cross_artifact)
+        finally:
+            client.headers.update(original_headers)
+
+        cross_before = continuation_budget(store, cross_task['task_id'])
+        original_before = continuation_budget(store, task)
+        with pytest.raises(ValueError, match='original bound conversation'):
+            reserve_v3(fixture, signal_job_id=cross_job)
+        assert continuation_budget(store, task) == original_before
+        assert continuation_budget(store, cross_task['task_id']) == cross_before
+
+        # The method derives the owning Task from the signal Job, so another
+        # valid Task bound to the same conversation is independently eligible.
+        same_task, same_version = create_task_chain(client, 'same-conversation', TRACE)
+        same_job, same_artifact = create_completed_job(
+            client, same_task, same_version, 'same-conversation', TRACE)
+        assert_valid_job_lineage(same_job, expected_task=same_task['task_id'],
+            expected_conversation=conversation, expected_artifact=same_artifact)
+        same_before = continuation_budget(store, same_task['task_id'])
+        same_entry = reserve_v3(fixture, signal_job_id=same_job)
+        assert same_entry['reservation']['task_id'] == same_task['task_id']
+        assert continuation_budget(store, task) == original_before
+        assert continuation_budget(store, same_task['task_id']) == [*(same_before or []), same_entry]
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_concurrent_claims_persist_one_reservation(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task = fixture['store'], fixture['payload']['task_id']
+    other = ResearchStore()
+    barrier = threading.Barrier(2, timeout=5)
+    arrivals = []
+    original_task_helper = type(store)._continuation_task
+
+    def synchronized_task_helper(connection, task_id, context, *, human):
+        try:
+            arrivals.append(barrier.wait(timeout=5))
+        except threading.BrokenBarrierError as exc:
+            raise AssertionError('both reservation transactions must reach the task-lock boundary') from exc
+        return original_task_helper(connection, task_id, context, human=human)
+
+    monkeypatch.setattr(type(store), '_continuation_task', staticmethod(synchronized_task_helper))
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            entries = list(pool.map(
+                lambda instance: instance.reserve_default_continuation_v3(
+                    fixture['conversation'], signal_job_id=fixture['job_id'],
+                    trusted_context=fixture['context']),
+                (store, other)))
+        assert sorted(arrivals) == [0, 1]
+        assert entries[0] == entries[1]
+        assert entries[0]['reservation_id'] == entries[1]['reservation_id']
+        assert continuation_budget(store, task) == [entries[0]]
+    finally:
+        other.close()
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_replay_after_restart_and_options_revision_is_idempotent(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task = fixture['store'], fixture['payload']['task_id']
+    restarted = None
+    catalog = None
+    try:
+        first = reserve_v3(fixture)
+        fixture['jobs']._execute("UPDATE signal_producer_jobs SET updated_at=updated_at + interval '1 second' WHERE job_id=:job",
+            {'job': fixture['job_id']})
+        catalog = ConversationCatalogStore()
+        catalog.update_execution_options(fixture['context']['owner_principal'],
+            fixture['context']['workspace_id'], fixture['conversation'], {
+                'schema_version': 'agent-execution-options.v1', 'expected_revision': 0,
+                'options': {'max_tool_calls': 7},
+            })
+        catalog.close()
+        catalog = None
+        store.close()
+        restarted = ResearchStore()
+        replay = restarted.reserve_default_continuation_v3(fixture['conversation'],
+            signal_job_id=fixture['job_id'], trusted_context=fixture['context'])
+        assert replay == first
+        assert replay['reservation']['execution_profile']['options_revision'] == 0
+
+        changed_hash = hashlib.sha256(b'changed validated fixture content').hexdigest()
+        fixture['jobs']._execute('UPDATE artifacts SET content_sha256=:digest WHERE artifact_id=:artifact',
+            {'digest': changed_hash, 'artifact': fixture['artifact_id']})
+        with pytest.raises(IdempotencyConflict, match='source facts conflict'):
+            restarted.reserve_default_continuation_v3(fixture['conversation'],
+                signal_job_id=fixture['job_id'], trusted_context=fixture['context'])
+        assert continuation_budget(restarted, task) == [first]
+    finally:
+        if catalog is not None:
+            catalog.close()
+        if restarted is not None:
+            restarted.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_auto_continue_disabled_blocks_new_reservation_only(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task = fixture['store'], fixture['payload']['task_id']
+    catalog = ConversationCatalogStore()
+    try:
+        first = reserve_v3(fixture)
+        catalog.update_execution_options(fixture['context']['owner_principal'],
+            fixture['context']['workspace_id'], fixture['conversation'], {
+                'schema_version': 'agent-execution-options.v1', 'expected_revision': 0,
+                'options': {'auto_continue': False},
+            })
+        assert reserve_v3(fixture) == first
+        next_job, _ = add_ready_event(fixture, key='v3-disabled-next',
+            content={'synthetic': 'v3-disabled-next'})
+        with pytest.raises(ValueError, match='automatic continuation is disabled'):
+            reserve_v3(fixture, signal_job_id=next_job)
+        assert continuation_budget(store, task) == [first]
+    finally:
+        catalog.close()
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_explicit_revoke_blocks_but_natural_expiry_does_not(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task = fixture['store'], fixture['payload']['task_id']
+    try:
+        grant_retry_permission(store, fixture, key='v3-expired-legacy-grant')
+        permission = store._fetch_one(
+            'SELECT continuation_permission FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_permission']
+        permission['expires_at'] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        store._execute('UPDATE research_tasks SET continuation_permission=:permission WHERE task_id=:task',
+            {'permission': permission, 'task': task})
+        allowed = reserve_v3(fixture)
+        assert allowed['reservation']['signal_job_id'] == fixture['job_id']
+
+        permission = store._fetch_one(
+            'SELECT continuation_permission FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_permission']
+        permission['revoked_at'] = datetime.now(timezone.utc).isoformat()
+        permission['revoked_by'] = fixture['context']['owner_principal']
+        store._execute('UPDATE research_tasks SET continuation_permission=:permission WHERE task_id=:task',
+            {'permission': permission, 'task': task})
+        next_job, _ = add_ready_event(fixture, key='v3-revoked-next',
+            content={'synthetic': 'v3-revoked-next'})
+        with pytest.raises(ValueError, match='explicitly revoked'):
+            reserve_v3(fixture, signal_job_id=next_job)
+        assert continuation_budget(store, task) == [allowed]
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_old_pending_and_unknown_receipts_block_without_mutation(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
+        fixture['conversation'], fixture['context'])
+    try:
+        grant_retry_permission(store, fixture, key='v3-old-v2-pending')
+        intent = store.claim_conversation_continuation(conversation, trusted_context=context)
+        reservation = intent['receipt']
+        assert reservation['schema_version'] == 'task-continuation-reservation.v2'
+        before_reserved = continuation_budget(store, task)
+        with pytest.raises(ValueError, match='unresolved legacy'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == before_reserved
+
+        assert store.claim_continuation_dispatch(task, reservation['reservation_id'],
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        before_unknown = continuation_budget(store, task)
+        assert before_unknown[0]['status'] == 'outcome_unknown'
+        with pytest.raises(ValueError, match='unresolved legacy'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == before_unknown
+
+        # Historical terminal v2 rows have no stable Job reference either.
+        # Exercise a rejected row from the persisted unknown shape, then restore
+        # the original unknown receipt before recording the settled path below.
+        rejected_v2 = dict(before_unknown[0], status='rejected')
+        with_rejected = [rejected_v2]
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': with_rejected, 'task': task})
+        with pytest.raises(ValueError, match='legacy continuation receipt identity'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == with_rejected
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': before_unknown, 'task': task})
+
+        accepted_v2 = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=reservation['reservation_id'], status='accepted', run_id='b' * 32)
+        before_accepted = continuation_budget(store, task)
+        assert before_accepted[0]['status'] == 'accepted'
+        assert before_accepted[0]['run_id'] == 'b' * 32
+        accepted_bytes = json.dumps(
+            before_accepted, sort_keys=True, separators=(',', ':')).encode()
+        with pytest.raises(ValueError, match='unresolved legacy'):
+            reserve_v3(fixture)
+        after_accepted = continuation_budget(store, task)
+        assert accepted_v2['status'] == 'accepted'
+        assert after_accepted == before_accepted
+        assert json.dumps(after_accepted, sort_keys=True, separators=(',', ':')).encode() == accepted_bytes
+        closed_v2 = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=reservation['reservation_id'], status='settled',
+            request_usage=confirmed_request_usage(), settlement_sha256='c' * 64,
+            outcome='completed')
+        assert closed_v2['status'] == 'settled'
+        with_closed_v2 = [closed_v2]
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': with_closed_v2, 'task': task})
+        with pytest.raises(ValueError, match='legacy continuation receipt identity'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == with_closed_v2
+
+        # A closed v2 receipt still cannot disambiguate a historical model
+        # receipt that has no verifiable Job reference. Its old event prefix and
+        # grant label are deliberately non-specific, with no instruction text.
+        ambiguous_model = legacy_model_reservation('e', status='settled')
+        ambiguous_model['grant_kind'] = 'legacy_model_receipt'
+        ambiguous_model['event_key'] = 'handoff-v1:' + 'f' * 64
+        ambiguous_model['instruction'] = None
+        with_ambiguous = [ambiguous_model, closed_v2]
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': with_ambiguous, 'task': task})
+        with pytest.raises(ValueError, match='legacy continuation receipt identity'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == with_ambiguous
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_existing_notification_for_same_job_is_not_upgraded(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
+        fixture['conversation'], fixture['context'])
+    try:
+        notification = store.claim_conversation_continuation(conversation, trusted_context=context)
+        assert notification['receipt']['grant_kind'] == 'data_ready_notification'
+        before = continuation_budget(store, task)
+        with pytest.raises(ValueError, match='already consumed'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == before
+
+        next_job, _ = add_ready_event(fixture, key='v3-notification-distinct-job',
+            content={'synthetic': 'v3-notification-distinct-job'})
+        next_event_key = stable_v3_event_key(fixture, next_job)
+        same_event_block = store._fetch_one(
+            'SELECT continuation_blocked_reason FROM research_tasks WHERE task_id=:task',
+            {'task': task})
+        assert same_event_block['continuation_blocked_reason'] is None
+        store._execute("""UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention',
+            continuation_blocked_event_key=:event WHERE task_id=:task""",
+            {'event': next_event_key, 'task': task})
+        with pytest.raises(ValueError, match='blocked by continuation needs_attention'):
+            reserve_v3(fixture, signal_job_id=next_job)
+        assert continuation_budget(store, task) == before
+
+        store._execute("""UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention',
+            continuation_blocked_event_key='*' WHERE task_id=:task""", {'task': task})
+        with pytest.raises(ValueError, match='blocked by continuation needs_attention'):
+            reserve_v3(fixture, signal_job_id=next_job)
+        assert continuation_budget(store, task) == before
+
+        # A blocker scoped to a different Job must not suppress this new event.
+        store._execute("""UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention',
+            continuation_blocked_event_key=:event WHERE task_id=:task""",
+            {'event': stable_v3_event_key(fixture, fixture['job_id']), 'task': task})
+        different_event = reserve_v3(fixture, signal_job_id=next_job)
+        assert different_event['signal_job_id'] == next_job
+        before = continuation_budget(store, task)
+
+        without_job_ref = [dict(row) for row in before]
+        refs = without_job_ref[0]['executable']['references']
+        refs.pop('signal_producer_job_id')
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': without_job_ref, 'task': task})
+        with pytest.raises(ValueError, match='already consumed'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == without_job_ref
+
+        ambiguous = [dict(row) for row in without_job_ref]
+        ambiguous[0]['executable']['references'].pop('signal_snapshot_artifact_id')
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': ambiguous, 'task': task})
+        with pytest.raises(ValueError, match='lineage is ambiguous'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, task) == ambiguous
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_v3_envelope_fails_closed_through_legacy_dispatch_and_settlement(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
+        fixture['conversation'], fixture['context'])
+    try:
+        grant_retry_permission(store, fixture, key='v3-legacy-paths')
+        entry = reserve_v3(fixture)
+        before = continuation_budget(store, task)
+        checked_before = store._fetch_one(
+            'SELECT continuation_checked_at FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_checked_at']
+        assert store.claim_conversation_continuation(conversation, trusted_context=context) == {
+            'status': 'waiting'}
+        checked_after = store._fetch_one(
+            'SELECT continuation_checked_at FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_checked_at']
+        assert checked_after == checked_before
+        view = store.get_continuation_permission(task, trusted_context=context)
+        assert view['request_state']['requests_reserved'] == 0
+        assert view['request_state']['request_identity'] is None
+        assert store.claim_continuation_dispatch(task, entry['reservation_id'],
+            trusted_context=context) == {'dispatch': False}
+        with pytest.raises(ValueError, match='v3 continuation receipt'):
+            store.record_continuation_receipt(task, trusted_context=context,
+                reservation_id=entry['reservation_id'], status='outcome_unknown')
+        assert continuation_budget(store, task) == before
     finally:
         store.close()
         fixture['backtests'].close()

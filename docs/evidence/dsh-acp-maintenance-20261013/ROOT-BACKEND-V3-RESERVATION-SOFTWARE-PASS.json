@@ -1,0 +1,49 @@
+{
+  "schema_version": "byq-root-backend-v3-software-pass.v1",
+  "status": "ROOT_PASS_SCOPED_UNACTIVATED_BACKEND_RESERVATION",
+  "utc": "2026-10-15T02:18:15.800546+00:00",
+  "source_base_head": "0be2f56c68382562c64f8624c8327779dd081390",
+  "source_diff_sha256": "e6951c9589c168d71fec5d91e7f11cae78e706149a51ef53adfb04b81f99b830",
+  "source_files": {
+    "services/backend/app/research_continuation.py": "dd3bb73a1deb468ed2bdd7edf9806a3f724a7c239729c501004659023ed9ee84",
+    "services/backend/tests/test_data_ready_continuation.py": "ec587ce06cd052edcb1bdbb5774595867f3298bcd5975e68a07357229d3c248c"
+  },
+  "evidence_layer": "isolated synthetic PostgreSQL; native Root execution, independent Tester and Sol result review",
+  "result": {
+    "fresh_collected": 9,
+    "fresh_passed": 9,
+    "reused_scoped_passed": 1,
+    "fresh_skipped": 0,
+    "fresh_failed": 0,
+    "elapsed_seconds": 25.871317863464355,
+    "total_deadline_seconds": 420,
+    "warning": "one Starlette deprecation warning; no stderr failure"
+  },
+  "covers": [
+    "atomic exact completed signal Job and validated snapshot reservation under owner/workspace/original conversation",
+    "stable Job identity, source-fact conflict and concurrent deduplication",
+    "nullable trusted execution parameters without new grant; disable/revoke and old unresolved liabilities respected",
+    "legacy claim/dispatch/settlement fail closed on new carrier; legacy notification regression"
+  ],
+  "limits": [
+    "New producer is not wired into Gateway or a dispatcher; no live background completion or usage settlement is qualified",
+    "No provider/model, real business Job, Product browser, deployment or production call in this slice",
+    "Only signal_producer_jobs plus validated signal_snapshot, not all Job classes",
+    "Not a fresh ten-test run; first case explicitly reused because production/shared fixtures/first-test AST unchanged"
+  ],
+  "preserved_failures": {
+    "v1": "FAIL_STOP_SETUP: optional Docker HostConfig.Mounts template; PG never started; pytest NOT_RUN",
+    "v2": "FAIL_STOP_PYTEST: test-local undefined conversation in second case; 1 passed,1 failed,8 NOT_RUN"
+  },
+  "remediation": "Both observers read stable parent JSON and validate resource/lifecycle shapes.22 offline fixture checks passed. F821/F822/F823/F811 static lint passed on8 affected Python files; test-local conversation binding repaired. No generic agent harness introduced.",
+  "cleanup": "Exact owned temporary runners, tmpfs PostgreSQL and empty internal network removed; no volume delete or retained service/identity change",
+  "receipts": {
+    "PG9-PLAN.json": "cbbbb7b28baae88b0c70c0eef11c8b9b50fa5fc4060945af0607086fa19bff74",
+    "INDEPENDENT-PG9-RESULT.json": "a60b8a84d8b22ade79e51568e67f120d73537303f8f8e16efcd8db2b9303e372",
+    "SOL-FINAL.json": "5321a25ffd76e7c881d90572812a447563d29c0a1254667cf51ba38db89cf3b9",
+    "PG9-STATE.json": "32b620004859a135df3498df8a5dc7d23ea44481f23d996d7b0991eb00ba8814"
+  },
+  "local_evidence_directory": ".ci-artifacts/execution-options-20261014/backend-v3-reservation-v3-static",
+  "production": "NOT_RUN",
+  "product_phase_advanced": false
+}

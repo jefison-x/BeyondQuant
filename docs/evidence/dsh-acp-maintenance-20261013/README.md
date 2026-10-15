@@ -2,6 +2,16 @@
 
 不推进 Product Phase。应用闭包基线为 `55033eb0937665bf1d19f848de1f185353f7dbc0`，基于同步后的 `origin/main=ad5f7df1ad18e54dd0d9860d424241297187eef8`。新增租约观察切片的五文件源码 SHA 单独记录于 ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP.json；修正入口后的定向离线验收见ROOT-LEASE-OBSERVER-OFFLINE-PASS.json，真实状态验收仍未完成。
 
+## 最新进展（2026-10-15 北京时间）
+
+**当前隔离版本 `0be2f56c`：搜索配置和前台委派均通过限定真实浏览器验收。** 用户在“模型配置 → 搜索服务”安全保存独立 DeepSeek 官方 Key；刷新仍只显示掩码。随后同一会话完成一次搜索和一轮无工具继续输入，历史消息 8→10→12，两个 Root completed/closed、unknown claims=0；模型代理实际3次完成。搜索返回来源链接，原生搜索服务 HTTP/用量未采集，天气数值答案质量不由此通过。独立 Sol → Root 的范围见 [搜索验收收据](ROOT-OWNER-SEARCH-BROWSER-PASS.json)。系统 `.env` **模型 Key** 退役仍是后续迁移要求，未称已完成。
+
+**当前版本单前台子 Agent：Sol → Root 限定 PASS。** 原页面一次输入、一个子 Agent、零 Job 意图；161.47秒内核对父子绑定、三条 settled 子 Agent 入口和四条 audit，当前工具 guard 的数值限制为 null，6次工具调用符合计划。8个模型代理请求均200，Root aggregate input=229231、output=1234、cache-read=169344；cache 不再加到 input，不分摊子 Agent 账单。Backend Root/两个 AgentRun 均 completed/closed，exact ACK seq53/hash 与持久化回执一致，签名进程组清理通过，11表计数前后一致。刷新后最终 ROOT_OK 显示一次；DB消息12→15，包含模型先发的绑定说明，不能写成只有一条 assistant 存储行。见 [委派验收收据](ROOT-CURRENT-FOREGROUND-CHILD-PASS.json)。原历史采集失败保留 FAIL，未被新批次覆盖。
+
+**后台 Backend v3 原子预留：Tester → Sol → Root 限定软件 PASS。** 精确已完成 SignalJob/validated snapshot 的预留、并发去重、原会话隔离、旧未知结果与显式停止保护通过9项新测试及1项有效复用；不是一次新跑10项。原观察器字段错误和测试局部变量错误均保留 FAIL_STOP，修正后补齐22项观察器样本与8文件未定义名检查。该入口尚未接入 Gateway/dispatch，真实后台自动接续仍未验证，见 [Backend 软件验收](ROOT-BACKEND-V3-RESERVATION-SOFTWARE-PASS.json)。
+
+**下一缺口：后台实际消费链仍走旧许可逻辑。** 合同/guard/传输的离线 PASS 不等于默认自动接续。只读确认当前采样的9类 Job/运行表计数为0，ResearchTask=1、Artifact=3；无现成 SignalJob 可复用。先补 Backend 的精确 Job/validated snapshot → v3 原子预留与去重，再接消费链；本次尚未执行真实后台 Job。取消、进程异常、两用户、迟到/未知结果、官方固有限额和最终CI/发布/生产门禁仍未由上述切片证明，整体 NOT_READY。保留14容器测试环境、端口32790、原账号/卷和浏览器页面，不推进 Product Phase、不操作生产。
+
 ## 最新进展（2026-10-14 北京时间）
 
 **后台续办准备：限定 Product 读回 PASS，后台执行仍 NOT_RUN。** V6 完整入口的 12 项独立替身通过；一次正常登录和七个精确 Product GET 确认 Task、不可变 Version 及股票池两成员/v1 快照投影。策略批准 UI V1 意外结果保留 FAIL_STOP；V2 一次确认后进入回测页，精确读回 validated approval、execution_outcome=not_started，未提交计算。续接许可自动 checkbox 操作及时间门禁 FAIL_STOP 保留；用户明确报告自己提交，独立只读核对既有许可的身份、版本、profile、预算和 waiting_for_event，不算自动 UI PASS。每次读回均固定 8 HTTP、无重试；Sol→Root 限定验收见 [ROOT-BUSINESS-PREPARATION-READBACK-PASS.json](ROOT-BUSINESS-PREPARATION-READBACK-PASS.json)。采集入口 [V3 SOURCE HOLD](ROOT-PRODUCT-PREPARATION-V3-SOURCE-HOLD.json)、[V4 FAIL_STOP](ROOT-PRODUCT-PREPARATION-V4-FAIL-STOP.json) 均保留。Job、Worker、自动续办与生产资格仍 NOT_RUN，整体 NOT_READY。
