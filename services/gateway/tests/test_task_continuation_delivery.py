@@ -9,6 +9,7 @@ from app import main
 from packages.contracts.agent_execution_options import default_agent_execution_options
 from packages.contracts.continuation_request import (
     continuation_request_usage_v2, profile_binding, request_limits,
+    execution_profile_v2, request_limits_v2,
     unknown_actual_usage, unknown_actual_usage_v2, unknown_admission_usage_v2,
     USAGE_SCHEMA_VERSION,
 )
@@ -72,14 +73,14 @@ def fixture(monkeypatch):
     return context, intent, writes, reads, prompts, original, settlement
 
 
-def v3_fixture(monkeypatch, *, eligible=False, adapter_receipt=None, reconcile_state='outcome_unknown'):
+def v3_fixture(monkeypatch, *, eligible=False, adapter_receipt=None, reconcile_state='outcome_unknown',
+        signal_job_id='signaljob_' + 'c' * 32, result_artifact_id='artifact_' + 'd' * 32):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     task_id = 'task_' + 'b' * 32
-    signal_job_id = 'signaljob_' + 'c' * 32
     carrier_args = dict(owner_principal=context['owner'], workspace_id=context['workspace_id'],
         conversation_id=context['conversation_id'], task_id=task_id, signal_job_id=signal_job_id,
-        result_artifact_id='artifact_' + 'd' * 32, result_artifact_content_sha256='e' * 64,
+        result_artifact_id=result_artifact_id, result_artifact_content_sha256='e' * 64,
         options=default_agent_execution_options(), options_revision=7)
     placeholder = continuation_reservation_v3(**carrier_args, event_key='ready-v1:' + '0' * 64)
     digest = placeholder['idempotency_key'].split(':', 1)[1]
@@ -191,9 +192,12 @@ def v3_fixture(monkeypatch, *, eligible=False, adapter_receipt=None, reconcile_s
                 sort_keys=True, separators=(',', ':'))
             assert params == {'idempotency_key': reservation_id,
                 'content_sha256': hashlib.sha256(expected.encode()).hexdigest()}
+            if state.get('reconcile_projection') is not None:
+                return state['reconcile_projection']
             if state['reconcile_state'] == 'accepted':
-                return {'state': 'accepted', 'run_id': 'f' * 32}
-            return {'state': state['reconcile_state']}
+                return {'schema_version': 'prompt-receipt.v1',
+                    'state': 'accepted', 'run_id': 'f' * 32}
+            return {'schema_version': 'prompt-receipt.v1', 'state': state['reconcile_state']}
         raise AssertionError(path)
 
     def adapter_post(path, *, payload=None, timeout=20.0):
@@ -655,6 +659,192 @@ def test_v3_consumer_keeps_hold_until_exact_backend_settlement_receipt(monkeypat
     assert session.continuation_reservation == reservation_id
     assert prompts == []
     assert [payload['status'] for kind, payload in writes if kind == 'receipt'] == ['accepted', 'settled']
+
+
+def _set_backend_v3_settled(intent, state, carrier, reservation_id):
+    runtime_receipt = v3_settled_adapter_receipt(carrier, reservation_id)
+    fields = {key: runtime_receipt[key] for key in (
+        'run_id', 'request_usage', 'outcome', 'settlement_sha256')}
+    state['backend_receipt'].update(status='settled', dispatch_attempts=1, **fields)
+    intent['receipt'].update(status='settled', dispatch_attempts=1, **fields)
+    intent.update(status='waiting', may_dispatch=False)
+
+
+def test_v3_settled_missing_runtime_releases_old_lease_for_next_reservation(monkeypatch):
+    (context, _, old_intent, old_carrier, old_reservation_id, old_state, old_calls,
+     old_writes, old_reads, old_prompts, session) = v3_fixture(monkeypatch)
+    _set_backend_v3_settled(old_intent, old_state, old_carrier, old_reservation_id)
+    old_state['adapter_receipt'] = {
+        'reservation_id': old_reservation_id, 'status': 'outcome_unknown',
+    }
+    old_state['reconcile_state'] = 'outcome_unknown'
+    old_registry = main.product_sessions
+
+    # The Backend's immutable settled receipt is the only positive evidence in
+    # this case; the Runtime's exact receipt has since disappeared. Never replay
+    # this old prompt, but do not let its completed lease occupy the session.
+    main._consume_admitted_task_continuation(context)
+
+    assert session.continuation_reservation is None
+    assert old_writes == []
+    assert old_prompts == []
+    assert [path.rsplit('/', 1)[-1] for path, _, _ in old_calls] == ['peek']
+    assert len(old_reads) == 2
+    assert old_reads[0][0].endswith(f'/continuation-receipt/{old_reservation_id}')
+    assert old_reads[1][0].endswith('/prompts/reconcile')
+
+    (new_context, _, _new_intent, new_carrier, new_reservation_id, _new_state, new_calls,
+     new_writes, new_reads, new_prompts, _new_session) = v3_fixture(
+        monkeypatch, signal_job_id='signaljob_' + 'f' * 32,
+        result_artifact_id='artifact_' + 'a' * 32)
+    monkeypatch.setattr(main, 'product_sessions', old_registry)
+
+    main._consume_admitted_task_continuation(new_context)
+
+    assert new_reservation_id != old_reservation_id
+    assert session.continuation_reservation == new_reservation_id
+    assert [path.rsplit('/', 1)[-1] for path, _, _ in new_calls] == [
+        'peek', 'dispatch', 'receipt',
+    ]
+    assert new_writes[0] == ('dispatch', {'reservation_id': new_reservation_id})
+    assert new_writes[-1][1] == {
+        'reservation_id': new_reservation_id,
+        'idempotency_key': new_carrier['idempotency_key'],
+        'status': 'accepted', 'run_id': 'f' * 32,
+    }
+    assert new_prompts[0][1]['idempotency_key'] == new_reservation_id
+    assert new_reads[0][0].endswith(f'/continuation-receipt/{new_reservation_id}')
+
+
+@pytest.mark.parametrize(('old_status', 'pending_cancel'), [
+    ('reserved', False), ('accepted', False), ('outcome_unknown', False), ('settled', True),
+])
+def test_v3_missing_runtime_keeps_unresolved_or_cancelled_old_lease(
+        monkeypatch, old_status, pending_cancel):
+    (context, _, old_intent, old_carrier, old_reservation_id, old_state, _old_calls,
+     _old_writes, _old_reads, old_prompts, session) = v3_fixture(monkeypatch)
+    if pending_cancel:
+        _set_backend_v3_settled(old_intent, old_state, old_carrier, old_reservation_id)
+        session.continuation_cancel_requested = old_reservation_id
+    else:
+        attempts = 0 if old_status == 'reserved' else 1
+        old_state['backend_receipt'].update(status=old_status, dispatch_attempts=attempts)
+        old_intent['receipt'].update(status=old_status, dispatch_attempts=attempts)
+        old_intent['may_dispatch'] = old_status == 'reserved'
+        if old_status == 'accepted':
+            old_state['backend_receipt']['run_id'] = old_intent['receipt']['run_id'] = 'f' * 32
+    old_state['adapter_receipt'] = {
+        'reservation_id': old_reservation_id, 'status': 'outcome_unknown',
+    }
+    old_state['reconcile_state'] = 'outcome_unknown'
+
+    main._consume_admitted_task_continuation(context)
+
+    assert session.continuation_reservation == old_reservation_id
+    if old_status == 'reserved':
+        assert len(old_prompts) == 1
+        assert old_prompts[0][1]['idempotency_key'] == old_reservation_id
+    else:
+        assert old_prompts == []
+
+
+def test_v3_backend_cancel_requested_keeps_settled_missing_runtime_lease(monkeypatch):
+    (context, _, intent, carrier, reservation_id, state, _calls, writes,
+     _reads, prompts, session) = v3_fixture(monkeypatch)
+    _set_backend_v3_settled(intent, state, carrier, reservation_id)
+    state['backend_receipt']['cancel_requested_at'] = intent['receipt']['cancel_requested_at'] = (
+        '2026-10-16T00:00:00+00:00')
+    state['adapter_receipt'] = {
+        'reservation_id': reservation_id, 'status': 'outcome_unknown',
+    }
+
+    main._consume_admitted_task_continuation(context)
+
+    assert session.continuation_reservation == reservation_id
+    assert writes == []
+    assert prompts == []
+
+
+def test_v3_settled_missing_runtime_requires_exact_missing_record_projection(monkeypatch):
+    (context, _, intent, carrier, reservation_id, state, _calls, writes,
+     _reads, prompts, session) = v3_fixture(monkeypatch)
+    _set_backend_v3_settled(intent, state, carrier, reservation_id)
+    state['adapter_receipt'] = {
+        'reservation_id': reservation_id, 'status': 'outcome_unknown', 'diagnostic': 'extra',
+    }
+
+    main._consume_admitted_task_continuation(context)
+
+    assert session.continuation_reservation == reservation_id
+    assert writes == []
+    assert prompts == []
+
+
+@pytest.mark.parametrize('tamper', [
+    'run_id', 'idempotency_key', 'request_usage', 'profile', 'limits',
+    'outcome', 'dispatch_attempts', 'settlement_sha256',
+])
+def test_v3_bad_backend_settlement_does_not_release_missing_runtime_lease(monkeypatch, tamper):
+    (context, _, intent, carrier, reservation_id, state, _calls, writes,
+     _reads, prompts, session) = v3_fixture(monkeypatch)
+    _set_backend_v3_settled(intent, state, carrier, reservation_id)
+    if tamper == 'run_id':
+        state['backend_receipt']['run_id'] = intent['receipt']['run_id'] = 'not-a-run'
+    elif tamper == 'idempotency_key':
+        state['backend_receipt']['idempotency_key'] = intent['receipt']['idempotency_key'] = 'task-ready-event:' + '0' * 64
+    elif tamper == 'request_usage':
+        state['backend_receipt']['request_usage'] = intent['receipt']['request_usage'] = {}
+    elif tamper in {'profile', 'limits'}:
+        options = dict(carrier['execution_profile']['options'])
+        options['max_tool_calls'] = 7
+        profile = execution_profile_v2(options, revision=carrier['execution_profile']['options_revision'])
+        usage = state['backend_receipt']['request_usage']
+        if tamper == 'profile':
+            usage['execution_profile'] = profile
+            usage['request_limits'] = request_limits_v2(options)
+        else:
+            usage['request_limits'] = dict(usage['request_limits'])
+            usage['request_limits']['max_tool_calls'] = 7
+        intent['receipt']['request_usage'] = usage
+    elif tamper == 'outcome':
+        state['backend_receipt']['outcome'] = intent['receipt']['outcome'] = 'running'
+    elif tamper == 'dispatch_attempts':
+        state['backend_receipt']['dispatch_attempts'] = intent['receipt']['dispatch_attempts'] = 2
+    else:
+        state['backend_receipt']['settlement_sha256'] = intent['receipt']['settlement_sha256'] = '0' * 64
+    state['adapter_receipt'] = {
+        'reservation_id': reservation_id, 'status': 'outcome_unknown',
+    }
+    state['reconcile_state'] = 'outcome_unknown'
+
+    with pytest.raises(ValueError):
+        main._consume_admitted_task_continuation(context)
+
+    assert session.continuation_reservation == reservation_id
+    assert writes == []
+    assert prompts == []
+
+
+@pytest.mark.parametrize('reconcile_projection', [
+    {'schema_version': 'prompt-receipt.v1', 'state': 'outcome_unknown', 'run_id': 'f' * 32},
+    {'schema_version': 'prompt-receipt.v2', 'state': 'outcome_unknown'},
+    {'schema_version': 'prompt-receipt.v1', 'state': 'outcome_unknown', 'extra': True},
+])
+def test_v3_settled_missing_runtime_requires_exact_reconcile_unknown(
+        monkeypatch, reconcile_projection):
+    (context, _, intent, carrier, reservation_id, state, _calls, writes,
+     _reads, prompts, session) = v3_fixture(monkeypatch)
+    _set_backend_v3_settled(intent, state, carrier, reservation_id)
+    state['adapter_receipt'] = {
+        'reservation_id': reservation_id, 'status': 'outcome_unknown',
+    }
+    state['reconcile_projection'] = reconcile_projection
+
+    main._consume_admitted_task_continuation(context)
+
+    assert session.continuation_reservation == reservation_id
+    assert writes == []
+    assert prompts == []
 
 
 @pytest.mark.parametrize('tamper', ['event_key', 'reservation_id'])

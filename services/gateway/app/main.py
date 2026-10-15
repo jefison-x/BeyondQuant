@@ -737,7 +737,8 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
     adapter_status = adapter_receipt.get('status')
     if adapter_receipt.get('reservation_id') != reservation_id:
         raise ValueError('v3 Adapter receipt reservation identity mismatch')
-    if adapter_status == 'outcome_unknown' and 'idempotency_key' not in adapter_receipt:
+    if (adapter_status == 'outcome_unknown'
+            and set(adapter_receipt) == {'reservation_id', 'status'}):
         # This is the Adapter's explicit missing-record shape. It proves
         # neither absence of a prior process write nor settlement.
         if session is None:
@@ -757,6 +758,22 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
             mark('accepted', run_id=run_id)
             return
         if reconciled.get('state') != 'outcome_unknown':
+            return
+        if receipt.get('status') == 'settled':
+            # The Adapter no longer has a per-reservation receipt, but the
+            # Backend has an immutable, fully settled ledger entry. That is
+            # sufficient to retire this exact Gateway retention lease; it is
+            # never permission to replay the old prompt.
+            if reconciled != {
+                    'schema_version': 'prompt-receipt.v1', 'state': 'outcome_unknown'}:
+                return
+            _validate_v3_backend_settled_receipt(receipt, carrier, reservation_id)
+            if receipt.get('cancel_requested_at') is not None:
+                return
+            if product_sessions.finish_v3_settled_missing_runtime(session, reservation_id):
+                generation = product_sessions.idle_release_generation(session)
+                if generation is not None:
+                    _schedule_idle_release(session, generation)
             return
         if receipt.get('status') != 'reserved' or intent.get('may_dispatch') is not True:
             return
@@ -861,6 +878,39 @@ def _validate_v3_product_session(session: ProductSession, context: dict) -> None
             or session.workspace_id != context['workspace_id']
             or session.principal.subject != context['owner']):
         raise ValueError('v3 continuation Gateway session binding changed')
+
+
+def _validate_v3_backend_settled_receipt(receipt: dict, carrier: dict, reservation_id: str) -> None:
+    """Validate exact durable settlement facts before releasing a missing Runtime lease."""
+    if (receipt.get('reservation_id') != reservation_id
+            or receipt.get('idempotency_key') != carrier.get('idempotency_key')
+            or receipt.get('status') != 'settled'
+            or type(receipt.get('dispatch_attempts')) is not int
+            or receipt.get('dispatch_attempts') != 1
+            or not _valid_prompt_run_id(receipt.get('run_id'))):
+        raise ValueError('Backend settled v3 receipt identity is invalid')
+    usage = validate_request_usage_v2(receipt.get('request_usage'))
+    if (usage.get('execution_profile') != carrier.get('execution_profile')
+            or usage.get('request_limits') != carrier.get('request_limits')):
+        raise ValueError('Backend settled v3 receipt profile does not match its carrier')
+    outcome = receipt.get('outcome')
+    settlement_sha256 = receipt.get('settlement_sha256')
+    if (outcome not in {'completed', 'needs_attention'}
+            or not isinstance(settlement_sha256, str)
+            or re.fullmatch(r'[0-9a-f]{64}', settlement_sha256) is None):
+        raise ValueError('Backend settled v3 receipt is incomplete')
+    settled_facts = {
+        'reservation_id': reservation_id,
+        'idempotency_key': carrier['idempotency_key'],
+        'status': 'settled',
+        'run_id': receipt['run_id'],
+        'outcome': outcome,
+        'request_usage': usage,
+    }
+    expected_settlement_sha256 = hashlib.sha256(json.dumps(
+        settled_facts, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if settlement_sha256 != expected_settlement_sha256:
+        raise ValueError('Backend settled v3 receipt digest does not match')
 
 
 def _consume_admitted_task_continuation(context, *, allow_legacy=True):
@@ -1670,6 +1720,22 @@ class ProductSessionRegistry:
                 session.continuation_cancel_requested = None
                 session.continuation_cancel_backend_status = None
                 session.continuation_cancel_runtime_ack = False
+
+    def finish_v3_settled_missing_runtime(
+        self, session: ProductSession, reservation_id: str,
+    ) -> bool:
+        """Release only the exact uncancelled v3 lease with verified settlement."""
+        with self._lock:
+            if (session.released
+                    or session.continuation_reservation != reservation_id
+                    or session.continuation_deadline is not None
+                    or session.continuation_cancel_requested is not None
+                    or session.continuation_cancel_backend_status is not None
+                    or session.continuation_cancel_runtime_ack):
+                return False
+            session.continuation_reservation = None
+            session.continuation_deadline = 0
+            return True
 
     def idle_release_delay(self, session: ProductSession) -> float | None:
         with self._lock:
