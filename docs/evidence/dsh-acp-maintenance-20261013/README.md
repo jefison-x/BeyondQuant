@@ -4,13 +4,13 @@
 
 ## 最新进展（2026-10-15 北京时间）
 
-**当前隔离版本 `0be2f56c`：搜索配置和前台委派均通过限定真实浏览器验收。** 用户在“模型配置 → 搜索服务”安全保存独立 DeepSeek 官方 Key；刷新仍只显示掩码。随后同一会话完成一次搜索和一轮无工具继续输入，历史消息 8→10→12，两个 Root completed/closed、unknown claims=0；模型代理实际3次完成。搜索返回来源链接，原生搜索服务 HTTP/用量未采集，天气数值答案质量不由此通过。独立 Sol → Root 的范围见 [搜索验收收据](ROOT-OWNER-SEARCH-BROWSER-PASS.json)。系统 `.env` **模型 Key** 退役仍是后续迁移要求，未称已完成。
+**搜索配置和前台委派于隔离版本 `0be2f56c` 通过限定真实浏览器验收；当前 ACP 两服务已更新到下述 `0a372d18`，其余12服务保持原版。** 用户在“模型配置 → 搜索服务”安全保存独立 DeepSeek 官方 Key；刷新仍只显示掩码。随后同一会话完成一次搜索和一轮无工具继续输入，历史消息 8→10→12，两个 Root completed/closed、unknown claims=0；模型代理实际3次完成。搜索返回来源链接，原生搜索服务 HTTP/用量未采集，天气数值答案质量不由此通过。独立 Sol → Root 的范围见 [搜索验收收据](ROOT-OWNER-SEARCH-BROWSER-PASS.json)。系统 `.env` **模型 Key** 退役仍是后续迁移要求，未称已完成。
 
 **当前版本单前台子 Agent：Sol → Root 限定 PASS。** 原页面一次输入、一个子 Agent、零 Job 意图；161.47秒内核对父子绑定、三条 settled 子 Agent 入口和四条 audit，当前工具 guard 的数值限制为 null，6次工具调用符合计划。8个模型代理请求均200，Root aggregate input=229231、output=1234、cache-read=169344；cache 不再加到 input，不分摊子 Agent 账单。Backend Root/两个 AgentRun 均 completed/closed，exact ACK seq53/hash 与持久化回执一致，签名进程组清理通过，11表计数前后一致。刷新后最终 ROOT_OK 显示一次；DB消息12→15，包含模型先发的绑定说明，不能写成只有一条 assistant 存储行。见 [委派验收收据](ROOT-CURRENT-FOREGROUND-CHILD-PASS.json)。原历史采集失败保留 FAIL，未被新批次覆盖。
 
 **后台 Backend v3 原子预留：Tester → Sol → Root 限定软件 PASS。** 精确已完成 SignalJob/validated snapshot 的预留、并发去重、原会话隔离、旧未知结果与显式停止保护通过9项新测试及1项有效复用；不是一次新跑10项。原观察器字段错误和测试局部变量错误均保留 FAIL_STOP，修正后补齐22项观察器样本与8文件未定义名检查。该入口尚未接入 Gateway/dispatch，真实后台自动接续仍未验证，见 [Backend 软件验收](ROOT-BACKEND-V3-RESERVATION-SOFTWARE-PASS.json)。
 
-**公开网页抓取：Tester → Sol → Root 限定离线软件 PASS。** 当前普通 Product ACP 原先关闭正文抓取；现启用固定官方 DSH fetch，保留原生默认值，市场研究可读取用户链接/搜索来源，规范化活动显示“读取公开网页”。12项原生断言及5个仓库测试通过，4个临时容器精确清理；真实网页正文、浏览器、镜像更新和生产仍为 NOT_RUN。见 [抓取软件验收](ROOT-PUBLIC-FETCH-SOFTWARE-PASS.json)。
+**公开网页读取：Tester、独立 Sol → Root 限定真实浏览器 PASS。** 源码 `0a372d18` 的官方 fetch 已安装到保留环境的 ACP 两服务，使用同一镜像 `68c3a1eb...`；其余12服务、原账号、数据库和端口32790保持不变。原会话两次输入，消息19→21→23且历史前缀不变；首轮一个“读取公开网页”活动开始/完成对，页面显示内容及来源，第二轮准确记住标记，刷新后均保留。两个 Root completed/closed、unknown0并匹配各自终态ACK，11表计数未变；原始浏览器回执证明246.865秒内完成。3次模型代理完成及用量单独记录，不冒充原生fetch HTTP/正文、天气事实准确性或结算证据；回答偏长与AX来源主机简写也保留。此前控制入口失败原样保留，原V1/V2脚本已退役，最终采用原生 Compose 更新。见 [抓取浏览器验收](ROOT-PUBLIC-FETCH-BROWSER-PASS.json)；[原离线软件验收](ROOT-PUBLIC-FETCH-SOFTWARE-PASS.json)保留当时NOT_RUN状态。生产、后台接续和发布仍未由此通过。
 
 **下一缺口：后台实际消费链仍走旧许可逻辑。** 合同/guard/传输的离线 PASS 不等于默认自动接续。只读确认当前采样的9类 Job/运行表计数为0，ResearchTask=1、Artifact=3；无现成 SignalJob 可复用。Backend 的精确 Job/validated snapshot → v3 原子预留与去重已完成限定软件验收，下一步接入消费链；本次尚未执行真实后台 Job。取消、进程异常、两用户、迟到/未知结果、官方固有限额和最终CI/发布/生产门禁仍未由上述切片证明，整体 NOT_READY。保留14容器测试环境、端口32790、原账号/卷和浏览器页面，不推进 Product Phase、不操作生产。
 
