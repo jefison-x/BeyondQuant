@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -61,6 +61,7 @@ const terminalSessionId = ref("");
 const softCancelPending = ref(false);
 const softCancelRunId = ref("");
 const activeRunId = ref("");
+const agentMessageRunIds = new WeakMap<object, string>();
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
 const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。关闭自动接续可阻止后续事件。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
@@ -114,25 +115,84 @@ const timeline = computed(() => [
   ...outcomes.value.map((outcome) => ({ type: "outcome" as const, at: outcome.timestamp, key: `outcome-${outcome.key}`, outcome })),
 ].sort((left, right) => left.at.localeCompare(right.at)));
 
+function runIdsBySequence(events: WorkflowTraceEvent[], sequences: number[]): Map<number, string> {
+  const intervals: Array<{ start: number; end: number; runId: string }> = [];
+  let currentRunId = "";
+  let currentStart = 0;
+  const terminalKinds = new Set(["session.result", "session.failed", "session.result.discarded"]);
+  const closeCurrentRun = (end: number) => {
+    if (currentRunId) intervals.push({ start: currentStart, end, runId: currentRunId });
+    currentRunId = "";
+  };
+  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
+    if (event.kind === "session.started") {
+      closeCurrentRun(event.sequence);
+      currentRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      currentStart = event.sequence;
+      continue;
+    }
+    const terminalRunEvent = terminalKinds.has(event.kind)
+      || (event.kind === "session.cancelled" && event.payload.mode !== "soft");
+    if (event.kind === "session.closed") {
+      closeCurrentRun(event.sequence);
+      continue;
+    }
+    if (!terminalRunEvent) continue;
+    const eventRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+    const matchesActiveRun = !currentRunId || !eventRunId || eventRunId === currentRunId;
+    const matchesDiscardedRun = event.kind !== "session.result.discarded"
+      || !currentRunId || eventRunId === currentRunId;
+    if (matchesActiveRun && matchesDiscardedRun) closeCurrentRun(event.sequence);
+  }
+  closeCurrentRun(Number.POSITIVE_INFINITY);
+  const runIds = new Map<number, string>();
+  for (const sequence of sequences) {
+    const interval = intervals.find((candidate) => sequence >= candidate.start && sequence < candidate.end);
+    if (interval) runIds.set(sequence, interval.runId);
+  }
+  return runIds;
+}
+
 function replayMessages(messages: AgentReplayMessage[], events: WorkflowTraceEvent[]): AgentMessage[] {
   const persistedAnswerSequences = new Set(messages
     .filter((message) => message.role === "assistant" && typeof message.workflow_sequence === "number")
     .map((message) => message.workflow_sequence));
+  const outputSequences = events.filter((event) => event.kind === "agent.output.delta"
+    && typeof event.payload.delta === "string" && !persistedAnswerSequences.has(event.sequence))
+    .map((event) => event.sequence);
+  const messageSequences = messages.filter((message) => message.role === "assistant"
+    && typeof message.workflow_sequence === "number")
+    .map((message) => message.workflow_sequence as number);
+  const runIds = runIdsBySequence(events, [...messageSequences, ...outputSequences]);
   const ordered = [
     ...messages.map((message) => ({
       kind: message.role === "assistant" ? "agent" as const : "user" as const,
       at: message.created_at,
       text: message.content,
+      runId: message.role === "assistant" && typeof message.workflow_sequence === "number"
+        ? runIds.get(message.workflow_sequence) ?? ""
+        : "",
     })),
     ...events.filter((event) => event.kind === "agent.output.delta"
       && typeof event.payload.delta === "string" && !persistedAnswerSequences.has(event.sequence))
-      .map((event) => ({ kind: "agent" as const, at: event.timestamp, text: String(event.payload.delta) })),
+      .map((event) => ({
+        kind: "agent" as const,
+        at: event.timestamp,
+        text: String(event.payload.delta),
+        runId: runIds.get(event.sequence) ?? "",
+      })),
   ].sort((left, right) => left.at.localeCompare(right.at));
   const result: AgentMessage[] = [];
   for (const item of ordered) {
     const last = result[result.length - 1];
-    if (item.kind === "agent" && last?.role === "agent") last.text += item.text;
-    else result.push({ role: item.kind, text: item.text, createdAt: item.at });
+    const lastRunId = last?.role === "agent" ? agentMessageRunIds.get(toRaw(last)) ?? "" : "";
+    if (item.kind === "agent" && item.runId && last?.role === "agent" && lastRunId === item.runId) {
+      last.text += item.text;
+    } else {
+      const message: AgentMessage = { role: item.kind, text: item.text, createdAt: item.at };
+      if (item.kind === "agent" && item.runId) agentMessageRunIds.set(toRaw(message), item.runId);
+      result.push(message);
+    }
   }
   return result;
 }
@@ -153,8 +213,8 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
   if (agent.events.some((current) => current.sequence === event.sequence)) return;
   agent.addEvent(event);
-  if (event.kind === "session.started" && typeof event.payload.run_id === "string") {
-    activeRunId.value = event.payload.run_id;
+  if (event.kind === "session.started") {
+    activeRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
   }
   if (event.kind === "session.cancelled" && event.payload.mode === "soft") {
     const runId = typeof event.payload.run_id === "string" ? event.payload.run_id : activeRunId.value;
@@ -199,8 +259,14 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   }
   if (event.kind === "agent.output.delta" && typeof event.payload.delta === "string") {
     const last = agent.messages[agent.messages.length - 1];
-    if (last?.role === "agent") last.text += event.payload.delta;
-    else agent.addMessage({ role: "agent", text: event.payload.delta, createdAt: event.timestamp });
+    const runId = activeRunId.value;
+    const lastRunId = last?.role === "agent" ? agentMessageRunIds.get(toRaw(last)) ?? "" : "";
+    if (runId && last?.role === "agent" && lastRunId === runId) last.text += event.payload.delta;
+    else {
+      const message: AgentMessage = { role: "agent", text: event.payload.delta, createdAt: event.timestamp };
+      if (runId) agentMessageRunIds.set(toRaw(message), runId);
+      agent.addMessage(message);
+    }
   }
   void nextTick(() => scrollConversation("smooth"));
 }
@@ -415,7 +481,9 @@ async function openSession(sessionId: string, updateRoute = true) {
     agent.hydrateSession(sessionId, replayMessages(replay.messages, replay.events), replay.events);
     void readExecutionOptions(sessionId, generation);
     for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
-      if (event.kind === "session.started" && typeof event.payload.run_id === "string") activeRunId.value = event.payload.run_id;
+      if (event.kind === "session.started") {
+        activeRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      }
       if (event.kind === "session.cancelled" && event.payload.mode === "soft") {
         softCancelPending.value = true;
         softCancelRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : activeRunId.value;
@@ -426,7 +494,10 @@ async function openSession(sessionId: string, updateRoute = true) {
       if (terminal && softCancelPending.value && softCancelRunId.value && runId === softCancelRunId.value) {
         softCancelPending.value = false; softCancelRunId.value = "";
       }
-      if (terminal && activeRunId.value && runId === activeRunId.value) activeRunId.value = "";
+      const matchesActiveRun = !activeRunId.value || !runId || runId === activeRunId.value;
+      const matchesDiscardedRun = event.kind !== "session.result.discarded"
+        || !activeRunId.value || runId === activeRunId.value;
+      if (terminal && matchesActiveRun && matchesDiscardedRun) activeRunId.value = "";
     }
     if (replay.events.some((event) => event.kind === "session.closed"
       || (event.kind === "session.cancelled" && event.payload.mode === "hard"))) {

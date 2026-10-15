@@ -784,6 +784,45 @@ describe("AgentView", () => {
     expect(agentMessages[0].text).toBe("唯一输出");
   });
 
+  it("keeps live output from a new root separate from the prior assistant message", async () => {
+    const marker = "BYQ-NEXT-TURN-20261014-READONLY-7F3A";
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "自动接续" },
+      messages: [
+        { message_id: "m1", sequence: 1, role: "user", content: "已有请求", created_at: "2026-08-28T00:00:00Z" },
+        { message_id: "m2", sequence: 2, role: "assistant", content: marker,
+          workflow_sequence: 18, created_at: "2026-08-28T00:00:02Z" },
+      ],
+      events: [
+        { trace_id: "trace-1", session_id: "session-1", sequence: 16, timestamp: "2026-08-28T00:00:01Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-prior" } },
+        { trace_id: "trace-1", session_id: "session-1", sequence: 24, timestamp: "2026-08-28T00:00:03Z",
+          kind: "session.result", source: "runtime-adapter", payload: { run_id: "run-prior" } },
+      ],
+    });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as {
+      handleEvent: (event: Record<string, unknown>, generation: number) => void;
+    };
+
+    view.handleEvent({ trace_id: "trace-1", session_id: "session-1", sequence: 25,
+      timestamp: "2026-08-28T00:00:04Z", kind: "session.started", source: "runtime-adapter",
+      payload: { run_id: "run-background" } }, 1);
+    view.handleEvent({ trace_id: "trace-1", session_id: "session-1", sequence: 27,
+      timestamp: "2026-08-28T00:00:05Z", kind: "agent.output.delta", source: "runtime-adapter",
+      payload: { delta: "后台" } }, 1);
+    view.handleEvent({ trace_id: "trace-1", session_id: "session-1", sequence: 29,
+      timestamp: "2026-08-28T00:00:06Z", kind: "agent.output.delta", source: "runtime-adapter",
+      payload: { delta: "接续回答" } }, 1);
+    await flushPromises();
+
+    expect(useAgentStore().messages.filter(message => message.role === "agent").map(message => message.text))
+      .toEqual([marker, "后台接续回答"]);
+    expect(wrapper.findAll(".conversation-message.agent:not(.assistant-processing)")).toHaveLength(2);
+    wrapper.unmount();
+  });
+
   it("removes the standalone processing bubble as soon as the final answer starts", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
@@ -844,6 +883,73 @@ describe("AgentView", () => {
     expect(messages.map((message) => [message.role, message.text])).toEqual([
       ["user", "问题"], ["agent", "数据库回答"],
     ]);
+  });
+
+  it("replays assistant rows grouped by their started run without merging roots", async () => {
+    const marker = "BYQ-NEXT-TURN-20261014-READONLY-7F3A";
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "自动接续历史" },
+      messages: [
+        { message_id: "m1", sequence: 1, role: "user", content: "已有请求", created_at: "2026-08-28T00:00:00Z" },
+        { message_id: "m2", sequence: 2, role: "assistant", content: marker,
+          workflow_sequence: 18, created_at: "2026-08-28T00:00:02Z" },
+        { message_id: "m3", sequence: 3, role: "assistant", content: "后台",
+          workflow_sequence: 27, created_at: "2026-08-28T00:00:04Z" },
+        { message_id: "m4", sequence: 4, role: "assistant", content: "接续",
+          workflow_sequence: 29, created_at: "2026-08-28T00:00:05Z" },
+        { message_id: "m5", sequence: 5, role: "assistant", content: "回答",
+          workflow_sequence: 30, created_at: "2026-08-28T00:00:06Z" },
+        { message_id: "m6", sequence: 6, role: "assistant", content: "已经",
+          workflow_sequence: 35, created_at: "2026-08-28T00:00:07Z" },
+        { message_id: "m7", sequence: 7, role: "assistant", content: "完成",
+          workflow_sequence: 36, created_at: "2026-08-28T00:00:08Z" },
+      ],
+      events: [
+        { trace_id: "trace-1", session_id: "session-1", sequence: 16, timestamp: "2026-08-28T00:00:01Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-prior" } },
+        { trace_id: "trace-1", session_id: "session-1", sequence: 24, timestamp: "2026-08-28T00:00:03Z",
+          kind: "session.result", source: "runtime-adapter", payload: { run_id: "run-prior" } },
+        { trace_id: "trace-1", session_id: "session-1", sequence: 25, timestamp: "2026-08-28T00:00:03Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-background" } },
+        { trace_id: "trace-1", session_id: "session-1", sequence: 39, timestamp: "2026-08-28T00:00:07Z",
+          kind: "session.result", source: "runtime-adapter", payload: { run_id: "run-background" } },
+      ],
+    });
+
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+
+    expect(useAgentStore().messages.map((message) => [message.role, message.text])).toEqual([
+      ["user", "已有请求"], ["agent", marker], ["agent", "后台接续回答已经完成"],
+    ]);
+    expect(wrapper.findAll(".conversation-message.agent:not(.assistant-processing)")).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it("does not merge replayed assistant output when its run boundary is unknown", async () => {
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "未知运行边界" },
+      messages: [
+        { message_id: "m1", sequence: 1, role: "assistant", content: "片段一",
+          workflow_sequence: 7, created_at: "2026-08-28T00:00:01Z" },
+        { message_id: "m2", sequence: 2, role: "assistant", content: "片段二",
+          workflow_sequence: 8, created_at: "2026-08-28T00:00:02Z" },
+      ],
+      events: [
+        { trace_id: "trace-1", session_id: "session-1", sequence: 2, timestamp: "2026-08-28T00:00:00Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-prior" } },
+        { trace_id: "trace-1", session_id: "session-1", sequence: 4, timestamp: "2026-08-28T00:00:00Z",
+          kind: "session.result", source: "runtime-adapter", payload: { run_id: "run-prior" } },
+      ],
+    });
+
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+
+    expect(useAgentStore().messages.filter(message => message.role === "agent").map(message => message.text))
+      .toEqual(["片段一", "片段二"]);
+    expect(wrapper.findAll(".conversation-message.agent:not(.assistant-processing)")).toHaveLength(2);
+    wrapper.unmount();
   });
 
   it("keeps a new empty conversation local until the first message is sent", async () => {
