@@ -4,6 +4,8 @@
 
 ## 当前结论（2026-10-16，北京时间）
 
+**搜索/帮助累计读取提示：Tester → 独立Sol → Root限定host合同PASS，尚未安装。** 应用提交 `80f3b1d2269b7706e6eff3934825e9415a52b9f7` 移除当前ACP市场研究的每轮四次搜索及产品帮助的一次读取提示，允许按缺失证据或变化的上下文再查；当前profile、两份实际挂载skill及identity/authoritative哈希同步。准确采集2项并2PASS/0SKIP，pytest0.03秒，含后置源码核对10.304秒，小于30秒；6项源码哈希和冻结diff不变，stderr空，0容器/数据库/网络/模型/Job。单次搜索schema与单份Artifact四条query容量仍保留，超容量不得截断来源后冒称完整保存。私有收据 `active-read-guidance-quota-v1/actual-v1/ROOT-PASS.json`，SHA-256 `068e5e9776672f06aa1a3431d8f16ae4cf73377b8a45e09c693f7686509a6b87`。当前仅软件/配置合同通过；下一步单独构建并核验32790所需的Backend-f6、Gateway-f6、MCP-f6及共用统一镜像的Runtime-adapter-f6/Product-runner，保留其余11服务、账号、数据库卷和原页面，再进行新版本浏览器真实验收。Full CI、推送、合并及生产仍NOT_RUN。
+
 **Backtest 分析默认6次/5分钟调用门：Tester → 独立Sol → Root限定离线PASS，尚未安装。** 应用提交 `bf2ac1e71e073eeb32c1c2f41d92dcbe839bd83c` 移除实际MCP handler默认计数门及退休包装器，同步活跃ACP persona、挂载skill与身份哈希；保留准确用户/工作区/Job、授权、分页形状和未知结果保护。首批回测接口脚本和2项架构用例通过，新增入口测试误要求只读GET带变更类observation header而FAIL，已停止并保留原件。统一核对读/写合同后仅修测试：重编译及ACP ingress另批通过，8次读取均有准确通用入口→GET→同ID结算，404正常结算，4种非法输入无入口/后端请求。新批36.788秒，小于180秒，原生和独立容器退出0、stderr空、无OOM，临时容器精确清理；原16服务稳定投影与14项源码哈希不变。分批复用原回测脚本及2项架构PASS，不称同批全套通过；live contract、Full CI、安装、新Product/模型/浏览器与生产均NOT_RUN。私有收据 `backtest-analysis-default-limit-v1/actual-v2/ROOT-OFFLINE-PASS.json`，SHA-256 `c4f53a0efc20c73c1369147cb8166635db4a32eaf0b539ebc188846b04b80cb9`。后续仅处理剩余活跃搜索/帮助提示中的累计次数条件，再单独验收聚合候选安装和真实流程。
 
 **活跃修正次数提示与接续许可措辞：限定离线软件 PASS，尚未安装。** 应用提交 `6c2b18f445488b2c50ba04e04bfdf861d807aa88` 移除 Backend/MCP 的默认一次修正提示，修订当前 ACP persona 及实际挂载的三份技能；保留四类业务阻断、准确授权、原失败输入拒绝和未知结果核对。旧 Backend 6项、配置/技能2项实际通过；其后只改两个 MCP 测试的 TypeScript 类型收窄，复用这8项，另批 MCP 构建及7个脚本通过，不称同批8项 pytest。新批72.668秒，小于180秒，原生终态与独立容器退出0、无OOM、stderr空；临时容器精确清理，原16容器完整稳定投影逐字节不变。既有 dev-check 静态门10文件通过。
