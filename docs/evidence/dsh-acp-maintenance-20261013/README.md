@@ -2,7 +2,19 @@
 
 不推进 Product Phase。应用闭包基线为 `55033eb0937665bf1d19f848de1f185353f7dbc0`，基于同步后的 `origin/main=ad5f7df1ad18e54dd0d9860d424241297187eef8`。新增租约观察切片的五文件源码 SHA 单独记录于 ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP.json；修正入口后的定向离线验收见ROOT-LEASE-OBSERVER-OFFLINE-PASS.json，真实状态验收仍未完成。
 
-## 最新浏览器切片（2026-10-15 北京时间）
+## 当前结论（2026-10-15，北京时间）
+
+**Agent 提交 Job 后自动接续：Tester → 独立 Sol → Root 限定 PASS。** 应用源码 `6b0d14dbd80f1f834b8179659f19bc33d0b2527f` 将 v3 工具准入同事务复用完整来源核验；新12项 Backend 路由回归通过。保留环境仅 Backend-f6 更新为 `sha256:5de7b8752da724aca251cd5859c9446cc1c8ced84e18bf3d696facdfecd792f4`，其余15容器身份、镜像和完整挂载不变。完整96路径安装源码包与冻结 manifest 相等，原账号、数据库卷、端口32790及原页面保留。安装和原始失败回执位于私有 `agent-origin-consumer-20261015-v1/authorize-tool-repair-v1/`。
+
+原浏览器会话仅新增一次输入、一个真实 SignalJob `signaljob_644469ced322438a8e64bdbc87b33810`；不补发“继续”、不请求接续许可。源 Root `f8a7f861ab004cf5b4e566c3460c4ce2` 与自动接续 Root `14f67819e12049d9b62efbd028fbfb84` 分开绑定，各自完成、权限关闭、unknown claims=0；新预留 `continuation_3ab7717e7adde467f6809ce4b917d8c0` 仅派发一次并结算，Adapter 与 Backend/Gateway 的终态序号77及摘要一致。原13条消息按不可变ID及完整内容逐项相等，两个旧Job、两个旧预留和五个旧Root保持原值；新的用户输入、前台回执和后台回答分别持久化，原标签刷新后恢复且分泡显示。
+
+两次业务读取不是仅凭 Agent 的 `read_ok` 自述验收。原生 DSH 压缩会话记录 SHA-256 `63ee2e6e7414fe0b1e47508b44c0cd98bc0c726e84e232e5cf3573128e6e6aaf` 中，本次后台轮次七组工具调用/返回均成功，并由 Tester 与 Sol 独立逐项核对：ResearchTask 返回同一身份与 `planned`；BacktestTask 返回本次同一Job的 `signal.completed`、`ready_to_execute`、`backtest=null`。这不表示执行过回测。原13条消息及新回答的全文另有只读数据库和浏览器刷新证据。
+
+本批13:46:56.583Z开始，165.713秒时已观察完成；900秒为观察窗，不是会话执行限制。后台6次模型请求、7次工具调用，input333660（已含cache-read289280）、output3109、75.436秒；可选执行参数均null。复用既有已批准合成生命周期输入，不下载行情、不证明真实行情质量。原始 L1 工具准入FAIL、回执保存引号错误及静态采集规则错误均保留。误查写操作claims表的补证SQL被独立审查拦下，未执行；改为读取已存在的原生工具结果，没有重跑模型或Job，也没有新增接口或采集框架。
+
+私有完整回执：`.ci-artifacts/agent-origin-consumer-20261015-v1/live-agent-origin-browser-v2/ROOT-LIVE-PASS.json`，关联 `TESTER-L2-FINAL-ACTUAL-REVIEW.json`、`L2/SOL-NATIVE-RESULTS-FINAL-REVIEW.json`、原生压缩记录、原始命令/stdout/stderr、SQL、AX及截图。**整体发布仍HOLD**：隐藏执行上限、两用户/迟到/未知结果和异常进程的剩余缺口须逐片核验；本候选Full CI、推送、合并、生产部署未执行，不推进Product Phase。
+
+## 历史浏览器切片与失败记录（以下保留各批次当时的结论）
 
 运行时/任务身份与用户登录/Job 提交身份已分开。真实核心运行源码为 `4c963fdef901b7c983343a930a8c54a1202bc424`；前端分轮修复源码为 `5ba25f2c775f8c04a271ea07ba9e7b8d1f786503`。保留环境现在是 `byq-dev-e8b02b5475` 的 16 个容器、端口32790及原账号/数据库卷。后台 Worker 新增运行，不带健康检查；其余15个容器有健康状态。未操作生产、推送或合并，不推进 Product Phase。
 
