@@ -4,9 +4,11 @@
 
 ## 当前结论（2026-10-16，北京时间）
 
+**Backtest 分析默认6次/5分钟调用门：Tester → 独立Sol → Root限定离线PASS，尚未安装。** 应用提交 `bf2ac1e71e073eeb32c1c2f41d92dcbe839bd83c` 移除实际MCP handler默认计数门及退休包装器，同步活跃ACP persona、挂载skill与身份哈希；保留准确用户/工作区/Job、授权、分页形状和未知结果保护。首批回测接口脚本和2项架构用例通过，新增入口测试误要求只读GET带变更类observation header而FAIL，已停止并保留原件。统一核对读/写合同后仅修测试：重编译及ACP ingress另批通过，8次读取均有准确通用入口→GET→同ID结算，404正常结算，4种非法输入无入口/后端请求。新批36.788秒，小于180秒，原生和独立容器退出0、stderr空、无OOM，临时容器精确清理；原16服务稳定投影与14项源码哈希不变。分批复用原回测脚本及2项架构PASS，不称同批全套通过；live contract、Full CI、安装、新Product/模型/浏览器与生产均NOT_RUN。私有收据 `backtest-analysis-default-limit-v1/actual-v2/ROOT-OFFLINE-PASS.json`，SHA-256 `c4f53a0efc20c73c1369147cb8166635db4a32eaf0b539ebc188846b04b80cb9`。后续仅处理剩余活跃搜索/帮助提示中的累计次数条件，再单独验收聚合候选安装和真实流程。
+
 **活跃修正次数提示与接续许可措辞：限定离线软件 PASS，尚未安装。** 应用提交 `6c2b18f445488b2c50ba04e04bfdf861d807aa88` 移除 Backend/MCP 的默认一次修正提示，修订当前 ACP persona 及实际挂载的三份技能；保留四类业务阻断、准确授权、原失败输入拒绝和未知结果核对。旧 Backend 6项、配置/技能2项实际通过；其后只改两个 MCP 测试的 TypeScript 类型收窄，复用这8项，另批 MCP 构建及7个脚本通过，不称同批8项 pytest。新批72.668秒，小于180秒，原生终态与独立容器退出0、无OOM、stderr空；临时容器精确清理，原16容器完整稳定投影逐字节不变。既有 dev-check 静态门10文件通过。
 
-早先入口、采集及 TypeScript 构建失败原件保留。固定输出替身和含无健康检查容器的保存样本通过独立审查后，实际验证逐条直接调用原生命令，没有新增执行包装器或调度框架。模型和业务Job均为0。Tester、独立Sol→Root限定PASS：私有 `active-correction-guidance-v1/mcp-types-repair-v1/ROOT-OFFLINE-PASS.json`，SHA-256 `bbf2bd19639a3e97a288ccd34b235eed0dfab9c7227f664af5d44c29b3a8f736`。当前浏览器仍运行下述6b已安装版本；本片不代表新候选镜像、真实Product/模型、Full CI或生产资格。下一片先修实际生效的 Backtest 分析默认6次/5分钟读取门，保留分页形状与业务安全。
+早先入口、采集及 TypeScript 构建失败原件保留。固定输出替身和含无健康检查容器的保存样本通过独立审查后，实际验证逐条直接调用原生命令，没有新增执行包装器或调度框架。模型和业务Job均为0。Tester、独立Sol→Root限定PASS：私有 `active-correction-guidance-v1/mcp-types-repair-v1/ROOT-OFFLINE-PASS.json`，SHA-256 `bbf2bd19639a3e97a288ccd34b235eed0dfab9c7227f664af5d44c29b3a8f736`。当前浏览器仍运行下述6b已安装版本；本片不代表新候选镜像、真实Product/模型、Full CI或生产资格。后续Backtest读取门的限定结果见上文。
 
 **Agent 提交 Job 后自动接续：Tester → 独立 Sol → Root 限定 PASS。** 应用源码 `6b0d14dbd80f1f834b8179659f19bc33d0b2527f` 将 v3 工具准入同事务复用完整来源核验；新12项 Backend 路由回归通过。保留环境仅 Backend-f6 更新为 `sha256:5de7b8752da724aca251cd5859c9446cc1c8ced84e18bf3d696facdfecd792f4`，其余15容器身份、镜像和完整挂载不变。完整96路径安装源码包与冻结 manifest 相等，原账号、数据库卷、端口32790及原页面保留。安装和原始失败回执位于私有 `agent-origin-consumer-20261015-v1/authorize-tool-repair-v1/`。
 
