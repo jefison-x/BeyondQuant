@@ -36,7 +36,7 @@ import {
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
-  fetchBudgetedByqBacktestAnalysis,
+  fetchByqBacktestAnalysis,
   fetchByqBacktestLookup,
   type BacktestLookup,
   fetchByqBacktestTaskCancel,
@@ -159,7 +159,6 @@ import {
   type DataDemandRequest,
   type DataDemandLookup,
 } from "./data-demand.js";
-import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 import { fetchByqResearchStageInput } from "./research-judgment.js";
 import {
   fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackReceipt, fetchByqFeedbackList, fetchByqFeedbackOptions,
@@ -213,15 +212,6 @@ const ACP_DOMAIN_CALL_ACTIONS = new Set([
   "byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute", "byq_strategy_version_create",
 ]);
 const ACP_LOCAL_ONLY_TOOLS = new Set(["byq_product_help_query", "byq_workflow_card_propose"]);
-const BACKTEST_ANALYSIS_PAGE_LIMIT = boundedIntegerEnvironment(
-  "BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT", 6, 1, 20,
-);
-const BACKTEST_ANALYSIS_PAGE_WINDOW_MS = boundedIntegerEnvironment(
-  "BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS", 300_000, 1_000, 3_600_000,
-);
-const backtestAnalysisPageBudget = new PageCallBudget(
-  BACKTEST_ANALYSIS_PAGE_LIMIT, BACKTEST_ANALYSIS_PAGE_WINDOW_MS,
-);
 
 const webEvidenceContentSchema = z.object({
   schema_version: z.literal("web-research-evidence.v1"),
@@ -780,11 +770,8 @@ async function byqBacktestAnalysis(
 ) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
-  const decision = backtestAnalysisPageBudget.consume([
-    context.workspace_id, context.session_id, context.dsh_run_id, args.job_id,
-  ].join("/"));
-  return fetchBudgetedByqBacktestAnalysis(
-    BACKEND_URL, args.job_id, args, decision, trustedBackendFetcher(context),
+  return fetchByqBacktestAnalysis(
+    BACKEND_URL, args.job_id, args, trustedBackendFetcher(context),
   );
 }
 
@@ -1596,7 +1583,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_backtest_analysis_get",
     {
-      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. The summary already contains deterministic return, drawdown-window, daily-risk, realized-trade, cost, benchmark and blocked-order diagnostics and is sufficient for a normal review. Detail sections provide only a first-page evidence sample; raw daily/equity series and object-store results are intentionally unavailable to the Agent. Every successful result reports remaining calls. Exhaustion is a normal stop-and-answer result, never a reason to retry or wait.",
+      description: "Read one bounded, owner-scoped evidence page from an immutable completed BYQ backtest. The summary already contains deterministic return, drawdown-window, daily-risk, realized-trade, cost, benchmark and blocked-order diagnostics and is sufficient for a normal review. Detail sections provide a page of evidence; raw daily/equity series and object-store results are intentionally unavailable to the Agent. Select only sections needed to answer the user and do not walk has_more mechanically.",
       inputSchema: {
         job_id: z.string().regex(/^backtest_[0-9a-f]{32}$/),
         section: z.enum(["summary", "trades", "blocked_trades", "logs"]).default("summary"),

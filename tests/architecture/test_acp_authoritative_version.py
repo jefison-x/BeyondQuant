@@ -62,6 +62,34 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
             "sha256:" + self.manifest["profiles"]["product"]["sha256"],
         )
 
+    def test_active_backtest_analysis_guidance_has_no_default_call_quota(self) -> None:
+        profile = PRODUCT_PATCH.read_text(encoding="utf-8")
+        role = profile.split("    - id: delegate-backtest-analysis\n", 1)[1].split(
+            "\n    - id: ", 1
+        )[0]
+        for obsolete in (
+            "at most two detail calls",
+            "analysis_page_budget",
+            "remaining_calls",
+            "analysis_page_budget_exceeded",
+        ):
+            self.assertNotIn(obsolete, role)
+        self.assertIn("Authorize, read, and audit each exact analysis action separately.", role)
+        self.assertIn("approval-gated BYQ actions", role)
+        self.assertIn("do not walk has_more mechanically", role)
+
+        filesystem = profile.split("- id: skill-filesystem\n", 1)[1].split("- id:", 1)[0]
+        self.assertIn("includeDefaultRoots: false", filesystem)
+        self.assertIn("/opt/dsh/bundles/dsh-byq/skills", filesystem)
+        skill = (ROOT / "plugins/dsh-byq/skills/byq-backtest-analyst/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        for obsolete in ("at most two detail calls", "analysis_page_budget", "remaining_calls"):
+            self.assertNotIn(obsolete, skill)
+        self.assertIn("Read the bounded summary first", skill)
+        self.assertIn("Do not walk `has_more` mechanically", skill)
+        self.assertIn("Preserve approval, owner, workspace, and job boundaries.", skill)
+
     def test_public_fetch_is_bounded_to_product_market_research(self) -> None:
         profile = PRODUCT_PATCH.read_text(encoding="utf-8")
         provider = profile.split("- id: web-fetch-http\n", 1)[1].split("\n- id: ", 1)[0]

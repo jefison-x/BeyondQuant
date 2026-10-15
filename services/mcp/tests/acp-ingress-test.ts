@@ -50,6 +50,7 @@ function sha256(value: unknown): string {
 }
 
 const runId = "agent_run_" + "c".repeat(32);
+const analysisJobId = "backtest_" + "f".repeat(32);
 const bindReceipt = {
   schema_version: "byq-acp-agent-bind-receipt.v1",
   root_run_id: claims.root_run_id,
@@ -70,6 +71,7 @@ let bindingStatus: "pending" | "bound" = "bound";
 let domainMode: "success" | "reject422" | "conflict409" | "timeout" = "success";
 let settlementMode: "valid" | "invalid" = "valid";
 let authorizationDenialMode: "valid" | "missing" | "ok" = "valid";
+let backtestAnalysisMode: "success" | "not_found" = "success";
 let rootBound = false;
 let ingressSequence = 0;
 const settlements: Array<Record<string, unknown>> = [];
@@ -307,6 +309,41 @@ const backend = createServer(async (req, res) => {
     send(200, { schema_version: "research-task-context.v1", status: "available", has_more: false, tasks: [] });
     return;
   }
+  const analysisUrl = new URL(req.url ?? "/", "http://backend");
+  const analysisJob = analysisUrl.pathname.match(/^\/v1\/research\/backtests\/(backtest_[0-9a-f]{32})\/analysis$/);
+  if (req.method === "GET" && analysisJob) {
+    assert.equal(analysisJob[1], analysisJobId, "the requested immutable Job ID is preserved");
+    assert.equal(entry.headers.get("authorization"), null, "the MCP bearer is not forwarded to the read endpoint");
+    assert.equal(entry.headers.get("x-byq-owner-principal"), claims.owner_principal);
+    assert.equal(entry.headers.get("x-byq-workspace-id"), claims.workspace_id);
+    assert.equal(entry.headers.get("x-byq-actor-principal"), claims.actor_principal);
+    assert.equal(entry.headers.get("x-byq-trace-id"), claims.trace_id);
+    assert.equal(entry.headers.get("x-byq-session-id"), claims.session_id);
+    assert.equal(entry.headers.get("x-byq-dsh-run-id"), claims.dsh_run_id);
+    assert.equal(entry.headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+    assert.equal(entry.headers.get("x-byq-root-run-id"), claims.root_run_id);
+    assert.equal(entry.headers.get("x-byq-acp-observation-id"), null,
+      "read-only analysis uses trusted signed scope; generic ingress IDs stay private to MCP");
+    const section = analysisUrl.searchParams.get("section");
+    const limit = Number(analysisUrl.searchParams.get("limit"));
+    const offset = Number(analysisUrl.searchParams.get("offset"));
+    assert.ok(["summary", "trades", "blocked_trades", "logs"].includes(String(section)));
+    assert.ok(Number.isInteger(limit) && limit >= 1 && limit <= 20);
+    assert.equal(offset, 0, "the existing one-page request schema remains unchanged");
+    if (backtestAnalysisMode === "not_found") {
+      send(404, { detail: "not found" });
+      return;
+    }
+    send(200, { job_id: analysisJobId, analysis: {
+      schema_version: "backtest-analysis.v1",
+      section,
+      summary: { total_return: 0.12 },
+      ...(section === "summary" ? {} : {
+        page: { items: [{ sample: section }], total: 9, limit, offset, has_more: true },
+      }),
+    } });
+    return;
+  }
   if (req.url === "/v1/research/strategies/validate") {
     if (domainMode === "reject422") {
       send(422, { detail: { schema_version: "domain-call-admission.v1", state: "correctable_failure",
@@ -417,6 +454,9 @@ try {
   await acp.connect();
   const acpTools = await acp.value.listTools();
   assert.ok(acpTools.tools.some(tool => tool.name === "byq_agent_run_start"));
+  const backtestAnalysisTool = acpTools.tools.find(tool => tool.name === "byq_backtest_analysis_get");
+  assert.ok(backtestAnalysisTool);
+  assert.doesNotMatch(backtestAnalysisTool.description ?? "", /remaining calls|analysis_page_budget|exhaustion/i);
   const strategyValidationTool = acpTools.tools.find(tool => tool.name === "byq_strategy_validate");
   assert.ok(strategyValidationTool);
   assert.match(strategyValidationTool.description ?? "", /authoritative strategy contract/);
@@ -573,6 +613,157 @@ try {
   ].sort(), "private admission IDs and credentials are not tool arguments");
   assert.equal(JSON.stringify(backtestObservedArgs).includes(backendProof), false);
   const backtestObservationId = backtestIngresses[0].body!.mcp_request_id;
+  const analysisReads = [
+    ["summary", 1], ["trades", 2], ["blocked_trades", 3], ["logs", 4],
+    ["summary", 5], ["trades", 6], ["blocked_trades", 7], ["logs", 8],
+  ] as const;
+  const beforeAnalysisReads = requests.length;
+  for (const [section, limit] of analysisReads) {
+    const analysisResult = await acp.value.callTool({ name: "byq_backtest_analysis_get", arguments: {
+      job_id: analysisJobId, section, limit, offset: 0,
+    } });
+    assert.equal(analysisResult.isError, false);
+    const analysisText = analysisResult.content.find(item => item.type === "text");
+    assert.ok(analysisText && analysisText.type === "text");
+    const analysisPayload = JSON.parse(analysisText.text) as Record<string, unknown>;
+    assert.equal(analysisPayload.service, "beyondquant-mcp");
+    assert.equal(analysisPayload.status, "ok");
+    assert.equal(analysisPayload.job_id, analysisJobId);
+    const analysis = analysisPayload.analysis as Record<string, unknown>;
+    assert.equal(analysis.schema_version, "backtest-analysis.v1");
+    assert.equal(analysis.section, section);
+    if (section === "summary") {
+      assert.deepEqual(analysis.summary, { total_return: 0.12 });
+    } else {
+      assert.deepEqual(analysis.page, {
+        items: [{ sample: section }], total: 9, limit, offset: 0, has_more: true,
+      });
+    }
+  }
+  const analysisTrace = requests.slice(beforeAnalysisReads);
+  const analysisIngresses = analysisTrace.filter(request => request.path === "/internal/acp/tool-ingress-observe"
+    && request.body?.tool_name === "byq_backtest_analysis_get");
+  const analysisRequests = analysisTrace.filter(request =>
+    request.path.startsWith(`/v1/research/backtests/${analysisJobId}/analysis?`));
+  const analysisSettlements = analysisTrace.filter(request => request.path === "/internal/acp/tool-ingress-settle"
+    && request.body?.tool_name === "byq_backtest_analysis_get");
+  const expectedAnalysisArguments = analysisReads.map(([section, limit]) => ({
+    job_id: analysisJobId, section, limit, offset: 0,
+  }));
+  assert.equal(analysisIngresses.length, analysisReads.length,
+    "each ACP analysis read has its own generic durable tool ingress");
+  assert.equal(analysisRequests.length, analysisReads.length);
+  assert.equal(analysisSettlements.length, analysisReads.length,
+    "each ACP analysis read settles its exact generic ingress");
+  assert.ok(analysisRequests.length > 6, "all eight actual MCP handler calls must reach the fake Backend");
+  assert.deepEqual(analysisIngresses.map(request => request.body?.arguments), expectedAnalysisArguments,
+    "the generic ingress records the exact normalized read arguments");
+  assert.deepEqual(analysisRequests.map(request => {
+    const url = new URL(request.path, "http://backend");
+    return [url.searchParams.get("section"), Number(url.searchParams.get("limit")), Number(url.searchParams.get("offset"))];
+  }), analysisReads.map(([section, limit]) => [section, limit, 0]));
+  assert.equal(analysisTrace.filter(request => request.path === "/internal/acp/domain-call-observe").length, 0,
+    "read-only analysis does not use the specialized domain-mutation observation protocol");
+  for (const [index, ingressRequest] of analysisIngresses.entries()) {
+    const mcpRequestId = String(ingressRequest.body?.mcp_request_id);
+    assert.match(mcpRequestId, /^[0-9a-f]{32}$/);
+    assert.equal(ingressRequest.body?.root_run_id, claims.root_run_id);
+    assert.equal(ingressRequest.body?.runtime_boot_id, claims.runtime_boot_id);
+    const observed = observedIngress.get(mcpRequestId);
+    assert.ok(observed, "the generic observation receipt is retained in the MCP audit path");
+    assert.equal(observed.receipt.tool_name, "byq_backtest_analysis_get");
+    assert.equal(observed.receipt.root_run_id, claims.root_run_id);
+    assert.equal(observed.receipt.runtime_boot_id, claims.runtime_boot_id);
+    assert.deepEqual(observed.arguments, expectedAnalysisArguments[index]);
+    const exactSettlements = analysisSettlements.filter(request => request.body?.mcp_request_id === mcpRequestId);
+    assert.equal(exactSettlements.length, 1, "the matching ingress is settled exactly once");
+    const settlementRequest = exactSettlements[0];
+    assert.equal(settlementRequest.body?.outcome, "settled");
+    assert.equal(settlementRequest.body?.root_run_id, claims.root_run_id);
+    assert.equal(settlementRequest.body?.runtime_boot_id, claims.runtime_boot_id);
+    assert.equal(settlementRequest.body?.sequence, observed.receipt.sequence);
+    assert.equal(settlementRequest.body?.event_sha256, observed.receipt.event_sha256);
+    assert.ok(analysisTrace.indexOf(ingressRequest) < analysisTrace.indexOf(analysisRequests[index])
+      && analysisTrace.indexOf(analysisRequests[index]) < analysisTrace.indexOf(settlementRequest),
+    "each generic ingress precedes its read and exact settlement follows it");
+  }
+  assert.ok(analysisRequests.every(request => request.headers.get("x-byq-acp-observation-id") === null),
+    "the specialized observation header is not injected into read-only Backend requests");
+  assert.equal(analysisRequests[3].headers.get("x-byq-root-run-id"), claims.root_run_id);
+  assert.equal(analysisRequests[3].headers.get("x-byq-owner-principal"), claims.owner_principal);
+  assert.equal(analysisRequests[3].headers.get("x-byq-workspace-id"), claims.workspace_id);
+  assert.equal(analysisRequests[3].headers.get("x-byq-actor-principal"), claims.actor_principal);
+  assert.equal(analysisRequests[3].headers.get("x-byq-trace-id"), claims.trace_id);
+  assert.equal(analysisRequests[3].headers.get("x-byq-session-id"), claims.session_id);
+  assert.equal(analysisRequests[3].headers.get("x-byq-dsh-run-id"), claims.dsh_run_id);
+  assert.equal(analysisRequests[3].headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+  const beforeAnalysisError = requests.length;
+  backtestAnalysisMode = "not_found";
+  const missingAnalysis = await acp.value.callTool({ name: "byq_backtest_analysis_get", arguments: {
+    job_id: analysisJobId, section: "logs", limit: 20, offset: 0,
+  } });
+  assert.equal(missingAnalysis.isError, true, "Backend read failures retain their MCP error classification");
+  const missingAnalysisText = missingAnalysis.content.find(item => item.type === "text");
+  assert.ok(missingAnalysisText && missingAnalysisText.type === "text");
+  assert.deepEqual(JSON.parse(missingAnalysisText.text), {
+    service: "beyondquant-mcp", status: "error",
+    backend: { status: "backtest_not_found", http_status: 404 },
+  });
+  const missingAnalysisTrace = requests.slice(beforeAnalysisError);
+  const missingAnalysisIngresses = missingAnalysisTrace.filter(request =>
+    request.path === "/internal/acp/tool-ingress-observe"
+      && request.body?.tool_name === "byq_backtest_analysis_get");
+  const missingAnalysisRequests = missingAnalysisTrace.filter(request =>
+    request.path.startsWith(`/v1/research/backtests/${analysisJobId}/analysis?`));
+  assert.equal(missingAnalysisRequests.length, 1);
+  assert.equal(missingAnalysisIngresses.length, 1);
+  assert.equal(missingAnalysisTrace.filter(request => request.path === "/internal/acp/domain-call-observe").length, 0,
+    "the read-only 404 does not enter the specialized domain-mutation protocol");
+  const missingAnalysisIngress = missingAnalysisIngresses[0];
+  const missingAnalysisId = String(missingAnalysisIngress.body?.mcp_request_id);
+  assert.match(missingAnalysisId, /^[0-9a-f]{32}$/);
+  assert.equal(missingAnalysisIngress.body?.root_run_id, claims.root_run_id);
+  assert.equal(missingAnalysisIngress.body?.runtime_boot_id, claims.runtime_boot_id);
+  const missingAnalysisObserved = observedIngress.get(missingAnalysisId);
+  assert.ok(missingAnalysisObserved);
+  assert.equal(missingAnalysisObserved.receipt.tool_name, "byq_backtest_analysis_get");
+  assert.equal(missingAnalysisObserved.receipt.root_run_id, claims.root_run_id);
+  assert.equal(missingAnalysisObserved.receipt.runtime_boot_id, claims.runtime_boot_id);
+  assert.deepEqual(missingAnalysisObserved.arguments, {
+    job_id: analysisJobId, section: "logs", limit: 20, offset: 0,
+  });
+  const missingAnalysisSettlements = missingAnalysisTrace.filter(request =>
+    request.path === "/internal/acp/tool-ingress-settle"
+      && request.body?.tool_name === "byq_backtest_analysis_get"
+      && request.body?.mcp_request_id === missingAnalysisId);
+  assert.equal(missingAnalysisSettlements.length, 1);
+  assert.equal(missingAnalysisSettlements[0].body?.outcome, "settled",
+    "the explicitly allowlisted read's definite 404 settles its generic ingress");
+  assert.equal(missingAnalysisSettlements[0].body?.root_run_id, claims.root_run_id);
+  assert.equal(missingAnalysisSettlements[0].body?.runtime_boot_id, claims.runtime_boot_id);
+  assert.equal(missingAnalysisSettlements[0].body?.sequence, missingAnalysisObserved.receipt.sequence);
+  assert.equal(missingAnalysisSettlements[0].body?.event_sha256, missingAnalysisObserved.receipt.event_sha256);
+  assert.ok(missingAnalysisTrace.indexOf(missingAnalysisIngress)
+    < missingAnalysisTrace.indexOf(missingAnalysisRequests[0])
+    && missingAnalysisTrace.indexOf(missingAnalysisRequests[0])
+      < missingAnalysisTrace.indexOf(missingAnalysisSettlements[0]));
+  backtestAnalysisMode = "success";
+  const invalidAnalysisArguments = [
+    { job_id: analysisJobId, section: "overview", limit: 20, offset: 0 },
+    { job_id: analysisJobId, section: "daily_returns", limit: 20, offset: 0 },
+    { job_id: analysisJobId, section: "trades", limit: 21, offset: 0 },
+    { job_id: analysisJobId, section: "logs", limit: 20, offset: 1 },
+  ];
+  const beforeInvalidAnalysis = requests.length;
+  for (const arguments_ of invalidAnalysisArguments) {
+    const rejectedAnalysis = await acp.value.callTool({
+      name: "byq_backtest_analysis_get",
+      arguments: arguments_,
+    }).catch(() => ({ isError: true }));
+    assert.equal(rejectedAnalysis.isError, true, "invalid analysis page arguments remain rejected");
+  }
+  assert.equal(requests.length, beforeInvalidAnalysis,
+    "invalid analysis sections, raw-series requests, limits, and offsets never reach Backend");
   const backtestResultText = JSON.stringify(backtestResult);
   assert.equal(backtestResultText.includes(backendProof), false, "Backend proof credentials never reach the model result");
   assert.equal(backtestResultText.includes(String(backtestObservationId)), false,

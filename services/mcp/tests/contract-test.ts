@@ -228,37 +228,10 @@ try {
     "raw daily/equity series must stay outside the Agent analysis surface",
   );
 
-  const boundedJobId = "backtest_ffffffffffffffffffffffffffffffff";
-  for (let pageCall = 0; pageCall < 6; pageCall += 1) {
-    const attempted = await client.callTool({
-      name: "byq_backtest_analysis_get",
-      arguments: { job_id: boundedJobId, section: "summary", limit: 1, offset: 0 },
-    });
-    assert.equal(attempted.isError, true, "Backend rejection remains a real tool error before budget exhaustion");
-  }
-  const bounded = await client.callTool({
-    name: "byq_backtest_analysis_get",
-    arguments: { job_id: boundedJobId, section: "logs", limit: 1, offset: 0 },
-  });
-  assert.notEqual(bounded.isError, true, "budget exhaustion must remain a normal tool result");
-  const boundedText = bounded.content.find((block) => block.type === "text");
-  if (!boundedText || !("text" in boundedText)) {
-    throw new Error("bounded backtest analysis did not return a text result");
-  }
-  assert.deepEqual(JSON.parse(boundedText.text), {
-    service: "beyondquant-mcp",
-    status: "bounded",
-    analysis_page_budget: {
-      status: "exhausted",
-      call_limit: 6,
-      remaining_calls: 0,
-      backend_accessed: false,
-      must_answer_from_collected_evidence: true,
-      code: "analysis_page_budget_exceeded",
-      retryable: false,
-    },
-  });
-  console.log("MCP contract PASS: initialize, tools, health and normal bounded-analysis completion");
+  const backtestAnalysisTool = listed.tools.find((tool) => tool.name === "byq_backtest_analysis_get");
+  assert.ok(backtestAnalysisTool);
+  assert.doesNotMatch(backtestAnalysisTool.description ?? "", /remaining calls|analysis_page_budget|exhaustion/i);
+  console.log("MCP contract PASS: initialize, tools, health and bounded analysis schema");
 } finally {
   await client.close();
 }

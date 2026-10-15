@@ -24,25 +24,19 @@ Stable failure codes are `runtime-run-timeout`, `runtime-subagent-timeout`, and
 `runtime-no-progress-timeout`; all are retryable. Raw DSH event, tool argument,
 child-session state, stack trace, and credentials are never projected.
 
-## Backtest analysis page budget
+## Backtest analysis reads
 
-BeyondQuant MCP allows at most six `byq_backtest_analysis_get` calls for the
-same workspace, Product session, DSH correlation, and Backtest job in a rolling
-five-minute window. The budget is process-local and fail-closed for a request;
-it resets naturally after the window or MCP restart and never changes business
-data. Every successful read includes an `analysis_page_budget` projection with
-the call limit, remaining calls and whether the current response accessed
-Backend. The last allowed read sets `remaining_calls=0` and
-`must_answer_from_collected_evidence=true`.
+`byq_backtest_analysis_get` is an owner-scoped read of a completed immutable
+Backtest. Each request returns one bounded section page using the existing
+section and page-size schema. The summary is sufficient for a normal review;
+request additional sections only when their evidence is needed to answer the
+user. `has_more` reports that the Backend has more rows available; it is not an
+instruction to enumerate every page. Raw daily-return/equity series and
+object-store results remain outside the Agent surface.
 
-Calls beyond the limit do not access Backend. They return a normal, non-error
-bounded-completion result with `analysis_page_budget_exceeded`,
-`retryable=false`, `backend_accessed=false` and
-`must_answer_from_collected_evidence=true`. Budget exhaustion is a control
-result that tells the analyst to synthesize the evidence already held; it is
-not a tool failure and must not be retried or waited on.
-
-The analyst must read summary once, select only relevant evidence sections,
-never enumerate `has_more`, track the returned remaining-call count, and answer
-from already collected evidence when the budget is exhausted. The runtime
-inactivity guards and explicit deadlines remain enforced. This read budget is not a universal persistent tool-loop stop; the wider F7 coverage gap is unchanged.
+Accepted ADR-0111 supersedes the former fixed default of six calls in five
+minutes that was recorded by historical ADR-0003. The tool does not add a
+session-level call-count or wall-clock budget. Its bounded response schema,
+owner/workspace/job checks, trusted request context, authorization and audit
+requirements remain in force. Runtime liveness guards and any explicitly
+configured execution options remain separate controls.

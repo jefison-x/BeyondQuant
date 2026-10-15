@@ -1,6 +1,4 @@
 import { safeRequestValidation } from "./request-validation.js";
-import type { PageBudgetDecision } from "./page-budget.js";
-
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
@@ -12,14 +10,6 @@ export type BacktestRequest = Record<string, unknown>;
 export type ByqBacktestResult = {
   content: Array<{ type: "text"; text: string }>;
   isError: boolean;
-};
-
-export type BacktestAnalysisBudget = {
-  status: "available" | "exhausted";
-  call_limit: number;
-  remaining_calls: number;
-  backend_accessed: boolean;
-  must_answer_from_collected_evidence: boolean;
 };
 
 function result(payload: unknown, isError: boolean): ByqBacktestResult {
@@ -145,56 +135,6 @@ export function fetchByqBacktestAnalysis(
     { method: "GET" },
     fetcher,
   );
-}
-
-function analysisBudgetPayload(
-  decision: PageBudgetDecision,
-  backendAccessed: boolean,
-): BacktestAnalysisBudget {
-  return {
-    status: decision.remaining > 0 ? "available" : "exhausted",
-    call_limit: decision.limit,
-    remaining_calls: decision.remaining,
-    backend_accessed: backendAccessed,
-    must_answer_from_collected_evidence: decision.remaining === 0,
-  };
-}
-
-export async function fetchBudgetedByqBacktestAnalysis(
-  backendUrl: string,
-  jobId: string,
-  options: { section: string; limit: number; offset: number },
-  decision: PageBudgetDecision,
-  fetcher: Fetcher = fetch,
-): Promise<ByqBacktestResult> {
-  if (!decision.allowed) {
-    return result({
-      service: "beyondquant-mcp",
-      status: "bounded",
-      analysis_page_budget: {
-        ...analysisBudgetPayload(decision, false),
-        code: "analysis_page_budget_exceeded",
-        retryable: false,
-      },
-    }, false);
-  }
-
-  const fetched = await fetchByqBacktestAnalysis(
-    backendUrl, jobId, options, fetcher,
-  );
-  if (fetched.isError) return fetched;
-  const text = fetched.content[0]?.text;
-  if (typeof text !== "string") return fetched;
-  try {
-    const payload = JSON.parse(text) as unknown;
-    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return fetched;
-    return result({
-      ...(payload as Record<string, unknown>),
-      analysis_page_budget: analysisBudgetPayload(decision, true),
-    }, false);
-  } catch {
-    return fetched;
-  }
 }
 
 export function fetchByqSignalSnapshotGet(
