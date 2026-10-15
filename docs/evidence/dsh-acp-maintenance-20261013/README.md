@@ -29,6 +29,9 @@
 首批实际为 Backend10 PASS、Gateway8 PASS、Runtime5 PASS/1 SKIP，153.945秒内完成准备、执行、准确清理与环境复核，小于420秒。发现跳过即停止新增测试：旧用例只用FakeCompatibility/NotificationDTO，却按真实SDK版本跳过，静态入口审查漏查了此动态条件。重新核对完整合同后，仅明确纯回调用例名称和fake/nonACP断言、移除无关版本门；原23项按未变源码复用，只补跑该1项，1 PASS/0 SKIP，含清理复核33.567秒，小于180秒。两批原始记录分别保留，不能写成同批24项全通过，也不表示真实SDK/ACP载体资格。原生命令及独立容器状态均exit0、无OOM，stderr均空；原16服务ID/镜像/完整挂载不变，临时资源准确清理，模型/真实Product Job为0。Tester、独立Sol→Root收据见私有 `hidden-ingress-audit-v1/session-evidence-1024-v1/ROOT-OFFLINE-PASS.json`。剩余每Root调用/claims固定1024门、未知claims快照/投影门仍OPEN；当前浏览器继续运行已验收6b版本，500/4096/本次会话1024修补都尚未安装，Full CI、推送、合并与生产仍未执行。
 
 
+**每Root累计业务调用1024门：离线限定 PASS，尚未安装（2026-10-16，北京时间）。** 源码 `aca5ea6e0e48ebbc187c8ccb3ac8f307eaff01da` 只移除 Backend 每Root全部claims累计1024拒绝，以及 Runtime同Root已跟踪call ID累计1024拒绝；call ID关联、准确身份/证据、幂等、未知结果停止与用户显式执行参数保持。四文件 diff SHA-256 `04cc089d5ef85aa86bbe27dcf7bcfe1abe906906704aef94a457d57c51a3d3dd`。Backend3项、Runtime7项一次10 PASS/0 FAIL/0 SKIP，pytest5.63/1.39秒；含准备、准确清理与后核106.958秒，小于420秒，模型/真实Product Job为0。1024条合成已结清证据/claims历史之后，真实Store路径可observe/claim/execute第1025次并准确重放；不是执行了1024次真实业务。Runtime两种callback验证第1025调用仍被跟踪、重复通知不增游标、无关unknown结果不误停、准确关联的unknown仍导致原停止码与failed终态。测试替身只观察专用guard派发，不证明真实ACP过程清理。各采集/测试原生命令与独立容器均退出0、无OOM、stderr为空；5个临时容器和单内网准确删除，原16服务ID/镜像/完整挂载及四源码哈希不变。Tester、独立Sol→Root收据见私有 `hidden-per-root-count-audit-v1/actual-v1/ROOT-OFFLINE-PASS.json`。未知claims快照/投影数量门、“最多修正一次”当前架构依据，以及registration fingerprint的128条门可达性仍OPEN；本片不声称全部默认限制已清除，候选安装、浏览器/模型、Full CI与生产仍未验收。
+
+
 ## 历史浏览器切片与失败记录（以下保留各批次当时的结论）
 
 运行时/任务身份与用户登录/Job 提交身份已分开。真实核心运行源码为 `4c963fdef901b7c983343a930a8c54a1202bc424`；前端分轮修复源码为 `5ba25f2c775f8c04a271ea07ba9e7b8d1f786503`。保留环境现在是 `byq-dev-e8b02b5475` 的 16 个容器、端口32790及原账号/数据库卷。后台 Worker 新增运行，不带健康检查；其余15个容器有健康状态。未操作生产、推送或合并，不推进 Product Phase。
