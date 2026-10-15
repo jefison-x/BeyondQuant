@@ -14,6 +14,8 @@
 
 私有完整回执：`.ci-artifacts/agent-origin-consumer-20261015-v1/live-agent-origin-browser-v2/ROOT-LIVE-PASS.json`，关联 `TESTER-L2-FINAL-ACTUAL-REVIEW.json`、`L2/SOL-NATIVE-RESULTS-FINAL-REVIEW.json`、原生压缩记录、原始命令/stdout/stderr、SQL、AX及截图。**整体发布仍HOLD**：隐藏执行上限、两用户/迟到/未知结果和异常进程的剩余缺口须逐片核验；本候选Full CI、推送、合并、生产部署未执行，不推进Product Phase。
 
+**500条会话历史总数门：离线软件限定 PASS，尚未安装。** 源码审计发现 Backend 的 `LIMIT 501`/超过500拒绝和 Gateway 的同类门也阻断普通终态消息交付，不只影响恢复。最小修补移除这两个固定总数门，保留 owner/workspace/session/trace、schema、唯一Root、终态hash和未知结果校验；不修改另外的4096/1024门。501条合法历史闭合Root的 Backend 投影1项、Gateway恢复模块11项一次通过（pytest分别0.05/0.04秒），原生命令及独立容器均exit0、无OOM、stderr为空；断网/只读临时容器，无数据库、模型或Job调用。含准确清理117.4秒，小于240秒；保留16容器ID及源码四文件哈希前后不变。后置汇总记录的JS类型错误单独保留，无测试重跑。Tester、独立Sol→Root限定PASS见私有 `hidden-limit-audit-v1/ROOT-OFFLINE-PASS.json`；完整源码版本/冻结差异与原始回执同目录记录。当前浏览器仍运行前述已验收6b版本，不能把此软件PASS当作安装、真实超过500轮或生产证据。
+
 ## 历史浏览器切片与失败记录（以下保留各批次当时的结论）
 
 运行时/任务身份与用户登录/Job 提交身份已分开。真实核心运行源码为 `4c963fdef901b7c983343a930a8c54a1202bc424`；前端分轮修复源码为 `5ba25f2c775f8c04a271ea07ba9e7b8d1f786503`。保留环境现在是 `byq-dev-e8b02b5475` 的 16 个容器、端口32790及原账号/数据库卷。后台 Worker 新增运行，不带健康检查；其余15个容器有健康状态。未操作生产、推送或合并，不推进 Product Phase。

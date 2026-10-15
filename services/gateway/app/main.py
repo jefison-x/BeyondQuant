@@ -2232,7 +2232,7 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
             or body.get("schema_version") != "byq-business-root-status.v1"):
         raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     roots = body.get("roots")
-    if not isinstance(roots, list) or len(roots) > 500:
+    if not isinstance(roots, list):
         raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     validated: list[dict[str, object]] = []
     seen: set[str] = set()

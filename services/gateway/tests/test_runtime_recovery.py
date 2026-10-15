@@ -295,6 +295,67 @@ def test_backend_root_status_rejects_partial_or_unknown_terminal_snapshot(monkey
         project({**row, "terminal_unknown_claim_count": -1})
 
 
+def test_501_backend_roots_keep_tail_terminal_delivery_and_recovery_attested(monkeypatch) -> None:
+    session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
+    terminal = {
+        "session_id": SESSION_ID,
+        "trace_id": TRACE_ID,
+        "sequence": 1009,
+        "timestamp": "2026-10-04T00:00:00+00:00",
+        "source": "runtime-adapter",
+        "kind": "session.result",
+        "payload": {"run_id": ROOT_ID},
+    }
+    receipt = main.lifecycle_receipt(main.project_lifecycle_event(terminal, SESSION_ID, TRACE_ID))
+    rows = [{
+        "root_run_id": f"{index + 1:032x}",
+        "status": "completed",
+        "authority_status": "closed",
+        "terminal_sequence": 2 * (index + 1),
+        "terminal_event_sha256": f"{2 * (index + 1):064x}",
+        "terminal_acp_ingress_sequence": None,
+        "terminal_acp_ingress_sha256": None,
+        "terminal_unknown_claim_count": None,
+        "terminal_unknown_claims_sha256": None,
+    } for index in range(500)]
+    rows.append({
+        "root_run_id": ROOT_ID,
+        "status": "completed",
+        "authority_status": "closed",
+        "terminal_sequence": receipt["sequence"],
+        "terminal_event_sha256": receipt["event_sha256"],
+        "terminal_acp_ingress_sequence": 1,
+        "terminal_acp_ingress_sha256": "a" * 64,
+        "terminal_unknown_claim_count": 0,
+        "terminal_unknown_claims_sha256": "e" * 64,
+    })
+
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+        "schema_version": "byq-business-root-status.v1", "roots": rows,
+    })
+    assert len(main._runtime_root_rows(session)) == 501
+    assert main._attested_runtime_events([terminal], session) == [terminal]
+
+    binding = _binding("settled")
+    binding["settlement_receipt"] = receipt
+    assert main._verify_settled_recovery_binding(binding, session) == receipt
+
+    duplicate_rows = [*rows]
+    duplicate_rows[-1] = dict(duplicate_rows[0])
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+        "schema_version": "byq-business-root-status.v1", "roots": duplicate_rows,
+    })
+    with pytest.raises(main.HTTPException):
+        main._runtime_root_rows(session)
+
+    unknown_terminal = {**terminal, "payload": {"run_id": "f" * 32}}
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+        "schema_version": "byq-business-root-status.v1", "roots": rows,
+    })
+    with pytest.raises(main.HTTPException):
+        main._attested_runtime_events([unknown_terminal], session)
+
+
 def test_missing_recovery_binding_needs_zero_backend_roots_before_fresh_shell(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
