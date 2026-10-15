@@ -1364,10 +1364,8 @@ class DomainCallEvidenceMixin:
         claims = execute(connection, """SELECT claim_id,task_id,action,idempotency_key,request_sha256,
                     input_sha256,agent_run_id,evidence_sequence,status
                 FROM agent_domain_call_claims WHERE root_run_id=:root AND status IN ('claimed','executing')
-                ORDER BY claim_id LIMIT 4097""", {"root": root_run_id})
-        if len(claims) > 4096:
-            raise AgentConflict("ACP unresolved claim projection exceeds its bounded result")
-        bounded_claims = [{"claim_id": row["claim_id"], "task_id": row["task_id"],
+                ORDER BY claim_id""", {"root": root_run_id})
+        unknown_claims = [{"claim_id": row["claim_id"], "task_id": row["task_id"],
             "action": row["action"], "idempotency_key_sha256": hashlib.sha256(
                 row["idempotency_key"].encode("utf-8")).hexdigest(),
             "request_sha256": row["request_sha256"], "input_sha256": row["input_sha256"],
@@ -1375,10 +1373,10 @@ class DomainCallEvidenceMixin:
             "status": row["status"]} for row in claims]
         return {"terminal_acp_ingress_sequence": ingress_sequence,
             "terminal_acp_ingress_sha256": ingress_sha256,
-            "terminal_unknown_claim_count": len(bounded_claims),
+            "terminal_unknown_claim_count": len(unknown_claims),
             "terminal_unknown_claims_sha256": acp_binding_sha256({
                 "schema_version": "byq-acp-unknown-claims.v1", "root_run_id": root_run_id,
-                "claims": bounded_claims})}
+                "claims": unknown_claims})}
 
     def observe_acp_domain_call(self, payload: object, *, trusted_scope: dict) -> dict:
         from .agent_research import AgentConflict, AgentNotFound, AgentUnauthorized, _runtime_boot_id

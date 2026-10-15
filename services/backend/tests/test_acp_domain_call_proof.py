@@ -931,6 +931,330 @@ def test_acp_domain_claims_allow_1025th_call_after_settled_root_history():
         research.close()
 
 
+def test_acp_terminal_unknown_claim_projection_includes_all_4098_claims_and_blocks_close():
+    """Project every unresolved claim from a synthetic isolated-DB fixture.
+
+    Only the first observation/claim uses the live Store path; the remaining
+    rows are contract-shaped test data. No model, domain action, or worker runs.
+    Each task/action bucket has exactly one still-claimed (unresolved) entry.
+    """
+    ctx = _context("unknown-claim-projection-4098")
+    catalog, research, store = ConversationCatalogStore(), ResearchStore(), AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+
+        # Keep task ownership and conversation binding on the real ResearchStore path.
+        first_task = _create_task(ctx, catalog, research, "unknown-claim-projection-1")
+        tasks = [first_task]
+        trusted_context = {
+            "owner_principal": ctx["x-byq-owner-principal"],
+            "workspace_id": ctx["x-byq-workspace-id"],
+            "actor_principal": ctx["x-byq-actor-principal"],
+            "trace_id": ctx["x-byq-trace-id"],
+            "session_id": ctx["x-byq-session-id"],
+        }
+        # Use the real task Store for unique, owner/workspace/conversation-bound
+        # fixtures; each call commits its task and reads its durable projection.
+        for sequence in range(2, 4099):
+            task = research.create_task({
+                "owner_principal": ctx["x-byq-owner-principal"],
+                "title": "ACP unknown claim projection fixture",
+                "objective": "Create one exact task bucket for one unresolved claim",
+                "trace_id": ctx["x-byq-trace-id"],
+                "idempotency_key": f"unknown-claim-projection-{sequence}",
+            }, trusted_context=trusted_context)
+            assert task["conversation_id"] == first_task["conversation_id"]
+            tasks.append(task)
+        assert len(tasks) == 4098
+        task_ids = [task["task_id"] for task in tasks]
+        assert len(set(task_ids)) == 4098
+
+        root_native = str(uuid4())
+        root, root_identity = _open_root(
+            store, ctx, f"unknown-claim-projection-root-{uuid4().hex}", root_native,
+        )
+        _bind(store, ctx, root_identity)
+        child = _child(store, ctx, root, root_native, f"unknown-claim-projection-child-{uuid4().hex}")
+        _bind(store, ctx, child)
+        scope = _scope(ctx, root)
+
+        def arguments_for(task_id: str, sequence: int) -> dict[str, object]:
+            return {
+                "task_id": task_id,
+                "agent_run_id": child["agent_run_id"],
+                "idempotency_key": f"unknown-claim-projection-call-{sequence}",
+                "strategy": {"code": "SYNTHETIC_UNRESOLVED_PROJECTION"},
+            }
+
+        first_arguments = arguments_for(task_ids[0], 1)
+        first_observation = {
+            "schema_version": "byq-acp-domain-call-observe.v1",
+            "mcp_request_id": uuid4().hex,
+            "root_run_id": root,
+            "runtime_boot_id": authority["boot_id"],
+            "native_agent_session_id": child["native_agent_session_id"],
+            "action": "byq_strategy_validate",
+            "arguments": first_arguments,
+        }
+        first_receipt = store.observe_acp_domain_call(first_observation, trusted_scope=scope)
+        claim_kwargs = {
+            "trusted_owner": ctx["x-byq-owner-principal"],
+            "trusted_workspace": ctx["x-byq-workspace-id"],
+            "trusted_session_id": ctx["x-byq-session-id"],
+            "trusted_trace_id": ctx["x-byq-trace-id"],
+            "trusted_generation": ctx["x-byq-dsh-run-id"],
+            "trusted_root": root,
+            "trusted_boot_id": authority["boot_id"],
+            "trusted_acp_observation_id": first_receipt["mcp_request_id"],
+        }
+        assert store.claim_domain_call(
+            "byq_strategy_validate", first_arguments, **claim_kwargs,
+        )["state"] == "claimed"
+
+        evidence_rows = []
+        observation_rows = []
+        bucket_rows = []
+        claim_rows = []
+        # The first sequence above was written by observe_acp_domain_call. Seed
+        # its contract-equivalent suffix in one set-based fixture insert so the
+        # test never performs thousands of simulated tool/model calls.
+        for sequence, task_id in enumerate(task_ids[1:], start=2):
+            arguments = arguments_for(task_id, sequence)
+            evidence = request_evidence(
+                "byq_strategy_validate", arguments, trace_id=ctx["x-byq-trace-id"],
+            )
+            request_id = uuid4().hex
+            replay_identity = {
+                "mcp_request_id": request_id,
+                "owner_principal": ctx["x-byq-owner-principal"],
+                "workspace_id": ctx["x-byq-workspace-id"],
+                "actor_principal": ctx["x-byq-actor-principal"],
+                "session_id": ctx["x-byq-session-id"],
+                "trace_id": ctx["x-byq-trace-id"],
+                "dsh_run_id": ctx["x-byq-dsh-run-id"],
+                "runtime_boot_id": authority["boot_id"],
+                "root_run_id": root,
+                "native_agent_session_id": child["native_agent_session_id"],
+                "agent_run_id": evidence["agent_run_id"],
+                "task_id": evidence["task_id"],
+                "action": evidence["action"],
+                "idempotency_key": evidence["idempotency_key"],
+                "request_sha256": evidence["request_sha256"],
+                "input_sha256": evidence["input_sha256"],
+            }
+            event_sha256 = acp_binding_sha256({
+                **replay_identity, "sequence": sequence, "evidence_sequence": sequence,
+            })
+            stored_evidence = {
+                "schema_version": "domain-call-observed.v1",
+                "sequence": sequence,
+                "root_run_id": root,
+                "generation": ctx["x-byq-dsh-run-id"],
+                "call_id": "acp-" + request_id,
+                **evidence,
+            }
+            evidence_rows.append({
+                "owner_principal": ctx["x-byq-owner-principal"],
+                "workspace_id": ctx["x-byq-workspace-id"],
+                "session_id": ctx["x-byq-session-id"],
+                "trace_id": ctx["x-byq-trace-id"],
+                "sequence": sequence,
+                "root_run_id": root,
+                "generation": ctx["x-byq-dsh-run-id"],
+                "agent_run_id": evidence["agent_run_id"],
+                "task_id": evidence["task_id"],
+                "action": evidence["action"],
+                "idempotency_key": evidence["idempotency_key"],
+                "request_sha256": evidence["request_sha256"],
+                "input_sha256": evidence["input_sha256"],
+                "evidence_json": stored_evidence,
+                "receipt_json": call_evidence_receipt(stored_evidence),
+            })
+            observation_rows.append({
+                **replay_identity,
+                "sequence": sequence,
+                "evidence_sequence": sequence,
+                "event_sha256": event_sha256,
+                "receipt_json": {
+                    "schema_version": "byq-acp-domain-call-observation-receipt.v1",
+                    "mcp_request_id": request_id,
+                    "root_run_id": root,
+                    "sequence": sequence,
+                    "event_sha256": event_sha256,
+                },
+            })
+            bucket_rows.append({
+                "root_run_id": root,
+                "task_id": task_id,
+                "action": "byq_strategy_validate",
+                "owner_principal": ctx["x-byq-owner-principal"],
+                "workspace_id": ctx["x-byq-workspace-id"],
+            })
+            claim_rows.append({
+                "claim_id": uuid4().hex,
+                "root_run_id": root,
+                "task_id": task_id,
+                "action": evidence["action"],
+                "idempotency_key": evidence["idempotency_key"],
+                "request_sha256": evidence["request_sha256"],
+                "input_sha256": evidence["input_sha256"],
+                "evidence_sequence": sequence,
+                "agent_run_id": evidence["agent_run_id"],
+                "status": "claimed",
+                "result_json": None,
+            })
+
+        def encoded_rows(rows: list[dict[str, object]]) -> str:
+            return json.dumps(rows, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+
+        store._execute("""INSERT INTO agent_domain_call_evidence
+            (owner_principal,workspace_id,session_id,trace_id,sequence,root_run_id,generation,
+             agent_run_id,task_id,action,idempotency_key,request_sha256,input_sha256,evidence_json,receipt_json)
+            SELECT seeded.owner_principal,seeded.workspace_id,seeded.session_id,seeded.trace_id,
+             seeded.sequence,seeded.root_run_id,seeded.generation,seeded.agent_run_id,seeded.task_id,
+             seeded.action,seeded.idempotency_key,seeded.request_sha256,seeded.input_sha256,
+             seeded.evidence_json,seeded.receipt_json
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+             owner_principal text,workspace_id text,session_id text,trace_id text,sequence bigint,
+             root_run_id text,generation text,agent_run_id text,task_id text,action text,
+             idempotency_key text,request_sha256 text,input_sha256 text,evidence_json jsonb,receipt_json jsonb)""",
+            {"rows": encoded_rows(evidence_rows)})
+        store._execute("""INSERT INTO agent_acp_domain_call_observations
+            (mcp_request_id,owner_principal,workspace_id,actor_principal,session_id,trace_id,dsh_run_id,
+             runtime_boot_id,root_run_id,native_agent_session_id,sequence,evidence_sequence,agent_run_id,
+             task_id,action,idempotency_key,request_sha256,input_sha256,event_sha256,receipt_json)
+            SELECT seeded.mcp_request_id,seeded.owner_principal,seeded.workspace_id,seeded.actor_principal,
+             seeded.session_id,seeded.trace_id,seeded.dsh_run_id,seeded.runtime_boot_id,seeded.root_run_id,
+             seeded.native_agent_session_id,seeded.sequence,seeded.evidence_sequence,seeded.agent_run_id,
+             seeded.task_id,seeded.action,seeded.idempotency_key,seeded.request_sha256,seeded.input_sha256,
+             seeded.event_sha256,seeded.receipt_json
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+             mcp_request_id text,owner_principal text,workspace_id text,actor_principal text,session_id text,
+             trace_id text,dsh_run_id text,runtime_boot_id text,root_run_id text,native_agent_session_id text,
+             sequence bigint,evidence_sequence bigint,agent_run_id text,task_id text,action text,
+             idempotency_key text,request_sha256 text,input_sha256 text,event_sha256 text,receipt_json jsonb)""",
+            {"rows": encoded_rows(observation_rows)})
+        store._execute("""INSERT INTO agent_domain_correction_buckets
+            (root_run_id,task_id,action,owner_principal,workspace_id)
+            SELECT seeded.root_run_id,seeded.task_id,seeded.action,seeded.owner_principal,seeded.workspace_id
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+             root_run_id text,task_id text,action text,owner_principal text,workspace_id text)""",
+            {"rows": encoded_rows(bucket_rows)})
+        store._execute("""INSERT INTO agent_domain_call_claims
+            (claim_id,root_run_id,task_id,action,idempotency_key,request_sha256,input_sha256,
+             evidence_sequence,agent_run_id,status,result_json)
+            SELECT seeded.claim_id,seeded.root_run_id,seeded.task_id,seeded.action,seeded.idempotency_key,
+             seeded.request_sha256,seeded.input_sha256,seeded.evidence_sequence,seeded.agent_run_id,
+             seeded.status,seeded.result_json
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+             claim_id text,root_run_id text,task_id text,action text,idempotency_key text,
+             request_sha256 text,input_sha256 text,evidence_sequence bigint,agent_run_id text,
+             status text,result_json jsonb)""",
+            {"rows": encoded_rows(claim_rows)})
+
+        joined = store._fetch_one("""SELECT count(*) AS row_count,
+                count(DISTINCT claim.task_id) AS tasks,
+                count(DISTINCT (claim.task_id,claim.action)) AS buckets,
+                count(*) FILTER (WHERE claim.status='claimed') AS unresolved
+            FROM agent_domain_call_claims claim
+            JOIN research_tasks task ON task.task_id=claim.task_id
+                AND task.owner_principal=:owner AND task.workspace_id=:workspace
+                AND task.conversation_id=:conversation
+            JOIN agent_domain_call_evidence evidence
+                ON evidence.owner_principal=:owner AND evidence.workspace_id=:workspace
+                AND evidence.session_id=:session AND evidence.trace_id=:trace
+                AND evidence.generation=:generation AND evidence.root_run_id=claim.root_run_id
+                AND evidence.sequence=claim.evidence_sequence AND evidence.task_id=claim.task_id
+                AND evidence.action=claim.action AND evidence.agent_run_id=claim.agent_run_id
+                AND evidence.idempotency_key=claim.idempotency_key
+                AND evidence.request_sha256=claim.request_sha256 AND evidence.input_sha256=claim.input_sha256
+            JOIN agent_acp_domain_call_observations observation
+                ON observation.owner_principal=:owner AND observation.workspace_id=:workspace
+                AND observation.actor_principal=:actor
+                AND observation.session_id=:session AND observation.trace_id=:trace
+                AND observation.dsh_run_id=:generation AND observation.runtime_boot_id=:boot
+                AND observation.native_agent_session_id=:native_agent
+                AND observation.root_run_id=claim.root_run_id
+                AND observation.evidence_sequence=claim.evidence_sequence
+                AND observation.task_id=claim.task_id AND observation.action=claim.action
+                AND observation.agent_run_id=claim.agent_run_id
+                AND observation.idempotency_key=claim.idempotency_key
+                AND observation.request_sha256=claim.request_sha256
+                AND observation.input_sha256=claim.input_sha256
+            JOIN agent_domain_correction_buckets bucket
+                ON bucket.root_run_id=claim.root_run_id AND bucket.task_id=claim.task_id
+                AND bucket.action=claim.action AND bucket.owner_principal=:owner
+                AND bucket.workspace_id=:workspace
+            WHERE claim.root_run_id=:root AND claim.status IN ('claimed','executing')""", {
+                "owner": ctx["x-byq-owner-principal"],
+                "workspace": ctx["x-byq-workspace-id"],
+                "actor": ctx["x-byq-actor-principal"],
+                "conversation": first_task["conversation_id"],
+                "session": ctx["x-byq-session-id"],
+                "trace": ctx["x-byq-trace-id"],
+                "generation": ctx["x-byq-dsh-run-id"],
+                "boot": authority["boot_id"],
+                "native_agent": child["native_agent_session_id"],
+                "root": root,
+            })
+        assert joined == {"row_count": 4098, "tasks": 4098, "buckets": 4098, "unresolved": 4098}
+
+        with store._transaction() as connection:
+            store._lifecycle_lock(connection, "runtime-authority:current")
+            store._lifecycle_lock(connection, "root:" + root)
+            snapshot = store._acp_terminal_evidence_snapshot(connection, root)
+        # Read every unresolved row independently; the expected summary does not call
+        # _acp_terminal_evidence_snapshot and therefore detects a missing tail row.
+        claim_facts = store._execute("""SELECT claim_id,task_id,action,idempotency_key,
+                request_sha256,input_sha256,agent_run_id,evidence_sequence,status
+            FROM agent_domain_call_claims WHERE root_run_id=:root AND status IN ('claimed','executing')
+            ORDER BY claim_id""", {"root": root})
+        assert len(claim_facts) == 4098
+        assert [row["claim_id"] for row in claim_facts] == sorted(row["claim_id"] for row in claim_facts)
+        assert any(row["task_id"] == task_ids[-1] for row in claim_facts)
+        expected_claims = [{
+            "claim_id": row["claim_id"],
+            "task_id": row["task_id"],
+            "action": row["action"],
+            "idempotency_key_sha256": hashlib.sha256(row["idempotency_key"].encode("utf-8")).hexdigest(),
+            "request_sha256": row["request_sha256"],
+            "input_sha256": row["input_sha256"],
+            "agent_run_id": row["agent_run_id"],
+            "evidence_sequence": row["evidence_sequence"],
+            "status": row["status"],
+        } for row in claim_facts]
+        expected_unknown_sha256 = _test_acp_sha256({
+            "schema_version": "byq-acp-unknown-claims.v1",
+            "root_run_id": root,
+            "claims": expected_claims,
+        })
+        missing_sorted_tail_sha256 = _test_acp_sha256({
+            "schema_version": "byq-acp-unknown-claims.v1",
+            "root_run_id": root,
+            "claims": expected_claims[:-1],
+        })
+        assert snapshot["terminal_unknown_claim_count"] == 4098
+        assert snapshot["terminal_unknown_claims_sha256"] == expected_unknown_sha256
+        assert expected_unknown_sha256 != missing_sorted_tail_sha256
+        assert snapshot["terminal_acp_ingress_sequence"] == 4098
+
+        with pytest.raises(AgentConflict, match="unresolved ACP domain call claim prevents root close"):
+            store.close_runtime_root(root, boot_id=authority["boot_id"], sequence=2,
+                outcome="interrupted", event_sha256="a" * 64)
+        root_row = store._fetch_one("""SELECT status,authority_status,terminal_sequence,
+                terminal_event_sha256,terminal_unknown_claim_count
+            FROM agent_runtime_turns WHERE root_run_id=:root""", {"root": root})
+        assert root_row == {
+            "status": "active", "authority_status": "active", "terminal_sequence": None,
+            "terminal_event_sha256": None, "terminal_unknown_claim_count": None,
+        }
+    finally:
+        store.close()
+        catalog.close()
+        research.close()
+
+
 def test_acp_pending_registration_marker_is_atomic_under_competing_child_start_and_blocks_transfer():
     ctx = _context("race")
     first, second = AgentResearchStore(), AgentResearchStore()

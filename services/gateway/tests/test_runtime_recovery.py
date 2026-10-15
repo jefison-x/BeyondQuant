@@ -239,7 +239,8 @@ def test_settled_acp_recovery_requires_frozen_backend_cursor_and_no_unknown_clai
     monkeypatch.setattr(main, "_runtime_root_rows", lambda _session: [row])
     assert main._verify_settled_recovery_binding(binding, session) == binding["settlement_receipt"]
     for altered in ({**row, "terminal_acp_ingress_sequence": None},
-                    {**row, "terminal_unknown_claim_count": 1}):
+                    {**row, "terminal_unknown_claim_count": 1},
+                    {**row, "terminal_unknown_claim_count": 4098}):
         monkeypatch.setattr(main, "_runtime_root_rows", lambda _session, value=altered: [value])
         with pytest.raises(main.ProductError):
             main._verify_settled_recovery_binding(binding, session)
@@ -275,6 +276,15 @@ def test_backend_closed_before_adapter_ack_recovers_without_transfer_or_prompt(m
     assert main._restore_product_session(CONVERSATION_ID, PRINCIPAL, WORKSPACE_ID).boot_id == NEW_BOOT_ID
     assert calls[-1] == (f"/internal/runtime/sessions/{SESSION_ID}/recover",
                           {"receipt": receipt, "initial_sequence": 9})
+    recovery_calls = list(calls)
+    session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
+    for unknown_count in (1, 4098):
+        unknown_row = {**row, "terminal_unknown_claim_count": unknown_count}
+        monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+            "schema_version": "byq-business-root-status.v1", "roots": [unknown_row]})
+        with pytest.raises(main.ProductError):
+            main._closed_before_adapter_ack_receipt(_binding("transfer_required"), session)
+    assert calls == recovery_calls
 
 
 def test_backend_root_status_rejects_partial_or_unknown_terminal_snapshot(monkeypatch) -> None:
@@ -300,9 +310,11 @@ def test_backend_root_status_rejects_partial_or_unknown_terminal_snapshot(monkey
             project({**row, "terminal_acp_ingress_sequence": cursor})
     with pytest.raises(main.HTTPException):
         project({**row, "terminal_acp_ingress_sha256": "not-a-digest"})
-    for unknown_count in (-1, 1025):
+    for unknown_count in (-1, True, "4098", 1.5):
         with pytest.raises(main.HTTPException):
             project({**row, "terminal_unknown_claim_count": unknown_count})
+    large_unknown = {**row, "terminal_unknown_claim_count": 4098}
+    assert project(large_unknown) == [large_unknown]
 
 
 def test_501_backend_roots_keep_tail_terminal_delivery_and_recovery_attested(monkeypatch) -> None:
