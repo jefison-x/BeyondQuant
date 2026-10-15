@@ -218,6 +218,16 @@ def _v3_runtime_root(fixture, *, close=True, session_id=None, trace_id=None, out
     return root_id, store, authority['boot_id']
 
 
+def _v3_bound_conversation(owner, *, session_id, trace_id):
+    """Create a real personal-scope conversation for mismatched-root negatives."""
+    headers = trusted_agent_context(owner, trace_id=trace_id, session_id=session_id)
+    context = {key.removeprefix('x-byq-').replace('-', '_'): value
+               for key, value in headers.items()}
+    catalog = ConversationCatalogStore()
+    conversation = catalog.create(owner, session_id, trace_id)['conversation_id']
+    return catalog, context, conversation
+
+
 def _v3_usage(carrier):
     return continuation_request_usage_v2(
         execution_profile=carrier['execution_profile'],
@@ -1587,7 +1597,7 @@ def test_v3_settlement_keeps_cancelled_snapshot_liability_after_option_change(mo
 
 
 @pytest.mark.parametrize('evidence_case', [
-    'missing_root', 'active_root', 'wrong_owner', 'wrong_workspace',
+    'missing_root', 'active_root', 'foreign_personal_scope',
     'wrong_session', 'wrong_trace', 'unknown_claim_count',
 ])
 def test_v3_settlement_refuses_unclosed_or_mismatched_runtime_evidence(
@@ -1597,6 +1607,7 @@ def test_v3_settlement_refuses_unclosed_or_mismatched_runtime_evidence(
     root_id = None
     runtime_store = None
     runtime_boot_id = None
+    alternate_catalog = None
     try:
         entry = reserve_v3(fixture)
         carrier = entry['reservation']
@@ -1607,6 +1618,38 @@ def test_v3_settlement_refuses_unclosed_or_mismatched_runtime_evidence(
             root_id = uuid4().hex
         elif evidence_case == 'active_root':
             root_id, runtime_store, runtime_boot_id = _v3_runtime_root(fixture, close=False)
+        elif evidence_case == 'foreign_personal_scope':
+            # The current contract gives each user exactly one personal
+            # workspace. A valid foreign workspace therefore also has a
+            # foreign owner; do not fabricate an owner/workspace mismatch.
+            foreign_owner = f"continuation-foreign-{uuid4().hex}"
+            foreign_session = f"foreign-session-{uuid4().hex}"
+            foreign_trace = f"foreign-trace-{uuid4().hex}"
+            alternate_catalog, foreign_context, foreign_conversation = _v3_bound_conversation(
+                foreign_owner, session_id=foreign_session, trace_id=foreign_trace)
+            foreign_binding = fixture['store']._fetch_one('''SELECT owner_principal, workspace_id,
+                    runtime_session_id, trace_id FROM product_conversations
+                    WHERE conversation_id=:conversation''', {'conversation': foreign_conversation})
+            assert foreign_binding == {
+                'owner_principal': foreign_owner,
+                'workspace_id': foreign_context['workspace_id'],
+                'runtime_session_id': foreign_session,
+                'trace_id': foreign_trace,
+            }
+            assert foreign_context['owner_principal'] != context['owner_principal']
+            assert foreign_context['workspace_id'] != context['workspace_id']
+            foreign_fixture = {**fixture, 'context': foreign_context,
+                               'conversation': foreign_conversation}
+            root_id, runtime_store, runtime_boot_id = _v3_runtime_root(foreign_fixture)
+            foreign_root = runtime_store._fetch_one('''SELECT owner_principal, workspace_id,
+                    session_id, trace_id FROM agent_runtime_turns WHERE root_run_id=:root''',
+                {'root': root_id})
+            assert foreign_root == {
+                'owner_principal': foreign_context['owner_principal'],
+                'workspace_id': foreign_context['workspace_id'],
+                'session_id': foreign_session,
+                'trace_id': foreign_trace,
+            }
         elif evidence_case == 'wrong_session':
             root_id, runtime_store, runtime_boot_id = _v3_runtime_root(
                 fixture, session_id='wrong-runtime-session')
@@ -1615,13 +1658,7 @@ def test_v3_settlement_refuses_unclosed_or_mismatched_runtime_evidence(
                 fixture, trace_id='wrong-runtime-trace')
         else:
             root_id, runtime_store, runtime_boot_id = _v3_runtime_root(fixture)
-            if evidence_case == 'wrong_owner':
-                runtime_store._execute('''UPDATE agent_runtime_turns
-                    SET owner_principal='other-owner' WHERE root_run_id=:root''', {'root': root_id})
-            elif evidence_case == 'wrong_workspace':
-                runtime_store._execute('''UPDATE agent_runtime_turns
-                    SET workspace_id='other-workspace' WHERE root_run_id=:root''', {'root': root_id})
-            else:
+            if evidence_case == 'unknown_claim_count':
                 runtime_store._execute('''UPDATE agent_runtime_turns
                     SET terminal_unknown_claim_count=1 WHERE root_run_id=:root''', {'root': root_id})
 
@@ -1639,6 +1676,8 @@ def test_v3_settlement_refuses_unclosed_or_mismatched_runtime_evidence(
                 outcome='completed')
         assert continuation_budget(store, task) == before
     finally:
+        if alternate_catalog is not None:
+            alternate_catalog.close()
         if root_id is not None and runtime_store is not None:
             root = runtime_store._fetch_one(
                 'SELECT status FROM agent_runtime_turns WHERE root_run_id=:root', {'root': root_id})
