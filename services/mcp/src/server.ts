@@ -468,6 +468,26 @@ function trustedBackendFetcher(context: CompleteAgentContext): typeof fetch {
   };
 }
 
+function backtestTaskCreateFetcher(context: CompleteAgentContext): typeof fetch | undefined {
+  const auth = context[privateAuth];
+  if (auth?.kind !== "acp-agent") return trustedBackendFetcher(context);
+
+  const observationId = context[privateObservationId];
+  if (!BACKEND_PROOF_TOKEN || !/^[0-9a-f]{32}$/.test(observationId ?? "")) return undefined;
+
+  const trustedFetch = trustedBackendFetcher(context);
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", `Bearer ${BACKEND_PROOF_TOKEN}`);
+    headers.set("x-byq-acp-native-agent-session-id", auth.claims.native_agent_session_id);
+    headers.set("x-byq-acp-native-root-session-id", auth.claims.native_root_session_id);
+    headers.set("x-byq-acp-native-parent-session-id", auth.claims.native_parent_session_id ?? "");
+    headers.set("x-byq-acp-origin", auth.claims.origin);
+    headers.set("x-byq-acp-depth", String(auth.claims.depth));
+    return trustedFetch(input, { ...init, headers });
+  };
+}
+
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
@@ -775,7 +795,11 @@ async function byqBacktestTaskPrepare(args: BacktestRequest, extra: unknown) {
 
 async function byqBacktestTaskCreate(args: BacktestRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestTaskCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const fetcher = backtestTaskCreateFetcher(context);
+  return fetcher
+    ? fetchByqBacktestTaskCreate(BACKEND_URL, args, fetcher)
+    : acpBridgeUnavailable("acp_backtest_task_admission_unavailable");
 }
 
 async function byqBacktestTaskGet(args: BacktestTaskLookup, extra: unknown) {
@@ -1074,6 +1098,13 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = await (callback as (...args: unknown[]) => unknown)(
                       toolArgs, callContext, ...callArgs.slice(2));
                   }
+                } else if (auth.kind === "acp-agent" && name === "byq_backtest_task_create") {
+                  // The generic ingress receipt is the Backend's exact Job
+                  // admission claim; this action does not use the strategy
+                  // domain-call evidence protocol.
+                  const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
+                  handlerResult = await (callback as (...args: unknown[]) => unknown)(
+                    toolArgs, callContext, ...callArgs.slice(2));
                 } else if (auth.kind === "acp-agent" && name === "byq_agent_authorize") {
                   const authorization = await fetchAcpAgentAuthorize(BACKEND_URL, ingressProof,
                     auth.claims, ingress, ingressArgs);
@@ -1523,7 +1554,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string().min(1).max(128),
       },
     },
-    (args) => byqBacktestTaskCreate(args, trustedContext),
+    (args, extra) => byqBacktestTaskCreate(args, admittedReadContext(extra)),
   );
   registerTool(
     "byq_backtest_task_get",

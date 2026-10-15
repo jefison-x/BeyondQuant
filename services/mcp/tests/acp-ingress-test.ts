@@ -326,6 +326,36 @@ const backend = createServer(async (req, res) => {
     send(200, { artifact: { artifact_id: "artifact_" + "e".repeat(32), status: "validated" } });
     return;
   }
+  if (req.url === "/v1/research/backtest-tasks" && req.method === "POST") {
+    const authorization = entry.headers.get("authorization");
+    if (authorization === `Bearer ${backendProof}`) {
+      const observationId = entry.headers.get("x-byq-acp-observation-id");
+      assert.equal(entry.headers.get("x-byq-acp-native-agent-session-id"), claims.native_agent_session_id);
+      assert.equal(entry.headers.get("x-byq-acp-native-root-session-id"), claims.native_root_session_id);
+      assert.equal(entry.headers.get("x-byq-acp-native-parent-session-id"), "");
+      assert.equal(entry.headers.get("x-byq-acp-origin"), "root");
+      assert.equal(entry.headers.get("x-byq-acp-depth"), "0");
+      assert.equal(entry.headers.get("x-byq-root-run-id"), claims.root_run_id);
+      assert.equal(entry.headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+      assert.match(String(observationId), /^[0-9a-f]{32}$/);
+      const observed = observedIngress.get(String(observationId));
+      assert.ok(observed, "backtest admission must use the exact observed generic ingress ID");
+      assert.equal(observed.receipt.mcp_request_id, observationId);
+      assert.equal(observed.receipt.tool_name, "byq_backtest_task_create");
+      assert.deepEqual(body, observed.arguments,
+        "the final Backend body must exactly match the Zod-normalized observed arguments");
+    } else {
+      assert.equal(authorization, null, "legacy backtest create must not receive the Backend proof bearer");
+      assert.equal(entry.headers.get("x-byq-acp-native-agent-session-id"), null);
+      assert.equal(entry.headers.get("x-byq-acp-native-root-session-id"), null);
+      assert.equal(entry.headers.get("x-byq-acp-native-parent-session-id"), null);
+      assert.equal(entry.headers.get("x-byq-acp-origin"), null);
+      assert.equal(entry.headers.get("x-byq-acp-depth"), null);
+      assert.equal(entry.headers.get("x-byq-acp-observation-id"), null);
+    }
+    send(201, { task: { task_id: body?.task_id, status: "prepared" } });
+    return;
+  }
   send(404, { detail: "not found" });
 });
 await new Promise<void>(resolve => backend.listen(0, "127.0.0.1", resolve));
@@ -491,6 +521,60 @@ try {
   assert.ok(readOnlyIngress);
   assert.equal(settlements.find(entry => entry.mcp_request_id === readOnlyIngress.body?.mcp_request_id)?.outcome,
     "settled", "only the explicit read-only allowlist settles a completed read error");
+
+  const backtestArgs = {
+    task_id: "task-wire",
+    strategy_version_artifact_id: "artifact_" + "c".repeat(32),
+    stock_pool_snapshot_id: "snapshot_" + "d".repeat(32),
+    start_date: "2024-01-01",
+    end_date: "2024-01-31",
+    idempotency_key: "acp-backtest-origin-wire",
+  };
+  const beforeBacktestCall = requests.length;
+  const beforeBacktestIngress = requests.filter(request => request.path === "/internal/acp/tool-ingress-observe").length;
+  const beforeBacktestDomainObservation = requests.filter(request => request.path === "/internal/acp/domain-call-observe").length;
+  const backtestResult = await acp.value.callTool({ name: "byq_backtest_task_create", arguments: backtestArgs });
+  assert.equal(backtestResult.isError, false);
+  const backtestRequests = requests.slice(beforeBacktestCall);
+  const backtestIngresses = backtestRequests.filter(request => request.path === "/internal/acp/tool-ingress-observe");
+  const backtestClaim = backtestRequests.find(request => request.path === "/v1/research/backtest-tasks");
+  assert.equal(requests.filter(request => request.path === "/internal/acp/tool-ingress-observe").length,
+    beforeBacktestIngress + 1, "backtest create uses one generic ingress observation");
+  assert.equal(requests.filter(request => request.path === "/internal/acp/domain-call-observe").length,
+    beforeBacktestDomainObservation, "backtest create does not use strategy domain-call observation");
+  assert.equal(backtestIngresses.length, 1);
+  assert.ok(backtestIngresses[0].body && backtestClaim?.body);
+  assert.equal(backtestClaim!.headers.get("authorization"), `Bearer ${backendProof}`);
+  assert.equal(backtestClaim!.headers.get("x-byq-acp-native-agent-session-id"), claims.native_agent_session_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-acp-native-root-session-id"), claims.native_root_session_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-acp-native-parent-session-id"), "");
+  assert.equal(backtestClaim!.headers.get("x-byq-acp-origin"), "root");
+  assert.equal(backtestClaim!.headers.get("x-byq-acp-depth"), "0");
+  assert.equal(backtestClaim!.headers.get("x-byq-root-run-id"), claims.root_run_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-acp-observation-id"),
+    String(backtestIngresses[0].body!.mcp_request_id));
+  assert.equal(backtestClaim!.headers.get("x-byq-owner-principal"), claims.owner_principal);
+  assert.equal(backtestClaim!.headers.get("x-byq-workspace-id"), claims.workspace_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-actor-principal"), claims.actor_principal);
+  assert.equal(backtestClaim!.headers.get("x-byq-session-id"), claims.session_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-trace-id"), claims.trace_id);
+  assert.equal(backtestClaim!.headers.get("x-byq-dsh-run-id"), claims.dsh_run_id);
+  const backtestObservedArgs = backtestIngresses[0].body!.arguments as Record<string, unknown>;
+  assert.equal(backtestObservedArgs.order_quantity, 100, "Zod's default order quantity is part of the observed arguments");
+  assert.deepEqual(backtestClaim.body, backtestObservedArgs);
+  assert.deepEqual(Object.keys(backtestObservedArgs).sort(), [
+    "end_date", "idempotency_key", "order_quantity", "start_date", "stock_pool_snapshot_id",
+    "strategy_version_artifact_id", "task_id",
+  ].sort(), "private admission IDs and credentials are not tool arguments");
+  assert.equal(JSON.stringify(backtestObservedArgs).includes(backendProof), false);
+  const backtestObservationId = backtestIngresses[0].body!.mcp_request_id;
+  const backtestResultText = JSON.stringify(backtestResult);
+  assert.equal(backtestResultText.includes(backendProof), false, "Backend proof credentials never reach the model result");
+  assert.equal(backtestResultText.includes(String(backtestObservationId)), false,
+    "the private observation ID never reaches the model result");
+  assert.equal(JSON.stringify(backtestArgs).includes(String(backtestObservationId)), false,
+    "the private observation ID is not supplied as a model argument");
 
   const actionArgs = { task_id: "task-wire", agent_run_id: "model-supplied-run",
     idempotency_key: "acp-strategy-validation", trace_id: "untrusted-trace",
@@ -658,6 +742,7 @@ try {
     "x-byq-runtime-boot-id": claims.runtime_boot_id, "x-byq-root-run-id": claims.root_run_id,
   });
   await legacy.connect();
+  clients.push(legacy.value);
   const beforeLegacy = requests.length;
   const legacyResult = await legacy.value.callTool({ name: "byq_strategy_validate", arguments: {
     ...actionArgs, idempotency_key: "legacy-rollback-path",
@@ -667,6 +752,18 @@ try {
   assert.ok(legacyClaim);
   assert.equal(legacyClaim.headers.get("x-byq-acp-observation-id"), null,
     "legacy carrier remains distinct and does not borrow ACP global fallback identity");
+  const legacyBacktestResult = await legacy.value.callTool({ name: "byq_backtest_task_create", arguments: backtestArgs });
+  assert.equal(legacyBacktestResult.isError, false);
+  const legacyBacktestClaim = requests.slice().reverse().find(request => request.path === "/v1/research/backtest-tasks");
+  assert.ok(legacyBacktestClaim);
+  assert.equal(legacyBacktestClaim.headers.get("authorization"), null,
+    "legacy backtest create keeps its existing unauthenticated compatibility request");
+  assert.equal(legacyBacktestClaim.headers.get("x-byq-acp-native-agent-session-id"), null);
+  assert.equal(legacyBacktestClaim.headers.get("x-byq-acp-native-root-session-id"), null);
+  assert.equal(legacyBacktestClaim.headers.get("x-byq-acp-native-parent-session-id"), null);
+  assert.equal(legacyBacktestClaim.headers.get("x-byq-acp-origin"), null);
+  assert.equal(legacyBacktestClaim.headers.get("x-byq-acp-depth"), null);
+  assert.equal(legacyBacktestClaim.headers.get("x-byq-acp-observation-id"), null);
 
   console.log("ACP MCP ingress: discovery-only, signed Agent context, generic and specialized durable observation, two-phase settlement and exact bind reconciliation PASS");
 } finally {

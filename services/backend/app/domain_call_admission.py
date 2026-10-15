@@ -511,6 +511,203 @@ class DomainCallEvidenceMixin:
             raise AgentConflict("research-judgment ingress AgentRun does not match its root binding")
         return run["run_id"]
 
+    def authorize_acp_backtest_task_submission(
+        self,
+        connection,
+        *,
+        mcp_request_id: object,
+        arguments: object,
+        task_id: object,
+        trusted_scope: dict,
+        trusted_identity: dict,
+        existing_job: dict | None = None,
+    ) -> dict:
+        """Bind one backtest Job admission to its exact persisted ACP tool ingress.
+
+        This runs on SignalJobStore's acceptance connection: the current root,
+        native AgentRun, tool request, Product task and Job origin therefore
+        share one transaction.  It returns only identity/role facts; the
+        caller evaluates mutable owner policy under that same connection.
+        """
+        from .agent_research import AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized
+        from .agent_research import _entity_id, _text
+
+        if not isinstance(mcp_request_id, str) or _ACP_REQUEST_ID.fullmatch(mcp_request_id) is None:
+            raise AgentUnauthorized("exact ACP tool ingress identity is required")
+        request_task = _entity_id(task_id, field="task_id", prefix="task")
+        if not isinstance(arguments, dict) or arguments.get("task_id") != request_task:
+            raise AgentConflict("backtest Job arguments do not match the exact Product task")
+        idempotency_key = _text(arguments.get("idempotency_key"), field="idempotency_key", max_length=128)
+        arguments_sha256, _ = _canonical_acp_arguments(arguments)
+        identity = self._normalize_acp_agent_identity(trusted_identity)
+        scope = {"owner": trusted_scope["owner"], "workspace": trusted_scope["workspace"],
+                 "actor": trusted_scope["actor"], "session": trusted_scope["session"],
+                 "trace": trusted_scope["trace"], "generation": trusted_scope["generation"]}
+        if (identity["root_run_id"] != trusted_scope["root"]
+                or identity["runtime_boot_id"] != trusted_scope["boot_id"]
+                or scope["actor"] != "byq-product-agent-" + scope["session"]
+                or scope["actor"] == scope["owner"]):
+            raise AgentUnauthorized("ACP backtest admission does not match its signed Agent identity")
+
+        # Match the lock order used by observe/settle: boot authority, active
+        # owner workspace, exact request, then exact root.
+        self._lifecycle_lock(connection, "runtime-authority:current")
+        self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
+        authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
+        self._lifecycle_lock(connection, "acp-mcp-request:" + mcp_request_id)
+        self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+
+        root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+            WHERE root_run_id=:root FOR SHARE""", {"root": identity["root_run_id"]})
+        if root is None:
+            raise AgentNotFound("ACP Backend root not found")
+        if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (
+                scope["owner"], scope["workspace"], scope["session"], scope["trace"]):
+            raise AgentUnauthorized("ACP backtest admission does not match the exact Backend root scope")
+
+        ingress = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:id FOR UPDATE""", {"id": mcp_request_id})
+        if ingress is None:
+            raise AgentNotFound("ACP tool ingress receipt not found")
+        expected = {
+            "owner_principal": scope["owner"], "workspace_id": scope["workspace"],
+            "actor_principal": scope["actor"], "session_id": scope["session"],
+            "trace_id": scope["trace"], "dsh_run_id": scope["generation"],
+            "runtime_boot_id": identity["runtime_boot_id"], "root_run_id": identity["root_run_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "tool_name": "byq_backtest_task_create", "arguments_sha256": arguments_sha256,
+        }
+        if any(ingress.get(key) != value for key, value in expected.items()):
+            raise AgentConflict("ACP tool ingress does not match this exact backtest request")
+        if ingress.get("agent_run_id") is None:
+            raise AgentForbidden("backtest task creation requires a bound native AgentRun")
+
+        event = {"sequence": ingress["sequence"], "owner_principal": scope["owner"],
+            "workspace_id": scope["workspace"], "actor_principal": scope["actor"],
+            "session_id": scope["session"], "trace_id": scope["trace"],
+            "dsh_run_id": scope["generation"], "agent_run_id": ingress["agent_run_id"],
+            "root_run_id": identity["root_run_id"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "tool_name": "byq_backtest_task_create", "arguments_sha256": arguments_sha256}
+        event_sha256 = acp_binding_sha256(event)
+        receipt = {"schema_version": "byq-acp-tool-ingress-receipt.v1",
+            "mcp_request_id": mcp_request_id, "root_run_id": identity["root_run_id"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "tool_name": "byq_backtest_task_create", "agent_run_id": ingress["agent_run_id"],
+            "sequence": ingress["sequence"], "event_sha256": event_sha256}
+        if ingress.get("event_sha256") != event_sha256 or ingress.get("receipt_json") != receipt:
+            raise AgentConflict("ACP tool ingress receipt is inconsistent with its durable event")
+
+        task = fetch_one(connection, """SELECT t.task_id,t.owner_principal,t.workspace_id,t.status AS task_status,
+                t.conversation_id,u.user_id,c.runtime_session_id,c.trace_id AS conversation_trace_id,
+                c.status AS conversation_status
+            FROM research_tasks t
+            JOIN users u ON u.username=t.owner_principal
+            JOIN workspaces w ON w.workspace_id=t.workspace_id AND w.owner_user_id=u.user_id
+            JOIN workspace_memberships m ON m.workspace_id=w.workspace_id
+                AND m.user_id=u.user_id AND m.role='owner'
+            JOIN product_conversations c ON c.conversation_id=t.conversation_id
+                AND c.owner_principal=t.owner_principal AND c.workspace_id=t.workspace_id
+            WHERE t.task_id=:task AND t.owner_principal=:owner AND t.workspace_id=:workspace
+              AND c.runtime_session_id=:session AND c.trace_id=:trace
+              AND u.status='active' AND w.status='active' AND w.kind='personal'
+              AND m.status='active'
+            FOR SHARE OF t,u,w,m,c""",
+            {"task": request_task, "owner": scope["owner"], "workspace": scope["workspace"],
+             "session": scope["session"], "trace": scope["trace"]})
+        if task is None:
+            raise AgentForbidden("backtest task is not bound to the exact ACP conversation")
+
+        bound_run = fetch_one(connection, """SELECT run_id,role_id,owner_principal,workspace_id,
+                actor_principal,session_id,trace_id,dsh_run_id,authority_boot_id,root_run_id
+            FROM agent_runs WHERE run_id=:run FOR SHARE""", {"run": ingress["agent_run_id"]})
+        if (bound_run is None or (bound_run["owner_principal"], bound_run["workspace_id"],
+                bound_run["actor_principal"], bound_run["session_id"], bound_run["trace_id"],
+                bound_run["dsh_run_id"], bound_run["authority_boot_id"], bound_run["root_run_id"])
+                != (scope["owner"], scope["workspace"], scope["actor"], scope["session"],
+                    scope["trace"], scope["generation"], identity["runtime_boot_id"],
+                    identity["root_run_id"])):
+            raise AgentConflict("ACP tool ingress no longer has its exact durable AgentRun")
+
+        base_origin = {
+            "schema_version": "signal-job-submission-origin.v2", "kind": "authorized_agent",
+            "action": "byq_backtest_task_create", "authorization_decision": "allowed",
+            "user_id": task["user_id"], "owner_principal": scope["owner"],
+            "workspace_id": scope["workspace"], "task_id": request_task,
+            "conversation_id": task["conversation_id"], "actor_principal": scope["actor"],
+            "session_id": scope["session"], "trace_id": scope["trace"],
+            "dsh_run_id": scope["generation"], "root_run_id": identity["root_run_id"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "agent_run_id": ingress["agent_run_id"], "role_id": bound_run["role_id"],
+            "mcp_request_id": mcp_request_id, "idempotency_key": idempotency_key,
+            "arguments_sha256": arguments_sha256, "event_sha256": event_sha256,
+        }
+
+        if (authority["boot_id"] != identity["runtime_boot_id"]
+                or root["status"] != "active" or root.get("authority_status", "active") != "active"
+                or root.get("authority_boot_id") != authority["boot_id"]):
+            raise AgentConflict("ACP backtest creation requires an active current Backend root")
+        if existing_job is None:
+            if ingress["status"] != "pending" or ingress.get("settlement_json") is not None:
+                raise AgentConflict("new backtest Job requires the exact pending ACP tool ingress")
+        elif ingress["status"] not in {"pending", "settled"} or (
+                ingress["status"] == "settled"
+                and (ingress.get("settlement_json") or {}).get("outcome") != "settled"):
+            # Unknown, denied, and abort tombstones cannot authorize a create
+            # replay. Closed roots remain recoverable only through read routes.
+            raise AgentConflict("existing backtest Job requires its exact pending or settled ingress")
+        self._require_judgment_tool_scope(
+            connection, identity, trusted_scope, "byq_backtest_task_create", arguments,
+            new_dispatch=existing_job is None)
+        agent_run_id = self._acp_tool_ingress_agent_run(
+            connection, identity, scope, "byq_backtest_task_create", bootstrap=False)
+        if agent_run_id != ingress["agent_run_id"]:
+            raise AgentConflict("ACP tool ingress AgentRun binding changed before Job admission")
+        authorization, _, denied = self._authorize_agent_action_in_transaction(
+            connection,
+            {"run_id": agent_run_id, "action": "byq_backtest_task_create",
+             "resource_type": "research_task", "resource_id": request_task},
+            trusted_owner=scope["owner"], trusted_actor=scope["actor"],
+            trusted_session_id=scope["session"], trusted_dsh_run_id=scope["generation"],
+            trusted_boot_id=identity["runtime_boot_id"],
+        )
+        if denied or authorization.get("authorized") is not True or authorization.get("decision") != "allowed":
+            raise AgentForbidden("ACP Agent role is not authorized to create this backtest task")
+        if authorization.get("role_id") != bound_run["role_id"]:
+            raise AgentConflict("ACP role changed between ingress and backtest Job admission")
+        if task.get("conversation_status") != "active":
+            raise AgentConflict("backtest Job requires its original active Product conversation")
+        if existing_job is None and task.get("task_status") in {"completed", "failed", "cancelled"}:
+            raise AgentConflict("terminal Product task cannot admit a new backtest Job")
+        if existing_job is not None:
+            existing_origin = existing_job.get("submission_origin")
+            if (not isinstance(existing_origin, dict)
+                    or existing_origin.get("kind") != "authorized_agent"
+                    or any(existing_origin.get(key) != value for key, value in base_origin.items()
+                           if key != "authorization_decision")
+                    or existing_origin.get("authorization_decision") != "allowed"
+                    or not isinstance(existing_origin.get("policy_snapshot_sha256"), str)
+                    or _ACP_SHA256.fullmatch(existing_origin["policy_snapshot_sha256"]) is None):
+                raise AgentConflict("existing Job is not the exact previously admitted ACP request")
+            return {"kind": "existing", "origin": existing_origin,
+                    "authorization": authorization}
+        return {"kind": "new", "origin": base_origin, "authorization": authorization}
+
     @staticmethod
     def _normalize_acp_agent_identity(identity: object) -> dict:
         from .agent_research import _entity_id, _runtime_boot_id

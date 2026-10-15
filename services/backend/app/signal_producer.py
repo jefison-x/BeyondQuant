@@ -32,10 +32,23 @@ MAX_JOB_BYTES = 32 * 1024 * 1024
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,127}$")
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 _SUBMISSION_ORIGIN_SCHEMA = "signal-job-submission-origin.v1"
+_AGENT_SUBMISSION_ORIGIN_SCHEMA = "signal-job-submission-origin.v2"
 _SUBMISSION_ORIGIN_FIELDS = frozenset({
     "schema_version", "kind", "user_id", "owner_principal", "workspace_id",
     "task_id", "conversation_id",
 })
+_AGENT_SUBMISSION_ORIGIN_FIELDS = frozenset({
+    "schema_version", "kind", "action", "authorization_decision", "user_id",
+    "owner_principal", "workspace_id", "task_id", "conversation_id", "actor_principal",
+    "session_id", "trace_id", "dsh_run_id", "root_run_id", "runtime_boot_id",
+    "native_root_session_id", "native_agent_session_id", "native_parent_session_id",
+    "origin", "depth", "agent_run_id", "role_id", "mcp_request_id", "idempotency_key",
+    "arguments_sha256", "event_sha256", "policy_snapshot_sha256",
+})
+_HEX32 = re.compile(r"^[0-9a-f]{32}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+_AGENT_RUN_ID = re.compile(r"^agent_run_[0-9a-f]{32}$")
 _SECRET_FRAGMENTS = (
     "token", "password", "secret", "apikey", "accesskey", "privatekey",
     "credential", "authorization",
@@ -109,35 +122,92 @@ def _text(value: object, field: str, maximum: int) -> str:
 
 def _submission_origin(
     value: object, *, owner: str, task: str, workspace: str | None = None,
-) -> dict[str, str] | None:
-    """Validate the closed, non-secret human admission fact stored on a Job."""
+    allow_authorized_agent: bool = False,
+) -> dict[str, object] | None:
+    """Validate a closed, non-secret admission fact stored on a Job."""
     if value is None:
         return None
-    if not isinstance(value, dict) or set(value) != _SUBMISSION_ORIGIN_FIELDS:
+    if not isinstance(value, dict):
         raise ValueError("signal submission origin has invalid fields")
-    if value.get("schema_version") != _SUBMISSION_ORIGIN_SCHEMA or value.get("kind") != "authenticated_human":
+    if (set(value) == _SUBMISSION_ORIGIN_FIELDS
+            and value.get("schema_version") == _SUBMISSION_ORIGIN_SCHEMA
+            and value.get("kind") == "authenticated_human"):
+        normalized: dict[str, object] = {
+            "schema_version": _SUBMISSION_ORIGIN_SCHEMA,
+            "kind": "authenticated_human",
+            "user_id": _identifier(value.get("user_id"), "origin.user_id"),
+            "owner_principal": _text(value.get("owner_principal"), "origin.owner_principal", 128),
+            "workspace_id": _identifier(value.get("workspace_id"), "origin.workspace_id"),
+            "task_id": _identifier(value.get("task_id"), "origin.task_id"),
+            "conversation_id": _identifier(value.get("conversation_id"), "origin.conversation_id"),
+        }
+    elif (allow_authorized_agent and set(value) == _AGENT_SUBMISSION_ORIGIN_FIELDS
+          and value.get("schema_version") == _AGENT_SUBMISSION_ORIGIN_SCHEMA
+          and value.get("kind") == "authorized_agent"):
+        string_fields = {
+            "action": "byq_backtest_task_create",
+            "authorization_decision": "allowed",
+        }
+        normalized = {"schema_version": _AGENT_SUBMISSION_ORIGIN_SCHEMA, "kind": "authorized_agent"}
+        for field, expected in string_fields.items():
+            if value.get(field) != expected:
+                raise ValueError("authorized Agent submission origin is unsupported")
+            normalized[field] = expected
+        for field in ("user_id", "workspace_id", "task_id", "conversation_id"):
+            normalized[field] = _identifier(value.get(field), f"origin.{field}")
+        for field in ("owner_principal", "actor_principal", "session_id", "trace_id", "dsh_run_id", "role_id"):
+            normalized[field] = _text(value.get(field), f"origin.{field}", 128)
+        normalized["idempotency_key"] = _text(value.get("idempotency_key"), "origin.idempotency_key", 128)
+        for field in ("root_run_id", "runtime_boot_id", "mcp_request_id"):
+            item = value.get(field)
+            if not isinstance(item, str) or _HEX32.fullmatch(item) is None:
+                raise ValueError(f"origin.{field} must be 32 lowercase hexadecimal characters")
+            normalized[field] = item
+        for field in ("arguments_sha256", "event_sha256", "policy_snapshot_sha256"):
+            item = value.get(field)
+            if not isinstance(item, str) or _SHA256.fullmatch(item) is None:
+                raise ValueError(f"origin.{field} must be 64 lowercase hexadecimal characters")
+            normalized[field] = item
+        for field in ("native_root_session_id", "native_agent_session_id"):
+            item = value.get(field)
+            if not isinstance(item, str) or _UUID4.fullmatch(item) is None:
+                raise ValueError(f"origin.{field} must be a lowercase UUIDv4 session id")
+            normalized[field] = item
+        parent = value.get("native_parent_session_id")
+        if parent is not None and (not isinstance(parent, str) or _UUID4.fullmatch(parent) is None):
+            raise ValueError("origin.native_parent_session_id must be null or a lowercase UUIDv4 session id")
+        normalized["native_parent_session_id"] = parent
+        if value.get("origin") not in {"root", "subagent"}:
+            raise ValueError("origin.origin is invalid")
+        depth = value.get("depth")
+        if type(depth) is not int or (value["origin"] == "root" and depth != 0) or (
+                value["origin"] == "subagent" and depth != 1):
+            raise ValueError("origin.depth does not match its native Agent lineage")
+        if (value["origin"] == "root" and (parent is not None
+                or value["native_agent_session_id"] != value["native_root_session_id"])
+                or value["origin"] == "subagent" and parent is None):
+            raise ValueError("authorized Agent submission origin has invalid native lineage")
+        agent_run_id = value.get("agent_run_id")
+        if not isinstance(agent_run_id, str) or _AGENT_RUN_ID.fullmatch(agent_run_id) is None:
+            raise ValueError("origin.agent_run_id has invalid format")
+        normalized["origin"] = value["origin"]
+        normalized["depth"] = depth
+        normalized["agent_run_id"] = agent_run_id
+    else:
         raise ValueError("signal submission origin is unsupported")
-    normalized = {
-        "schema_version": _SUBMISSION_ORIGIN_SCHEMA,
-        "kind": "authenticated_human",
-        "user_id": _identifier(value.get("user_id"), "origin.user_id"),
-        "owner_principal": _text(value.get("owner_principal"), "origin.owner_principal", 128),
-        "workspace_id": _identifier(value.get("workspace_id"), "origin.workspace_id"),
-        "task_id": _identifier(value.get("task_id"), "origin.task_id"),
-        "conversation_id": _identifier(value.get("conversation_id"), "origin.conversation_id"),
-    }
     if (normalized["owner_principal"] != owner or normalized["task_id"] != task
             or (workspace is not None and normalized["workspace_id"] != workspace)):
         raise ValueError("signal submission origin does not match the trusted Job scope")
     return normalized
 
 
-def _assert_submission_origin_binding(connection, origin: dict[str, str] | None) -> None:
+def _assert_submission_origin_binding(connection, origin: dict[str, object] | None) -> None:
     """Bind the immutable origin snapshot to the existing task/conversation graph."""
     if origin is None:
         return
+    agent_origin = origin["kind"] == "authorized_agent"
     row = fetch_one(connection, """SELECT t.task_id, t.owner_principal, t.workspace_id,
-            t.conversation_id, u.user_id
+            t.conversation_id, u.user_id, c.runtime_session_id, c.trace_id
         FROM research_tasks t
         JOIN users u ON u.username=t.owner_principal
         JOIN workspaces w ON w.workspace_id=t.workspace_id AND w.owner_user_id=u.user_id
@@ -145,12 +215,14 @@ def _assert_submission_origin_binding(connection, origin: dict[str, str] | None)
           AND c.owner_principal=t.owner_principal AND c.workspace_id=t.workspace_id
         WHERE t.task_id=:task AND t.owner_principal=:owner AND t.workspace_id=:workspace
           AND t.conversation_id=:conversation AND u.user_id=:user
+          AND (NOT :agent_origin OR (c.runtime_session_id=:session AND c.trace_id=:trace))
         FOR SHARE OF t, u, w, c""",
         {"task": origin["task_id"], "owner": origin["owner_principal"],
          "workspace": origin["workspace_id"], "conversation": origin["conversation_id"],
-         "user": origin["user_id"]})
+         "user": origin["user_id"], "agent_origin": agent_origin,
+         "session": origin.get("session_id"), "trace": origin.get("trace_id")})
     if row is None:
-        raise ValueError("authenticated signal origin is not bound to the exact Product task")
+        raise ValueError("signal submission origin is not bound to the exact Product task")
 
 
 def prepare_signal_job_input(
@@ -262,6 +334,9 @@ class SignalJobStore(PgStoreMixin):
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS ready_input_sha256 TEXT""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS submission_hash TEXT""",
         """ALTER TABLE signal_producer_jobs ADD COLUMN IF NOT EXISTS submission_origin JSONB""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS signal_producer_jobs_agent_request
+            ON signal_producer_jobs ((submission_origin->>'mcp_request_id'))
+            WHERE submission_origin->>'kind'='authorized_agent'""",
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -356,6 +431,7 @@ class SignalJobStore(PgStoreMixin):
         self, *, command: dict[str, object], purpose: str, trusted_owner: str, trusted_workspace: str,
         trace_id: str, idempotency_key: object, prepare: Callable[[], dict[str, object]],
         record_reference: Callable[..., object], submission_origin: object | None = None,
+        submission_origin_factory: Callable[[Any, dict[str, object] | None, dict[str, Any] | None], object] | None = None,
     ) -> dict[str, object]:
         """Serialize one original command; accept job and reference atomically."""
         owner = _text(trusted_owner, "owner_principal", 128)
@@ -363,8 +439,11 @@ class SignalJobStore(PgStoreMixin):
         key = _text(idempotency_key, "idempotency_key", 128)
         if purpose not in {"signal_producer", "backtest_task"}:
             raise ValueError("signal submission purpose is invalid")
-        origin = _submission_origin(submission_origin, owner=owner,
-            task=_identifier(command.get("task_id"), "task_id"), workspace=workspace)
+        if submission_origin is not None and submission_origin_factory is not None:
+            raise ValueError("signal submission must use one trusted origin source")
+        task_id = _identifier(command.get("task_id"), "task_id")
+        origin = None if submission_origin_factory is not None else _submission_origin(
+            submission_origin, owner=owner, task=task_id, workspace=workspace)
         _reject_secrets(command)
         encoded = _canonical({"version": 1, "owner": owner, "workspace": workspace,
                               "purpose": purpose, "command": command})
@@ -377,11 +456,21 @@ class SignalJobStore(PgStoreMixin):
             existing = fetch_one(connection, """SELECT * FROM signal_producer_jobs
                 WHERE owner_principal=:owner AND idempotency_key=:key""", {"owner": owner, "key": key})
             if existing is not None:
+                if submission_origin_factory is not None:
+                    origin = _submission_origin(submission_origin_factory(connection, None, existing),
+                        owner=owner, task=task_id, workspace=workspace, allow_authorized_agent=True)
                 if (existing.get("workspace_id") != workspace
                         or existing.get("submission_hash") != submission_hash
                         or existing.get("submission_origin") != origin):
                     raise SignalProducerConflict("signal submission identity conflicts; use original receipt lookup")
                 return self._public_row(existing)
+            if submission_origin_factory is not None:
+                # Authorization and origin proof are checked before potentially
+                # expensive Product preparation, under the same acceptance Tx.
+                origin = _submission_origin(submission_origin_factory(connection, None, None),
+                    owner=owner, task=task_id, workspace=workspace, allow_authorized_agent=True)
+                if origin is None:
+                    raise ValueError("authorized Agent submission origin is required")
             prepared = prepare()
             prepared_task = prepared.get("task")
             if (not isinstance(prepared_task, dict)
@@ -389,6 +478,9 @@ class SignalJobStore(PgStoreMixin):
                     or (origin is not None
                         and prepared_task.get("conversation_id") != origin["conversation_id"])):
                 raise ValueError("signal submission origin does not match the prepared Product task")
+            if submission_origin_factory is not None:
+                if prepared_task.get("conversation_id") != origin["conversation_id"]:
+                    raise ValueError("authorized Agent origin does not match the prepared Product task")
             job = self.create_waiting(
                 owner_principal=owner, task_id=prepared["task"]["task_id"],
                 experiment_id=command.get("experiment_id"),
@@ -397,7 +489,7 @@ class SignalJobStore(PgStoreMixin):
                 preparation=prepared["preparation"], requirement=prepared["requirement"],
                 requirement_plan=prepared.get("requirement_plan"),
                 readiness=prepared["readiness"], trace_id=trace_id, idempotency_key=key, connection=connection,
-                submission_origin=origin,
+                submission_origin=origin, _allow_authorized_agent_origin=submission_origin_factory is not None,
             )
             record_reference(connection, prepared["pool_snapshot"]["snapshot_id"], domain="signal_producer",
                              reference_id=job["job_id"], trusted_owner=owner)
@@ -412,6 +504,7 @@ class SignalJobStore(PgStoreMixin):
         readiness: dict[str, object], trace_id: object, idempotency_key: object,
         requirement_plan: dict[str, object] | None = None,
         connection=None, submission_origin: object | None = None,
+        _allow_authorized_agent_origin: bool = False,
     ) -> dict[str, object]:
         owner = _text(owner_principal, "owner_principal", 128)
         task = _identifier(task_id, "task_id")
@@ -420,7 +513,8 @@ class SignalJobStore(PgStoreMixin):
         snapshot = _identifier(stock_pool_snapshot_id, "stock_pool_snapshot_id")
         trace = _text(trace_id, "trace_id", 128)
         idempotency = _text(idempotency_key, "idempotency_key", 128)
-        origin = _submission_origin(submission_origin, owner=owner, task=task)
+        origin = _submission_origin(submission_origin, owner=owner, task=task,
+            allow_authorized_agent=_allow_authorized_agent_origin)
         if requirement_plan is not None and not isinstance(requirement_plan, dict):
             raise ValueError("signal requirement plan must be an object")
         _reject_secrets(preparation)

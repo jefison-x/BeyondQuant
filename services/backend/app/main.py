@@ -2395,6 +2395,14 @@ def _backtest_task_call(operation: Callable[[], dict[str, object]]) -> dict[str,
         return operation()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    except AgentUnauthorized as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except AgentForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except AgentConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except AgentNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound, MLPredictionNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except (SignalProducerConflict, BacktestConflict, MLPredictionConflict, PaperTradingConflict) as error:
@@ -4961,10 +4969,64 @@ def _authenticated_signal_submission_origin(
 
 def _submit_signal_component(
     data: dict[str, Any], context: dict[str, str], *, purpose: str, request: Request,
+    agent_arguments: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     task = _owned_research_entity("research_task", data.get("task_id"), context)
-    submission_origin = _authenticated_signal_submission_origin(request, context, task)
+    acp_markers = (
+        *_ACP_RUN_HEADERS, "x-byq-root-run-id", "x-byq-runtime-boot-id",
+        "x-byq-acp-observation-id",
+    )
+    carries_acp_identity = (
+        context.get("actor_principal") != context.get("owner_principal")
+        or any(name in request.headers for name in acp_markers)
+        or (MCP_BACKEND_PROOF_TOKEN is not None
+            and request.headers.get("authorization") == f"Bearer {MCP_BACKEND_PROOF_TOKEN}")
+    )
+    agent_submission = purpose == "backtest_task" and carries_acp_identity
+    submission_origin = None if agent_submission else _authenticated_signal_submission_origin(request, context, task)
     command = {key: value for key, value in data.items() if key not in {"trace_id", "idempotency_key"}}
+
+    submission_origin_factory = None
+    if agent_submission:
+        if agent_arguments is None or not isinstance(agent_arguments, dict):
+            raise AgentUnauthorized("exact raw ACP backtest arguments are required")
+        scope = _acp_private_scope(request)
+        if any(name not in request.headers for name in _ACP_RUN_HEADERS):
+            raise HTTPException(status_code=401, detail="exact trusted ACP native Agent headers are required")
+        depth_value = request.headers.get("x-byq-acp-depth")
+        if depth_value not in {"0", "1"}:
+            raise HTTPException(status_code=422, detail="invalid exact ACP Agent depth")
+        trusted_identity = {
+            "root_run_id": scope["root"],
+            "runtime_boot_id": scope["boot_id"],
+            "native_root_session_id": request.headers.get("x-byq-acp-native-root-session-id"),
+            "native_agent_session_id": request.headers.get("x-byq-acp-native-agent-session-id"),
+            "native_parent_session_id": request.headers.get("x-byq-acp-native-parent-session-id") or None,
+            "origin": request.headers.get("x-byq-acp-origin"),
+            "depth": int(depth_value),
+        }
+        mcp_request_id = request.headers.get("x-byq-acp-observation-id")
+
+        def submission_origin_factory(connection, _prepared, existing):
+            admission = agent_store.authorize_acp_backtest_task_submission(
+                connection,
+                mcp_request_id=mcp_request_id,
+                arguments=agent_arguments,
+                task_id=data.get("task_id"),
+                trusted_scope=scope,
+                trusted_identity=trusted_identity,
+                existing_job=existing,
+            )
+            effective, policy_sha256 = user_policy_store.evaluate_authorization_in_transaction(
+                connection, context["owner_principal"], admission["authorization"]
+            )
+            if effective.get("authorized") is not True or effective.get("decision") != "allowed":
+                raise AgentForbidden("current owner policy does not allow this backtest task admission")
+            if admission["kind"] == "existing":
+                # Re-evaluate current permission before returning an idempotent
+                # receipt, while preserving the original immutable admission snapshot.
+                return admission["origin"]
+            return {**admission["origin"], "policy_snapshot_sha256": policy_sha256}
 
     def prepare() -> dict[str, object]:
         prepared = _prepare_signal_producer(
@@ -4986,6 +5048,7 @@ def _submit_signal_component(
         idempotency_key=data.get("idempotency_key"), prepare=prepare,
         record_reference=paper_store.record_pool_reference_in_transaction,
         submission_origin=submission_origin,
+        submission_origin_factory=submission_origin_factory,
     )
 
 
@@ -5137,7 +5200,8 @@ def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str,
 
     def operation() -> dict[str, object]:
         data = _backtest_task_input(payload, include_idempotency=True)
-        job = _submit_signal_component(data, context, purpose="backtest_task", request=request)
+        job = _submit_signal_component(data, context, purpose="backtest_task", request=request,
+                                       agent_arguments=payload)
         return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
 
     return _backtest_task_call(operation)
