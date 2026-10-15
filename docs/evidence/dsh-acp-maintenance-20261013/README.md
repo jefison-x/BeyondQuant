@@ -2,7 +2,13 @@
 
 不推进 Product Phase。应用闭包基线为 `55033eb0937665bf1d19f848de1f185353f7dbc0`，基于同步后的 `origin/main=ad5f7df1ad18e54dd0d9860d424241297187eef8`。新增租约观察切片的五文件源码 SHA 单独记录于 ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP.json；修正入口后的定向离线验收见ROOT-LEASE-OBSERVER-OFFLINE-PASS.json，真实状态验收仍未完成。
 
-## 当前结论（2026-10-16，北京时间）
+## 最新进展（2026-10-16，北京时间）
+
+已完成聚合镜像核对和隔离环境更新；应用现为 `6975bd18a3df48fa372def36f8fb64935978aea9`。普通回合通过，旧结算记录占用租约的最小修复经103项离线回归及独立审查通过。后台同一Job已自动回答并结算；原停滞与采集错误批次保留FAIL，另批只读官方收据的限定恢复证据单独记录。镜像体积增量、准确版本和未验证边界见 [10月16日镜像与接续记录](20261016-image-and-settled-lease.md)。生产、推送和合并仍NOT_RUN。环境与原页面保留。
+
+## 此前分片验收快照
+
+以下“尚未安装”等描述对应各片当时状态；当前安装和验证范围以上述最新记录为准。
 
 **搜索/帮助累计读取提示：Tester → 独立Sol → Root限定host合同PASS，尚未安装。** 应用提交 `80f3b1d2269b7706e6eff3934825e9415a52b9f7` 移除当前ACP市场研究的每轮四次搜索及产品帮助的一次读取提示，允许按缺失证据或变化的上下文再查；当前profile、两份实际挂载skill及identity/authoritative哈希同步。准确采集2项并2PASS/0SKIP，pytest0.03秒，含后置源码核对10.304秒，小于30秒；6项源码哈希和冻结diff不变，stderr空，0容器/数据库/网络/模型/Job。单次搜索schema与单份Artifact四条query容量仍保留，超容量不得截断来源后冒称完整保存。私有收据 `active-read-guidance-quota-v1/actual-v1/ROOT-PASS.json`，SHA-256 `068e5e9776672f06aa1a3431d8f16ae4cf73377b8a45e09c693f7686509a6b87`。当前仅软件/配置合同通过；下一步单独构建并核验32790所需的Backend-f6、Gateway-f6、MCP-f6及共用统一镜像的Runtime-adapter-f6/Product-runner，保留其余11服务、账号、数据库卷和原页面，再进行新版本浏览器真实验收。Full CI、推送、合并及生产仍NOT_RUN。
 
