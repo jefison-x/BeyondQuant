@@ -1664,9 +1664,6 @@ class DomainCallEvidenceMixin:
                 return {"state": "blocked", "reason": "unchanged_failed_input"}
             if bucket["repair_used"]:
                 return {"state": "blocked", "reason": "correction_budget_exhausted"}
-            count = fetch_one(connection, "SELECT count(*) AS n FROM agent_domain_call_claims WHERE root_run_id=:root", scope)
-            if count["n"] >= 1024:
-                return {"state": "blocked", "reason": "call_retention_bound"}
             if bucket["failed_input_sha256"] is not None:
                 execute(connection, """UPDATE agent_domain_correction_buckets SET repair_used=TRUE
                     WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", scope)
