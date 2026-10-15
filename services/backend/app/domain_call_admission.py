@@ -989,12 +989,6 @@ class DomainCallEvidenceMixin:
             agent_run_id = self._acp_tool_ingress_agent_run(
                 connection, identity, scope, tool_name, bootstrap=bootstrap)
 
-            total = fetch_one(connection, """SELECT
-                (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
-                + (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
-                AS count""", {"root": identity["root_run_id"]})
-            if total["count"] >= 4096:
-                raise AgentConflict("ACP root ingress evidence retention bound reached")
             sequence_row = fetch_one(connection, """SELECT GREATEST(
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root),0),
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_domain_call_observations WHERE root_run_id=:root),0)
@@ -1120,12 +1114,6 @@ class DomainCallEvidenceMixin:
                 raise AgentConflict("ACP tool ingress abort root is not active under current authority")
             agent_run_id = self._acp_tool_ingress_agent_run(
                 connection, identity, scope, tool_name, bootstrap=bootstrap)
-            total = fetch_one(connection, """SELECT
-                (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
-                + (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
-                AS count""", {"root": identity["root_run_id"]})
-            if total["count"] >= 4096:
-                raise AgentConflict("ACP root ingress evidence retention bound reached")
             sequence_row = fetch_one(connection, """SELECT GREATEST(
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root),0),
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_domain_call_observations WHERE root_run_id=:root),0)
@@ -1363,9 +1351,9 @@ class DomainCallEvidenceMixin:
                     COALESCE(settlement_json->>'settlement_sha256',settlement_json->>'abort_sha256')
                         AS settlement_sha256
                 FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root
-            ) evidence ORDER BY sequence LIMIT 4097""", {"root": root_run_id})
-        if len(events) > 4096 or any(row["sequence"] != index for index, row in enumerate(events, 1)):
-            raise AgentConflict("ACP root ingress evidence cursor is not contiguous and bounded")
+            ) evidence ORDER BY sequence""", {"root": root_run_id})
+        if any(row["sequence"] != index for index, row in enumerate(events, 1)):
+            raise AgentConflict("ACP root ingress evidence cursor is not contiguous")
         ingress_sequence = len(events)
         ingress_sha256 = acp_binding_sha256({"schema_version": "byq-acp-root-ingress-cursor.v1",
             "root_run_id": root_run_id, "sequence": ingress_sequence,
@@ -1474,13 +1462,6 @@ class DomainCallEvidenceMixin:
             self._domain_identity(connection, {**evidence, "generation": scope["generation"]},
                                   context, active=True)
 
-            root_count = fetch_one(connection, """SELECT
-                (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
-                + (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
-                AS count""",
-                {"root": identity["root_run_id"]})
-            if root_count["count"] >= 4096:
-                raise AgentConflict("ACP root ingress evidence retention bound reached")
             self._lifecycle_lock(connection, "domain-call-session:" + scope["session"])
             session_count = fetch_one(connection, """SELECT count(*) AS count FROM agent_domain_call_evidence
                 WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session""",

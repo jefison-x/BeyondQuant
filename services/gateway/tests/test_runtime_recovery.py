@@ -230,8 +230,12 @@ def test_settled_acp_recovery_requires_frozen_backend_cursor_and_no_unknown_clai
     binding = _binding("settled")
     row = {"root_run_id": ROOT_ID, "status": "failed", "authority_status": "closed",
            "terminal_sequence": 9, "terminal_event_sha256": "d" * 64,
-           "terminal_acp_ingress_sequence": 0, "terminal_acp_ingress_sha256": "a" * 64,
+           "terminal_acp_ingress_sequence": 4097, "terminal_acp_ingress_sha256": "a" * 64,
            "terminal_unknown_claim_count": 0, "terminal_unknown_claims_sha256": "e" * 64}
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+        "schema_version": "byq-business-root-status.v1", "roots": [row],
+    })
+    assert main._runtime_root_rows(session) == [row]
     monkeypatch.setattr(main, "_runtime_root_rows", lambda _session: [row])
     assert main._verify_settled_recovery_binding(binding, session) == binding["settlement_receipt"]
     for altered in ({**row, "terminal_acp_ingress_sequence": None},
@@ -291,8 +295,14 @@ def test_backend_root_status_rejects_partial_or_unknown_terminal_snapshot(monkey
     assert project(legacy) == [legacy]
     with pytest.raises(main.HTTPException):
         project({**row, "terminal_acp_ingress_sha256": None})
+    for cursor in (-1, True, "4097", 1.5):
+        with pytest.raises(main.HTTPException):
+            project({**row, "terminal_acp_ingress_sequence": cursor})
     with pytest.raises(main.HTTPException):
-        project({**row, "terminal_unknown_claim_count": -1})
+        project({**row, "terminal_acp_ingress_sha256": "not-a-digest"})
+    for unknown_count in (-1, 1025):
+        with pytest.raises(main.HTTPException):
+            project({**row, "terminal_unknown_claim_count": unknown_count})
 
 
 def test_501_backend_roots_keep_tail_terminal_delivery_and_recovery_attested(monkeypatch) -> None:

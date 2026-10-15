@@ -2269,7 +2269,7 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
             unknown_digest = row["terminal_unknown_claims_sha256"]
             values = (cursor, cursor_digest, unknown_count, unknown_digest)
             if any(value is not None for value in values) and (
-                type(cursor) is not int or not 0 <= cursor <= 4096
+                type(cursor) is not int or cursor < 0
                 or not isinstance(cursor_digest, str) or re.fullmatch(r"[0-9a-f]{64}", cursor_digest) is None
                 or type(unknown_count) is not int or not 0 <= unknown_count <= 1024
                 or not isinstance(unknown_digest, str) or re.fullmatch(r"[0-9a-f]{64}", unknown_digest) is None

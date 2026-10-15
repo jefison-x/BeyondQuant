@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -130,6 +131,144 @@ def _settle_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[
     if outcome == "denied":
         body["refusal_receipt"] = refusal_receipt
     return store.settle_acp_tool_ingress(body, trusted_scope=_scope(ctx, identity["root_run_id"]))
+
+
+_INGRESS_EVENT_FIELDS = (
+    "owner_principal", "workspace_id", "actor_principal", "session_id", "trace_id",
+    "dsh_run_id", "agent_run_id", "root_run_id", "runtime_boot_id",
+    "native_root_session_id", "native_agent_session_id", "native_parent_session_id",
+    "origin", "depth", "tool_name", "arguments_sha256",
+)
+
+
+def _test_acp_sha256(value: dict[str, object]) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                         allow_nan=False).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _synthetic_settled_ingress(template: dict[str, object], sequence: int) -> dict[str, object]:
+    """Build one internally consistent fixture row from a real Store receipt."""
+    event = {key: template[key] for key in _INGRESS_EVENT_FIELDS}
+    event["sequence"] = sequence
+    event_sha256 = _test_acp_sha256(event)
+    request_id = uuid4().hex
+
+    receipt = dict(template["receipt_json"])
+    receipt.update(mcp_request_id=request_id, sequence=sequence, event_sha256=event_sha256)
+    settlement_payload = {
+        "mcp_request_id": request_id,
+        "root_run_id": template["root_run_id"],
+        "runtime_boot_id": template["runtime_boot_id"],
+        "native_agent_session_id": template["native_agent_session_id"],
+        "tool_name": template["tool_name"],
+        "sequence": sequence,
+        "event_sha256": event_sha256,
+        "outcome": "settled",
+    }
+    settlement = {
+        "schema_version": "byq-acp-tool-ingress-settle-receipt.v1",
+        **settlement_payload,
+        "settlement_sha256": _test_acp_sha256(settlement_payload),
+    }
+    return {
+        **{key: template[key] for key in (
+            "owner_principal", "workspace_id", "actor_principal", "session_id", "trace_id",
+            "dsh_run_id", "runtime_boot_id", "root_run_id", "native_root_session_id",
+            "native_agent_session_id", "native_parent_session_id", "origin", "depth",
+            "agent_run_id", "tool_name", "arguments_sha256",
+        )},
+        "mcp_request_id": request_id,
+        "sequence": sequence,
+        "event_sha256": event_sha256,
+        "status": "settled",
+        "settlement_json": settlement,
+        "receipt_json": receipt,
+    }
+
+
+def _seed_settled_ingress_history(store: AgentResearchStore,
+                                 template: dict[str, object], sequences: range | list[int]) -> None:
+    """Insert only fixture history, with hashes verified against a real Store row."""
+    original_event = {key: template[key] for key in _INGRESS_EVENT_FIELDS}
+    original_event["sequence"] = template["sequence"]
+    assert _test_acp_sha256(original_event) == template["event_sha256"]
+    assert template["receipt_json"]["mcp_request_id"] == template["mcp_request_id"]
+    assert template["receipt_json"]["sequence"] == template["sequence"]
+    assert template["receipt_json"]["event_sha256"] == template["event_sha256"]
+
+    original_settlement_payload = {
+        "mcp_request_id": template["mcp_request_id"],
+        "root_run_id": template["root_run_id"],
+        "runtime_boot_id": template["runtime_boot_id"],
+        "native_agent_session_id": template["native_agent_session_id"],
+        "tool_name": template["tool_name"],
+        "sequence": template["sequence"],
+        "event_sha256": template["event_sha256"],
+        "outcome": "settled",
+    }
+    assert template["settlement_json"] == {
+        "schema_version": "byq-acp-tool-ingress-settle-receipt.v1",
+        **original_settlement_payload,
+        "settlement_sha256": _test_acp_sha256(original_settlement_payload),
+    }
+
+    rows = [_synthetic_settled_ingress(template, sequence) for sequence in sequences]
+    if not rows:
+        return
+    payload = json.dumps(rows, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    store._execute("""INSERT INTO agent_acp_tool_ingress_observations
+        (mcp_request_id,owner_principal,workspace_id,actor_principal,session_id,trace_id,dsh_run_id,
+         runtime_boot_id,root_run_id,native_root_session_id,native_agent_session_id,
+         native_parent_session_id,origin,depth,agent_run_id,tool_name,arguments_sha256,
+         sequence,event_sha256,status,settlement_json,settled_at,receipt_json)
+        SELECT seeded.mcp_request_id,seeded.owner_principal,seeded.workspace_id,seeded.actor_principal,
+         seeded.session_id,seeded.trace_id,seeded.dsh_run_id,seeded.runtime_boot_id,seeded.root_run_id,
+         seeded.native_root_session_id,seeded.native_agent_session_id,seeded.native_parent_session_id,
+         seeded.origin,seeded.depth,seeded.agent_run_id,seeded.tool_name,seeded.arguments_sha256,
+         seeded.sequence,seeded.event_sha256,seeded.status,seeded.settlement_json,CURRENT_TIMESTAMP,
+         seeded.receipt_json
+        FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+         mcp_request_id text,owner_principal text,workspace_id text,actor_principal text,session_id text,
+         trace_id text,dsh_run_id text,runtime_boot_id text,root_run_id text,native_root_session_id text,
+         native_agent_session_id text,native_parent_session_id text,origin text,depth smallint,
+         agent_run_id text,tool_name text,arguments_sha256 text,sequence bigint,event_sha256 text,
+         status text,settlement_json jsonb,receipt_json jsonb)""", {"rows": payload})
+
+
+def _independent_cursor_digest(store: AgentResearchStore, root: str) -> tuple[int, str, list[dict[str, object]]]:
+    events: list[dict[str, object]] = []
+    for row in store._execute("""SELECT sequence,event_sha256,status,settlement_json
+        FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root""", {"root": root}):
+        settlement = row["settlement_json"] or {}
+        events.append({
+            "sequence": row["sequence"],
+            "event_sha256": row["event_sha256"],
+            "kind": "tool_ingress",
+            "status": row["status"],
+            "outcome": settlement.get("outcome"),
+            "settlement_sha256": settlement.get("settlement_sha256") or settlement.get("abort_sha256"),
+        })
+    for row in store._execute("""SELECT sequence,event_sha256
+        FROM agent_acp_domain_call_observations WHERE root_run_id=:root""", {"root": root}):
+        events.append({
+            "sequence": row["sequence"],
+            "event_sha256": row["event_sha256"],
+            "kind": "domain_call",
+            "status": "observed",
+            "outcome": None,
+            "settlement_sha256": None,
+        })
+    events.sort(key=lambda event: event["sequence"])
+    assert [event["sequence"] for event in events] == list(range(1, len(events) + 1))
+    digest_payload = {
+        "schema_version": "byq-acp-root-ingress-cursor.v1",
+        "root_run_id": root,
+        "sequence": len(events),
+        "events": events,
+    }
+    digest = _test_acp_sha256(digest_payload)
+    return len(events), digest, events
 
 
 def _authorize_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[str, object],
@@ -958,6 +1097,110 @@ def test_acp_settled_dispatch_is_included_in_terminal_cursor_digest():
         assert row["terminal_unknown_claim_count"] == 0
         assert row["terminal_unknown_claims_sha256"] == acp_binding_sha256({
             "schema_version": "byq-acp-unknown-claims.v1", "root_run_id": root, "claims": []})
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("producer", ("tool-observe", "tool-abort", "domain-observe"))
+def test_acp_root_ingress_producers_continue_past_4096_and_freeze_complete_cursor(producer: str):
+    ctx = _context(f"large-cursor-{producer}")
+    catalog = research = None
+    store = AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        root_native = str(uuid4())
+        root, root_identity = _open_root(store, ctx, f"large-cursor-{uuid4().hex}", root_native)
+        _bind(store, ctx, root_identity)
+
+        dispatch_identity = root_identity
+        if producer == "domain-observe":
+            catalog, research = ConversationCatalogStore(), ResearchStore()
+            task = _create_task(ctx, catalog, research, f"large-cursor-{uuid4().hex}")
+            dispatch_identity = _child(store, ctx, root, root_native, f"large-child-{uuid4().hex}")
+            _bind(store, ctx, dispatch_identity)
+
+        template_receipt = _observe_tool(store, ctx, root_identity, "byq_agent_context",
+            {"fixture": "real-template"})
+        _settle_tool(store, ctx, root_identity, template_receipt)
+        template = store._fetch_one("""SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:request""", {"request": template_receipt["mcp_request_id"]})
+        assert template is not None
+        _seed_settled_ingress_history(store, template, range(2, 4097))
+        assert store._fetch_one("""SELECT count(*) AS count FROM agent_acp_tool_ingress_observations
+            WHERE root_run_id=:root""", {"root": root})["count"] == 4096
+
+        if producer == "tool-observe":
+            tail_receipt = _observe_tool(store, ctx, dispatch_identity, "byq_agent_context",
+                {"fixture": "after-former-bound"})
+            assert tail_receipt["sequence"] == 4097
+            _settle_tool(store, ctx, dispatch_identity, tail_receipt)
+            tail_kind = "tool_ingress"
+        elif producer == "tool-abort":
+            tail_receipt = _abort_tool(store, ctx, dispatch_identity, "byq_agent_context",
+                {"fixture": "aborted-after-former-bound"})
+            assert tail_receipt["sequence"] == 4097
+            assert tail_receipt["outcome"] == "aborted_before_dispatch"
+            tail_kind = "tool_ingress"
+        else:
+            arguments = {"task_id": task["task_id"],
+                "agent_run_id": dispatch_identity["agent_run_id"],
+                "idempotency_key": f"large-cursor-{uuid4().hex}",
+                "strategy": {"code": "VALIDATED_FIXTURE_ONLY"}}
+            observation = {"schema_version": "byq-acp-domain-call-observe.v1",
+                "mcp_request_id": uuid4().hex, "root_run_id": root,
+                "runtime_boot_id": authority["boot_id"],
+                "native_agent_session_id": dispatch_identity["native_agent_session_id"],
+                "action": "byq_strategy_validate", "arguments": arguments}
+            tail_receipt = store.observe_acp_domain_call(observation, trusted_scope=_scope(ctx, root))
+            assert tail_receipt["sequence"] == 4097
+            tail_kind = "domain_call"
+
+        store.close_runtime_root(root, boot_id=authority["boot_id"], sequence=2,
+            outcome="completed", event_sha256="f" * 64)
+        sequence, expected_digest, events = _independent_cursor_digest(store, root)
+        assert sequence == 4097
+        assert events[-1]["kind"] == tail_kind
+        assert events[-1]["event_sha256"] == tail_receipt["event_sha256"]
+        terminal = store._fetch_one("""SELECT status,terminal_acp_ingress_sequence,
+                terminal_acp_ingress_sha256,terminal_unknown_claim_count
+            FROM agent_runtime_turns WHERE root_run_id=:root""", {"root": root})
+        assert terminal == {"status": "completed", "terminal_acp_ingress_sequence": 4097,
+            "terminal_acp_ingress_sha256": expected_digest, "terminal_unknown_claim_count": 0}
+    finally:
+        store.close()
+        if catalog is not None:
+            catalog.close()
+        if research is not None:
+            research.close()
+
+
+def test_acp_terminal_cursor_still_rejects_sequence_gaps_after_4096_gate_removal():
+    ctx = _context("cursor-gap")
+    store = AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        root_native = str(uuid4())
+        root, identity = _open_root(store, ctx, f"cursor-gap-{uuid4().hex}", root_native)
+        _bind(store, ctx, identity)
+        ingress = _observe_tool(store, ctx, identity, "byq_agent_context", {"fixture": "gap-template"})
+        _settle_tool(store, ctx, identity, ingress)
+        template = store._fetch_one("""SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:request""", {"request": ingress["mcp_request_id"]})
+        assert template is not None
+        # The second valid row claims sequence 3, leaving sequence 2 absent.
+        # The fixture inserts an internally consistent row; only the shared cursor has a gap.
+        _seed_settled_ingress_history(store, template, [3])
+
+        with pytest.raises(AgentConflict, match="not contiguous"):
+            store.close_runtime_root(root, boot_id=authority["boot_id"], sequence=2,
+                outcome="completed", event_sha256="a" * 64)
+        root_state = store._fetch_one("""SELECT status,terminal_acp_ingress_sequence,
+                terminal_acp_ingress_sha256 FROM agent_runtime_turns WHERE root_run_id=:root""",
+            {"root": root})
+        assert root_state == {"status": "active", "terminal_acp_ingress_sequence": None,
+            "terminal_acp_ingress_sha256": None}
     finally:
         store.close()
 
