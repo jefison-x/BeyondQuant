@@ -14,7 +14,11 @@
 
 **残余 Backend 负例：新增7项隔离测试限定 PASS。** 修补源码 `231ab0b832037ba012cd7b2fc152ac04594ca331` 仅改变测试文件，生产实现未改。旧 `wrong_owner` 失败是非法修改既有 root 身份，被数据库 fence 正确阻断；当前个人工作区一人一个，因此将两个不合法独立错配负例合并为一个合法 `foreign_personal_scope`。隔离库中的第二用户/工作区/会话/root 的绑定逐字段核对后，结算被拒且 ledger 不变；其余新测覆盖错误 session/trace、未知证据、准确 digest/幂等、工具目标授权和取消后的授权拒绝。新批次收集7项、一次7 PASS / 0 FAIL / 0 SKIP，pytest15.84秒；Root计时含临时准备/清理126.668秒，非独立UTC起止对。Tester、独立Sol→Root限定PASS，私有收据在 `.ci-artifacts/background-residual-20261015-v1/`。模型/真实Job为0，临时资源按准确ID清理，保留16服务的ID/镜像均不变。旧20 PASS按未变依赖复用，旧1 FAIL / 7 NOT_RUN原件保留，不写成同批27/28项全通过，也不声称独立覆盖owner-only/workspace-only两分支。
 
-**仍未闭合：** 已验证的自动接续仅覆盖 authenticated-human 来源；当前合法 Product MCP 创建的 SignalJob 没有可信 Agent 来源事实，无法进入默认自动接续。下一最小修补须从现有 Backend 运行、MCP 调用及业务授权的持久事实建立来源，未知来源继续拒绝，不把运行会话当登录身份。两用户真实隔离、迟到/未知结果、取消与后台竞争、进程异常等完整资格及远程CI/发布/生产仍 HOLD/NOT_RUN。原测试环境和页面继续保留，供用户当场互动反馈。
+**Product MCP Job 来源准入：离线限定 PASS。** 源码 `a1775f6e971442c0773ccc02687f77b2e6cc398b` 为现有 `byq_backtest_task_create` 私下传递准确 ingress、Backend proof 与签名原生身份；Job 提交事务核验当前 boot/root、绑定 AgentRun、角色、用户策略、完整参数及原 Task/Conversation，再原子写入 Job、池引用和不含凭据的 `authorized_agent` 来源，单个 MCP 请求只能认领一个 Job。既有记录的创建重试也复核当前权限与策略，未知来源不升级；人类来源与 bootstrap/null 兼容保留。这是业务创建授权核验，没有新增接续许可或 Product DSH 权限。冻结源码的 MCP 构建及5个原生脚本通过；Backend 新11项与4项共享影响回归共15项通过，pytest28.84秒，含临时准备/清理131.478秒，小于420秒。Tester、独立Sol→Root限定PASS，私有收据在 `.ci-artifacts/mcp-signal-origin-20261015-v1/`，模型/真实Product Job均为0。
+
+**本片失败原件保留：** 首批Backend准确采集15项后，新测试误把 `task.references.research_task_id` 读为顶层字段；HTTP202后断言失败，原批为0 PASS / 1 FAIL / 14 NOT_RUN，立即停批。整11项静态合同重新核对后，只修测试一行，再经过独立审查执行新的同15项批次；没有改产品投影来迎合测试，也没有覆盖原失败。入口重名HOLD及修正、原始stdout/stderr、独立容器退出码和清理记录分别保存。两个批次均只使用隔离内网/tmpfs库，所有临时资源按准确ID清理，保留16服务ID/镜像不变。
+
+**仍未闭合：** 自动接续消费端仍只接受 authenticated-human 来源；新准入的 Agent 来源尚未接入消费端。下一最小切片核验该持久来源后接入默认自动接续，再补真实浏览器中的 MCP 创建Job→完成→原会话接续；旧未知来源继续拒绝，不把运行会话当登录身份。当前保留环境尚未安装本片源码。两用户真实隔离、迟到/未知结果、取消与后台竞争、进程异常等完整资格及远程CI/发布/生产仍 HOLD/NOT_RUN。原测试环境和页面继续保留，供用户当场互动反馈。
 
 ## 此前切片（2026-10-15 北京时间；以下保留各切片当时版本）
 
