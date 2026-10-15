@@ -18,7 +18,11 @@
 
 **本片失败原件保留：** 首批Backend准确采集15项后，新测试误把 `task.references.research_task_id` 读为顶层字段；HTTP202后断言失败，原批为0 PASS / 1 FAIL / 14 NOT_RUN，立即停批。整11项静态合同重新核对后，只修测试一行，再经过独立审查执行新的同15项批次；没有改产品投影来迎合测试，也没有覆盖原失败。入口重名HOLD及修正、原始stdout/stderr、独立容器退出码和清理记录分别保存。两个批次均只使用隔离内网/tmpfs库，所有临时资源按准确ID清理，保留16服务ID/镜像不变。
 
-**仍未闭合：** 自动接续消费端仍只接受 authenticated-human 来源；新准入的 Agent 来源尚未接入消费端。下一最小切片核验该持久来源后接入默认自动接续，再补真实浏览器中的 MCP 创建Job→完成→原会话接续；旧未知来源继续拒绝，不把运行会话当登录身份。当前保留环境尚未安装本片源码。两用户真实隔离、迟到/未知结果、取消与后台竞争、进程异常等完整资格及远程CI/发布/生产仍 HOLD/NOT_RUN。原测试环境和页面继续保留，供用户当场互动反馈。
+**Agent 来源消费端：离线11项限定 PASS，尚未安装。** 当前 Git 基点为 `23764218130009c75a691eaa62c84e3ed30eb4f2`，候选 `research_continuation.py` SHA-256 为 `5b8eb11e79b83df6d39d4b26b781184c05f73611dd79c7b9fb3585770078a375`。候选只扩展现有 v3 校验：准确的历史来源 Root 必须 completed/closed，并核原 AgentRun、角色、原生绑定、已结算 ingress、冻结终态摘要、同一 Job/Task/Conversation 和 validated snapshot；不要求旧 boot 仍 current，不增加许可、调度器或 Product DSH 权限。提交前的 Python 哈希原像可能被 JSONB 数值规范化改变，因此不假装能从持久 JSONB 重算 Job 原摘要。这不代表真实接续 PASS。
+
+**消费端两次离线批保留 FAIL，统一合同重审后另批通过。** `actual-v2` 收集11项，首项测试把首次只读 `eligible` 预览误当持久 `intent`，结果0 PASS / 1 FAIL / 10 NOT_RUN，pytest3.76秒、含准备清理169.752秒。整11项返回/状态合同复核后，`actual-v3` 再收集11项，首项在预览符合合同后把原始 SQL NULL 账本误断言为JSONB空数组，再次0 PASS / 1 FAIL / 10 NOT_RUN，pytest2.98秒、含准备清理141.569秒；均在420秒观察上限内。CLI与独立容器状态均确认exit1、无OOM，stderr为空。第二次同类错误后停止后续执行，统一重审DDL、INSERT、raw helper、内部规范化和API三层合同；没有更改Product API/数据库默认值来迎合测试，也没有继续调用模型。最终测试源 SHA-256 `11bce713ef445b96105c3333f2e3a3026c00f53c2c3bb40e063a0cfc12d018b7` 已统一保存原始账本baseline并验证预览/等待不改变它，claim后才核单项数组；修订后经独立入口审查，新 `actual-v4` 批收集11项、一次11 PASS / 0 FAIL / 0 NOT_RUN，pytest34.78秒、含准备清理129.664秒，小于420秒。完整stdout、空stderr、CLI exit0与独立容器退出0/无OOM一致，Tester、独立Sol→Root限定PASS，收据为 `ROOT-CONSUMER-OFFLINE-PASS.json`。v4初次只读预检误用了网络列表不支持的 `-a`，CLI失败原件单独保留；修正预检及逐个名称不存在检查通过后才创建临时资源。人类/child正例计划只验证到派发，root正例才覆盖accepted/closed/settled；账本比较是解码JSON值相等，不冒充原始数据库字节比对。私有完整证据在 `.ci-artifacts/agent-origin-consumer-20261015-v1/`。模型与真实Product Job均为0，准确清理临时容器/网络后，原16服务ID/镜像不变，账号/卷/原页面保留。
+
+**仍未闭合：** 保留环境运行的消费端仍只接受 authenticated-human 来源；上述 Agent 来源消费端已获Root离线限定PASS，尚未安装。下一项先按审查后的准确镜像/服务范围更新隔离Backend和MCP，再补当前浏览器的 MCP 创建Job→完成→原会话接续；旧未知来源继续拒绝，不把运行会话当登录身份。两用户真实隔离、迟到/未知结果、取消与后台竞争、进程异常、旧固定证据数量边界的执行影响等仍待分别审计/验证，远程CI/发布/生产仍HOLD/NOT_RUN。此前12小时登录过期的403记录保留；用户已重新登录，2026-10-15本轮浏览器确认原账号、原会话及核对记录恢复；没有改密码或重置身份。原测试环境和页面继续保留，供用户当场互动反馈。
 
 ## 此前切片（2026-10-15 北京时间；以下保留各切片当时版本）
 

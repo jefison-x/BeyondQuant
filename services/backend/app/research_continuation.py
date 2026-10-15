@@ -413,25 +413,247 @@ class ResearchContinuationMixin:
         return None
 
     @staticmethod
-    def _assert_v3_human_job_origin(task, conversation, job):
-        """Reject root, legacy, malformed, or cross-scope SignalJob origins."""
-        origin = job.get('submission_origin')
-        expected = {
-            'schema_version': 'signal-job-submission-origin.v1',
-            'kind': 'authenticated_human',
-            'user_id': str(job.get('owner_user_id') or ''),
-            'owner_principal': task['owner_principal'],
-            'workspace_id': task['workspace_id'],
-            'task_id': task['task_id'],
-            'conversation_id': conversation['conversation_id'],
+    def _assert_v3_job_origin(connection, task, conversation, job):
+        """Validate the exact human or historically authorized Agent Job origin."""
+        from .signal_producer import _assert_submission_origin_binding, _submission_origin
+
+        raw_origin = job.get('submission_origin')
+        origin = _submission_origin(raw_origin, owner=task['owner_principal'],
+            task=task['task_id'], workspace=task['workspace_id'], allow_authorized_agent=True)
+        if origin is None or origin != raw_origin:
+            raise ValueError('SignalJob origin is unknown or outside the exact Product scope')
+        _assert_submission_origin_binding(connection, origin)
+
+        if origin['kind'] == 'authenticated_human':
+            expected = {
+                'schema_version': 'signal-job-submission-origin.v1',
+                'kind': 'authenticated_human',
+                'user_id': str(job.get('owner_user_id') or ''),
+                'owner_principal': task['owner_principal'],
+                'workspace_id': task['workspace_id'],
+                'task_id': task['task_id'],
+                'conversation_id': conversation['conversation_id'],
+            }
+            if not expected['user_id'] or origin != expected:
+                raise ValueError('SignalJob origin is unknown or outside the exact human Product scope')
+            return
+
+        ResearchContinuationMixin._assert_v3_authorized_agent_origin(
+            connection, task, conversation, job, origin)
+
+    @staticmethod
+    def _assert_v3_authorized_agent_origin(connection, task, conversation, job, origin):
+        """Recheck frozen admission, root, native binding, ingress, and Job facts."""
+        from .agent_research import AgentConflict
+        from .domain_call_admission import DomainCallEvidenceMixin, _acp_binding_fields, acp_binding_sha256
+
+        if (origin['conversation_id'] != conversation['conversation_id']
+                or origin['session_id'] != conversation.get('runtime_session_id')
+                or origin['trace_id'] != conversation.get('trace_id')
+                or job.get('trace_id') != origin['trace_id']
+                or job.get('idempotency_key') != origin['idempotency_key']):
+            raise ValueError('authorized Agent origin does not match the exact Product conversation and Job')
+
+        # Hash preimages are not persisted: request fields cross JSONB storage
+        # and the original submitted command is discarded. Check digest shape
+        # only, then validate the exact linked business facts below.
+        for field in ('request_hash', 'submission_hash'):
+            if not isinstance(job.get(field), str) or re.fullmatch(r'[0-9a-f]{64}', job[field]) is None:
+                raise ValueError(f'authorized Agent Job {field} is unavailable or malformed')
+
+        root = fetch_one(connection, '''SELECT root_run_id, owner_principal, workspace_id,
+                session_id, trace_id, authority_boot_id, status, authority_status,
+                terminal_sequence, terminal_event_sha256, terminal_acp_ingress_sequence,
+                terminal_acp_ingress_sha256, terminal_unknown_claim_count,
+                terminal_unknown_claims_sha256
+            FROM agent_runtime_turns WHERE root_run_id=:root''', {'root': origin['root_run_id']})
+        if (root is None
+                or (root['root_run_id'], root['owner_principal'], root['workspace_id'],
+                    root['session_id'], root['trace_id'], root['authority_boot_id']) != (
+                    origin['root_run_id'], origin['owner_principal'], origin['workspace_id'],
+                    origin['session_id'], origin['trace_id'], origin['runtime_boot_id'])
+                or root['status'] != 'completed' or root['authority_status'] != 'closed'
+                or type(root['terminal_sequence']) is not int or root['terminal_sequence'] < 1
+                or not isinstance(root['terminal_event_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_event_sha256']) is None
+                or type(root['terminal_acp_ingress_sequence']) is not int
+                or root['terminal_acp_ingress_sequence'] < 0
+                or not isinstance(root['terminal_acp_ingress_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_acp_ingress_sha256']) is None
+                or type(root['terminal_unknown_claim_count']) is not int
+                or root['terminal_unknown_claim_count'] != 0
+                or not isinstance(root['terminal_unknown_claims_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_unknown_claims_sha256']) is None):
+            raise ValueError('authorized Agent source root is not the exact normally completed root')
+
+        closure = DomainCallEvidenceMixin()
+        try:
+            closure._require_acp_root_terminal_safe(connection, origin['root_run_id'])
+            current_evidence = closure._acp_terminal_evidence_snapshot(connection, origin['root_run_id'])
+        except AgentConflict as error:
+            raise ValueError('authorized Agent source root still has unresolved ACP liabilities') from error
+        frozen_evidence = {
+            'terminal_acp_ingress_sequence': root['terminal_acp_ingress_sequence'],
+            'terminal_acp_ingress_sha256': root['terminal_acp_ingress_sha256'],
+            'terminal_unknown_claim_count': root['terminal_unknown_claim_count'],
+            'terminal_unknown_claims_sha256': root['terminal_unknown_claims_sha256'],
         }
-        if not expected['user_id'] or not isinstance(origin, dict) or set(origin) != set(expected) or origin != expected:
-            raise ValueError('SignalJob origin is unknown or outside the exact human Product scope')
+        if current_evidence != frozen_evidence:
+            raise ValueError('authorized Agent source root terminal evidence changed')
+
+        scope = {
+            'owner': origin['owner_principal'], 'workspace': origin['workspace_id'],
+            'actor': origin['actor_principal'], 'session': origin['session_id'],
+            'trace': origin['trace_id'], 'generation': origin['dsh_run_id'],
+        }
+
+        def bound_run(native_agent_session_id, native_parent_session_id, origin_kind, depth,
+                      expected_run_id, expected_parent_run_id):
+            identity = {
+                'root_run_id': origin['root_run_id'],
+                'runtime_boot_id': origin['runtime_boot_id'],
+                'native_root_session_id': origin['native_root_session_id'],
+                'native_agent_session_id': native_agent_session_id,
+                'native_parent_session_id': native_parent_session_id,
+                'origin': origin_kind, 'depth': depth,
+            }
+            registration = fetch_one(connection, '''SELECT * FROM agent_acp_native_agent_registrations
+                WHERE root_run_id=:root AND native_agent_session_id=:native''',
+                {'root': origin['root_run_id'], 'native': native_agent_session_id})
+            expected_registration = {
+                'root_run_id': origin['root_run_id'],
+                'native_agent_session_id': native_agent_session_id,
+                'native_root_session_id': origin['native_root_session_id'],
+                'native_parent_session_id': native_parent_session_id,
+                'owner_principal': origin['owner_principal'],
+                'workspace_id': origin['workspace_id'],
+                'actor_principal': origin['actor_principal'],
+                'session_id': origin['session_id'], 'trace_id': origin['trace_id'],
+                'dsh_run_id': origin['dsh_run_id'], 'runtime_boot_id': origin['runtime_boot_id'],
+                'origin': origin_kind, 'depth': depth, 'agent_run_id': expected_run_id,
+                'parent_run_id': expected_parent_run_id, 'status': 'bound',
+            }
+            if registration is None or any(registration.get(key) != value
+                    for key, value in expected_registration.items()):
+                raise ValueError('authorized Agent native registration does not match its exact AgentRun')
+            binding_fields = _acp_binding_fields(identity, scope,
+                agent_run_id=expected_run_id, parent_run_id=expected_parent_run_id)
+            expected_receipt = {
+                'schema_version': 'byq-acp-agent-bind-receipt.v1',
+                'root_run_id': origin['root_run_id'],
+                'runtime_boot_id': origin['runtime_boot_id'],
+                'native_agent_session_id': native_agent_session_id,
+                'native_parent_session_id': native_parent_session_id,
+                'agent_run_id': expected_run_id, 'parent_run_id': expected_parent_run_id,
+                'origin': origin_kind, 'depth': depth, 'status': 'bound',
+                'binding_sha256': acp_binding_sha256(binding_fields),
+            }
+            if registration.get('receipt_json') != expected_receipt:
+                raise ValueError('authorized Agent native bind receipt does not match its exact registration')
+            run = fetch_one(connection, 'SELECT * FROM agent_runs WHERE run_id=:run',
+                {'run': expected_run_id})
+            expected_run = {
+                'run_id': expected_run_id, 'root_run_id': origin['root_run_id'],
+                'parent_run_id': expected_parent_run_id,
+                'owner_principal': origin['owner_principal'],
+                'workspace_id': origin['workspace_id'], 'actor_principal': origin['actor_principal'],
+                'session_id': origin['session_id'], 'trace_id': origin['trace_id'],
+                'dsh_run_id': origin['dsh_run_id'], 'authority_boot_id': origin['runtime_boot_id'],
+                'authority_status': 'closed',
+            }
+            if expected_run_id == origin['agent_run_id']:
+                expected_run['role_id'] = origin['role_id']
+            if run is None or any(run.get(key) != value for key, value in expected_run.items()):
+                raise ValueError('authorized Agent origin does not match its historically closed AgentRun')
+            return run
+
+        if origin['origin'] == 'root':
+            if (origin['depth'] != 0 or origin['native_agent_session_id'] != origin['native_root_session_id']
+                    or origin['native_parent_session_id'] is not None):
+                raise ValueError('authorized Agent root origin has invalid native lineage')
+            bound_run(origin['native_agent_session_id'], None, 'root', 0,
+                origin['agent_run_id'], None)
+        else:
+            if (origin['depth'] != 1 or origin['native_parent_session_id'] != origin['native_root_session_id']):
+                raise ValueError('authorized Agent child origin has invalid native lineage')
+            # The child binding carries the Backend parent AgentRun ID. Resolve
+            # it from the already verified root native registration.
+            root_registration = fetch_one(connection, '''SELECT agent_run_id FROM agent_acp_native_agent_registrations
+                WHERE root_run_id=:root AND native_agent_session_id=:native''',
+                {'root': origin['root_run_id'], 'native': origin['native_root_session_id']})
+            if root_registration is None:
+                raise ValueError('authorized Agent child lacks its exact native root registration')
+            bound_run(origin['native_root_session_id'], None, 'root', 0,
+                root_registration['agent_run_id'], None)
+            bound_run(origin['native_agent_session_id'], origin['native_parent_session_id'],
+                'subagent', 1, origin['agent_run_id'], root_registration['agent_run_id'])
+
+        ingress = fetch_one(connection, '''SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:request''', {'request': origin['mcp_request_id']})
+        expected_ingress = {
+            'mcp_request_id': origin['mcp_request_id'],
+            'owner_principal': origin['owner_principal'], 'workspace_id': origin['workspace_id'],
+            'actor_principal': origin['actor_principal'], 'session_id': origin['session_id'],
+            'trace_id': origin['trace_id'], 'dsh_run_id': origin['dsh_run_id'],
+            'runtime_boot_id': origin['runtime_boot_id'], 'root_run_id': origin['root_run_id'],
+            'native_root_session_id': origin['native_root_session_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'native_parent_session_id': origin['native_parent_session_id'],
+            'origin': origin['origin'], 'depth': origin['depth'],
+            'agent_run_id': origin['agent_run_id'], 'tool_name': origin['action'],
+            'arguments_sha256': origin['arguments_sha256'],
+        }
+        if ingress is None or any(ingress.get(key) != value for key, value in expected_ingress.items()):
+            raise ValueError('authorized Agent origin does not match the exact persisted tool ingress')
+        if ingress.get('status') != 'settled' or ingress.get('settled_at') is None:
+            raise ValueError('authorized Agent source ingress is not known settled')
+        event = {
+            'sequence': ingress['sequence'], 'owner_principal': origin['owner_principal'],
+            'workspace_id': origin['workspace_id'], 'actor_principal': origin['actor_principal'],
+            'session_id': origin['session_id'], 'trace_id': origin['trace_id'],
+            'dsh_run_id': origin['dsh_run_id'], 'agent_run_id': origin['agent_run_id'],
+            'root_run_id': origin['root_run_id'], 'runtime_boot_id': origin['runtime_boot_id'],
+            'native_root_session_id': origin['native_root_session_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'native_parent_session_id': origin['native_parent_session_id'],
+            'origin': origin['origin'], 'depth': origin['depth'], 'tool_name': origin['action'],
+            'arguments_sha256': origin['arguments_sha256'],
+        }
+        event_sha256 = acp_binding_sha256(event)
+        expected_receipt = {
+            'schema_version': 'byq-acp-tool-ingress-receipt.v1',
+            'mcp_request_id': origin['mcp_request_id'], 'root_run_id': origin['root_run_id'],
+            'runtime_boot_id': origin['runtime_boot_id'],
+            'native_root_session_id': origin['native_root_session_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'native_parent_session_id': origin['native_parent_session_id'],
+            'origin': origin['origin'], 'depth': origin['depth'], 'tool_name': origin['action'],
+            'agent_run_id': origin['agent_run_id'], 'sequence': ingress['sequence'],
+            'event_sha256': event_sha256,
+        }
+        if (event_sha256 != origin['event_sha256'] or ingress.get('event_sha256') != event_sha256
+                or ingress.get('receipt_json') != expected_receipt):
+            raise ValueError('authorized Agent ingress event or receipt digest changed')
+
+        settlement_payload = {
+            'mcp_request_id': origin['mcp_request_id'], 'root_run_id': origin['root_run_id'],
+            'runtime_boot_id': origin['runtime_boot_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'tool_name': origin['action'], 'sequence': ingress['sequence'],
+            'event_sha256': event_sha256, 'outcome': 'settled',
+        }
+        settlement_sha256 = acp_binding_sha256(settlement_payload)
+        expected_settlement = {
+            'schema_version': 'byq-acp-tool-ingress-settle-receipt.v1',
+            **settlement_payload, 'settlement_sha256': settlement_sha256,
+        }
+        if ingress.get('settlement_json') != expected_settlement:
+            raise ValueError('authorized Agent ingress settlement is not the exact settled transport receipt')
 
     @staticmethod
     def _assert_v3_source_binding(connection, task, conversation, job, carrier):
-        """Recheck the exact human Job and validated snapshot behind a carrier."""
-        ResearchContinuationMixin._assert_v3_human_job_origin(task, conversation, job)
+        """Recheck the exact human-or-Agent Job and validated snapshot behind a carrier."""
+        ResearchContinuationMixin._assert_v3_job_origin(connection, task, conversation, job)
         if (job.get('job_id') != carrier.get('signal_job_id')
                 or job.get('task_id') != task.get('task_id')
                 or job.get('owner_principal') != task.get('owner_principal')
@@ -461,7 +683,8 @@ class ResearchContinuationMixin:
     def _recheck_v3_source_binding(connection, task, conversation, carrier):
         """Lock and revalidate the immutable source facts for a v3 receipt."""
         job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal, j.workspace_id,
-                j.status, j.result_artifact_id, j.submission_origin, u.user_id AS owner_user_id
+                j.status, j.result_artifact_id, j.submission_origin, u.user_id AS owner_user_id,
+                j.trace_id, j.request_hash, j.submission_hash, j.idempotency_key
             FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
             WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
               AND j.workspace_id=:workspace FOR SHARE OF j, u''',
@@ -933,6 +1156,7 @@ class ResearchContinuationMixin:
             job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal, j.workspace_id,
                     j.status, j.result_artifact_id, j.submission_origin, u.user_id AS owner_user_id,
                     j.strategy_version_artifact_id, j.stock_pool_snapshot_id, j.readiness_json,
+                    j.trace_id, j.request_hash, j.submission_hash, j.idempotency_key,
                     j.attempt_count, j.error_code, j.error_detail
                 FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
                 WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
@@ -940,7 +1164,7 @@ class ResearchContinuationMixin:
                 {'job': signal_job_id, 'task': task['task_id'], 'owner': task['owner_principal'],
                  'workspace': task['workspace_id']})
             if job is not None:
-                self._assert_v3_human_job_origin(task, conversation, job)
+                self._assert_v3_job_origin(connection, task, conversation, job)
             if job is None or job['status'] != 'completed' or not isinstance(job['result_artifact_id'], str):
                 raise ValueError('signal producer Job is not an exact completed task result')
             artifact = fetch_one(connection, '''SELECT artifact_id, content_sha256, kind, status
@@ -1130,7 +1354,8 @@ class ResearchContinuationMixin:
                         return {'status': 'waiting'}
                     job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
                             j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
-                            u.user_id AS owner_user_id
+                            u.user_id AS owner_user_id, j.trace_id, j.request_hash,
+                            j.submission_hash, j.idempotency_key
                         FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
                         WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
                           AND j.workspace_id=:workspace''',
@@ -1141,6 +1366,8 @@ class ResearchContinuationMixin:
                             return {'status': 'waiting'}
                         self._assert_v3_source_binding(connection, task, {
                             'conversation_id': conversation_id,
+                            'runtime_session_id': task['runtime_session_id'],
+                            'trace_id': task['conversation_trace_id'],
                         }, job, carrier)
                     except ValueError:
                         return {'status': 'waiting'}
@@ -1229,7 +1456,8 @@ class ResearchContinuationMixin:
                 raise ValueError('exact v3 continuation reservation binding changed')
             job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
                     j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
-                    u.user_id AS owner_user_id
+                    u.user_id AS owner_user_id, j.trace_id, j.request_hash,
+                    j.submission_hash, j.idempotency_key
                 FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
                 WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
                   AND j.workspace_id=:workspace FOR SHARE OF j, u''',
@@ -1500,7 +1728,8 @@ class ResearchContinuationMixin:
                     return {'dispatch': False}
                 job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
                         j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
-                        u.user_id AS owner_user_id
+                        u.user_id AS owner_user_id, j.trace_id, j.request_hash,
+                        j.submission_hash, j.idempotency_key
                     FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
                     WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
                       AND j.workspace_id=:workspace FOR SHARE OF j, u''',
