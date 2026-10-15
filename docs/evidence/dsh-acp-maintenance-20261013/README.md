@@ -10,7 +10,9 @@
 
 **后台 Backend v3 原子预留：Tester → Sol → Root 限定软件 PASS。** 精确已完成 SignalJob/validated snapshot 的预留、并发去重、原会话隔离、旧未知结果与显式停止保护通过9项新测试及1项有效复用；不是一次新跑10项。原观察器字段错误和测试局部变量错误均保留 FAIL_STOP，修正后补齐22项观察器样本与8文件未定义名检查。该入口尚未接入 Gateway/dispatch，真实后台自动接续仍未验证，见 [Backend 软件验收](ROOT-BACKEND-V3-RESERVATION-SOFTWARE-PASS.json)。
 
-**下一缺口：后台实际消费链仍走旧许可逻辑。** 合同/guard/传输的离线 PASS 不等于默认自动接续。只读确认当前采样的9类 Job/运行表计数为0，ResearchTask=1、Artifact=3；无现成 SignalJob 可复用。先补 Backend 的精确 Job/validated snapshot → v3 原子预留与去重，再接消费链；本次尚未执行真实后台 Job。取消、进程异常、两用户、迟到/未知结果、官方固有限额和最终CI/发布/生产门禁仍未由上述切片证明，整体 NOT_READY。保留14容器测试环境、端口32790、原账号/卷和浏览器页面，不推进 Product Phase、不操作生产。
+**公开网页抓取：Tester → Sol → Root 限定离线软件 PASS。** 当前普通 Product ACP 原先关闭正文抓取；现启用固定官方 DSH fetch，保留原生默认值，市场研究可读取用户链接/搜索来源，规范化活动显示“读取公开网页”。12项原生断言及5个仓库测试通过，4个临时容器精确清理；真实网页正文、浏览器、镜像更新和生产仍为 NOT_RUN。见 [抓取软件验收](ROOT-PUBLIC-FETCH-SOFTWARE-PASS.json)。
+
+**下一缺口：后台实际消费链仍走旧许可逻辑。** 合同/guard/传输的离线 PASS 不等于默认自动接续。只读确认当前采样的9类 Job/运行表计数为0，ResearchTask=1、Artifact=3；无现成 SignalJob 可复用。Backend 的精确 Job/validated snapshot → v3 原子预留与去重已完成限定软件验收，下一步接入消费链；本次尚未执行真实后台 Job。取消、进程异常、两用户、迟到/未知结果、官方固有限额和最终CI/发布/生产门禁仍未由上述切片证明，整体 NOT_READY。保留14容器测试环境、端口32790、原账号/卷和浏览器页面，不推进 Product Phase、不操作生产。
 
 ## 最新进展（2026-10-14 北京时间）
 

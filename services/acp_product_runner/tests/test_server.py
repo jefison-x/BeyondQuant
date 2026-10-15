@@ -600,6 +600,14 @@ def test_child_environment_forces_runner_runtime_root_and_drops_authority(
         "BYQ_RUNTIME_AUTHORITY_TOKEN": "authority",
         "DEEPSEEK_API_KEY_UPSTREAM": "search",
         "BYQ_WORKSPACE_ID": "workspace-team-a",
+        "HTTP_PROXY": "http://proxy.invalid:8080",
+        "HTTPS_PROXY": "http://proxy.invalid:8080",
+        "ALL_PROXY": "http://proxy.invalid:8080",
+        "http_proxy": "http://proxy.invalid:8080",
+        "https_proxy": "http://proxy.invalid:8080",
+        "all_proxy": "http://proxy.invalid:8080",
+        "NO_PROXY": "example.invalid",
+        "no_proxy": "example.invalid",
     }
     child = slot._minimal_child_environment(
         env, home, tmp_path / "sessions", Path("/opt/dsh-runtime"))
@@ -608,6 +616,10 @@ def test_child_environment_forces_runner_runtime_root_and_drops_authority(
     assert "DEEPSEEK_API_KEY_UPSTREAM" not in child
     assert "DEEPSEEK_SEARCH_API_KEY" not in child
     assert child["BYQ_WORKSPACE_ID"] == "workspace-team-a"
+    assert not ({
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy",
+        "all_proxy", "NO_PROXY", "no_proxy",
+    } & child.keys())
 
     validated = {**env, "DEEPSEEK_SEARCH_API_KEY": "validated-search-secret"}
     child = slot._minimal_child_environment(

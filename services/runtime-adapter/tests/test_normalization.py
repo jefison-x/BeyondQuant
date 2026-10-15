@@ -388,6 +388,41 @@ def test_known_tool_emits_curated_activity_and_proposal_card() -> None:
     assert completed[1]["payload"]["authority"] == "proposal"
 
 
+def test_web_fetch_projects_activity_without_page_content() -> None:
+    state = NormalizationState()
+    started = normalize(
+        notify("tool/call", {"callId": "fetch-1", "name": "web_fetch"}),
+        state,
+    )
+    page_result = {
+        "url": "https://example.com/article",
+        "statusCode": 200,
+        "body": {"kind": "html", "content": "PRIVATE_PAGE_TEXT_SENTINEL"},
+        "truncated": False,
+    }
+    completed = normalize(
+        notify(
+            "tool/result",
+            {"message": {"content": [{
+                "type": "tool-result",
+                "toolCallId": "fetch-1",
+                "isError": False,
+                "content": [{"type": "text", "text": json.dumps(page_result)}],
+            }]}},
+        ),
+        state,
+    )
+
+    assert started[0]["payload"]["label"] == "读取公开网页"
+    assert started[0]["payload"]["agent_label"] == "市场研究 Agent"
+    assert started[0]["payload"]["plugin_label"] == "网页研究插件"
+    assert completed[0]["payload"]["state"] == "completed"
+    assert completed[0]["payload"]["label"] == "读取公开网页"
+    assert "example.com" not in json.dumps([*started, *completed])
+    assert "PRIVATE_PAGE_TEXT_SENTINEL" not in json.dumps([*started, *completed])
+    assert "statusCode" not in json.dumps(completed)
+
+
 def test_domain_tool_result_is_only_an_internal_reference_candidate() -> None:
     state = NormalizationState()
     normalize(
