@@ -187,8 +187,8 @@ class LifecycleDelivery:
             previous = state["cursor"]
             for source in reply["events"]:
                 validate_call_evidence(source)
-                if source["sequence"] != previous + 1 or source["sequence"] > 1024:
-                    raise ValueError("private evidence sequence gap or retention overflow")
+                if source["sequence"] != previous + 1:
+                    raise ValueError("private evidence sequence gap")
                 previous = source["sequence"]
         except Exception:
             state["source_unavailable"] = True

@@ -15,6 +15,7 @@ from app.conversation_catalog import ConversationCatalogStore
 from app.domain_call_admission import acp_binding_sha256
 from app.research import ResearchStore
 from packages.contracts.agent_run_lifecycle import registration_fingerprint
+from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence
 from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 
@@ -234,6 +235,46 @@ def _seed_settled_ingress_history(store: AgentResearchStore,
          native_agent_session_id text,native_parent_session_id text,origin text,depth smallint,
          agent_run_id text,tool_name text,arguments_sha256 text,sequence bigint,event_sha256 text,
          status text,settlement_json jsonb,receipt_json jsonb)""", {"rows": payload})
+
+
+def _domain_evidence_row(ctx: dict[str, str], root: str, agent_run_id: str,
+                         task_id: str, sequence: int) -> dict[str, object]:
+    arguments = {"task_id": task_id, "agent_run_id": agent_run_id,
+        "idempotency_key": f"session-evidence-history-{sequence}",
+        "strategy": {"code": "VALID_SYNTHETIC_HISTORY"}}
+    return {"schema_version": "domain-call-observed.v1", "sequence": sequence,
+        "root_run_id": root, "generation": ctx["x-byq-dsh-run-id"],
+        "call_id": f"session-evidence-history-call-{sequence}",
+        **request_evidence("byq_strategy_validate", arguments,
+            trace_id=ctx["x-byq-trace-id"])}
+
+
+def _seed_domain_evidence_rows(store: AgentResearchStore, ctx: dict[str, str],
+                               template: dict[str, object], through_sequence: int) -> None:
+    rows = []
+    for sequence in range(template["sequence"] + 1, through_sequence + 1):
+        event = _domain_evidence_row(ctx, template["root_run_id"], template["agent_run_id"],
+            template["task_id"], sequence)
+        rows.append({"owner_principal": ctx["x-byq-owner-principal"],
+            "workspace_id": ctx["x-byq-workspace-id"], "session_id": ctx["x-byq-session-id"],
+            "trace_id": ctx["x-byq-trace-id"], "sequence": sequence,
+            "root_run_id": event["root_run_id"], "generation": event["generation"],
+            "agent_run_id": event["agent_run_id"], "task_id": event["task_id"],
+            "action": event["action"], "idempotency_key": event["idempotency_key"],
+            "request_sha256": event["request_sha256"], "input_sha256": event["input_sha256"],
+            "evidence_json": event, "receipt_json": call_evidence_receipt(event)})
+    if rows:
+        store._execute("""INSERT INTO agent_domain_call_evidence
+            (owner_principal,workspace_id,session_id,trace_id,sequence,root_run_id,generation,
+             agent_run_id,task_id,action,idempotency_key,request_sha256,input_sha256,evidence_json,receipt_json)
+            SELECT seeded.owner_principal,seeded.workspace_id,seeded.session_id,seeded.trace_id,seeded.sequence,
+             seeded.root_run_id,seeded.generation,seeded.agent_run_id,seeded.task_id,seeded.action,seeded.idempotency_key,
+             seeded.request_sha256,seeded.input_sha256,seeded.evidence_json,seeded.receipt_json
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+             owner_principal text,workspace_id text,session_id text,trace_id text,sequence bigint,
+             root_run_id text,generation text,agent_run_id text,task_id text,action text,
+             idempotency_key text,request_sha256 text,input_sha256 text,evidence_json jsonb,receipt_json jsonb)""",
+            {"rows": json.dumps(rows, separators=(",", ":"), ensure_ascii=True, allow_nan=False)})
 
 
 def _independent_cursor_digest(store: AgentResearchStore, root: str) -> tuple[int, str, list[dict[str, object]]]:
@@ -1203,6 +1244,98 @@ def test_acp_terminal_cursor_still_rejects_sequence_gaps_after_4096_gate_removal
             "terminal_acp_ingress_sha256": None}
     finally:
         store.close()
+
+
+def test_acp_observation_uses_session_evidence_sequence_after_closed_root_history():
+    ctx = _context(f"session-evidence-{uuid4().hex}")
+    catalog, research, store = ConversationCatalogStore(), ResearchStore(), AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        conversation = catalog.create(ctx["x-byq-owner-principal"],
+            ctx["x-byq-session-id"], ctx["x-byq-trace-id"])
+        task = research.create_task({"owner_principal": ctx["x-byq-owner-principal"],
+            "title": "ACP session evidence history", "objective": "Synthetic retained evidence",
+            "trace_id": ctx["x-byq-trace-id"], "idempotency_key": f"task-{uuid4().hex}"},
+            trusted_context={"owner_principal": ctx["x-byq-owner-principal"],
+                "workspace_id": ctx["x-byq-workspace-id"], "actor_principal": ctx["x-byq-actor-principal"],
+                "trace_id": ctx["x-byq-trace-id"], "session_id": ctx["x-byq-session-id"]})
+
+        old_root, old_identity = _open_root(store, ctx, f"old-{uuid4().hex}", str(uuid4()))
+        _bind(store, ctx, old_identity)
+        legacy_scope = {"trusted_owner": ctx["x-byq-owner-principal"],
+            "trusted_workspace": ctx["x-byq-workspace-id"],
+            "trusted_session_id": ctx["x-byq-session-id"],
+            "trusted_trace_id": ctx["x-byq-trace-id"],
+            "trusted_boot_id": ctx["x-byq-runtime-boot-id"],
+            "conversation_id": conversation["conversation_id"]}
+        history = _domain_evidence_row(ctx, old_root, old_identity["agent_run_id"], task["task_id"], 1)
+        history_receipt = store.consume_domain_call_evidence(history, **legacy_scope)
+        assert history_receipt == call_evidence_receipt(history)
+        _seed_domain_evidence_rows(store, ctx, history, 1024)
+        assert store._fetch_one("""SELECT count(*) AS count, max(sequence) AS max_sequence
+            FROM agent_domain_call_evidence WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND session_id=:session""", {"owner": ctx["x-byq-owner-principal"],
+            "workspace": ctx["x-byq-workspace-id"], "session": ctx["x-byq-session-id"]}) == {
+                "count": 1024, "max_sequence": 1024}
+
+        store.consume_runtime_lifecycle_event({
+            "schema_version": "agent-run-lifecycle.v1", "root_run_id": old_root,
+            "sequence": 2, "outcome": "completed",
+        }, trusted_owner=ctx["x-byq-owner-principal"],
+            trusted_workspace=ctx["x-byq-workspace-id"],
+            trusted_session_id=ctx["x-byq-session-id"],
+            trusted_trace_id=ctx["x-byq-trace-id"], trusted_boot_id=authority["boot_id"])
+        assert store._fetch_one("SELECT status FROM agent_runtime_turns WHERE root_run_id=:root",
+            {"root": old_root})["status"] == "completed"
+
+        next_ctx = {**ctx, "x-byq-dsh-run-id": f"generation-{uuid4().hex}"}
+        new_root, root_identity = _open_root(store, next_ctx, f"new-{uuid4().hex}", str(uuid4()), sequence=3)
+        _bind(store, next_ctx, root_identity)
+        child = _child(store, next_ctx, new_root, root_identity["native_root_session_id"],
+            f"child-{uuid4().hex}")
+        _bind(store, next_ctx, child)
+        arguments = {"task_id": task["task_id"], "agent_run_id": child["agent_run_id"],
+            "idempotency_key": f"new-root-{uuid4().hex}", "strategy": {"code": "VALID_NEW_ROOT"}}
+        observation = {"schema_version": "byq-acp-domain-call-observe.v1",
+            "mcp_request_id": uuid4().hex, "root_run_id": new_root,
+            "runtime_boot_id": authority["boot_id"],
+            "native_agent_session_id": child["native_agent_session_id"],
+            "action": "byq_strategy_validate", "arguments": arguments}
+        new_scope = _scope(next_ctx, new_root)
+        receipt = store.observe_acp_domain_call(observation, trusted_scope=new_scope)
+        assert receipt["sequence"] == 1  # Root ingress cursor starts independently.
+        assert store.observe_acp_domain_call(observation, trusted_scope=new_scope) == receipt
+        evidence_row = store._fetch_one("""SELECT sequence,root_run_id FROM agent_domain_call_evidence
+            WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+              AND sequence=1025""", {"owner": ctx["x-byq-owner-principal"],
+            "workspace": ctx["x-byq-workspace-id"], "session": ctx["x-byq-session-id"]})
+        observation_row = store._fetch_one("""SELECT evidence_sequence,sequence FROM
+            agent_acp_domain_call_observations WHERE mcp_request_id=:request""",
+            {"request": observation["mcp_request_id"]})
+        assert evidence_row == {"sequence": 1025, "root_run_id": new_root}
+        assert observation_row == {"evidence_sequence": 1025, "sequence": 1}
+        with pytest.raises(AgentConflict, match="request id was reused"):
+            store.observe_acp_domain_call({**observation, "arguments": {
+                **arguments, "strategy": {"code": "CHANGED_INPUT"}}}, trusted_scope=new_scope)
+        with pytest.raises(AgentUnauthorized):
+            store.observe_acp_domain_call(observation,
+                trusted_scope={**new_scope, "root": "f" * 32})
+        assert store._fetch_one("""SELECT count(*) AS count FROM agent_domain_call_evidence
+            WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session""",
+            {"owner": ctx["x-byq-owner-principal"], "workspace": ctx["x-byq-workspace-id"],
+             "session": ctx["x-byq-session-id"]})["count"] == 1025
+        store.consume_runtime_lifecycle_event({
+            "schema_version": "agent-run-lifecycle.v1", "root_run_id": new_root,
+            "sequence": 4, "outcome": "completed",
+        }, trusted_owner=next_ctx["x-byq-owner-principal"],
+            trusted_workspace=next_ctx["x-byq-workspace-id"],
+            trusted_session_id=next_ctx["x-byq-session-id"],
+            trusted_trace_id=next_ctx["x-byq-trace-id"], trusted_boot_id=authority["boot_id"])
+    finally:
+        store.close()
+        research.close()
+        catalog.close()
 
 
 def test_acp_abort_existing_pending_observation_is_exact_idempotent_and_scope_bound():

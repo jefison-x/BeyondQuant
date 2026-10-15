@@ -1463,11 +1463,6 @@ class DomainCallEvidenceMixin:
                                   context, active=True)
 
             self._lifecycle_lock(connection, "domain-call-session:" + scope["session"])
-            session_count = fetch_one(connection, """SELECT count(*) AS count FROM agent_domain_call_evidence
-                WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session""",
-                {"owner": scope["owner"], "workspace": scope["workspace"], "session": scope["session"]})
-            if session_count["count"] >= 1024:
-                raise AgentConflict("private call evidence retention bound reached")
             sequence_row = fetch_one(connection, """SELECT GREATEST(
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root),0),
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_domain_call_observations WHERE root_run_id=:root),0)
@@ -1798,10 +1793,6 @@ class DomainCallEvidenceMixin:
             if task is None or (task["owner_principal"], task.get("workspace_id"), task.get("conversation_id")) != (
                     context["owner"], context["workspace"], conversation_id):
                 raise AgentUnauthorized("private call does not match the original conversation task")
-            count = fetch_one(connection, """SELECT count(*) AS count FROM agent_domain_call_evidence
-                WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session""", context)
-            if count["count"] >= 1024:
-                raise AgentConflict("private call evidence retention bound reached")
             execute(connection, """INSERT INTO agent_domain_call_evidence
                 (owner_principal,workspace_id,session_id,trace_id,sequence,root_run_id,generation,agent_run_id,
                  task_id,action,idempotency_key,request_sha256,input_sha256,evidence_json,receipt_json)

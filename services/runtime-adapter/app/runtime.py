@@ -3535,8 +3535,7 @@ class RuntimeAdapter:
                 if self._root_scoped and source_run is run and runtime_activity:
                     if (observation.kind == "tool.call"
                             and observation.tool_name in {f"mcp__byq__{action}" for action in DOMAIN_CALL_ACTIONS}):
-                        if (len(run.domain_calls) >= 1024
-                                or record.domain_call_sequence >= 1024):
+                        if len(run.domain_calls) >= 1024:
                             run.domain_stop_code = "domain-call-retention-bound"
                         else:
                             run.domain_calls.add(observation.call_id)

@@ -1,4 +1,6 @@
 import os
+import json
+import uuid
 
 import pytest
 
@@ -36,6 +38,56 @@ def observed():
     agents.close()
     research.close()
     catalog.close()
+
+
+def _seed_domain_evidence_history(store, evidence, scope, *, through_sequence):
+    """Create valid retained evidence rows from a real accepted proof fixture."""
+    rows = []
+    for sequence in range(evidence["sequence"] + 1, through_sequence + 1):
+        arguments = {
+            "task_id": evidence["task_id"],
+            "agent_run_id": evidence["agent_run_id"],
+            "idempotency_key": f"retained-evidence-{sequence}-{uuid.uuid4().hex}",
+            "strategy": {"code": f"SYNTHETIC_HISTORY_{sequence}"},
+        }
+        item = {
+            "schema_version": "domain-call-observed.v1",
+            "sequence": sequence,
+            "root_run_id": evidence["root_run_id"],
+            "generation": evidence["generation"],
+            "call_id": f"retained-evidence-{sequence}-{uuid.uuid4().hex}",
+            **request_evidence(evidence["action"], arguments, trace_id=scope["trusted_trace_id"]),
+        }
+        rows.append({
+            "owner_principal": scope["trusted_owner"],
+            "workspace_id": scope["trusted_workspace"],
+            "session_id": scope["trusted_session_id"],
+            "trace_id": scope["trusted_trace_id"],
+            "sequence": sequence,
+            "root_run_id": item["root_run_id"],
+            "generation": item["generation"],
+            "agent_run_id": item["agent_run_id"],
+            "task_id": item["task_id"],
+            "action": item["action"],
+            "idempotency_key": item["idempotency_key"],
+            "request_sha256": item["request_sha256"],
+            "input_sha256": item["input_sha256"],
+            "evidence_json": item,
+            "receipt_json": call_evidence_receipt(item),
+        })
+    if rows:
+        store._execute("""INSERT INTO agent_domain_call_evidence
+            (owner_principal,workspace_id,session_id,trace_id,sequence,root_run_id,generation,
+             agent_run_id,task_id,action,idempotency_key,request_sha256,input_sha256,evidence_json,receipt_json)
+            SELECT seeded.owner_principal,seeded.workspace_id,seeded.session_id,seeded.trace_id,
+             seeded.sequence,seeded.root_run_id,seeded.generation,seeded.agent_run_id,seeded.task_id,
+             seeded.action,seeded.idempotency_key,seeded.request_sha256,seeded.input_sha256,
+             seeded.evidence_json,seeded.receipt_json
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS seeded(
+             owner_principal text,workspace_id text,session_id text,trace_id text,sequence bigint,
+             root_run_id text,generation text,agent_run_id text,task_id text,action text,
+             idempotency_key text,request_sha256 text,input_sha256 text,evidence_json jsonb,receipt_json jsonb)""",
+            {"rows": json.dumps(rows, separators=(",", ":"), ensure_ascii=True, allow_nan=False)})
 
 
 
@@ -118,3 +170,35 @@ def test_foreign_owner_workspace_and_root_cannot_reuse_observation(action_observ
                 "trusted_owner": "bob", "trusted_workspace": bob["x-byq-workspace-id"],
                 "trusted_session_id": "session-bob", "trusted_trace_id": "trace-bob"})
     assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_evidence")["n"] == 0
+
+
+def test_legacy_consume_accepts_exact_session_evidence_sequence_1025(observed):
+    store, evidence, scope, _ = observed
+    first_receipt = store.consume_domain_call_evidence(evidence, **scope)
+    assert first_receipt == call_evidence_receipt(evidence)
+    _seed_domain_evidence_history(store, evidence, scope, through_sequence=1024)
+
+    arguments = {
+        "task_id": evidence["task_id"],
+        "agent_run_id": evidence["agent_run_id"],
+        "idempotency_key": f"legacy-after-history-{uuid.uuid4().hex}",
+        "strategy": {"code": "VALID_AFTER_RETAINED_HISTORY"},
+    }
+    next_evidence = {
+        "schema_version": "domain-call-observed.v1",
+        "sequence": 1025,
+        "root_run_id": evidence["root_run_id"],
+        "generation": evidence["generation"],
+        "call_id": f"legacy-after-history-{uuid.uuid4().hex}",
+        **request_evidence(evidence["action"], arguments, trace_id=scope["trusted_trace_id"]),
+    }
+    expected_receipt = call_evidence_receipt(next_evidence)
+    assert store.consume_domain_call_evidence(next_evidence, **scope) == expected_receipt
+    assert store.consume_domain_call_evidence(next_evidence, **scope) == expected_receipt
+    with pytest.raises(AgentConflict, match="sequence conflicts"):
+        store.consume_domain_call_evidence({**next_evidence, "call_id": "changed-call"}, **scope)
+    persisted = store._fetch_one("""SELECT sequence,receipt_json FROM agent_domain_call_evidence
+        WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+          AND sequence=1025""", {"owner": scope["trusted_owner"], "workspace": scope["trusted_workspace"],
+        "session": scope["trusted_session_id"]})
+    assert persisted == {"sequence": 1025, "receipt_json": expected_receipt}
