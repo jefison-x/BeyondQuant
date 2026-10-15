@@ -19,7 +19,7 @@ export function getResearchReceipts(conversationId: string): Promise<{
 }
 
 export class ResearchRequestError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
 
 async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -32,8 +32,12 @@ async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new ResearchRequestError(body.error?.message ?? "research request failed", response.status);
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: { code?: unknown; message?: unknown };
+    };
+    const code = typeof body.error?.code === "string" ? body.error.code : undefined;
+    const message = typeof body.error?.message === "string" ? body.error.message : "research request failed";
+    throw new ResearchRequestError(message, response.status, code);
   }
   return (await response.json()) as T;
 }

@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
-import { getResearchReceipts, type ResearchReceipt } from '@/api/research';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { getResearchReceipts, ResearchRequestError, type ResearchReceipt } from '@/api/research';
 
 const props = defineProps<{ conversationId: string }>();
 const receipts = ref<ResearchReceipt[]>([]);
 const unavailable = ref(false);
+const sessionExpired = ref(false);
 const loading = ref(false);
 const refreshFeedback = ref('');
 const lastSuccessfulRefreshAt = ref('');
 let generation = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
+const loginHref = computed(() => {
+  const returnPath = `/agent?session=${encodeURIComponent(props.conversationId)}`;
+  return `/login?redirect=${encodeURIComponent(returnPath)}`;
+});
 const names = { research_task: '研究任务', experiment: '实验', artifact: '研究成果' };
 const states = { awaiting_receipt: '正在核对创建结果', confirmed: '已确认创建',
   conflict: '请求身份冲突，需核查', needs_attention: '核对已停止，结果仍未确认' };
@@ -27,15 +32,22 @@ async function refresh(version = generation, manual = true) {
     }
     receipts.value = value.receipts;
     unavailable.value = false;
+    sessionExpired.value = false;
     lastSuccessfulRefreshAt.value = new Date().toISOString();
     if (manual) refreshFeedback.value = '核对记录已刷新';
-  } catch {
-    if (version === generation) unavailable.value = true;
+  } catch (error) {
+    if (version === generation) {
+      const loginRequired = error instanceof ResearchRequestError
+        && [401, 403].includes(error.status)
+        && ['session_invalid', 'product_authentication_required'].includes(error.code ?? '');
+      sessionExpired.value = loginRequired;
+      unavailable.value = !loginRequired;
+    }
   } finally {
     if (version === generation) {
       loading.value = false;
       clearTimeout(timer);
-      timer = setTimeout(() => { void refresh(version, false); }, 10000);
+      if (!sessionExpired.value) timer = setTimeout(() => { void refresh(version, false); }, 10000);
     }
   }
 }
@@ -46,6 +58,7 @@ watch(() => props.conversationId, () => {
   loading.value = false;
   receipts.value = [];
   unavailable.value = false;
+  sessionExpired.value = false;
   refreshFeedback.value = '';
   lastSuccessfulRefreshAt.value = '';
   void refresh(generation, false);
@@ -54,12 +67,13 @@ onBeforeUnmount(() => { generation += 1; clearTimeout(timer); });
 </script>
 
 <template>
-  <section v-if="receipts.length || unavailable" class="receipt-panel" aria-label="研究提交核对">
+  <section v-if="receipts.length || unavailable || sessionExpired" class="receipt-panel" aria-label="研究提交核对">
     <header><strong>研究提交核对</strong><button type="button" :disabled="loading" @click="refresh()">刷新核对记录</button></header>
     <p v-if="loading" role="status">正在刷新核对记录…</p>
     <p v-else-if="refreshFeedback" role="status">{{ refreshFeedback }}</p>
     <p v-if="lastSuccessfulRefreshAt" class="refresh-time">最近成功刷新：<time data-test="last-successful-refresh" :datetime="lastSuccessfulRefreshAt">{{ new Date(lastSuccessfulRefreshAt).toLocaleString() }}</time></p>
     <p v-if="unavailable" role="status">暂时无法读取核对状态，已有结果保持不变。请勿重复提交。</p>
+    <p v-if="sessionExpired" role="status">登录已失效，已有结果保持不变。请重新登录后返回当前会话查看核对状态。 <a :href="loginHref">登录并返回此会话</a></p>
     <ul v-if="receipts.length">
       <li v-for="receipt in receipts" :key="receipt.watch_id">
         <div><strong>{{ names[receipt.entity_type] }}</strong> · {{ states[receipt.status] }}</div>

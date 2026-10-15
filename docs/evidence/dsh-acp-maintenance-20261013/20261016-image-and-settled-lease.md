@@ -80,6 +80,33 @@ input 295,958、cache-read 253,184、output 3,370 tokens；这是Root聚合，�
 不宣称单独 native child closed、旧子进程恢复、多子助手或生产资格。
 Tester → 独立 Sol → Root 限定 PASS；准确命令、raw 与三门收据见私有 `current-delegation-v1/`。
 
+## 当前镜像取消后再输入：已存结果补查与登录提示缺陷
+
+同页发两条纯文字输入、中间只点一次停止，没有工具、委派或新Job。
+取消 Root `ba6d11218fff45d5925e93491d87bb88` 已 cancelled/closed、unknown claims 0，终态与ACK序号122；
+在第二次输入前已读取其 settled recovery-binding，外层游标124与内层结算收据122含义不同。
+页面等待提示消失、迟到结果未采纳，最终未持久化取消轮的assistant答案。
+新 Root `19dad0526ba24721a4a4dfc739c51cf9` completed/closed，终态与ACK130，实际短回答正常持久化。
+消息25→28（两user、一assistant）、Root12→14，旧消息/Root、4个Job和4笔预留不变。
+取消轮1次provider请求用量未知，不能记成零费用；新轮1次HTTP200，input/cache/output为37,546/26,752/14。
+
+Root复用命令时全局替换目录，误改固定SQL输入路径，导致两项采集在Docker/SQL前重定向失败。
+原批保留 **FAIL_STOP**，停止后续真实测试。纠正方式是固定已验证SQL的绝对输入路径，执行前检查文件哈希与输出路径；
+不构建新观察器。独立Sol准入另一批零模型/Job只读核对：已完成Root预检及两条准确Root查询均原生0。
+Tester → 独立Sol → Root限定已存在结果补查PASS；不追认原批为PASS。
+
+本轮新发现研究核对面板把登录失效403错误显示为“暂时无法读取核对状态”。
+收据GET与认证GET此前200，`23:26:18Z`开始403；最小只读登录时间查询确认账号active，最近一次登录恰于
+`2026-10-15T23:26:15.205464Z`正常满12小时过期。没有读取session ID、密码或密钥，没有重置账号。
+当前修补范围仅为准确识别会话认证错误、保留已有结果并提供回到同CID的登录入口；不改变登录期限或权限。
+该UI缺陷与SQL采集错误分开记录，整体UI验收仍未关闭。私有证据见 `current-soft-cancel-v1/`。
+
+最小修补已完成：只认401/403及已知会话认证错误码，保留已有记录/成功时间，停止此类自动轮询，并提供同源登录返回链接。
+其他403、服务错误和网络异常保持原处理；旧CID迟到错误不能污染新CID。
+四个前端文件的源码与测试哈希冻结一致，两个spec共18 PASS，vue-tsc/Vite构建原生0，两stderr为空。
+Tester → 独立Sol → Root离线门通过。该门不代表镜像已更新或新提示已通过真实浏览器；后续单独记录。
+证据：`receipt-auth-expiry-v1/ROOT-OFFLINE-PASS.json`。
+
 ## 准确私有证据入口
 
 证据根：`.ci-artifacts/agent-origin-consumer-20261015-v1/`。

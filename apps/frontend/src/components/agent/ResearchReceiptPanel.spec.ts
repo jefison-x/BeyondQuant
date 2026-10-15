@@ -1,8 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import Panel from './ResearchReceiptPanel.vue';
-import { getResearchReceipts } from '@/api/research';
-vi.mock('@/api/research', () => ({ getResearchReceipts: vi.fn() }));
+import { getResearchReceipts, ResearchRequestError } from '@/api/research';
+vi.mock('@/api/research', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/research')>(),
+  getResearchReceipts: vi.fn(),
+}));
 const reply = (conversation: string, id: string) => ({schema_version:'research-receipt-list.v1' as const,
   conversation_id:conversation, receipts:[{schema_version:'research-receipt-watch.v1' as const,
     watch_id:id,entity_type:'research_task' as const,task_id:null,idempotency_key:'original',
@@ -24,6 +27,24 @@ it('discards late replies from a previous conversation and stops after unmount',
   wrapper.unmount();await vi.advanceTimersByTimeAsync(20000);
   expect(getResearchReceipts).toHaveBeenCalledTimes(2);
 });
+
+it('ignores a late login failure from the previous conversation', async () => {
+  vi.useFakeTimers();
+  let rejectFirst!: (error: Error) => void;
+  vi.mocked(getResearchReceipts).mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject; }))
+    .mockResolvedValueOnce(reply('second','current-watch'));
+  const wrapper=mount(Panel,{props:{conversationId:'first'}});
+  await wrapper.setProps({conversationId:'second'});await flushPromises();
+  const lastSuccess = wrapper.get('[data-test="last-successful-refresh"]').attributes('datetime');
+  rejectFirst(new ResearchRequestError('session is not valid', 403, 'session_invalid'));
+  await flushPromises();
+  expect(wrapper.text()).toContain('current-watch');
+  expect(wrapper.text()).not.toContain('登录已失效');
+  expect(wrapper.text()).not.toContain('暂时无法读取');
+  expect(wrapper.get('[data-test="last-successful-refresh"]').attributes('datetime')).toBe(lastSuccess);
+  wrapper.unmount();
+});
+
 it('retains known state during transport failure without offering write retry', async () => {
   vi.useFakeTimers();
   vi.mocked(getResearchReceipts).mockResolvedValueOnce(reply('first','original-watch'))
@@ -34,6 +55,41 @@ it('retains known state during transport failure without offering write retry', 
   expect(wrapper.text()).toContain('original-watch');expect(wrapper.text()).toContain('暂时无法读取');
   expect(wrapper.get('[data-test="last-successful-refresh"]').attributes('datetime')).toBe(lastSuccess);
   expect(wrapper.text()).not.toContain('private transport');expect(wrapper.findAll('button')).toHaveLength(1);
+  wrapper.unmount();
+});
+
+it.each([
+  [401, 'session_invalid'],
+  [403, 'product_authentication_required'],
+] as const)('preserves receipts and stops polling after an explicit login failure (%s %s)', async (status, code) => {
+  vi.useFakeTimers();
+  vi.mocked(getResearchReceipts).mockResolvedValueOnce(reply('first','original-watch'))
+    .mockRejectedValueOnce(new ResearchRequestError('session is not valid', status, code));
+  const wrapper=mount(Panel,{props:{conversationId:'first'}});await flushPromises();
+  const lastSuccess = wrapper.get('[data-test="last-successful-refresh"]').attributes('datetime');
+  await wrapper.get('button').trigger('click');await flushPromises();
+  expect(wrapper.text()).toContain('original-watch');
+  expect(wrapper.text()).toContain('登录已失效');
+  expect(wrapper.text()).not.toContain('暂时无法读取');
+  expect(wrapper.get('[data-test="last-successful-refresh"]').attributes('datetime')).toBe(lastSuccess);
+  expect(wrapper.get('a').attributes('href')).toBe(`/login?redirect=${encodeURIComponent('/agent?session=first')}`);
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(getResearchReceipts).toHaveBeenCalledTimes(2);
+  wrapper.unmount();
+});
+
+it('does not classify an unrelated 403 as an expired login and keeps retrying', async () => {
+  vi.useFakeTimers();
+  vi.mocked(getResearchReceipts).mockResolvedValueOnce(reply('first','original-watch'))
+    .mockRejectedValueOnce(new ResearchRequestError('forbidden', 403, 'product_forbidden'))
+    .mockRejectedValueOnce(new Error('temporary failure'));
+  const wrapper=mount(Panel,{props:{conversationId:'first'}});await flushPromises();
+  await wrapper.get('button').trigger('click');await flushPromises();
+  expect(wrapper.text()).toContain('original-watch');
+  expect(wrapper.text()).toContain('暂时无法读取');
+  expect(wrapper.text()).not.toContain('登录已失效');
+  await vi.advanceTimersByTimeAsync(10000);await flushPromises();
+  expect(getResearchReceipts).toHaveBeenCalledTimes(3);
   wrapper.unmount();
 });
 
