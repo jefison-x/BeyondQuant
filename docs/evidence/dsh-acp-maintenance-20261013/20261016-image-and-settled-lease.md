@@ -60,8 +60,25 @@ Runtime terminal、Backend 和 Gateway ACK 的序号 109、boot、root 和事件
 
 Gateway 重启会清除本地内存占用，因此上述组合仅证明**已有 Job 的限定恢复完成**；
 连续运行时“旧 Runtime 终态缺失→下一个事件”的真实回归仍 **NOT_RUN**，软件因果由定向回归证明。
-不宣称恢复原子 Agent。真实新版本取消/委派/进程异常/两用户与迟到请求等未覆盖项目仍分别保留。
+不宣称恢复原子 Agent。真实新版本取消/进程异常/两用户与迟到请求等未覆盖项目仍分别保留。
 推送、远程 CI、合并和生产部署 **NOT_RUN**；当前环境与原页面保持打开。
+
+## 当前镜像单子 Agent 只读委派
+
+原页面在 `2026-10-15T23:19:09.063Z` 提交一次输入，限制为一个子助手、零新 Job、最多12次模型请求、300秒。
+采集入口已先用现有已完成 Root 和官方 recovery-binding 核对；没有新建验证框架。
+本轮 Root 从新增 Backend 行确定为 `c5ce0d9d9b864a7eab414f7a2d6a0097`。
+quant_orchestrator 父运行与 market_researcher 子运行使用独立 AgentRun/native session，签名父子链一致。
+子运行只发生 authorize → byq_research_get → audit 三条 settled MCP 入口，授权与成功审计指向原研究任务。
+浏览器活动显示委派步骤完成，父回答转述实际 `planned` 状态及子助手标记。
+
+普通回合 journal 记录8次请求，均HTTP 200、聚合峰值并发1；provider跨度35,693毫秒。
+input 295,958、cache-read 253,184、output 3,370 tokens；这是Root聚合，不能作子助手费用拆分。
+两个业务 AgentRun 均 completed/authority closed，Root unknown 0；terminal、Gateway ACK、持久化行同序号118和事件摘要。
+官方 recovery-binding 返回同一 Root/boot/epoch 的 settled 收据，证明 Adapter 已确认其所拥有的 Root 进程退出。
+消息23→25（一个用户输入和一个回答），Root11→12；旧消息/Root、4个Job及4笔预留逐行不变。
+不宣称单独 native child closed、旧子进程恢复、多子助手或生产资格。
+Tester → 独立 Sol → Root 限定 PASS；准确命令、raw 与三门收据见私有 `current-delegation-v1/`。
 
 ## 准确私有证据入口
 
