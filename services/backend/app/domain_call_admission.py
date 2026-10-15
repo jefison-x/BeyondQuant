@@ -1569,7 +1569,7 @@ class DomainCallEvidenceMixin:
     def claim_domain_call(self, action, payload, *, trusted_owner, trusted_workspace,
                           trusted_session_id, trusted_trace_id, trusted_generation, trusted_root,
                           trusted_boot_id=None, trusted_acp_observation_id=None):
-        """Commit the debit before domain validation; proof arrival never executes."""
+        """Persist the idempotent claim before validation; proof arrival never executes."""
         from .agent_research import AgentConflict, _principal, _trace
         value = request_evidence(action, payload, trace_id=trusted_trace_id)
         # Reuse the closed proof identity validator, not a model-provided root.
@@ -1658,13 +1658,14 @@ class DomainCallEvidenceMixin:
                 WHERE root_run_id=:root AND task_id=:task_id AND action=:action AND status IN ('claimed','executing') LIMIT 1""", scope)
             if unresolved:
                 return {"state": "blocked", "reason": "prior_call_outcome_unknown"}
-            if bucket["failed_input_sha256"] == value["input_sha256"]:
+            failed_input = fetch_one(connection, """SELECT claim_id FROM agent_domain_call_claims
+                WHERE root_run_id=:root AND task_id=:task_id AND action=:action
+                  AND status='correctable_failure' AND input_sha256=:input_sha256 LIMIT 1""",
+                {**scope, "input_sha256": value["input_sha256"]})
+            # Keep the bucket hash as a conservative fallback for records created
+            # before every failed input was retained in the claim ledger.
+            if bucket["failed_input_sha256"] == value["input_sha256"] or failed_input:
                 return {"state": "blocked", "reason": "unchanged_failed_input"}
-            if bucket["repair_used"]:
-                return {"state": "blocked", "reason": "correction_budget_exhausted"}
-            if bucket["failed_input_sha256"] is not None:
-                execute(connection, """UPDATE agent_domain_correction_buckets SET repair_used=TRUE
-                    WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", scope)
             claim_id = uuid.uuid4().hex
             execute(connection, """INSERT INTO agent_domain_call_claims
                 (claim_id,root_run_id,task_id,action,idempotency_key,request_sha256,input_sha256,evidence_sequence,agent_run_id,status)
@@ -1720,11 +1721,7 @@ class DomainCallEvidenceMixin:
                 row = fetch_one(connection, "SELECT * FROM agent_domain_call_claims WHERE claim_id=:id FOR UPDATE", {"id": claim["claim_id"]})
                 if row is None or row["status"] != "executing":
                     raise AgentConflict("domain call claim cannot be completed twice")
-                bucket = fetch_one(connection, """SELECT repair_used FROM agent_domain_correction_buckets
-                    WHERE root_run_id=:root AND task_id=:task AND action=:action""",
-                    {"root": row["root_run_id"], "task": row["task_id"], "action": row["action"]})
-                result = {"state": "correctable_failure",
-                    "reason": "correction_failed" if bucket["repair_used"] else "domain_validation_failed"}
+                result = {"state": "correctable_failure", "reason": "domain_validation_failed"}
                 if error.validation is not None:
                     result["validation"] = error.validation
                 execute(connection, """UPDATE agent_domain_correction_buckets SET failed_input_sha256=COALESCE(failed_input_sha256,:input)

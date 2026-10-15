@@ -37,6 +37,7 @@ def test_version_schema_repair_commits_original_receipt_and_survives_restart(obs
                            json={"action": action, "arguments": invalid})
     assert rejected.status_code == 422, rejected.text
     assert rejected.json()["detail"]["state"] == "correctable_failure"
+    assert rejected.json()["detail"]["reason"] == "domain_validation_failed"
     prove(payload, 3)
     if crash_before_transition:
         original_transition = main.research_store.transition
@@ -60,11 +61,20 @@ def test_version_schema_repair_commits_original_receipt_and_survives_restart(obs
         replay = client.post(path, headers=headers, json=payload)
         assert replay.status_code == 201 and replay.json() == created.json()
         assert store._fetch_one("SELECT count(*) AS n FROM artifacts WHERE kind='strategy_version'")["n"] == 1
-        third = {**payload, "idempotency_key": "third", "draft_artifact_id": "different"}
+        second_draft = client.post("/v1/research/strategies/validate", headers=human, json={
+            "task_id": evidence["task_id"], "trace_id": "trace-test", "idempotency_key": "human-draft-second",
+            "strategy": strategy_payload(name="Second Momentum Strategy", parameters={"lookback": 30}),
+        })
+        assert second_draft.status_code == 201, second_draft.text
+        second_draft_id = second_draft.json()["artifact"]["artifact_id"]
+        assert second_draft_id != draft.json()["artifact"]["artifact_id"]
+        third = {**payload, "idempotency_key": "third", "draft_artifact_id": second_draft_id}
         prove(third, 4)
-        blocked = client.post(path, headers=headers, json=third)
-        assert blocked.status_code == 409, blocked.text
-        assert blocked.json()["detail"]["reason"] == "correction_budget_exhausted"
+        created_third = client.post(path, headers=headers, json=third)
+        assert created_third.status_code == 201, created_third.text
+        assert created_third.json()["artifact"]["status"] == "validated"
+        assert created_third.json()["source_draft_artifact_id"] == second_draft_id
+        assert store._fetch_one("SELECT count(*) AS n FROM artifacts WHERE kind='strategy_version'")["n"] == 2
     finally:
         reopened.close()
 
@@ -112,12 +122,12 @@ def test_version_repairs_are_atomic_and_do_not_share_other_action_evidence(obser
     winner_index = next(index for index, result in enumerate(outcomes) if result["state"] == "claimed")
     winner = repairs[winner_index]
     assert store.execute_domain_call(outcomes[winner_index], reject) == {
-        "state": "correctable_failure", "reason": "correction_failed"}
+        "state": "correctable_failure", "reason": "domain_validation_failed"}
     changed_same_key = {**winner, "draft_artifact_id": "third-draft"}
     prove(action, changed_same_key, 6)
     with pytest.raises(AgentConflict):
         store.claim_domain_call(action, changed_same_key, **context)
     third = {**changed_same_key, "idempotency_key": "third"}
     prove(action, third, 7)
-    assert store.claim_domain_call(action, third, **context)["reason"] == "correction_budget_exhausted"
+    assert store.claim_domain_call(action, third, **context)["state"] == "claimed"
     assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 0
