@@ -2,9 +2,19 @@
 
 不推进 Product Phase。应用闭包基线为 `55033eb0937665bf1d19f848de1f185353f7dbc0`，基于同步后的 `origin/main=ad5f7df1ad18e54dd0d9860d424241297187eef8`。新增租约观察切片的五文件源码 SHA 单独记录于 ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP.json；修正入口后的定向离线验收见ROOT-LEASE-OBSERVER-OFFLINE-PASS.json，真实状态验收仍未完成。
 
-## 最新进展（2026-10-15 北京时间）
+## 最新浏览器切片（2026-10-15 北京时间）
 
-**搜索配置和前台委派于隔离版本 `0be2f56c` 通过限定真实浏览器验收；当前 ACP 两服务已更新到下述 `0a372d18`，其余12服务保持原版。** 用户在“模型配置 → 搜索服务”安全保存独立 DeepSeek 官方 Key；刷新仍只显示掩码。随后同一会话完成一次搜索和一轮无工具继续输入，历史消息 8→10→12，两个 Root completed/closed、unknown claims=0；模型代理实际3次完成。搜索返回来源链接，原生搜索服务 HTTP/用量未采集，天气数值答案质量不由此通过。独立 Sol → Root 的范围见 [搜索验收收据](ROOT-OWNER-SEARCH-BROWSER-PASS.json)。系统 `.env` **模型 Key** 退役仍是后续迁移要求，未称已完成。
+运行时/任务身份与用户登录/Job 提交身份已分开。真实核心运行源码为 `4c963fdef901b7c983343a930a8c54a1202bc424`；前端分轮修复源码为 `5ba25f2c775f8c04a271ea07ba9e7b8d1f786503`。保留环境现在是 `byq-dev-e8b02b5475` 的 16 个容器、端口32790及原账号/数据库卷。后台 Worker 新增运行，不带健康检查；其余15个容器有健康状态。未操作生产、推送或合并，不推进 Product Phase。
+
+**真实核心限定 PASS：** 原浏览器通过 Gateway/Product API 提交恰好一个 SignalJob `signaljob_68060a47070f447e958efbfdba5fd987`，复用已核对的合成生命周期数据，不下载行情。Job 完成后，在原绑定会话 `conversation_d1970f74cbcb4703b8c182523db4c4f1` 自动发起一次接续，未补发用户提示、未请求单独续接许可。新 Root `d1ccf5479f5a40c390b3c5f9ced39415` 完成，回答持久化，预留已结算、权限已关闭、unknown claims 为0；Adapter、Backend 和 Gateway 的 boot/root/终态序号39/hash一致。6次模型请求、7次工具调用，用量 input173179/output4330/cache-read140672，cache-read 包含在 input 中；执行上限参数为 null。两项指定业务读取分别有 AUTO 授权和 read_ok 审计。独立 Sol 已限定通过，Root 见私有 `ROOT-REAL-CORE-PASS.json`。不据此声称独立逐项重建全部7次调用。
+
+**真实浏览器原批次保留 FAIL_UI；修复后回放限定 PASS：** 新回答最初被前端拼到旧 assistant 气泡，数据库原标记行没有被改写。前端最小修补按规范化 run 边界合并同轮片段、隔离不同轮次，并处理 Gateway 刷新时已过滤持久 delta 的实际响应。37项定向测试和类型检查一次通过，独立 Sol→Root 离线 PASS；只更新 frontend-f6 后，原标签刷新显示旧标记独立、新回答五段同泡。其他15个容器ID不变，刷新未新增模型或 Job。独立 Sol 核对实际安装回执、库存、AX及截图后限定 PASS，私有收据为 `SOL-BROWSER-BOUNDARY-FINAL.json`；修复后的实时流只由离线测试覆盖，没有为此重跑 Job，原批次 FAIL 不覆盖。
+
+**仍未闭合：** Backend 定向负例仍为20 PASS / 1 FAIL / 7 NOT_RUN，失败是测试修改既有 root owner 被数据库身份 fence 提前拒绝，尚未触及预期结算层断言；真实正例不能抵消它。两用户、迟到/未知结果、取消与后台竞争、进程异常等完整资格及远程CI/发布/生产仍 HOLD/NOT_RUN。原测试环境和页面继续保留，供用户当场互动反馈。
+
+## 此前切片（2026-10-15 北京时间；以下保留各切片当时版本）
+
+**搜索配置和前台委派于隔离版本 `0be2f56c` 通过限定真实浏览器验收；该切片当时 ACP 两服务更新到 `0a372d18`，其余12服务当时保持原版。** 用户在“模型配置 → 搜索服务”安全保存独立 DeepSeek 官方 Key；刷新仍只显示掩码。随后同一会话完成一次搜索和一轮无工具继续输入，历史消息 8→10→12，两个 Root completed/closed、unknown claims=0；模型代理实际3次完成。搜索返回来源链接，原生搜索服务 HTTP/用量未采集，天气数值答案质量不由此通过。独立 Sol → Root 的范围见 [搜索验收收据](ROOT-OWNER-SEARCH-BROWSER-PASS.json)。系统 `.env` **模型 Key** 退役仍是后续迁移要求，未称已完成。
 
 **当前版本单前台子 Agent：Sol → Root 限定 PASS。** 原页面一次输入、一个子 Agent、零 Job 意图；161.47秒内核对父子绑定、三条 settled 子 Agent 入口和四条 audit，当前工具 guard 的数值限制为 null，6次工具调用符合计划。8个模型代理请求均200，Root aggregate input=229231、output=1234、cache-read=169344；cache 不再加到 input，不分摊子 Agent 账单。Backend Root/两个 AgentRun 均 completed/closed，exact ACK seq53/hash 与持久化回执一致，签名进程组清理通过，11表计数前后一致。刷新后最终 ROOT_OK 显示一次；DB消息12→15，包含模型先发的绑定说明，不能写成只有一条 assistant 存储行。见 [委派验收收据](ROOT-CURRENT-FOREGROUND-CHILD-PASS.json)。原历史采集失败保留 FAIL，未被新批次覆盖。
 
@@ -140,7 +150,7 @@ V3 发现结算后等待文案残留，非阻断。最小修补已在 `8eb3ad384
 
 ### 2026-10-15 身份修正与当前验收边界
 
-后台跟进测试现将运行时会话用于任务绑定、登录会话仅用于用户的 Job 提交；登录凭据不持久化为来源事实。原会话绑定校验保持。独立 Sol 已审查该修正。实际隔离 PostgreSQL 定向测试为 **20 PASS / 1 FAIL / 7 NOT_RUN**：失败负例尝试修改既有 Runtime root 的 owner，被现有数据库身份 fence 拒绝；尚未验证该用例期望的结算层拒绝。完整 Backend 资格、真实后台自动跟进、发布和部署仍未通过，不能用其他组件的 PASS 抵消这一失败。原失败日志保留在私有 `.ci-artifacts/background-browser-20261015-v1/identity-test/`；没有真实模型、业务 Job 或生产操作。
+后台跟进测试现将运行时会话用于任务绑定、登录会话仅用于用户的 Job 提交；登录凭据不持久化为来源事实。原会话绑定校验保持。独立 Sol 已审查该修正。实际隔离 PostgreSQL 定向测试为 **20 PASS / 1 FAIL / 7 NOT_RUN**：失败负例尝试修改既有 Runtime root 的 owner，被现有数据库身份 fence 拒绝；尚未验证该用例期望的结算层拒绝。完整 Backend 资格、发布和部署仍未通过，不能用其他组件的 PASS 抵消这一失败。原失败日志保留在私有 `.ci-artifacts/background-browser-20261015-v1/identity-test/`；该定向测试没有真实模型、业务 Job 或生产操作。后续一次真实后台跟进及前端问题见本页最新浏览器切片。
 
 ## 浏览器窗口纪律
 
