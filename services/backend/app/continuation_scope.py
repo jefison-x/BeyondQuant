@@ -82,17 +82,7 @@ def authorize(store, reservation_id, payload, context):
                     or (entry.get('run_id') is not None
                         and entry['run_id'] != payload['root_run_id'])):
                 raise ValueError('continuation action is no longer admitted')
-            job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
-                    j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
-                    u.user_id AS owner_user_id
-                FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
-                WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
-                  AND j.workspace_id=:workspace FOR SHARE OF j, u''',
-                {'job': carrier['signal_job_id'], 'task': task['task_id'],
-                 'owner': task['owner_principal'], 'workspace': task['workspace_id']})
-            if job is None:
-                raise ValueError('continuation action is no longer admitted')
-            store._assert_v3_source_binding(connection, task, conversation, job, carrier)
+            store._recheck_v3_source_binding(connection, task, conversation, carrier)
             scope = Scope(connection, task, context)
             args = payload['arguments']
             derived_receipt = {'backtest_task_id': task_id_from_signal_job(carrier['signal_job_id'])}

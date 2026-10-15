@@ -10,9 +10,11 @@ from uuid import uuid4
 import pytest
 
 from app import main
+from app.backtest_task import task_id_from_signal_job
 from app.conversation_catalog import ConversationCatalogStore
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION_V3
+from tests import test_data_ready_continuation as data_ready
 from tests.test_acp_backtest_task_submission import (
     _close_setup,
     _post_create,
@@ -20,10 +22,12 @@ from tests.test_acp_backtest_task_submission import (
 )
 from tests.test_acp_domain_call_proof import _abort_tool, _bind, _observe_tool, _settle_tool
 from tests.test_data_ready_continuation import (
+    _v3_runtime_root,
     _v3_settlement_sha256,
     _v3_usage,
     continuation_budget,
     setup_ready,
+    trusted_v3_tool_context,
 )
 
 
@@ -229,6 +233,119 @@ def _close_fixture(fixture: dict[str, object]) -> None:
         fixture["jobs"].close()
     else:
         _close_setup(fixture)
+
+
+def _prepare_authorize_dispatch(store, *, conversation_id: str, task_id: str,
+                                job_id: str, artifact_id: str, trusted_context: dict[str, str]):
+    raw_ledger = continuation_budget(store, task_id)
+    assert raw_ledger is None
+    eligible = store.peek_default_continuation_v3(
+        conversation_id, trusted_context=trusted_context)
+    assert eligible == {
+        "status": "eligible",
+        "reservation_schema_version": RESERVATION_SCHEMA_VERSION_V3,
+        "signal_job_id": job_id,
+        "task_id": task_id,
+        "conversation_id": conversation_id,
+        "session_id": trusted_context["session_id"],
+        "trace_id": trusted_context["trace_id"],
+    }
+    assert "receipt" not in eligible and "reservation" not in eligible
+    assert continuation_budget(store, task_id) == raw_ledger
+
+    claimed = store.claim_default_continuation_v3(
+        conversation_id, signal_job_id=job_id, trusted_context=trusted_context)
+    assert claimed["status"] == "intent"
+    assert claimed["may_dispatch"] is True
+    carrier = claimed["reservation"]
+    assert (carrier["signal_job_id"], carrier["task_id"], carrier["conversation_id"],
+            carrier["result_artifact_id"], carrier["result_artifact_kind"],
+            carrier["result_artifact_status"]) == (
+                job_id, task_id, conversation_id, artifact_id, "signal_snapshot", "validated")
+    reservation_id = claimed["receipt"]["reservation_id"]
+    assert claimed["receipt"]["reservation"] == carrier
+
+    reserved_ledger = continuation_budget(store, task_id)
+    assert [(row["status"], row["dispatch_attempts"], row["reservation_id"])
+            for row in reserved_ledger] == [("reserved", 0, reservation_id)]
+    replay = store.peek_default_continuation_v3(
+        conversation_id, trusted_context=trusted_context)
+    assert replay["status"] == "intent"
+    assert (replay["receipt"]["reservation_id"], replay["reservation"]) == (reservation_id, carrier)
+    assert continuation_budget(store, task_id) == reserved_ledger
+
+    dispatch = store.claim_continuation_dispatch(
+        task_id, reservation_id, trusted_context=trusted_context)
+    assert dispatch == {"dispatch": True, "attempt": 1}
+    unknown_ledger = continuation_budget(store, task_id)
+    assert [(row["status"], row["dispatch_attempts"], row["reservation_id"])
+            for row in unknown_ledger] == [("outcome_unknown", 1, reservation_id)]
+    return claimed, carrier, unknown_ledger
+
+
+def _open_authorize_runtime_root(fixture: dict[str, object], trusted_context: dict[str, str],
+                                 source_kind: str) -> dict[str, object]:
+    if source_kind == "human_v1":
+        root_id, runtime_store, boot_id = _v3_runtime_root(fixture, close=False)
+        sequence = 1
+    else:
+        runtime_store = fixture["agent_store"]
+        authority = runtime_store.current_runtime_authority()
+        assert authority is not None
+        source_boot_id = fixture["context"]["x-byq-runtime-boot-id"]
+        assert (authority["boot_id"] != source_boot_id
+                if source_kind == "agent_child_v2_closed_old_boot"
+                else authority["boot_id"] == source_boot_id)
+        root_id = uuid4().hex
+        sequence = 3
+        runtime_event = {
+            "schema_version": "agent-run-lifecycle.v1",
+            "root_run_id": root_id,
+            "sequence": sequence,
+            "outcome": "active",
+        }
+        receipt = runtime_store.consume_runtime_lifecycle_event(
+            runtime_event,
+            trusted_owner=trusted_context["owner_principal"],
+            trusted_workspace=trusted_context["workspace_id"],
+            trusted_session_id=trusted_context["session_id"],
+            trusted_trace_id=trusted_context["trace_id"],
+            trusted_boot_id=authority["boot_id"],
+        )
+        assert receipt == lifecycle_receipt(runtime_event)
+        boot_id = authority["boot_id"]
+    return {"root_run_id": root_id, "store": runtime_store,
+            "boot_id": boot_id, "close_sequence": sequence + 1}
+
+
+def _close_authorize_runtime_root(root: dict[str, object]) -> None:
+    closed = root["store"].close_runtime_root(
+        root["root_run_id"], boot_id=root["boot_id"],
+        sequence=root["close_sequence"], outcome="completed", event_sha256="d" * 64)
+    assert closed == {
+        "schema_version": "agent-run-lifecycle-receipt.v1",
+        "sequence": root["close_sequence"],
+        "root_run_id": root["root_run_id"],
+        "event_sha256": "d" * 64,
+    }
+
+
+def _post_authorize_tool(fixture: dict[str, object], *, trusted_context: dict[str, str],
+                         runtime_root: dict[str, object], reservation_id: str,
+                         tool: str, arguments: dict[str, object]):
+    headers = {f"x-byq-{field.replace('_', '-')}": trusted_context[field]
+               for field in ("owner_principal", "actor_principal", "workspace_id",
+                             "trace_id", "session_id", "dsh_run_id")}
+    headers.update({
+        "x-byq-runtime-boot-id": runtime_root["boot_id"],
+        "x-byq-root-run-id": runtime_root["root_run_id"],
+    })
+    return fixture["client"].post(
+        f"/internal/task-continuation/{reservation_id}/authorize-tool",
+        headers=headers,
+        json={"tool": tool, "arguments": arguments,
+              "root_run_id": runtime_root["root_run_id"]},
+    )
 
 
 @pytest.mark.parametrize("source_kind", ["human_v1", "agent_root_v2", "agent_child_v2_closed_old_boot"])
@@ -593,4 +710,255 @@ def test_v3_source_recheck_rejects_changed_facts_without_ledger_mutation(
             )
         assert continuation_budget(store, task_id) == before
     finally:
+        _close_fixture(fixture)
+
+
+@pytest.mark.parametrize("source_kind", [
+    "human_v1", "agent_root_v2", "agent_child_v2_closed_old_boot",
+])
+def test_authorize_tool_admits_exact_source_after_start_and_two_reads(
+        monkeypatch, tmp_path, source_kind):
+    if source_kind == "human_v1":
+        runtime_session = f"session-authorize-{uuid4().hex}"
+        assert data_ready.TRACE == "byq-trace-task-receipt"
+        monkeypatch.setattr(data_ready, "SESSION", runtime_session)
+        fixture = setup_ready(monkeypatch, tmp_path)
+        assert fixture["context"]["session_id"] == runtime_session
+        assert fixture["context"]["trace_id"] == data_ready.TRACE
+        store = fixture["store"]
+        trusted_context = trusted_v3_tool_context(fixture)
+        conversation_id = fixture["conversation"]
+        task_id = fixture["payload"]["task_id"]
+    else:
+        fixture = _create_agent_job(
+            monkeypatch, tmp_path, f"authorize-{source_kind}",
+            origin="child" if source_kind == "agent_child_v2_closed_old_boot" else "root",
+        )
+        store = fixture["research"]
+        trusted_context = fixture["trusted_context"]
+        conversation_id = fixture["conversation"]["conversation_id"]
+        task_id = fixture["task"]["task_id"]
+        if source_kind == "agent_child_v2_closed_old_boot":
+            rotated = fixture["client"].post(
+                "/internal/runtime-authority/boot",
+                headers={"Authorization": "Bearer test-runtime-authority"},
+                json={"schema_version": "byq-runtime-authority-boot.v1", "boot_id": uuid4().hex},
+            )
+            assert rotated.status_code == 200, rotated.text
+
+    runtime_root = None
+    try:
+        job_id = fixture["job_id"]
+        claimed, carrier, unknown_ledger = _prepare_authorize_dispatch(
+            store, conversation_id=conversation_id, task_id=task_id,
+            job_id=job_id, artifact_id=fixture["artifact_id"],
+            trusted_context=trusted_context,
+        )
+        runtime_root = _open_authorize_runtime_root(fixture, trusted_context, source_kind)
+        reservation_id = claimed["receipt"]["reservation_id"]
+        expected = {
+            "schema_version": "continuation-action-admission.v1",
+            "admitted": True,
+            "reservation_id": reservation_id,
+            "task_id": task_id,
+        }
+        # MCP's schema makes parent_run_id optional, so omit it to represent a root.
+        actions = [
+            ("byq_agent_run_start", {
+                "role_id": "quant_orchestrator",
+                "idempotency_key": f"continuation-authorize-{runtime_root['root_run_id']}",
+            }),
+            ("byq_research_get", {
+                "entity_type": "research_task", "entity_id": task_id,
+            }),
+            ("byq_backtest_task_get", {
+                "backtest_task_id": task_id_from_signal_job(job_id),
+            }),
+        ]
+        for index, (tool, arguments) in enumerate(actions):
+            response = _post_authorize_tool(
+                fixture, trusted_context=trusted_context, runtime_root=runtime_root,
+                reservation_id=reservation_id, tool=tool, arguments=arguments,
+            )
+            assert response.status_code == 200, response.text
+            assert response.json() == expected
+            ledger = continuation_budget(store, task_id)
+            if index == 0:
+                assert len(ledger) == 1
+                assert ledger[0]["status"] == "accepted"
+                assert ledger[0]["run_id"] == runtime_root["root_run_id"]
+                assert ledger[0]["dispatch_attempts"] == 1
+                accepted_ledger = ledger
+            else:
+                assert ledger == accepted_ledger
+        assert unknown_ledger[0]["status"] == "outcome_unknown"
+        _close_authorize_runtime_root(runtime_root)
+        runtime_root = None
+    finally:
+        if runtime_root is not None:
+            _close_authorize_runtime_root(runtime_root)
+        _close_fixture(fixture)
+
+
+def _tamper_authorize_source_fact(fixture: dict[str, object], tamper: str) -> None:
+    if tamper == "origin_root_binding":
+        job = fixture["jobs"]._fetch_one(
+            "SELECT submission_origin FROM signal_producer_jobs WHERE job_id=:job",
+            {"job": fixture["job_id"]},
+        )
+        changed = dict(job["submission_origin"])
+        changed["root_run_id"] = "0" * 32 if changed["root_run_id"] != "0" * 32 else "1" * 32
+        fixture["jobs"]._execute(
+            "UPDATE signal_producer_jobs SET submission_origin=CAST(:origin AS jsonb) WHERE job_id=:job",
+            {"origin": json.dumps(changed), "job": fixture["job_id"]},
+        )
+    elif tamper == "ingress_settlement":
+        row = fixture["agent_store"]._fetch_one(
+            "SELECT settlement_json FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
+            {"id": fixture["source_ingress"]["mcp_request_id"]},
+        )
+        changed = dict(row["settlement_json"])
+        changed["unexpected"] = "changed"
+        fixture["agent_store"]._execute(
+            """UPDATE agent_acp_tool_ingress_observations SET settlement_json=CAST(:value AS jsonb)
+               WHERE mcp_request_id=:id""",
+            {"value": json.dumps(changed), "id": fixture["source_ingress"]["mcp_request_id"]},
+        )
+    elif tamper == "terminal_ingress_cursor":
+        row = fixture["agent_store"]._fetch_one(
+            "SELECT event_sha256 FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
+            {"id": fixture["source_ingress"]["mcp_request_id"]},
+        )
+        changed = "f" * 64 if row["event_sha256"] != "f" * 64 else "e" * 64
+        fixture["agent_store"]._execute(
+            "UPDATE agent_acp_tool_ingress_observations SET event_sha256=:digest WHERE mcp_request_id=:id",
+            {"digest": changed, "id": fixture["source_ingress"]["mcp_request_id"]},
+        )
+    elif tamper == "job_idempotency":
+        fixture["jobs"]._execute(
+            "UPDATE signal_producer_jobs SET idempotency_key=:key WHERE job_id=:job",
+            {"key": fixture["arguments"]["idempotency_key"] + "-changed",
+             "job": fixture["job_id"]},
+        )
+    elif tamper == "snapshot_content_hash":
+        fixture["research"]._execute(
+            "UPDATE artifacts SET content_sha256=:digest WHERE artifact_id=:artifact",
+            {"digest": "0" * 64, "artifact": fixture["artifact_id"]},
+        )
+    elif tamper == "job_request_hash_malformed":
+        fixture["jobs"]._execute(
+            "UPDATE signal_producer_jobs SET request_hash='bad' WHERE job_id=:job",
+            {"job": fixture["job_id"]},
+        )
+    elif tamper == "job_submission_hash_missing":
+        fixture["jobs"]._execute(
+            "UPDATE signal_producer_jobs SET submission_hash=NULL WHERE job_id=:job",
+            {"job": fixture["job_id"]},
+        )
+
+
+@pytest.mark.parametrize("tamper", [
+    "origin_root_binding",
+    "ingress_settlement",
+    "terminal_ingress_cursor",
+    "job_idempotency",
+    "snapshot_content_hash",
+    "job_request_hash_malformed",
+    "job_submission_hash_missing",
+])
+def test_authorize_tool_rejects_changed_v2_source_without_ledger_mutation(
+        monkeypatch, tmp_path, tamper):
+    fixture = _create_agent_job(monkeypatch, tmp_path, f"authorize-tamper-{tamper}")
+    store, task_id, trusted_context = (
+        fixture["research"], fixture["task"]["task_id"], fixture["trusted_context"])
+    runtime_root = None
+    try:
+        claimed, carrier, unknown_ledger = _prepare_authorize_dispatch(
+            store, conversation_id=fixture["conversation"]["conversation_id"],
+            task_id=task_id, job_id=fixture["job_id"],
+            artifact_id=fixture["artifact_id"], trusted_context=trusted_context,
+        )
+        runtime_root = _open_authorize_runtime_root(fixture, trusted_context, "agent_root_v2")
+        _tamper_authorize_source_fact(fixture, tamper)
+        assert continuation_budget(store, task_id) == unknown_ledger
+
+        response = _post_authorize_tool(
+            fixture, trusted_context=trusted_context, runtime_root=runtime_root,
+            reservation_id=claimed["receipt"]["reservation_id"],
+            tool="byq_agent_run_start",
+            arguments={"role_id": "quant_orchestrator",
+                       "idempotency_key": f"continuation-authorize-{runtime_root['root_run_id']}"},
+        )
+        assert response.status_code == 422, response.text
+        assert continuation_budget(store, task_id) == unknown_ledger
+
+        with pytest.raises(ValueError):
+            store.record_continuation_receipt(
+                task_id, trusted_context=trusted_context,
+                reservation_id=claimed["receipt"]["reservation_id"],
+                idempotency_key=carrier["idempotency_key"],
+                status="accepted", run_id=runtime_root["root_run_id"],
+            )
+        assert continuation_budget(store, task_id) == unknown_ledger
+    finally:
+        if runtime_root is not None:
+            _close_authorize_runtime_root(runtime_root)
+        _close_fixture(fixture)
+
+
+@pytest.mark.parametrize("violation", ["wrong_task_read", "write_action"])
+def test_authorize_tool_blocks_scope_violation_without_ledger_mutation(
+        monkeypatch, tmp_path, violation):
+    fixture = _create_agent_job(monkeypatch, tmp_path, f"authorize-scope-{violation}")
+    store, task_id, trusted_context = (
+        fixture["research"], fixture["task"]["task_id"], fixture["trusted_context"])
+    runtime_root = None
+    try:
+        claimed, _carrier, unknown_ledger = _prepare_authorize_dispatch(
+            store, conversation_id=fixture["conversation"]["conversation_id"],
+            task_id=task_id, job_id=fixture["job_id"],
+            artifact_id=fixture["artifact_id"], trusted_context=trusted_context,
+        )
+        runtime_root = _open_authorize_runtime_root(fixture, trusted_context, "agent_root_v2")
+        if violation == "wrong_task_read":
+            other = store.create_task({
+                "owner_principal": trusted_context["owner_principal"],
+                "title": "Other task",
+                "objective": "Unrelated continuation target",
+                "trace_id": trusted_context["trace_id"],
+                "idempotency_key": f"authorize-wrong-target-{uuid4().hex}",
+            }, trusted_context=trusted_context)
+            tool, arguments = "byq_research_get", {
+                "entity_type": "research_task", "entity_id": other["task_id"],
+            }
+        else:
+            tool, arguments = "byq_backtest_task_execute", {
+                "backtest_task_id": task_id_from_signal_job(fixture["job_id"]),
+            }
+
+        response = _post_authorize_tool(
+            fixture, trusted_context=trusted_context, runtime_root=runtime_root,
+            reservation_id=claimed["receipt"]["reservation_id"],
+            tool=tool, arguments=arguments,
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "schema_version": "continuation-action-admission.v1",
+            "admitted": False,
+            "reservation_id": claimed["receipt"]["reservation_id"],
+            "task_id": task_id,
+        }
+        blocked = store._fetch_one(
+            """SELECT continuation_blocked_reason, continuation_blocked_event_key
+               FROM research_tasks WHERE task_id=:task""",
+            {"task": task_id},
+        )
+        assert blocked == {
+            "continuation_blocked_reason": "continuation_needs_attention",
+            "continuation_blocked_event_key": claimed["receipt"]["event_key"],
+        }
+        assert continuation_budget(store, task_id) == unknown_ledger
+    finally:
+        if runtime_root is not None:
+            _close_authorize_runtime_root(runtime_root)
         _close_fixture(fixture)
