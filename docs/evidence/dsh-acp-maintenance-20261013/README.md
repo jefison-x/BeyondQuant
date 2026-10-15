@@ -65,6 +65,12 @@
 **后续范围仍HOLD：** “original-task permission”为旧泛化报错文案，不能据此恢复单独接续许可。当前不重放已settled预留，不继续真实模型测试。两用户真实隔离、迟到/未知结果、取消与后台竞争、进程异常、旧固定证据数量边界的执行影响等仍待分别审计/验证，远程CI/发布/生产仍HOLD/NOT_RUN。原测试环境和页面保留供当场互动；当前无需用户再提供登录或凭据。
 
 
+**Backend“最多修正一次”执行门（切片A）：离线限定 PASS，尚未安装（2026-10-16，北京时间）。** 应用源码 `40eb2964bc24820706301655be6290a6f78418c7` 移除 `repair_used` 的终身准入限制及新失败的 `correction_failed` 分支。不同修正输入可以继续提交；同一失败输入、幂等冲突、旧未知责任、身份/取消及原子提交仍受保护。历史字段和值及旧闭合结果原样保留。四文件冻结 diff SHA-256 `fe7c526809a281e5610caa9ad5d2354d9679e5b74dd6d3946bc5511a5cb606e4`，Tester、独立Sol→Root收据见私有 `hidden-correction-once-audit-v1/completion-v3/ROOT-OFFLINE-PASS.json`。
+
+31项定向范围由原批27项PASS和新批4项PASS分别覆盖，不称同批31PASS。原批256MiB测试tmpfs耗尽产生PG WAL ENOSPC，保留27PASS/1 setup ERROR/3 NOT_RUN；第二批因Root将 `df` 显示路径误作挂载身份而停在测试前，4项全部NOT_RUN，原失败不覆盖。重新完整修正纯采集入口，24项保存输出/负例合同通过Tester→Sol→Root后，新批同一冻结CLI的pre/post实际采集均通过；4项pytest10.25秒、0 FAIL/ERROR/SKIP，整批143.792秒小于300秒。原生命令RUNNING后仅轮询同一session至exit0，没有重启测试。临时3容器/1内网/1新建本地卷按准确身份清理，原16服务完整记录、挂载及4源码/8 helper哈希不变；0模型/真实Product Job，隔离测试创建2条合成FactorJob。一个Starlette弃用警告保留。
+
+当前ACP profile、MCP及公开校验返回的“最多修正一次”提示仍OPEN，须单独修正验证；registration fingerprint128可达性仍OPEN。本片不宣称全部默认限制已清除、任意规模性能、候选安装、真实Product/浏览器或生产资格。原测试环境和页面继续保留，下一片先审活跃提示合同。
+
 ## 此前切片（2026-10-15 北京时间；以下保留各切片当时版本）
 
 **搜索配置和前台委派于隔离版本 `0be2f56c` 通过限定真实浏览器验收；该切片当时 ACP 两服务更新到 `0a372d18`，其余12服务当时保持原版。** 用户在“模型配置 → 搜索服务”安全保存独立 DeepSeek 官方 Key；刷新仍只显示掩码。随后同一会话完成一次搜索和一轮无工具继续输入，历史消息 8→10→12，两个 Root completed/closed、unknown claims=0；模型代理实际3次完成。搜索返回来源链接，原生搜索服务 HTTP/用量未采集，天气数值答案质量不由此通过。独立 Sol → Root 的范围见 [搜索验收收据](ROOT-OWNER-SEARCH-BROWSER-PASS.json)。系统 `.env` **模型 Key** 退役仍是后续迁移要求，未称已完成。
