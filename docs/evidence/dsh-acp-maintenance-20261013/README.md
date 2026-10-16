@@ -18,7 +18,13 @@ Tester → 独立Sol → Root PASS，详见上述10月16日记录；特定旧终
 已停止扩大真实测试。离线核准完整命令后，另批零模型补查确认父/子仍active、两条审计入口unknown，恢复查询409，
 当前为 **HOLD_REAL_ROOT_NOT_CLOSED**；本次原生会话已定位到公开审计字段`authorization_decision`触发422并留下unknown。
 最小字段校验修补`f6a1c51f`已通过19项替身存储离线回归及Tester→独立Sol→Root，尚未安装或真实重验。
-确定性拒绝回执另片处理，旧unknown未改写；环境和页面继续保留。
+确定性拒绝回执切片B已提交 `3f87d3f24edbdf4efe6524ffc056b9d05c81b6d8`，
+六个功能源文件经独立Sol和Root限定源码/静态检查通过，没有新增或执行功能测试代码。
+两候选镜像九个变更文件的哈希、字节和权限读回通过；Backend增加100502字节、MCP增加59910字节，各一层。
+尚未安装或做新版本浏览器验收：旧unknown不改写，仍封锁当前Workspace的新ACP Root。
+Adapter重启不能证明独立Product runner退出，也不能解除该门槛。
+历史普通审计unknown的正式核对方案另见Proposed ADR-0113，尚未接受或实现；不启用Proposed ADR-0104。
+环境和原页面继续保留，生产/推送/合并仍NOT_RUN。
 
 ## 此前分片验收快照
 

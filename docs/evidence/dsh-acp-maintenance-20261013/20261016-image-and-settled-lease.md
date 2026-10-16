@@ -215,3 +215,32 @@ Tester → 独立Sol → Root限定PASS，私有入口`audit-detail-public-decis
 - `settled-continuation-lease-v1/ROOT-OFFLINE-PASS.json`、`GREEN-ENTRY.json`：准确源码哈希、命令、原生红绿日志与独立审查。未采集的 RED/GREEN UTC 起止明示 NOT_RECORDED。
 - `settled-continuation-lease-v1/image-v1/ACTUAL-RESULT.json`：精确镜像、原生命令、65 文件核对与体积。
 - `settled-continuation-lease-v1/local-gateway-update-v1/`：完整 preflight/rollback、备份、容器前后快照、失败原件、单次后置只读收据、浏览器截图和独立审查。
+
+### 切片B：确定性审计拒绝回执，源码及镜像差量限定PASS
+
+应用提交 `3f87d3f24edbdf4efe6524ffc056b9d05c81b6d8`，冻结六文件diff
+SHA-256 `36a3b3dd0bd7957819fb0b342f1a2cffb70ea165a32893108738a91e170553d2`。
+Accepted ADR-0112 已实现：Backend 在精确活动Root/AgentRun及锁定ingress上验证输入，
+只有写入前的确定性校验拒绝才保存私有标记；MCP精确核对并以denied结算，模型看不到证明。
+普通422/超时/5xx/丢响应仍unknown；旧unknown不升级，拒绝标记不能被observe重复派发或abort覆盖。
+跨AgentRun权限检查先于detail拒绝；ACP私有入口不能退回普通接口，普通SDK共享boot/root头保持兼容。
+
+按维护者最新要求，没有新增或执行功能测试代码。初次静态记录缺原生退出码，保留原收据；
+Root只补一次必要的AST、指定Ruff规则、diff检查和MCP TypeScript构建，各原生0、四份stderr为空。
+独立Sol源码及实际静态回执审查通过，Root限定PASS。
+准确命令、源码及raw/native入口为 `audit-validation-refusal-v1/ROOT-SOURCE-PASS.json`。
+
+仅构建两份候选镜像，没有安装：Backend `sha256:5e8ddc836cd92ef55c91477cdeabdd4ddf5041e453195b0683ce92b3c07a3c70`，
+MCP `sha256:13486c17984f91c15e487f12241228d4c089f25e29f36ecffc6687d547f2d884`。
+各在精确原镜像上单次COPY，USER/CMD/工作目录不变；RootFS各增加一层，存储增量分别100502/59910字节。
+通过从未启动的两个临时容器读回三份Python及三份TS/三份JS，九文件SHA/字节/UID/GID/0444均匹配。
+准确临时CID已删除、批次标签查询为空；无模型/Job/服务更新。
+独立Sol→Root的镜像差量限定PASS入口为 `audit-validation-refusal-v1/images-v1/ROOT-IMAGE-PASS.json`。
+各构建120秒timeout生效并退出0；全批UTC起止未留存，不声称300秒总墙钟验收。
+这不是完整image admission、浏览器或生产PASS。
+
+当前原Workspace仍被Root7537的两条历史unknown封锁；镜像修补不解除旧责任。
+Accepted ADR-0100/0109/0111要求保留该门槛，不能仅靠轮换Adapter内存/boot在同组新建Root。
+普通DSH由独立Product runner持有，前述空闲Adapter退出不能证明它或活动child退出。
+Proposed ADR-0113提出单独的普通审计unknown人工核对合同；未接受、未实现、未执行，ADR-0104仍Proposed。
+新版本安装、浏览器/真实模型验收、Full CI、推送/合并及生产均NOT_RUN；原环境和页面保持打开。
