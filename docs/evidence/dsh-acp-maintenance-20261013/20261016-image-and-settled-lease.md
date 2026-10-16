@@ -133,6 +133,29 @@ Tester → 独立Sol → Root镜像门通过。
 
 ## 准确私有证据入口
 
+### 重新登录与连续Gateway后台接续（V2）
+
+用户重新登录后回到原CID，核对记录刷新正常，旧28条消息未变；未改密码或登录期限。
+源码验收点 `85aad7f7e30e1541dbbf00015c7289a069693ba0`，Gateway应用仍为上述6975bd18、前端1979031e。
+`2026-10-16T00:13:50.291Z`仅从原浏览器提交一次已有批准合成输入，创建一个新SignalJob，未委派、下载行情或执行回测。
+
+- Job `signaljob_82d0b0be6ea74a4cb51642b543921289` 一次完成；预留 `continuation_3d79b88a5a2875644df86c1d1ce955e8` 只派发一次并settled。
+- 源Root `f149b866112b423e941b97696cf07ef1` 与自动Root `cada1c0324534c9382b6baf65542cc6e` 均completed/closed、unknown claims为0；终态与Gateway ACK分别为143、158。
+- 源轮5次HTTP200；后台官方收据为5次请求、7次工具调用、峰值并发1，known/provider_response用量input218408/cache-read196736/output2924。后台逐次HTTP状态未采集，不冒称通过。
+- Runtime与Backend canonical结算摘要同为 `0066618aa837c3049f16ee054a3262ab4d5443589c3d634482da225ff7d7b46c`；可选执行限制仍null。
+- Gateway前后CID、StartedAt、RestartCount=0及镜像逐字节相同。后置16容器快照与此前保留基线按服务及唯一挂载目标比较一致，15健康、1无健康检查；该全量快照的原生命令包未单独保存，不冒充V2批内全16项原生前后验收。
+- 消息28→39、Root14→16、Job4→5、预留4→5；旧消息、Root和Job行精确不变，旧预留仅全账本摘要随新增项变化。ResearchTask仍planned/version1，但其预算字段随预留增加，不宣称整行未变。
+
+原计划误把两个可见assistant气泡当成两条耐久消息。实际每个Root各保存5条非空文本delta，连同1条user共新增11条；新段哈希各异，无旧历史重放。
+原PLAN保留，另行澄清存储与UI分组合同，没有为此重跑模型。
+刷新原页后自动回答仍在，准确说明同一BacktestTask信号完成、回测未执行；刷新前后元数据快照字节相同。
+观察窗600秒、最多1输入/1Job/0子助手、请求观察阈值16，实际10次；阈值是测试停止线，不是Product配额。
+
+Tester → 独立Sol → Root **限定PASS**，私有入口 `continuous-background-v2/ROOT-PASS.json`。
+它证明连续Gateway中的新Job自动接续；未独立注入“旧Runtime终态缺失”内部条件，该分支仍以103项离线因果证据为准。
+旧V1失败原件不改标。进程异常、空闲释放、两用户/迟到/未知结果剩余范围另行验证；生产/推送/合并NOT_RUN。
+原环境和浏览器页面保持打开。
+
 证据根：`.ci-artifacts/agent-origin-consumer-20261015-v1/`。
 
 - `native-image-readback-v1/ROOT-LOCAL-IMAGE-PASS.json`：原生哈希/权限/目录与体积；首轮权限及观察器失败均保留。
