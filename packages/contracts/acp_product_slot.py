@@ -33,6 +33,7 @@ _PRODUCT_RUNNER_REASONS = frozenset({
 })
 
 _HEX32 = re.compile(r"[0-9a-f]{32}\Z")
+_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _ROOT_CWD = re.compile(r"(?:session|root)-[0-9a-f]{32}\Z")
 _PRINCIPAL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}\Z")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")

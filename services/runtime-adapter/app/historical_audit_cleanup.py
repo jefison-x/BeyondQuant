@@ -27,7 +27,10 @@ from packages.contracts.acp_product_slot import (
     validate_product_scope,
 )
 
-from .acp_product_slot_client import read_product_cleanup_receipt_with_sha256
+from .acp_product_slot_client import (
+    ProductSlotLeaseMismatch,
+    read_product_cleanup_receipt_with_sha256,
+)
 
 
 EXPECTED_SCOPE_SCHEMA = "byq-acp-product-cleanup-scope.v1"
@@ -472,9 +475,14 @@ def supplement_historical_binding(
             if canonical_product_json(expected_after) != original_raw:
                 raise HistoricalCleanupHold("persisted ACP binding differs from exact supplement")
             already_supplemented = True
-        receipt, receipt_sha256 = read_product_cleanup_receipt_with_sha256(
-            DEFAULT_PRODUCT_CONTROL_DIRECTORY, control_key, scope,
-        )
+        try:
+            receipt, receipt_sha256 = read_product_cleanup_receipt_with_sha256(
+                DEFAULT_PRODUCT_CONTROL_DIRECTORY, control_key, scope,
+            )
+        except ProductSlotLeaseMismatch as exc:
+            raise HistoricalCleanupHold(
+                "Product Runner cleanup receipt is unavailable or invalid",
+            ) from exc
         if receipt["cleanup"] != "proven":
             raise HistoricalCleanupHold("Product Runner cleanup remains unproven")
         if already_supplemented:
