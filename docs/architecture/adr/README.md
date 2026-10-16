@@ -216,7 +216,7 @@ reset until reconciled; minimal retired-key replay protection remains separate.
 Implementation and real E acceptance are recorded in the Phase17 evidence;
 acceptance does not authorize resetting existing production data.
 
-[ADR-0112](ADR-0112-acp-audit-validation-negative-receipt.md) is **Proposed**:
+[ADR-0112](ADR-0112-acp-audit-validation-negative-receipt.md) is **Accepted**:
 an exact private negative receipt for pre-write ACP audit validation. It is
-separate from ADR-0109's authorize-only receipt, does not rewrite old unknown
-rows, and requires maintainer acceptance before implementation.
+separate from ADR-0109's authorize-only receipt and does not rewrite old unknown
+rows. Implementation and qualification remain separate evidence gates.

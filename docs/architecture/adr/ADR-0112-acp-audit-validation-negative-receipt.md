@@ -1,6 +1,7 @@
 # ADR-0112 — ACP审计校验的精确负回执
 
-- Status: **Proposed — 等待维护者接受，尚未授权实现本片**。
+- Status: **Accepted — 实现与资格验证逐片执行**。
+- Acceptance: 2026-10-16，维护者在独立Sol审查后的具体提案中明确回复“接受 ADR-0112，继续实现”。
 - Date: 2026-10-16。
 - Scope: 仅普通Product ACP的`byq_agent_audit`；不推进Product Phase。
 - Related: Accepted ADR-0094、ADR-0109、ADR-0111；不扩大ADR-0109的authorize专用合同。
