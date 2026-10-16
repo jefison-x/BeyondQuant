@@ -221,8 +221,8 @@ an exact private negative receipt for pre-write ACP audit validation. It is
 separate from ADR-0109's authorize-only receipt and does not rewrite old unknown
 rows. Implementation and qualification remain separate evidence gates.
 
-[ADR-0113](ADR-0113-historical-audit-unknown-reconciliation.md) is **Proposed**:
+[ADR-0113](ADR-0113-historical-audit-unknown-reconciliation.md) is **Accepted**:
 Engineering-only acknowledgement of historical ordinary audit-append uncertainty,
 preserving original unknown observations and requiring exact signed runner cleanup,
 trusted reconciliation storage and terminal ACK. It does not enable ADR-0104 or
-authorize recovery operations before acceptance and implementation review.
+authorize recovery operations before implementation review and exact preflight.

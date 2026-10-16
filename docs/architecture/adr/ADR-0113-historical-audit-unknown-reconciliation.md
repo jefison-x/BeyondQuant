@@ -1,6 +1,8 @@
 # ADR-0113 — Historical audit-only unknown reconciliation
 
-- Status: **Proposed**. No recovery operation is authorized by this draft.
+- Status: **Accepted** (2026-10-16; maintainer: "接受 ADR-0113，继续实现并用浏览器验证").
+  Acceptance authorizes the bounded implementation and verification gates below;
+  it does not itself authorize an unreviewed recovery operation.
 - Scope: DSH/ACP maintenance, not Product Phase advancement or production deployment.
 - Amends the unresolved audit-ingress fence in ADR-0100/0109/0112 only through
   the explicit reconciliation below. ADR-0104 remains Proposed and is not enabled.
@@ -18,7 +20,7 @@ Ordinary DSH belongs to the independent Product runner. Restarting only the
 Adapter cannot prove that process stopped. Restarting both services is not a
 substitute for an accepted process proof, business reconciliation, or terminal ACK.
 
-## Proposed narrow decision
+## Accepted narrow decision
 
 Allow a trusted Engineering operator to reconcile **only ordinary public audit
 append uncertainty**. This is explicit acknowledgement that an old audit append
@@ -100,5 +102,5 @@ verification uses browser → Gateway/Product API: apply the separately admitted
 Engineering reconciliation, verify the old answer/history remains, send one
 ordinary next input, then verify current delegation and automatic continuation
 in small declared batches. No added functional test code is required by this
-draft. Read-only receipts confirm exact ACK, cleanup and no replay; untouched
+decision. Read-only receipts confirm exact ACK, cleanup and no replay; untouched
 negative cases remain NOT_RUN. Production, push and merge retain their gates.
