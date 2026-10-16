@@ -869,6 +869,14 @@ def peek_task_continuation(conversation_id: str, request: Request) -> dict:
     return candidate if candidate is not None else {'status': 'waiting'}
 
 
+@app.get('/internal/task-continuation/{conversation_id}/reservations/{reservation_id}')
+def get_exact_task_continuation(conversation_id: str, reservation_id: str,
+        request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.get_default_continuation_v3_exact(
+        conversation_id, reservation_id, trusted_context=context))
+
+
 @app.post('/internal/task-continuation/{conversation_id}/cancel')
 def cancel_task_continuation(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)

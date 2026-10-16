@@ -1255,19 +1255,27 @@ def _request_v3_continuation_cancel_fence(context: dict, reservation_id: str) ->
     return body
 
 
+def _read_exact_v3_continuation_intent(context: dict, reservation_id: str):
+    intent = _catalog_request(
+        'GET',
+        f"/internal/task-continuation/{context['conversation_id']}/reservations/{reservation_id}",
+        Principal(subject=context['owner']), context['workspace_id'])
+    if not _has_v3_continuation_intent(intent):
+        raise ValueError('exact Backend v3 continuation receipt is unavailable')
+    receipt, carrier, exact_id, instruction = _validate_v3_continuation_intent(intent, context)
+    if exact_id != reservation_id:
+        raise ValueError('Backend returned a different exact v3 continuation receipt')
+    return intent, receipt, carrier, instruction
+
+
 def _v3_never_dispatched_cancel_proof(
     context: dict, reservation_id: str, *, allow_reserved: bool = False,
 ) -> str | None:
     """Use Backend's exact zero-attempt cancellation plus no Runtime contradiction."""
-    principal = Principal(subject=context['owner'])
-    intent = _catalog_request('POST', f"/internal/task-continuation/{context['conversation_id']}/peek",
-        principal, context['workspace_id'])
-    if not _has_v3_continuation_intent(intent):
-        return None
-    receipt, carrier, exact_id, instruction = _validate_v3_continuation_intent(intent, context)
+    _intent, receipt, carrier, instruction = _read_exact_v3_continuation_intent(
+        context, reservation_id)
     backend_status = receipt.get('status')
-    if (exact_id != reservation_id
-            or backend_status not in ({'cancelled', 'reserved'} if allow_reserved else {'cancelled'})
+    if (backend_status not in ({'cancelled', 'reserved'} if allow_reserved else {'cancelled'})
             or type(receipt.get('dispatch_attempts')) is not int
             or receipt.get('dispatch_attempts') != 0):
         return None
@@ -1296,14 +1304,8 @@ def _v3_cancel_target(
     context: dict, reservation_id: str, session: ProductSession, mode: str,
 ) -> tuple[str, str] | None:
     """Read-only bind a held reservation to its exact active or closed Runtime root."""
-    principal = Principal(subject=context['owner'])
-    intent = _catalog_request('POST', f"/internal/task-continuation/{context['conversation_id']}/peek",
-        principal, context['workspace_id'])
-    if not _has_v3_continuation_intent(intent):
-        return None
-    receipt, carrier, exact_id, instruction = _validate_v3_continuation_intent(intent, context)
-    if exact_id != reservation_id:
-        return None
+    _intent, receipt, carrier, instruction = _read_exact_v3_continuation_intent(
+        context, reservation_id)
 
     adapter_receipt = _continuation_adapter_get(
         f"/internal/runtime/sessions/{context['session_id']}/continuation-receipt/{reservation_id}")
@@ -1526,15 +1528,10 @@ def _retry_v3_continuation_cancel(context: dict, reservation_id: str, mode: str)
                 fenced = _request_v3_continuation_cancel_fence(context, reservation_id)
                 return (fenced.get('status') == 'cancelled'
                     and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled')
-            intent = _catalog_request('POST',
-                f"/internal/task-continuation/{context['conversation_id']}/peek",
-                Principal(subject=context['owner']), context['workspace_id'])
-            if _has_v3_continuation_intent(intent):
-                receipt, _carrier, exact_id, _instruction = _validate_v3_continuation_intent(
-                    intent, context)
-                if exact_id == reservation_id and receipt.get('status') in {
-                        'outcome_unknown', 'accepted'}:
-                    _request_v3_continuation_cancel_fence(context, reservation_id)
+            _intent, receipt, _carrier, _instruction = _read_exact_v3_continuation_intent(
+                context, reservation_id)
+            if receipt.get('status') in {'outcome_unknown', 'accepted'}:
+                _request_v3_continuation_cancel_fence(context, reservation_id)
             return False
         except Exception as exc:
             logger.warning('v3 no-dispatch cancellation proof remains unresolved: error=%s',

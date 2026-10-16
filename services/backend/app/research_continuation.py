@@ -1520,6 +1520,60 @@ class ResearchContinuationMixin:
                 }
         return terminal_v3_intent
 
+    def get_default_continuation_v3_exact(self, conversation_id: str, reservation_id: str,
+            *, trusted_context: dict) -> dict:
+        """Read one exact v3 ledger entry for cancellation reconciliation only."""
+        owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
+        if (not isinstance(conversation_id, str) or not conversation_id
+                or not isinstance(owner, str) or not owner
+                or not isinstance(workspace, str) or not workspace
+                or not isinstance(reservation_id, str)
+                or re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None):
+            raise ValueError('exact v3 continuation identity is required')
+
+        with self._transaction() as connection:
+            matches = execute(connection, '''SELECT t.*, c.runtime_session_id,
+                    c.trace_id AS conversation_trace_id, c.status AS conversation_status
+                FROM research_tasks t JOIN product_conversations c
+                  ON c.conversation_id=t.conversation_id AND c.owner_principal=t.owner_principal
+                 AND c.workspace_id=t.workspace_id
+                WHERE t.conversation_id=:conversation AND t.owner_principal=:owner
+                  AND t.workspace_id=:workspace
+                  AND t.continuation_budget @> CAST(:receipt AS JSONB)''',
+                {'conversation': conversation_id, 'owner': owner, 'workspace': workspace,
+                 'receipt': [{'reservation_id': reservation_id}]})
+            if len(matches) != 1:
+                raise ValueError('exact v3 continuation reservation is unavailable or ambiguous')
+
+            task = matches[0]
+            ledger = task.get('continuation_budget')
+            if not isinstance(ledger, list) or any(not isinstance(row, dict) for row in ledger):
+                raise ValueError('exact v3 continuation ledger is malformed')
+            matching_rows = [row for row in ledger if row.get('reservation_id') == reservation_id]
+            if len(matching_rows) != 1 or not _is_v3_ledger_entry(matching_rows[0]):
+                raise ValueError('exact v3 continuation ledger entry is unavailable or ambiguous')
+            entry = _validate_v3_ledger_entry(matching_rows[0])
+            carrier = entry['reservation']
+            if (task.get('task_id') != carrier.get('task_id')
+                    or task.get('conversation_id') != conversation_id
+                    or task.get('owner_principal') != owner
+                    or task.get('workspace_id') != workspace
+                    or carrier.get('conversation_id') != conversation_id
+                    or carrier.get('owner_principal') != owner
+                    or carrier.get('workspace_id') != workspace):
+                raise ValueError('exact v3 continuation scope changed')
+            conversation = {
+                'conversation_id': conversation_id,
+                'runtime_session_id': task.get('runtime_session_id'),
+                'trace_id': task.get('conversation_trace_id'),
+                'status': task.get('conversation_status'),
+            }
+            if (not isinstance(conversation['runtime_session_id'], str)
+                    or not isinstance(conversation['trace_id'], str)):
+                raise ValueError('exact v3 continuation conversation binding is unavailable')
+            self._recheck_v3_source_binding(connection, task, conversation, carrier)
+            return self._v3_intent(task, conversation, entry)
+
     def claim_default_continuation_v3(self, conversation_id: str, *, signal_job_id: str,
             trusted_context: dict) -> dict:
         """Claim exactly the Job returned by the preceding v3 peek."""
