@@ -95,6 +95,61 @@ def _canonical_acp_arguments(arguments: object) -> tuple[str, int]:
     return hashlib.sha256(encoded).hexdigest(), len(encoded)
 
 
+def _historical_audit_unknown_coverage(connection, root_run_id: str,
+                                       receipt: dict) -> tuple[list[dict], list[dict]]:
+    """Validate the exact immutable eight-row ingress history covered by ADR-0113."""
+    from .agent_research import (
+        AgentConflict, _HISTORICAL_AUDIT_INGRESS, _HISTORICAL_AUDIT_UNKNOWN,
+        _historical_ingress_rows_sha256,
+    )
+
+    rows = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+        WHERE root_run_id=:root ORDER BY sequence""", {"root": root_run_id})
+    if len(rows) != len(_HISTORICAL_AUDIT_INGRESS):
+        raise AgentConflict("historical audit reconciliation ingress set changed")
+    if _historical_ingress_rows_sha256(rows) != receipt.get("original_ingress_rows_sha256"):
+        raise AgentConflict("historical audit reconciliation ingress snapshot changed")
+
+    unknown_rows: list[dict] = []
+    for row, (sequence, request_id, tool_name, event_sha256) in zip(
+            rows, _HISTORICAL_AUDIT_INGRESS, strict=True):
+        event, expected_receipt = DomainCallEvidenceMixin._acp_audit_ingress_event_and_receipt(row)
+        if (row.get("sequence") != sequence
+                or row.get("mcp_request_id") != request_id
+                or row.get("tool_name") != tool_name
+                or row.get("event_sha256") != event_sha256
+                or row.get("receipt_json") != expected_receipt
+                or acp_binding_sha256(event) != event_sha256
+                or row.get("owner_principal") != receipt["scope"].get("owner_principal")
+                or row.get("workspace_id") != receipt["scope"].get("workspace_id")
+                or row.get("session_id") != receipt["scope"].get("session_id")
+                or row.get("trace_id") != receipt["scope"].get("trace_id")
+                or row.get("runtime_boot_id") != receipt["scope"].get("runtime_boot_id")
+                or row.get("root_run_id") != root_run_id):
+            raise AgentConflict("historical audit reconciliation ingress identity changed")
+        selected = request_id in _HISTORICAL_AUDIT_UNKNOWN
+        if selected:
+            if row.get("status") != "unknown" or not isinstance(row.get("settlement_json"), dict):
+                raise AgentConflict("historical audit uncertainty is no longer the exact unknown state")
+            unknown_rows.append(row)
+        elif row.get("status") != "settled" or not isinstance(row.get("settlement_json"), dict):
+            raise AgentConflict("another unresolved ingress prevents historical audit reconciliation")
+
+    expected_unknowns = [{
+        "mcp_request_id": row["mcp_request_id"],
+        "sequence": row["sequence"],
+        "event_sha256": row["event_sha256"],
+        "arguments_sha256": row["arguments_sha256"],
+        "settlement_sha256": acp_binding_sha256(row["settlement_json"]),
+        "status": "unknown",
+    } for row in unknown_rows]
+    if (len(unknown_rows) != 2
+            or receipt.get("unknown_ingresses") != expected_unknowns
+            or receipt.get("unknown_count") != 2):
+        raise AgentConflict("historical audit receipt does not match the exact unknown rows")
+    return rows, unknown_rows
+
+
 class DomainValidationRejected(ValueError):
     """Only a trusted domain/schema validator may classify a repairable failure."""
 
@@ -220,7 +275,7 @@ DOMAIN_CALL_DDL = [
 class DomainCallEvidenceMixin:
     def _require_acp_root_terminal_safe(self, connection, root_run_id: str) -> None:
         """Reject terminal ACK while ACP bind, tool dispatch, or domain claim is unresolved."""
-        from .agent_research import AgentConflict
+        from .agent_research import AgentConflict, _historical_reconciliation_row
 
         pending_registration = fetch_one(connection, """SELECT count(*) AS count
             FROM agent_acp_native_agent_registrations
@@ -228,11 +283,19 @@ class DomainCallEvidenceMixin:
         if pending_registration["count"]:
             raise AgentConflict("pending ACP native registration prevents root close")
 
-        unsettled_ingress = fetch_one(connection, """SELECT count(*) AS count
+        unsettled_rows = execute(connection, """SELECT *
             FROM agent_acp_tool_ingress_observations
-            WHERE root_run_id=:root AND status IN ('pending','unknown')""", {"root": root_run_id})
-        if unsettled_ingress["count"]:
-            raise AgentConflict("pending or unknown ACP tool ingress prevents root close")
+            WHERE root_run_id=:root AND status IN ('pending','unknown') ORDER BY sequence""",
+            {"root": root_run_id})
+        if any(row.get("status") == "pending" for row in unsettled_rows):
+            raise AgentConflict("pending ACP tool ingress prevents root close")
+        if any(row.get("status") == "unknown" for row in unsettled_rows):
+            audit_row = _historical_reconciliation_row(connection, root_run_id)
+            receipt = (audit_row.get("detail_json", {}).get("acp_control")
+                       if audit_row is not None else None)
+            if not isinstance(receipt, dict):
+                raise AgentConflict("unknown ACP tool ingress prevents root close")
+            _historical_audit_unknown_coverage(connection, root_run_id, receipt)
 
         acp_marker = fetch_one(connection, """SELECT
             (SELECT count(*) FROM agent_acp_native_agent_registrations WHERE root_run_id=:root)
@@ -1460,7 +1523,10 @@ class DomainCallEvidenceMixin:
 
     def _acp_terminal_evidence_snapshot(self, connection, root_run_id: str) -> dict[str, object]:
         """Freeze the shared ingress cursor and raw-free unknown claim summary under the root lock."""
-        from .agent_research import AgentConflict
+        from .agent_research import (
+            AgentConflict, _historical_ingress_rows_sha256,
+            _historical_reconciliation_row,
+        )
 
         events = execute(connection, """SELECT sequence,event_sha256,event_kind,status,outcome,settlement_sha256 FROM (
                 SELECT sequence,event_sha256,'domain_call'::text AS event_kind,
@@ -1492,6 +1558,21 @@ class DomainCallEvidenceMixin:
             "request_sha256": row["request_sha256"], "input_sha256": row["input_sha256"],
             "agent_run_id": row["agent_run_id"], "evidence_sequence": row["evidence_sequence"],
             "status": row["status"]} for row in claims]
+        reconciliation_row = _historical_reconciliation_row(connection, root_run_id)
+        if reconciliation_row is not None:
+            reconciliation = reconciliation_row["detail_json"]["acp_control"]
+            ingress_rows, _unknown_rows = _historical_audit_unknown_coverage(
+                connection, root_run_id, reconciliation)
+            ingress_sha256 = acp_binding_sha256({
+                "schema_version": "byq-acp-root-ingress-reconciliation-snapshot.v1",
+                "root_run_id": root_run_id,
+                "sequence": ingress_sequence,
+                "original_cursor_sha256": ingress_sha256,
+                "original_ingress_rows_sha256": _historical_ingress_rows_sha256(ingress_rows),
+                "audit_unknown_count": reconciliation["unknown_count"],
+                "audit_unknown_disposition": reconciliation["unknown_disposition"],
+                "reconciliation_receipt_sha256": reconciliation["receipt_sha256"],
+            })
         return {"terminal_acp_ingress_sequence": ingress_sequence,
             "terminal_acp_ingress_sha256": ingress_sha256,
             "terminal_unknown_claim_count": len(unknown_claims),

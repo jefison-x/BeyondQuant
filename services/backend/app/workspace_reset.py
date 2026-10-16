@@ -311,6 +311,30 @@ class WorkspaceResetStore(PgStoreMixin):
                    allow_active_agent_roots: bool = False) -> None:
         params = {"owner": owner, "workspace": workspace}
 
+        # ADR-0113's reserved proof is still needed for Backend/Adapter/Gateway
+        # terminal acknowledgement and exact slot release. The current durable
+        # Backend schema records its own lifecycle receipt, but has no persisted
+        # Gateway ACK plus slot-release receipt pair to prove that recovery no
+        # longer depends on this row. Hold only this one deterministic proof;
+        # do not exempt the broader agent_audit table from reset retention.
+        from .agent_research import (
+            _HISTORICAL_AUDIT_OWNER,
+            _HISTORICAL_AUDIT_WORKSPACE_ID,
+            _HISTORICAL_AUDIT_ROOT_ID,
+            historical_audit_reconciliation_id,
+        )
+
+        protected_proof = None
+        if owner == _HISTORICAL_AUDIT_OWNER and workspace == _HISTORICAL_AUDIT_WORKSPACE_ID:
+            protected_proof = WorkspaceResetStore._first_row(connection, """
+                SELECT audit_id FROM agent_audit WHERE audit_id=:audit_id LIMIT 1
+            """, {"audit_id": historical_audit_reconciliation_id(
+                _HISTORICAL_AUDIT_ROOT_ID)})
+        if protected_proof is not None:
+            raise WorkspaceResetBlocked(
+                "ADR-0113 reconciliation proof has no durable Gateway ACK and slot-release record"
+            )
+
         if not allow_active_agent_roots:
             root = WorkspaceResetStore._first_row(connection, """
                 SELECT root_run_id FROM agent_runtime_turns

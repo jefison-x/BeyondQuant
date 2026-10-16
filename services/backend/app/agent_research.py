@@ -8,7 +8,10 @@ session schemas.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -22,7 +25,17 @@ from typing import Any
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event, lifecycle_receipt
+from packages.contracts.agent_run_lifecycle import (
+    registration_fingerprint,
+    validate_lifecycle_event,
+    lifecycle_receipt,
+    project_lifecycle_event,
+)
+from packages.contracts.acp_product_slot import (
+    PRODUCT_SCOPE_KEYS,
+    validate_product_scope,
+    verify_product_cleanup_receipt,
+)
 from packages.contracts.research_plan_approval import (
     AGENT_APPROVAL_PLAN_ACTION,
     PLAN_APPROVAL_ACTION,
@@ -71,6 +84,87 @@ _SECRET_KEY_FRAGMENTS = (
     "authorization",
 )
 _AUDIT_AUTHORIZATION_DECISIONS = frozenset({"allowed", "denied", "approval_required"})
+_HISTORICAL_AUDIT_ROOT_ID = "753727634c8641a0add1597d6a304bae"
+_HISTORICAL_AUDIT_OWNER = "owneradmin"
+_HISTORICAL_AUDIT_ROOT_RUN_ID = "agent_run_83faa0ce544849908304e195320487ab"
+_HISTORICAL_AUDIT_CHILD_RUN_ID = "agent_run_fd7f6b8b34c045aca846a5aefb2f44bb"
+_HISTORICAL_AUDIT_NATIVE_ROOT_ID = "a4b2c390-5972-433c-84d4-1f3cab4baa1c"
+_HISTORICAL_AUDIT_NATIVE_CHILD_ID = "4f96f0a0-6dc6-4c3e-a178-f82d41c84cdd"
+_HISTORICAL_AUDIT_BOOT_ID = "488d00f535f263b1390318772c82469e"
+_HISTORICAL_AUDIT_SESSION_ID = "byq-session-734f644d7a8f4cc7b39fb253c5cebe02"
+_HISTORICAL_AUDIT_TRACE_ID = "byq-trace-7e2a8af177614ea4b575199770a41825"
+_HISTORICAL_AUDIT_WORKSPACE_ID = "workspace_4c5b803209d549019b7804976f6930c6"
+_HISTORICAL_AUDIT_UNKNOWN = {
+    "5e8e9f1701b9843fbce73ab218fa748a": (
+        5,
+        "c90e56c441d87dcde50c474fbb99fdb0614b10e5202a50ca8da564876796e6e5",
+        "129a8de53b2a4c505428692d8fe3e436fdc4a638c08885cbfa740a6f3545b65b",
+    ),
+    "854f82571071842756c622ab4c532659": (
+        6,
+        "308bb45270a3951fa55a7921942b73cd2a310ee8741ae79310ca93508a26ce36",
+        "67fd4f8c1011f0b23c000673e50a8c2012a3522bd98e2b567a362d2951cfc46b",
+    ),
+}
+_HISTORICAL_AUDIT_INGRESS = (
+    (1, "47501ca4f200f70549f06f055ed57dea", "byq_agent_authorize", "06154af14f889fcb6f59b1d7a4cc62a804976de77b05f9e03b9ba38ec5f4c02f"),
+    (2, "58684f8e09ee68a0e394a1bea6b38324", "byq_agent_authorize", "85da487764c2c0ecccb2e26bd56f74280c751789110685f24fac6cc9016f0421"),
+    (3, "9c6a023ec4befdeb9802376004f754ec", "byq_research_get", "156eb616eb96823895540afef0e49436aa8c1a708c544d96bfaa9f1879b45ef6"),
+    (4, "2baafc550f0d67126a1c26b58a645e37", "byq_backtest_task_get", "060991e4537679f895d848c19e2cc8fa543fcc815fa1e76bb0a9699c9d64a2eb"),
+    (5, "5e8e9f1701b9843fbce73ab218fa748a", "byq_agent_audit", "c90e56c441d87dcde50c474fbb99fdb0614b10e5202a50ca8da564876796e6e5"),
+    (6, "854f82571071842756c622ab4c532659", "byq_agent_audit", "308bb45270a3951fa55a7921942b73cd2a310ee8741ae79310ca93508a26ce36"),
+    (7, "f37a5f926a2f319f3f23a48309e23f4d", "byq_agent_audit", "ec80732efb332247dbc9a625373fda432fffc88e4756c05d9932be91cc5433fd"),
+    (8, "6fb84c71939175f80e225f8e3e99d2e4", "byq_agent_audit", "ae0ef0e591c41dd0dbc836167fa30c6a1d6c7e3b74c41cc053381b6a246c467c"),
+)
+_HISTORICAL_RECONCILIATION_SCHEMA = "byq-acp-historical-audit-reconciliation.v1"
+_HISTORICAL_RECONCILIATION_ACTION = "historical_audit_unknown_reconciliation"
+_HISTORICAL_RECONCILIATION_OUTCOME = "audit_append_outcome_unknown_acknowledged"
+_HISTORICAL_BACKEND_SCOPE_SCHEMA = "byq-acp-product-cleanup-scope.v1"
+_HISTORICAL_BACKEND_SNAPSHOT_SCHEMA = "byq-acp-historical-audit-backend-snapshot.v1"
+_HISTORICAL_CONTROL_KEY_SHA_ENV = "BYQ_ACP_PRODUCT_CONTROL_KEY_SHA256"
+_HISTORICAL_AUTHORITY_EPOCH = 10
+_HISTORICAL_AUDIT_ACTIONS = {
+    "5e8e9f1701b9843fbce73ab218fa748a": ("byq_research_get", "research_task"),
+    "854f82571071842756c622ab4c532659": ("byq_backtest_task_get", "backtest_task"),
+}
+_HISTORICAL_TERMINAL_SOURCE_EVENT = {
+    "kind": "session.result",
+    "payload": {
+        "finish_reason": "completed",
+        "run_id": _HISTORICAL_AUDIT_ROOT_ID,
+    },
+    "sequence": 167,
+    "session_id": _HISTORICAL_AUDIT_SESSION_ID,
+    "source": "runtime-adapter",
+    "timestamp": "2026-10-16T00:40:52.456601+00:00",
+    "trace_id": _HISTORICAL_AUDIT_TRACE_ID,
+}
+_HISTORICAL_SNAPSHOT_MUTABLE_ROOT_FIELDS = frozenset({
+    "status", "authority_status", "updated_at", "terminal_sequence",
+    "terminal_event_sha256", "terminal_acp_ingress_sequence",
+    "terminal_acp_ingress_sha256", "terminal_unknown_claim_count",
+    "terminal_unknown_claims_sha256",
+})
+_HISTORICAL_SNAPSHOT_MUTABLE_RUN_FIELDS = frozenset({
+    "status", "authority_status", "updated_at", "version",
+})
+_HISTORICAL_RUNTIME_RESULT_FIELDS = frozenset({
+    "status", "root_run_id", "backend_snapshot_sha256", "native_root_session_id",
+    "scope", "binding_sha256_before", "binding_sha256_after",
+    "product_cleanup_receipt_sha256", "product_cleanup_scope_digest",
+    "product_cleanup_receipt_raw_b64",
+})
+_HISTORICAL_RECEIPT_FIELDS = frozenset({
+    "schema_version", "root_run_id", "scope", "native_root_session_id",
+    "authority_epoch", "agent_run_ids", "native_registrations_sha256",
+    "original_ingress_rows_sha256", "unknown_count", "unknown_disposition",
+    "unknown_ingresses", "domain_claim_count", "terminal_unknown_claims_sha256",
+    "backend_snapshot_sha256", "product_cleanup_receipt_sha256",
+    "product_cleanup_scope_digest", "runner_instance_id", "cleanup_reason",
+    "cleanup_code", "cleanup_signal", "binding_sha256_before",
+    "binding_sha256_after", "terminal_event_receipt", "operator_uid",
+    "operator_name", "receipt_sha256",
+})
 _PLAN_BINDING_FIELDS = (
     "plan_task_id", "plan_workspace_id", "plan_version", "plan_task_version",
     "plan_action", "plan_resource_kind", "plan_resource_id", "plan_params_digest",
@@ -100,6 +194,113 @@ class AgentConflict(AgentResearchError):
 
 class AgentPersistenceError(AgentResearchError):
     pass
+
+
+def historical_audit_reconciliation_id(root_run_id: str) -> str:
+    """Return the one reserved audit key for the fixed historical Root."""
+    if root_run_id != _HISTORICAL_AUDIT_ROOT_ID:
+        raise ValueError("historical reconciliation is limited to its exact Root")
+    digest = hashlib.sha256(
+        b"byq-acp-historical-audit-reconciliation.v1\0" + root_run_id.encode("ascii")
+    ).hexdigest()
+    return "agent_audit_" + digest[:32]
+
+
+def _historical_ingress_rows_sha256(rows: list[dict[str, Any]]) -> str:
+    return acp_binding_sha256({
+        "schema_version": "byq-acp-historical-original-ingress-rows.v1",
+        "root_run_id": _HISTORICAL_AUDIT_ROOT_ID,
+        "rows": rows,
+    })
+
+
+def _historical_receipt_from_audit_row(row: dict[str, Any] | None,
+                                       root_run_id: str) -> dict[str, Any] | None:
+    """Validate the reserved private row's deterministic ID and closed detail."""
+    if row is None:
+        return None
+    detail = row.get("detail_json")
+    receipt = detail.get("acp_control") if isinstance(detail, dict) else None
+    if (row.get("audit_id") != historical_audit_reconciliation_id(root_run_id)
+            or row.get("audit_root_run_id") != root_run_id
+            or row.get("run_id") != _HISTORICAL_AUDIT_ROOT_RUN_ID
+            or row.get("owner_principal") != row.get("audit_owner_principal")
+            or row.get("actor_principal") != row.get("audit_actor_principal")
+            or row.get("action") != _HISTORICAL_RECONCILIATION_ACTION
+            or row.get("outcome") != _HISTORICAL_RECONCILIATION_OUTCOME
+            or row.get("resource_type") != "runtime_root"
+            or row.get("resource_id") != root_run_id
+            or row.get("detail_json") != {"acp_control": receipt}
+            or not isinstance(receipt, dict)):
+        raise AgentConflict("historical reconciliation proof is not the exact reserved audit row")
+    proof_scope = receipt.get("scope")
+    if (not isinstance(proof_scope, dict)
+            or row.get("owner_principal") != proof_scope.get("owner_principal")
+            or row.get("actor_principal") != f"byq-product-agent-{proof_scope.get('session_id')}"
+            or row.get("audit_workspace_id") != proof_scope.get("workspace_id")):
+        raise AgentConflict("historical reconciliation proof audit identity differs from its scope")
+    try:
+        checked_scope = validate_product_scope(proof_scope)
+    except (TypeError, ValueError) as exc:
+        raise AgentConflict("historical reconciliation proof scope is invalid") from exc
+    fields = {
+        "schema_version", "root_run_id", "scope", "native_root_session_id",
+        "authority_epoch", "agent_run_ids", "native_registrations_sha256",
+        "original_ingress_rows_sha256", "unknown_count", "unknown_disposition",
+        "unknown_ingresses", "domain_claim_count", "terminal_unknown_claims_sha256",
+        "backend_snapshot_sha256", "product_cleanup_receipt_sha256",
+        "product_cleanup_scope_digest", "runner_instance_id", "cleanup_reason",
+        "cleanup_code", "cleanup_signal", "binding_sha256_before",
+        "binding_sha256_after", "terminal_event_receipt", "operator_uid",
+        "operator_name", "receipt_sha256",
+    }
+    if set(receipt) != fields or receipt.get("schema_version") != _HISTORICAL_RECONCILIATION_SCHEMA:
+        raise AgentConflict("historical reconciliation proof has an invalid schema")
+    base = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+    digest = receipt.get("receipt_sha256")
+    if not isinstance(digest, str) or not hmac.compare_digest(acp_binding_sha256(base), digest):
+        raise AgentConflict("historical reconciliation proof digest is invalid")
+    if (receipt.get("root_run_id") != root_run_id
+            or not isinstance(receipt.get("scope"), dict)
+            or set(receipt["scope"]) != PRODUCT_SCOPE_KEYS
+            or any(not isinstance(key, str) or not isinstance(value, str)
+                   for key, value in receipt["scope"].items())
+            or receipt.get("native_root_session_id") != _HISTORICAL_AUDIT_NATIVE_ROOT_ID
+            or receipt.get("authority_epoch") != _HISTORICAL_AUTHORITY_EPOCH
+            or checked_scope.get("root_run_id") != root_run_id
+            or checked_scope.get("owner_principal") != row.get("owner_principal")
+            or checked_scope.get("workspace_id") != _HISTORICAL_AUDIT_WORKSPACE_ID
+            or checked_scope.get("session_id") != _HISTORICAL_AUDIT_SESSION_ID
+            or checked_scope.get("trace_id") != _HISTORICAL_AUDIT_TRACE_ID
+            or checked_scope.get("runtime_boot_id") != _HISTORICAL_AUDIT_BOOT_ID
+            or receipt.get("agent_run_ids") != [
+                _HISTORICAL_AUDIT_ROOT_RUN_ID, _HISTORICAL_AUDIT_CHILD_RUN_ID,
+            ]
+            or receipt.get("unknown_count") != 2
+            or receipt.get("unknown_disposition") != _HISTORICAL_RECONCILIATION_OUTCOME
+            or receipt.get("domain_claim_count") != 0
+            or not isinstance(receipt.get("unknown_ingresses"), list)
+            or len(receipt["unknown_ingresses"]) != 2):
+        raise AgentConflict("historical reconciliation proof does not cover its exact uncertainty")
+    return receipt
+
+
+def _historical_reconciliation_row(connection: Any, root_run_id: str) -> dict[str, Any] | None:
+    if root_run_id != _HISTORICAL_AUDIT_ROOT_ID:
+        return None
+    row = fetch_one(connection, """SELECT a.*, r.root_run_id AS audit_root_run_id,
+            r.owner_principal AS audit_owner_principal,
+            r.actor_principal AS audit_actor_principal,
+            t.workspace_id AS audit_workspace_id
+        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+        JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+        WHERE a.audit_id=:audit_id""",
+        {"audit_id": historical_audit_reconciliation_id(root_run_id)})
+    if row is not None:
+        if row.get("audit_root_run_id") != root_run_id:
+            raise AgentConflict("historical reconciliation audit is attached to another AgentRun")
+        _historical_receipt_from_audit_row(row, root_run_id)
+    return row
 
 
 @dataclass(frozen=True, slots=True)
@@ -644,6 +845,700 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if guard_engine is not None:
             guard_engine.dispose()
         super().close()
+
+    @staticmethod
+    def _historical_audit_arguments(arguments_by_request: object) -> dict[str, str]:
+        """Validate both exact old public audit requests without retaining them."""
+        from .domain_call_admission import _canonical_acp_arguments
+
+        if (not isinstance(arguments_by_request, dict)
+                or set(arguments_by_request) != set(_HISTORICAL_AUDIT_UNKNOWN)):
+            raise AgentConflict("historical audit argument map is incomplete")
+        hashes: dict[str, str] = {}
+        public_fields = {"run_id", "action", "outcome", "resource_type", "resource_id", "detail"}
+        for request_id, arguments in arguments_by_request.items():
+            expected = _HISTORICAL_AUDIT_UNKNOWN[request_id]
+            if not isinstance(arguments, dict) or set(arguments) != public_fields:
+                raise AgentConflict("historical audit arguments do not match the public audit shape")
+            if (arguments.get("run_id") != _HISTORICAL_AUDIT_CHILD_RUN_ID
+                    or arguments.get("action") != _HISTORICAL_AUDIT_ACTIONS[request_id][0]
+                    or arguments.get("resource_type") != _HISTORICAL_AUDIT_ACTIONS[request_id][1]
+                    or not isinstance(arguments.get("outcome"), str)):
+                raise AgentConflict("historical audit arguments target another run or action")
+            try:
+                _entity_id(arguments["run_id"], field="run_id", prefix="agent_run")
+                _text(arguments["action"], field="action", max_length=128)
+                _text(arguments["outcome"], field="outcome", max_length=64)
+                _text(arguments["resource_type"], field="resource_type", max_length=64)
+                _text(arguments["resource_id"], field="resource_id", max_length=128)
+                digest, _ = _canonical_acp_arguments(arguments)
+                detail, _ = _audit_detail_object(arguments["detail"], field="detail")
+                _reject_reserved_acp_control(detail)
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise AgentConflict("historical audit arguments fail ordinary audit validation") from exc
+            if not hmac.compare_digest(digest, expected[2]):
+                raise AgentConflict("historical audit arguments differ from the extracted original")
+            hashes[request_id] = digest
+        return hashes
+
+    @staticmethod
+    def _historical_terminal_event() -> tuple[dict[str, Any], dict[str, Any]]:
+        """Project the saved native terminal event through the shared lifecycle contract."""
+        try:
+            event = project_lifecycle_event(
+                _HISTORICAL_TERMINAL_SOURCE_EVENT,
+                _HISTORICAL_AUDIT_SESSION_ID,
+                _HISTORICAL_AUDIT_TRACE_ID,
+            )
+            if (event is None or event.get("root_run_id") != _HISTORICAL_AUDIT_ROOT_ID
+                    or event.get("sequence") != 167 or event.get("outcome") != "completed"):
+                raise ValueError("the fixed terminal event did not project to its recorded Root")
+            return event, lifecycle_receipt(event)
+        except (TypeError, ValueError, KeyError) as exc:
+            raise AgentConflict("the saved historical terminal event is not a valid lifecycle receipt") from exc
+
+    def _historical_audit_snapshot(
+        self,
+        connection: Any,
+        *,
+        arguments_by_request: object,
+        allow_closed: bool = False,
+        lock_claims: bool = False,
+    ) -> dict[str, Any]:
+        """Read and validate the frozen DB preimage used by both prepare and finalize."""
+        from .domain_call_admission import (
+            DomainCallEvidenceMixin,
+            _acp_binding_fields,
+            _canonical_acp_arguments,
+            acp_binding_sha256,
+        )
+
+        argument_hashes = self._historical_audit_arguments(arguments_by_request)
+        root_id = _HISTORICAL_AUDIT_ROOT_ID
+        root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                         {"root": root_id})
+        if root is None:
+            raise AgentNotFound("fixed historical runtime Root is absent")
+        expected_root_identity = {
+            "root_run_id": root_id,
+            "owner_principal": _HISTORICAL_AUDIT_OWNER,
+            "workspace_id": _HISTORICAL_AUDIT_WORKSPACE_ID,
+            "session_id": _HISTORICAL_AUDIT_SESSION_ID,
+            "trace_id": _HISTORICAL_AUDIT_TRACE_ID,
+            "authority_boot_id": _HISTORICAL_AUDIT_BOOT_ID,
+        }
+        if any(root.get(key) != value for key, value in expected_root_identity.items()):
+            raise AgentConflict("fixed historical Root identity changed")
+        if allow_closed:
+            if (root.get("status") != "completed" or root.get("authority_status") != "closed"
+                    or root.get("terminal_sequence") != 167):
+                raise AgentConflict("historical Root is not closed by the exact completed event")
+        elif (root.get("status") != "active" or root.get("authority_status") != "active"
+              or root.get("terminal_sequence") is not None):
+            raise AgentConflict("historical Root is no longer active and unclosed")
+
+        workspace_identity = fetch_one(connection, """SELECT
+                u.user_id,u.username,u.status AS user_status,
+                w.workspace_id,w.owner_user_id,w.kind,w.status AS workspace_status,w.reset_id,
+                m.role AS membership_role,m.status AS membership_status
+            FROM workspaces w
+            JOIN users u ON u.user_id=w.owner_user_id
+            JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
+            WHERE w.workspace_id=:workspace AND u.username=:owner""",
+            {"workspace": root["workspace_id"], "owner": root["owner_principal"]})
+        if (workspace_identity is None
+                or workspace_identity.get("kind") != "personal"
+                or workspace_identity.get("user_status") != "active"
+                or workspace_identity.get("workspace_status") != "active"
+                or workspace_identity.get("membership_role") != "owner"
+                or workspace_identity.get("membership_status") != "active"
+                or workspace_identity.get("reset_id") is not None
+                or workspace_identity.get("username") != root["owner_principal"]
+                or workspace_identity.get("owner_user_id") != workspace_identity.get("user_id")):
+            raise AgentConflict("active personal workspace ownership is not exact")
+
+        runs = execute(connection, """SELECT * FROM agent_runs
+            WHERE root_run_id=:root ORDER BY run_id""", {"root": root_id})
+        if ({row.get("run_id") for row in runs} != {
+                _HISTORICAL_AUDIT_ROOT_RUN_ID, _HISTORICAL_AUDIT_CHILD_RUN_ID}
+                or len(runs) != 2):
+            raise AgentConflict("historical AgentRun set changed")
+        runs_by_id = {row["run_id"]: row for row in runs}
+        parent_run = runs_by_id[_HISTORICAL_AUDIT_ROOT_RUN_ID]
+        child_run = runs_by_id[_HISTORICAL_AUDIT_CHILD_RUN_ID]
+        generation = parent_run.get("dsh_run_id")
+        actor = parent_run.get("actor_principal")
+        expected_actor = f"byq-product-agent-{_HISTORICAL_AUDIT_SESSION_ID}"
+        if (not isinstance(generation, str)
+                or re.fullmatch(r"generation-[0-9a-f]{32}", generation) is None
+                or actor != expected_actor
+                or any(row.get("owner_principal") != root["owner_principal"]
+                       or row.get("actor_principal") != actor
+                       or row.get("trace_id") != _HISTORICAL_AUDIT_TRACE_ID
+                       or row.get("session_id") != _HISTORICAL_AUDIT_SESSION_ID
+                       or row.get("dsh_run_id") != generation
+                       or row.get("authority_boot_id") != _HISTORICAL_AUDIT_BOOT_ID
+                       or row.get("root_run_id") != root_id for row in runs)
+                or parent_run.get("parent_run_id") is not None
+                or child_run.get("parent_run_id") != parent_run["run_id"]):
+            raise AgentConflict("historical AgentRun scope or parentage changed")
+        if allow_closed:
+            if any(row.get("status") != "completed" or row.get("authority_status") != "closed"
+                   for row in runs):
+                raise AgentConflict("historical AgentRuns are not closed by the exact completed event")
+        elif any(row.get("status") != "active" or row.get("authority_status") != "active"
+                 for row in runs):
+            raise AgentConflict("historical AgentRun authority is no longer active")
+
+        scope = {
+            "workspace_id": root["workspace_id"],
+            "owner_principal": root["owner_principal"],
+            "session_id": root["session_id"],
+            "trace_id": root["trace_id"],
+            "root_run_id": root_id,
+            "runtime_boot_id": _HISTORICAL_AUDIT_BOOT_ID,
+            "generation_id": generation,
+        }
+        native_rows = execute(connection, """SELECT * FROM agent_acp_native_agent_registrations
+            WHERE root_run_id=:root ORDER BY origin,native_agent_session_id""", {"root": root_id})
+        if len(native_rows) != 2:
+            raise AgentConflict("historical native registration set changed")
+        native_root_id = None
+        native_by_agent: dict[str, dict[str, Any]] = {}
+        for row in native_rows:
+            if (row.get("owner_principal") != scope["owner_principal"]
+                    or row.get("workspace_id") != scope["workspace_id"]
+                    or row.get("actor_principal") != actor
+                    or row.get("session_id") != scope["session_id"]
+                    or row.get("trace_id") != scope["trace_id"]
+                    or row.get("dsh_run_id") != generation
+                    or row.get("runtime_boot_id") != scope["runtime_boot_id"]
+                    or row.get("status") != "bound"
+                    or row.get("native_root_session_id") != _HISTORICAL_AUDIT_NATIVE_ROOT_ID):
+                raise AgentConflict("historical native registration scope changed")
+            identity = {
+                "root_run_id": row["root_run_id"],
+                "runtime_boot_id": row["runtime_boot_id"],
+                "native_root_session_id": row["native_root_session_id"],
+                "native_agent_session_id": row["native_agent_session_id"],
+                "native_parent_session_id": row["native_parent_session_id"],
+                "origin": row["origin"],
+                "depth": row["depth"],
+            }
+            native_scope = {"owner": scope["owner_principal"], "workspace": scope["workspace_id"],
+                            "actor": actor, "session": scope["session_id"],
+                            "trace": scope["trace_id"], "generation": generation}
+            expected_binding = {
+                "schema_version": "byq-acp-agent-bind-receipt.v1",
+                "root_run_id": identity["root_run_id"],
+                "runtime_boot_id": identity["runtime_boot_id"],
+                "native_agent_session_id": identity["native_agent_session_id"],
+                "native_parent_session_id": identity["native_parent_session_id"],
+                "agent_run_id": row["agent_run_id"],
+                "parent_run_id": row["parent_run_id"],
+                "origin": identity["origin"], "depth": identity["depth"], "status": "bound",
+                "binding_sha256": acp_binding_sha256(_acp_binding_fields(
+                    identity, native_scope, agent_run_id=row["agent_run_id"],
+                    parent_run_id=row["parent_run_id"],
+                )),
+            }
+            if row.get("receipt_json") != expected_binding:
+                raise AgentConflict("historical native registration receipt is invalid")
+            if row["origin"] == "root":
+                if (row["depth"] != 0
+                        or row["native_agent_session_id"] != _HISTORICAL_AUDIT_NATIVE_ROOT_ID
+                        or row["parent_run_id"] is not None
+                        or row["agent_run_id"] != parent_run["run_id"]):
+                    raise AgentConflict("historical native root binding changed")
+                native_root_id = row["native_agent_session_id"]
+            elif row["origin"] == "subagent":
+                if (row["depth"] != 1
+                        or row["native_agent_session_id"] != _HISTORICAL_AUDIT_NATIVE_CHILD_ID
+                        or row["native_parent_session_id"] != _HISTORICAL_AUDIT_NATIVE_ROOT_ID
+                        or row["parent_run_id"] != parent_run["run_id"]
+                        or row["agent_run_id"] != child_run["run_id"]):
+                    raise AgentConflict("historical native child binding changed")
+            else:
+                raise AgentConflict("historical native registration origin is invalid")
+            native_by_agent[row["native_agent_session_id"]] = row
+        if native_root_id != _HISTORICAL_AUDIT_NATIVE_ROOT_ID:
+            raise AgentConflict("historical native root session is absent")
+
+        authority_receipt = fetch_one(connection, """SELECT boot_id,epoch,receipt_json
+            FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot""",
+            {"boot": _HISTORICAL_AUDIT_BOOT_ID})
+        authority_receipt_body = (authority_receipt.get("receipt_json")
+                                  if authority_receipt is not None else None)
+        if (authority_receipt is None or authority_receipt.get("epoch") != _HISTORICAL_AUTHORITY_EPOCH
+                or not isinstance(authority_receipt_body, dict)
+                or authority_receipt_body.get("boot_id") != _HISTORICAL_AUDIT_BOOT_ID
+                or authority_receipt_body.get("authority_epoch") != _HISTORICAL_AUTHORITY_EPOCH):
+            raise AgentConflict("historical runtime authority receipt changed")
+        if not allow_closed:
+            current_authority = self._current_authority_row(connection)
+            if (current_authority is None
+                    or current_authority.get("boot_id") != _HISTORICAL_AUDIT_BOOT_ID
+                    or current_authority.get("epoch") != _HISTORICAL_AUTHORITY_EPOCH
+                    or current_authority.get("receipt_json", {}).get("status") != "current"):
+                raise AgentConflict("historical runtime boot is no longer current")
+
+        from .domain_call_admission import _historical_audit_unknown_coverage
+
+        ingress_rows = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE root_run_id=:root ORDER BY sequence""", {"root": root_id})
+        if len(ingress_rows) != len(_HISTORICAL_AUDIT_INGRESS):
+            raise AgentConflict("historical ingress set changed")
+        unknown_rows: list[dict[str, Any]] = []
+        for row, (sequence, request_id, tool_name, event_sha256) in zip(
+                ingress_rows, _HISTORICAL_AUDIT_INGRESS, strict=True):
+            event, expected_receipt = DomainCallEvidenceMixin._acp_audit_ingress_event_and_receipt(row)
+            registration = native_by_agent.get(row.get("native_agent_session_id"))
+            if (row.get("sequence") != sequence or row.get("mcp_request_id") != request_id
+                    or row.get("tool_name") != tool_name or row.get("event_sha256") != event_sha256
+                    or row.get("receipt_json") != expected_receipt
+                    or acp_binding_sha256(event) != event_sha256
+                    or row.get("owner_principal") != scope["owner_principal"]
+                    or row.get("workspace_id") != scope["workspace_id"]
+                    or row.get("actor_principal") != actor
+                    or row.get("session_id") != scope["session_id"]
+                    or row.get("trace_id") != scope["trace_id"]
+                    or row.get("dsh_run_id") != generation
+                    or row.get("runtime_boot_id") != scope["runtime_boot_id"]
+                    or row.get("native_root_session_id") != native_root_id
+                    or row.get("root_run_id") != root_id
+                    or registration is None
+                    or row.get("origin") != registration.get("origin")
+                    or row.get("depth") != registration.get("depth")
+                    or row.get("native_parent_session_id") != registration.get("native_parent_session_id")
+                    or row.get("agent_run_id") != registration.get("agent_run_id")):
+                raise AgentConflict("historical ingress identity or event hash changed")
+            if request_id in _HISTORICAL_AUDIT_UNKNOWN:
+                if (row.get("status") != "unknown" or not isinstance(row.get("settlement_json"), dict)
+                        or row.get("arguments_sha256") != argument_hashes.get(request_id)
+                        or row.get("arguments_sha256") != _HISTORICAL_AUDIT_UNKNOWN[request_id][2]):
+                    raise AgentConflict("selected historical audit ingress is not the exact unknown")
+                arguments = arguments_by_request[request_id]
+                if arguments.get("run_id") != row.get("agent_run_id"):
+                    raise AgentConflict("selected audit argument targets a different AgentRun")
+                unknown_rows.append(row)
+            elif row.get("status") != "settled" or not isinstance(row.get("settlement_json"), dict):
+                raise AgentConflict("another pending or unknown ingress prevents reconciliation")
+        if len(unknown_rows) != 2:
+            raise AgentConflict("historical audit unknown count changed")
+
+        ingress_digest = _historical_ingress_rows_sha256(ingress_rows)
+        receipts = execute(connection, """SELECT * FROM agent_runtime_registrations
+            WHERE root_run_id=:root ORDER BY registration_fingerprint""", {"root": root_id})
+        expected_fingerprints = sorted(row.get("runtime_registration_fingerprint") for row in runs)
+        if (not all(isinstance(value, str) and value for value in expected_fingerprints)
+                or [row.get("registration_fingerprint") for row in receipts] != expected_fingerprints):
+            raise AgentConflict("historical runtime registration set changed")
+
+        claims_sql = "SELECT * FROM agent_domain_call_claims WHERE root_run_id=:root ORDER BY claim_id"
+        if lock_claims:
+            claims_sql += " FOR UPDATE"
+        claims = execute(connection, claims_sql, {"root": root_id})
+        if claims:
+            raise AgentConflict("historical Root has business domain claims")
+        domain_observations = execute(connection, """SELECT * FROM agent_acp_domain_call_observations
+            WHERE root_run_id=:root ORDER BY sequence""", {"root": root_id})
+        domain_evidence = execute(connection, """SELECT * FROM agent_domain_call_evidence
+            WHERE root_run_id=:root ORDER BY sequence""", {"root": root_id})
+        correction_buckets = execute(connection, """SELECT * FROM agent_domain_correction_buckets
+            WHERE root_run_id=:root ORDER BY task_id,action""", {"root": root_id})
+        if domain_observations or domain_evidence or correction_buckets:
+            raise AgentConflict("historical Root has unclassified business domain-call evidence")
+
+        approvals = execute(connection, """SELECT * FROM agent_approvals
+            WHERE run_id IN (:parent,:child) ORDER BY run_id,approval_id""",
+            {"parent": parent_run["run_id"], "child": child_run["run_id"]})
+        audit_rows = execute(connection, """SELECT * FROM agent_audit
+            WHERE run_id IN (:parent,:child) ORDER BY run_id,created_at,audit_id""",
+            {"parent": parent_run["run_id"], "child": child_run["run_id"]})
+        proof_id = historical_audit_reconciliation_id(root_id)
+        if any(row.get("audit_id") == proof_id for row in audit_rows):
+            _historical_reconciliation_row(connection, root_id)
+            if not allow_closed:
+                raise AgentConflict("reserved reconciliation proof exists before Root closure")
+        filtered_audit_rows = []
+        terminal_binding_audits = []
+        for row in audit_rows:
+            if row.get("audit_id") == proof_id:
+                continue
+            terminal_binding_audit = (
+                row.get("action") == "runtime_turn_binding"
+                and row.get("outcome") == "completed"
+                and row.get("resource_type") == "runtime_turn"
+                and row.get("resource_id") == root_id
+                and row.get("detail_json") == {"root_run_id": root_id, "terminal_sequence": 167}
+            )
+            if terminal_binding_audit:
+                if not allow_closed:
+                    raise AgentConflict("historical terminal audit already exists before reconciliation")
+                terminal_binding_audits.append(row)
+                continue
+            filtered_audit_rows.append(row)
+        if allow_closed and (
+                len(terminal_binding_audits) != 2
+                or {row.get("run_id") for row in terminal_binding_audits}
+                != {_HISTORICAL_AUDIT_ROOT_RUN_ID, _HISTORICAL_AUDIT_CHILD_RUN_ID}):
+            raise AgentConflict("historical close audit evidence is incomplete or changed")
+
+        runtime_receipts = execute(connection, """SELECT * FROM agent_runtime_receipts
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND session_id=:session ORDER BY sequence""",
+            {"owner": scope["owner_principal"], "workspace": scope["workspace_id"],
+             "session": scope["session_id"]})
+        terminal_event, terminal_receipt = self._historical_terminal_event()
+        stable_runtime_receipts = []
+        terminal_runtime_receipts = []
+        for row in runtime_receipts:
+            if row.get("trace_id") != scope["trace_id"]:
+                raise AgentConflict("historical session contains a receipt from another trace")
+            if row.get("sequence") == terminal_receipt["sequence"]:
+                if row.get("receipt_json") != terminal_receipt:
+                    raise AgentConflict("historical terminal receipt sequence is already occupied")
+                if not allow_closed:
+                    raise AgentConflict("historical terminal receipt exists before reconciliation")
+                terminal_runtime_receipts.append(row)
+                continue
+            stable_runtime_receipts.append(row)
+
+        if allow_closed:
+            if (len(terminal_runtime_receipts) != 1
+                    or root.get("terminal_event_sha256") != terminal_receipt["event_sha256"]
+                    or root.get("terminal_acp_ingress_sequence") != len(ingress_rows)
+                    or root.get("terminal_unknown_claim_count") != 0
+                    or root.get("terminal_unknown_claims_sha256") != acp_binding_sha256({
+                        "schema_version": "byq-acp-unknown-claims.v1",
+                        "root_run_id": root_id,
+                        "claims": [],
+                    })):
+                raise AgentConflict("closed historical Root terminal evidence changed")
+            terminal_evidence = self._acp_terminal_evidence_snapshot(connection, root_id)
+            if any(root.get(key) != value for key, value in terminal_evidence.items()):
+                raise AgentConflict("closed historical Root ingress or claim preimage changed")
+        else:
+            terminal_evidence = None
+
+        snapshot_root = {key: value for key, value in root.items()
+                         if key not in _HISTORICAL_SNAPSHOT_MUTABLE_ROOT_FIELDS}
+        snapshot_runs = [{key: value for key, value in row.items()
+                          if key not in _HISTORICAL_SNAPSHOT_MUTABLE_RUN_FIELDS}
+                         for row in runs]
+        snapshot = {
+            "schema_version": _HISTORICAL_BACKEND_SNAPSHOT_SCHEMA,
+            "scope": scope,
+            "native_root_session_id": native_root_id,
+            "workspace_identity": workspace_identity,
+            "runtime_authority_boot_receipt": authority_receipt,
+            "root": snapshot_root,
+            "agent_runs": snapshot_runs,
+            "native_registrations": native_rows,
+            "runtime_registrations": receipts,
+            "original_ingress_rows": ingress_rows,
+            "domain_call_observations": domain_observations,
+            "domain_call_evidence": domain_evidence,
+            "domain_correction_buckets": correction_buckets,
+            "domain_claims": claims,
+            "approvals": approvals,
+            "audit_rows": filtered_audit_rows,
+            "runtime_lifecycle_receipts": stable_runtime_receipts,
+            "arguments_sha256": argument_hashes,
+            "terminal_event_receipt": terminal_receipt,
+        }
+        return {
+            "scope": scope,
+            "native_root_session_id": native_root_id,
+            "snapshot_sha256": acp_binding_sha256(snapshot),
+            "snapshot": snapshot,
+            "root": root,
+            "runs": runs,
+            "native_registrations": native_rows,
+            "ingress_rows": ingress_rows,
+            "unknown_rows": unknown_rows,
+            "terminal_event": terminal_event,
+            "terminal_receipt": terminal_receipt,
+        }
+
+    def prepare_historical_audit_reconciliation(
+        self,
+        *,
+        arguments_by_request: object,
+    ) -> dict[str, object]:
+        """Return the fixed seven-field Backend scope and its repeatable snapshot hash."""
+        with self._transaction() as connection:
+            connection.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            frozen = self._historical_audit_snapshot(
+                connection,
+                arguments_by_request=arguments_by_request,
+            )
+        return {
+            "schema_version": _HISTORICAL_BACKEND_SCOPE_SCHEMA,
+            "scope": frozen["scope"],
+            "native_root_session_id": frozen["native_root_session_id"],
+            "backend_snapshot_sha256": frozen["snapshot_sha256"],
+        }
+
+    @staticmethod
+    def _historical_validate_runtime_result(
+        runtime_result: object,
+        *,
+        frozen: dict[str, Any],
+        product_control_key: bytes,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Independently verify the helper result and original signed Product receipt."""
+        from .domain_call_admission import acp_binding_sha256
+
+        if (not isinstance(runtime_result, dict)
+                or set(runtime_result) != _HISTORICAL_RUNTIME_RESULT_FIELDS
+                or runtime_result.get("status") != "supplemented"
+                or runtime_result.get("root_run_id") != _HISTORICAL_AUDIT_ROOT_ID
+                or runtime_result.get("native_root_session_id") != frozen["native_root_session_id"]
+                or runtime_result.get("backend_snapshot_sha256") != frozen["snapshot_sha256"]):
+            raise AgentConflict("Runtime cleanup result does not match the frozen Backend snapshot")
+        if not isinstance(product_control_key, bytes) or not 32 <= len(product_control_key) <= 512:
+            raise AgentConflict("Product control key size is invalid")
+        configured_hash = os.environ.get(_HISTORICAL_CONTROL_KEY_SHA_ENV)
+        if (not isinstance(configured_hash, str)
+                or _SHA256_PATTERN.fullmatch(configured_hash) is None
+                or not hmac.compare_digest(hashlib.sha256(product_control_key).hexdigest(), configured_hash)):
+            raise AgentConflict("Product control key does not match the Backend trust anchor")
+
+        full_scope = runtime_result.get("scope")
+        if (not isinstance(full_scope, dict) or set(full_scope) != PRODUCT_SCOPE_KEYS
+                or any(not isinstance(key, str) or not isinstance(value, str)
+                       for key, value in full_scope.items())
+                or any(full_scope.get(key) != value for key, value in frozen["scope"].items())):
+            raise AgentConflict("Runtime cleanup scope differs from the locked Backend Root")
+        digest_fields = (
+            "backend_snapshot_sha256", "binding_sha256_before", "binding_sha256_after",
+            "product_cleanup_receipt_sha256", "product_cleanup_scope_digest",
+        )
+        if any(not isinstance(runtime_result.get(field), str)
+               or _SHA256_PATTERN.fullmatch(runtime_result[field]) is None
+               for field in digest_fields):
+            raise AgentConflict("Runtime cleanup result contains an invalid digest")
+        if runtime_result["binding_sha256_before"] == runtime_result["binding_sha256_after"]:
+            raise AgentConflict("Runtime binding did not record the process-exit confirmation")
+
+        raw_b64 = runtime_result.get("product_cleanup_receipt_raw_b64")
+        if not isinstance(raw_b64, str) or len(raw_b64) > 8192:
+            raise AgentConflict("Runtime cleanup receipt encoding is invalid")
+        try:
+            raw = base64.b64decode(raw_b64.encode("ascii"), validate=True)
+        except (UnicodeError, binascii.Error, ValueError) as exc:
+            raise AgentConflict("Runtime cleanup receipt is not canonical base64") from exc
+        if not raw or base64.b64encode(raw).decode("ascii") != raw_b64:
+            raise AgentConflict("Runtime cleanup receipt is not canonical base64")
+        raw_digest = hashlib.sha256(raw).hexdigest()
+        if not hmac.compare_digest(raw_digest, runtime_result["product_cleanup_receipt_sha256"]):
+            raise AgentConflict("Runtime cleanup receipt bytes differ from their reported digest")
+        try:
+            verified = verify_product_cleanup_receipt(
+                raw,
+                control_key=product_control_key,
+                expected_scope=full_scope,
+            )
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("signed Product cleanup receipt failed independent verification") from exc
+        verified_scope = {key: verified[key] for key in PRODUCT_SCOPE_KEYS}
+        if (verified_scope != full_scope
+                or verified.get("scope_digest") != runtime_result["product_cleanup_scope_digest"]
+                or verified.get("cleanup") != "proven"):
+            raise AgentConflict("signed Product cleanup receipt differs from the Runtime result")
+        # Keep this explicit equality check next to the shared MAC verifier: the
+        # Runtime helper's booleans are not authority for this Backend write.
+        if acp_binding_sha256(verified_scope) != acp_binding_sha256(full_scope):
+            raise AgentConflict("signed Product cleanup receipt scope changed")
+        return dict(full_scope), verified
+
+    @staticmethod
+    def _historical_reconciliation_receipt(
+        frozen: dict[str, Any],
+        *,
+        full_scope: dict[str, str],
+        runtime_result: dict[str, Any],
+        product_receipt: dict[str, Any],
+        operator_uid: int,
+        operator_name: str,
+    ) -> dict[str, Any]:
+        from .domain_call_admission import acp_binding_sha256
+
+        unknown_ingresses = [{
+            "mcp_request_id": row["mcp_request_id"],
+            "sequence": row["sequence"],
+            "event_sha256": row["event_sha256"],
+            "arguments_sha256": row["arguments_sha256"],
+            "settlement_sha256": acp_binding_sha256(row["settlement_json"]),
+            "status": "unknown",
+        } for row in frozen["unknown_rows"]]
+        empty_claims_sha256 = acp_binding_sha256({
+            "schema_version": "byq-acp-unknown-claims.v1",
+            "root_run_id": _HISTORICAL_AUDIT_ROOT_ID,
+            "claims": [],
+        })
+        base = {
+            "schema_version": _HISTORICAL_RECONCILIATION_SCHEMA,
+            "root_run_id": _HISTORICAL_AUDIT_ROOT_ID,
+            "scope": full_scope,
+            "native_root_session_id": frozen["native_root_session_id"],
+            "authority_epoch": _HISTORICAL_AUTHORITY_EPOCH,
+            "agent_run_ids": [
+                _HISTORICAL_AUDIT_ROOT_RUN_ID,
+                _HISTORICAL_AUDIT_CHILD_RUN_ID,
+            ],
+            "native_registrations_sha256": acp_binding_sha256(frozen["native_registrations"]),
+            "original_ingress_rows_sha256": _historical_ingress_rows_sha256(
+                frozen["ingress_rows"]),
+            "unknown_count": 2,
+            "unknown_disposition": _HISTORICAL_RECONCILIATION_OUTCOME,
+            "unknown_ingresses": unknown_ingresses,
+            "domain_claim_count": 0,
+            "terminal_unknown_claims_sha256": empty_claims_sha256,
+            "backend_snapshot_sha256": frozen["snapshot_sha256"],
+            "product_cleanup_receipt_sha256": runtime_result["product_cleanup_receipt_sha256"],
+            "product_cleanup_scope_digest": runtime_result["product_cleanup_scope_digest"],
+            "runner_instance_id": product_receipt["runner_instance_id"],
+            "cleanup_reason": product_receipt["reason"],
+            "cleanup_code": product_receipt["code"],
+            "cleanup_signal": product_receipt["signal"],
+            "binding_sha256_before": runtime_result["binding_sha256_before"],
+            "binding_sha256_after": runtime_result["binding_sha256_after"],
+            "terminal_event_receipt": frozen["terminal_receipt"],
+            "operator_uid": operator_uid,
+            "operator_name": operator_name,
+        }
+        return base | {"receipt_sha256": acp_binding_sha256(base)}
+
+    def finalize_historical_audit_reconciliation(
+        self,
+        *,
+        runtime_result: object,
+        arguments_by_request: object,
+        product_control_key: bytes,
+        operator_uid: int,
+        operator_name: str,
+    ) -> dict[str, Any]:
+        """Verify signed cleanup, persist one proof, and close the existing completed Root."""
+        from .domain_call_admission import acp_binding_sha256
+
+        if type(operator_uid) is not int or operator_uid < 0 or operator_uid > 2**31 - 1:
+            raise AgentConflict("Engineering operator uid is invalid")
+        try:
+            operator_name = _principal(operator_name, field="operator_name")
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("Engineering operator name is invalid") from exc
+
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            for request_id in sorted(_HISTORICAL_AUDIT_UNKNOWN):
+                self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
+            self._lifecycle_lock(connection, "root:" + _HISTORICAL_AUDIT_ROOT_ID)
+            self._lifecycle_lock(connection, "domain-call-session:" + _HISTORICAL_AUDIT_SESSION_ID)
+            root_identity = fetch_one(connection, "SELECT owner_principal FROM agent_runtime_turns "
+                                      "WHERE root_run_id=:root",
+                                      {"root": _HISTORICAL_AUDIT_ROOT_ID})
+            if root_identity is None:
+                raise AgentNotFound("fixed historical runtime Root is absent")
+            reserved_row = _historical_reconciliation_row(
+                connection, _HISTORICAL_AUDIT_ROOT_ID)
+            if reserved_row is None:
+                self._require_current_runtime_boot(connection, _HISTORICAL_AUDIT_BOOT_ID, required=True)
+            self._require_lifecycle_workspace(
+                connection,
+                _principal(root_identity.get("owner_principal"), field="owner_principal"),
+                _HISTORICAL_AUDIT_WORKSPACE_ID,
+            )
+
+            # Match the existing root->registration lock order used by terminal
+            # close, and take row locks over every evidence family we recheck.
+            runtime_registrations = execute(connection, """SELECT registration_fingerprint
+                FROM agent_runtime_registrations WHERE root_run_id=:root
+                ORDER BY registration_fingerprint""", {"root": _HISTORICAL_AUDIT_ROOT_ID})
+            for registration in runtime_registrations:
+                self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
+            execute(connection, """SELECT root_run_id FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR UPDATE""", {"root": _HISTORICAL_AUDIT_ROOT_ID})
+            execute(connection, """SELECT run_id FROM agent_runs
+                WHERE root_run_id=:root ORDER BY run_id FOR UPDATE""",
+                {"root": _HISTORICAL_AUDIT_ROOT_ID})
+            execute(connection, """SELECT native_agent_session_id FROM agent_acp_native_agent_registrations
+                WHERE root_run_id=:root ORDER BY native_agent_session_id FOR UPDATE""",
+                {"root": _HISTORICAL_AUDIT_ROOT_ID})
+            execute(connection, """SELECT mcp_request_id FROM agent_acp_tool_ingress_observations
+                WHERE root_run_id=:root ORDER BY sequence FOR UPDATE""",
+                {"root": _HISTORICAL_AUDIT_ROOT_ID})
+            execute(connection, """SELECT claim_id FROM agent_domain_call_claims
+                WHERE root_run_id=:root ORDER BY claim_id FOR UPDATE""",
+                {"root": _HISTORICAL_AUDIT_ROOT_ID})
+
+            allow_closed = reserved_row is not None
+            frozen = self._historical_audit_snapshot(
+                connection,
+                arguments_by_request=arguments_by_request,
+                allow_closed=allow_closed,
+                lock_claims=True,
+            )
+            full_scope, verified_product_receipt = self._historical_validate_runtime_result(
+                runtime_result,
+                frozen=frozen,
+                product_control_key=product_control_key,
+            )
+            expected_proof = self._historical_reconciliation_receipt(
+                frozen,
+                full_scope=full_scope,
+                runtime_result=runtime_result,
+                product_receipt=verified_product_receipt,
+                operator_uid=operator_uid,
+                operator_name=operator_name,
+            )
+
+            if reserved_row is not None:
+                existing_proof = _historical_receipt_from_audit_row(
+                    reserved_row, _HISTORICAL_AUDIT_ROOT_ID)
+                if existing_proof != expected_proof:
+                    raise AgentConflict("historical reconciliation retry differs from its immutable proof")
+                terminal_receipt = frozen["terminal_receipt"]
+                return {
+                    "schema_version": _HISTORICAL_RECONCILIATION_SCHEMA,
+                    "status": "reconciled",
+                    "receipt": existing_proof,
+                    "runtime_lifecycle_receipt": terminal_receipt,
+                }
+
+            if allow_closed:
+                raise AgentConflict("closed historical Root has no reconciliation proof")
+            run = next(row for row in frozen["runs"]
+                       if row["run_id"] == _HISTORICAL_AUDIT_ROOT_RUN_ID)
+            self._record_audit_row(
+                run,
+                action=_HISTORICAL_RECONCILIATION_ACTION,
+                outcome=_HISTORICAL_RECONCILIATION_OUTCOME,
+                resource_type="runtime_root",
+                resource_id=_HISTORICAL_AUDIT_ROOT_ID,
+                detail={"acp_control": expected_proof},
+                connection=connection,
+                audit_id=historical_audit_reconciliation_id(_HISTORICAL_AUDIT_ROOT_ID),
+            )
+            event = frozen["terminal_event"]
+            runtime_lifecycle_receipt = self.consume_runtime_lifecycle_event(
+                event,
+                _connection=connection,
+                trusted_owner=frozen["scope"]["owner_principal"],
+                trusted_workspace=frozen["scope"]["workspace_id"],
+                trusted_session_id=frozen["scope"]["session_id"],
+                trusted_trace_id=frozen["scope"]["trace_id"],
+                trusted_boot_id=frozen["scope"]["runtime_boot_id"],
+            )
+            if runtime_lifecycle_receipt != frozen["terminal_receipt"]:
+                raise AgentConflict("existing historical terminal receipt changed during close")
+            return {
+                "schema_version": _HISTORICAL_RECONCILIATION_SCHEMA,
+                "status": "reconciled",
+                "receipt": expected_proof,
+                "runtime_lifecycle_receipt": runtime_lifecycle_receipt,
+            }
 
     @classmethod
     def from_env(cls) -> "AgentResearchStore":
@@ -1786,7 +2681,34 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if row is None:
             raise AgentNotFound("agent run not found")
         self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
-        return self._record_audit_row(row, action=action, outcome=outcome, resource_type=payload.get("resource_type"), resource_id=payload.get("resource_id"), detail=detail)
+        if row.get("root_run_id") == _HISTORICAL_AUDIT_ROOT_ID:
+            # The public audit path historically appended outside the Root
+            # lifecycle lock. Serialize only this fixed reconciliation Root so
+            # a delayed ordinary audit cannot land after its frozen proof.
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "root:" + _HISTORICAL_AUDIT_ROOT_ID)
+                current = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:run_id FOR UPDATE",
+                                    {"run_id": run_id})
+                if current is None:
+                    raise AgentNotFound("agent run not found")
+                self._check_run_access(current, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+                root = fetch_one(connection, """SELECT status,authority_status
+                    FROM agent_runtime_turns WHERE root_run_id=:root FOR SHARE""",
+                    {"root": _HISTORICAL_AUDIT_ROOT_ID})
+                if (root is None or root.get("status") != "active"
+                        or root.get("authority_status") != "active"):
+                    raise AgentForbidden("agent run root is no longer active")
+                return self._record_audit_row(
+                    current,
+                    action=action,
+                    outcome=outcome,
+                    resource_type=payload.get("resource_type"),
+                    resource_id=payload.get("resource_id"),
+                    detail=detail,
+                    connection=connection,
+                )
+        return self._record_audit_row(row, action=action, outcome=outcome,
+            resource_type=payload.get("resource_type"), resource_id=payload.get("resource_id"), detail=detail)
 
     def list_audit(self, run_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         run_id = _entity_id(run_id, field="run_id", prefix="agent_run")
