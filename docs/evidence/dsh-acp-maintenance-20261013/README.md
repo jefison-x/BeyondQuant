@@ -6,7 +6,9 @@
 
 **最新限定PASS：软取消后在同一会话继续。** 源码`7e5779f0`增加准确reservation读取，修复通用peek返回旧记录导致取消标记无法退休；隔离Backend/Gateway现为`37434d44…`/`9f79f8d5…`，层数42/26不变，比前版仅+481/+39字节，运行12文件/4父目录准确，其他14容器及全部16挂载保持。原8137取消标记由正常poller自行退休，无重放或人工删标记；同CID普通输入只用1次HTTP200，新Root完成/权限关闭/unknown0、ACK247及MAC/清理一致，0新Job/子Agent/取消，旧23Root/69消息/7Job/7ledger不变。新回复在当前浏览器只读刷新后仍在，45篇全文/顺序稳定（40消息/5运行卡），经独立Sol→Root限定PASS；未恢复原子Agent。
 
-原B日志解析、镜像包装字段及本次跨新Root全article比较的FAIL均保留。后者仅两旧运行卡追加合法后续轮次提示，不是消息改写；已改为持久消息与动态运行卡分别核对，未重发模型。第二账号仍未创建，双用户/进程异常/迟到/业务unknown等仍NOT_RUN，15参数写入与执行延期，CI/推送/合并/生产未运行。当前环境和页面保持打开。详情见[精确取消核对与后续输入](20261016-explicit-revoke-fence.md)、[观察合同](20261016-browser-post-observation.md)及私有`explicit-revoke-fence-20261016-v1/exact-cancel-receipt-fix-v1/ROOT-FINAL-SCOPED-PASS.json`。
+**新增双用户基础核对（尚未完整通过）：** 第二普通测试账号已创建并经独立Sol核对身份及旧数据指纹；浏览器登录后仅见自身空历史/任务，跨原账号会话及任务均返回拒绝正文。原A会话刷新后45篇全文不变、输入可用。Root时间字段比较及随后函数字符串采集两次观察器错误均保留FAIL，已停止本轮后续实时测试；精确HTTP状态和datetime属性核对未完成，双用户基础门HOLD，不扩展到并发或迟到请求。模型/Job均0，原A和新B页面、账号与环境保留。见[双用户浏览器记录](20261016-two-user-browser.md)。
+
+原B日志解析、镜像包装字段及本次跨新Root全article比较的FAIL均保留。后者仅两旧运行卡追加合法后续轮次提示，不是消息改写；已改为持久消息与动态运行卡分别核对，未重发模型。第二账号当前已创建；双用户完整门HOLD，进程异常/迟到/业务unknown等仍NOT_RUN，15参数写入与执行延期，CI/推送/合并/生产未运行。当前环境和页面保持打开。详情见[精确取消核对与后续输入](20261016-explicit-revoke-fence.md)、[观察合同](20261016-browser-post-observation.md)及私有`explicit-revoke-fence-20261016-v1/exact-cancel-receipt-fix-v1/ROOT-FINAL-SCOPED-PASS.json`。
 
 以下记录按发生时版本保留；旧“当前安装”“待修复”“未安装”不覆盖上述最新收据。
 
