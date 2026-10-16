@@ -85,9 +85,18 @@ _SECRET_KEY_FRAGMENTS = (
 )
 _AUDIT_AUTHORIZATION_DECISIONS = frozenset({"allowed", "denied", "approval_required"})
 _HISTORICAL_AUDIT_ROOT_ID = "753727634c8641a0add1597d6a304bae"
-_HISTORICAL_AUDIT_OWNER = "owneradmin"
+_HISTORICAL_AUDIT_OWNER = "admin"
 _HISTORICAL_AUDIT_ROOT_RUN_ID = "agent_run_83faa0ce544849908304e195320487ab"
 _HISTORICAL_AUDIT_CHILD_RUN_ID = "agent_run_fd7f6b8b34c045aca846a5aefb2f44bb"
+_HISTORICAL_AUDIT_ROOT_ROLE = "quant_orchestrator"
+_HISTORICAL_AUDIT_CHILD_ROLE = "backtest_analyst"
+_HISTORICAL_AUDIT_CONVERSATION_ID = "conversation_d1970f74cbcb4703b8c182523db4c4f1"
+_HISTORICAL_AUDIT_PARENT_REGISTRATION_FINGERPRINT = (
+    "ad51bf768a73df13dddfe836c1f5d0940c912dbde758594f25307b5f5a18aee3"
+)
+_HISTORICAL_AUDIT_CHILD_REGISTRATION_FINGERPRINT = (
+    "7aa8c8287b6212e3a2a9dcafbc6bd213ecd11cda29dfe931ce0b055c660ec0c0"
+)
 _HISTORICAL_AUDIT_NATIVE_ROOT_ID = "a4b2c390-5972-433c-84d4-1f3cab4baa1c"
 _HISTORICAL_AUDIT_NATIVE_CHILD_ID = "4f96f0a0-6dc6-4c3e-a178-f82d41c84cdd"
 _HISTORICAL_AUDIT_BOOT_ID = "488d00f535f263b1390318772c82469e"
@@ -957,6 +966,25 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 or workspace_identity.get("owner_user_id") != workspace_identity.get("user_id")):
             raise AgentConflict("active personal workspace ownership is not exact")
 
+        conversation_sql = """SELECT conversation_id,owner_principal,runtime_session_id,trace_id,status
+            FROM product_conversations WHERE conversation_id=:conversation"""
+        if lock_claims:
+            # Prepare remains read-only; during finalize, hold the public row stable
+            # while the terminal proof and Root close commit.
+            conversation_sql += " FOR SHARE"
+        conversation = fetch_one(
+            connection,
+            conversation_sql,
+            {"conversation": _HISTORICAL_AUDIT_CONVERSATION_ID},
+        )
+        if (conversation is None
+                or conversation.get("conversation_id") != _HISTORICAL_AUDIT_CONVERSATION_ID
+                or conversation.get("owner_principal") != root["owner_principal"]
+                or conversation.get("runtime_session_id") != root["session_id"]
+                or conversation.get("trace_id") != root["trace_id"]
+                or conversation.get("status") != "active"):
+            raise AgentConflict("historical public conversation identity or status changed")
+
         runs = execute(connection, """SELECT * FROM agent_runs
             WHERE root_run_id=:root ORDER BY run_id""", {"root": root_id})
         if ({row.get("run_id") for row in runs} != {
@@ -980,7 +1008,13 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                        or row.get("authority_boot_id") != _HISTORICAL_AUDIT_BOOT_ID
                        or row.get("root_run_id") != root_id for row in runs)
                 or parent_run.get("parent_run_id") is not None
-                or child_run.get("parent_run_id") != parent_run["run_id"]):
+                or child_run.get("parent_run_id") != parent_run["run_id"]
+                or parent_run.get("role_id") != _HISTORICAL_AUDIT_ROOT_ROLE
+                or child_run.get("role_id") != _HISTORICAL_AUDIT_CHILD_ROLE
+                or parent_run.get("runtime_registration_fingerprint")
+                != _HISTORICAL_AUDIT_PARENT_REGISTRATION_FINGERPRINT
+                or child_run.get("runtime_registration_fingerprint")
+                != _HISTORICAL_AUDIT_CHILD_REGISTRATION_FINGERPRINT):
             raise AgentConflict("historical AgentRun scope or parentage changed")
         if allow_closed:
             if any(row.get("status") != "completed" or row.get("authority_status") != "closed"
@@ -1129,9 +1163,12 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         ingress_digest = _historical_ingress_rows_sha256(ingress_rows)
         receipts = execute(connection, """SELECT * FROM agent_runtime_registrations
             WHERE root_run_id=:root ORDER BY registration_fingerprint""", {"root": root_id})
-        expected_fingerprints = sorted(row.get("runtime_registration_fingerprint") for row in runs)
-        if (not all(isinstance(value, str) and value for value in expected_fingerprints)
-                or [row.get("registration_fingerprint") for row in receipts] != expected_fingerprints):
+        # The ACP child has its own pinned AgentRun fingerprint, but its native
+        # registration binds it to the existing Root and creates no second row here.
+        if (len(receipts) != 1
+                or receipts[0].get("registration_fingerprint")
+                != _HISTORICAL_AUDIT_PARENT_REGISTRATION_FINGERPRINT
+                or receipts[0].get("root_run_id") != root_id):
             raise AgentConflict("historical runtime registration set changed")
 
         claims_sql = "SELECT * FROM agent_domain_call_claims WHERE root_run_id=:root ORDER BY claim_id"
@@ -1231,6 +1268,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             "scope": scope,
             "native_root_session_id": native_root_id,
             "workspace_identity": workspace_identity,
+            "conversation": conversation,
             "runtime_authority_boot_receipt": authority_receipt,
             "root": snapshot_root,
             "agent_runs": snapshot_runs,
