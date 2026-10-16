@@ -207,7 +207,7 @@ export function fetchByqResearchTaskCreate(
 }
 
 const RESEARCH_EXECUTION_NOTE =
-  "Business task status and handoff describe current state, not permission. This query grants no execution permission; follow the current trusted Root instruction and obtain required authorization before any allowed action.";
+  "This query reports existing task state and grants no authority. Automatic continuation uses saved conversation settings and trusted events without a separate continuation permission; business actions still require their current authorization and approval.";
 
 // Fixed bounded explanations selected only from a legal handoff state/reason
 // pair. Maps are own-entry lookups, so hostile keys such as __proto__,
@@ -218,7 +218,8 @@ const RESEARCH_HANDOFF_STATE_NOTES = new Map<string, string>([
   ["waiting_job", "Task is waiting on an existing Domain Job. This query does not advance or resume it."],
   ["waiting_approval", "An approval is pending. Request that human approval outside this query; this query does not grant it."],
   ["approval_continuation_queued", "Approval continuation is queued. This query does not dispatch or resume it."],
-  ["continuation_queued", "Continuation is queued. This query does not dispatch or resume it."],
+  ["continuation_queued", "A reserved continuation event is recorded for this task. This does not show that it was dispatched or that a new event was authorized."],
+  ["waiting_event", "No continuation event is currently pending. Automatic continuation may follow trusted future events under saved conversation settings."],
   ["completed", "This reports a confirmed task status; validate same-task evidence before claiming completion."],
   ["failed", "This reports the task status; this query does not change or retry it."],
   ["cancelled", "This reports the task status; this query does not change or resume it."],
@@ -233,23 +234,29 @@ const RESEARCH_HANDOFF_REASON_NOTES = new Map<string, string>([
   ["task_execution_unconfirmed", "Task execution is unconfirmed. This query does not prove, resume, or attribute execution."],
   ["conversation_binding_missing", "The conversation binding is missing. This query does not repair or recreate it."],
   ["no_registered_executor", "No registered executor is available. This query does not register or start one."],
-  ["permission_missing", "A required permission is missing. This query does not grant it."],
-  ["permission_revoked", "A required permission was revoked. This query does not restore it."],
-  ["permission_expired", "A required permission expired. This query does not renew it."],
+  ["conversation_inactive", "The original conversation is inactive. This query does not reopen it."],
+  ["automatic_continuation_disabled", "Automatic continuation is disabled for future events in this conversation. Existing recorded events remain separately visible."],
+  ["automatic_continuation_stopped", "An explicit stop was recorded for automatic continuation. This query does not restart it."],
+  ["continuation_needs_attention", "A continuation needs attention. Keep any listed event status intact; this query does not cancel it or restart continuation."],
+  ["execution_options_invalid", "Saved conversation settings did not pass validation. Existing event records remain intact; this query does not admit new events."],
+  ["continuation_ledger_invalid", "Continuation records did not pass validation. Preserve their recorded states and reconcile; this query does not replay them."],
 ]);
 
 // Legal state/reason pair sets derived from the actual Backend projection.
 const RESEARCH_NULL_REASON_STATES = new Set([
   "waiting_job", "waiting_approval", "approval_continuation_queued",
-  "continuation_queued", "completed", "failed", "cancelled",
+  "continuation_queued", "waiting_event", "completed", "failed", "cancelled",
 ]);
-const RESEARCH_PERMISSION_REASONS = new Set(["permission_missing", "permission_revoked", "permission_expired"]);
 const RESEARCH_RECONCILE_REASONS = new Set([
   "completion_evidence_missing", "evidence_limit_reached", "continuation_result_unconfirmed",
+  "execution_options_invalid", "continuation_ledger_invalid",
   "approval_binding_invalid", "approval_continuation_unconfirmed",
-  "permission_missing", "permission_revoked", "permission_expired",
+  "continuation_needs_attention",
 ]);
-const RESEARCH_BLOCKED_REASONS = new Set(["conversation_binding_missing", "no_registered_executor"]);
+const RESEARCH_BLOCKED_REASONS = new Set([
+  "conversation_binding_missing", "conversation_inactive", "no_registered_executor",
+  "automatic_continuation_disabled", "automatic_continuation_stopped", "continuation_needs_attention",
+]);
 
 function researchContinuationNote(value: Record<string, unknown>, taskId: string): string | undefined {
   const handoff = value.handoff;
@@ -267,10 +274,7 @@ function researchContinuationNote(value: Record<string, unknown>, taskId: string
     return reason === null ? RESEARCH_HANDOFF_STATE_NOTES.get(state) : undefined;
   }
   if (state === "conversation_active") {
-    return reason === "task_execution_unconfirmed" ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
-  }
-  if (state === "needs_permission") {
-    return reason !== null && RESEARCH_PERMISSION_REASONS.has(reason)
+    return reason === "task_execution_unconfirmed"
       ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
   }
   if (state === "needs_reconciliation") {
