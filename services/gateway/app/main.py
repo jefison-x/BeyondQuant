@@ -592,14 +592,15 @@ def _consume_task_continuation(context):
         _consume_admitted_task_continuation(context, allow_legacy=True)
 
 
-def _consume_default_task_continuation(context):
+def _consume_default_task_continuation(context, *, allow_dispatch=True):
     """Process only default v3 task-ready intents while F6 remains disabled."""
     try:
         require_runtime_authority()
     except HTTPException:
         return
     with chat_admission():
-        _consume_admitted_task_continuation(context, allow_legacy=False)
+        _consume_admitted_task_continuation(
+            context, allow_legacy=False, allow_dispatch=allow_dispatch)
 
 
 def _attach_continuation_observer(context):
@@ -685,7 +686,33 @@ def _v3_backend_receipt(backend, task: str, reservation_id: str, idempotency_key
     return backend('receipt', payload, task=task, runtime_boot_id=runtime_boot_id)
 
 
-def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> None:
+def _ensure_v3_cancel_marker(context: dict, reservation_id: str) -> str:
+    """Persist one exact Backend stop intent without replacing another cancel."""
+    pending = task_continuation_delivery.pending_cancel(context)
+    if pending is None:
+        task_continuation_delivery.request_cancel(context, reservation_id, 'soft')
+        mode = 'soft'
+    else:
+        if pending[0] != reservation_id:
+            raise ValueError('another exact continuation cancellation is pending')
+        mode = pending[1]
+    session = product_sessions.find_owned(
+        context['conversation_id'], Principal(subject=context['owner']),
+    )
+    if session is not None:
+        _validate_v3_product_session(session, context)
+        if session.continuation_reservation != reservation_id:
+            if not product_sessions.hold_v3_continuation(session, reservation_id):
+                raise ValueError('Backend cancellation conflicts with the current session hold')
+        is_v3, held_id = product_sessions.begin_v3_cancel(session)
+        if not is_v3 or held_id != reservation_id:
+            raise ValueError('Backend cancellation no longer matches the held reservation')
+    return mode
+
+
+def _consume_v3_task_continuation(
+    context: dict, intent: dict, *, backend, allow_dispatch: bool = True,
+) -> None:
     """Consume or reconcile one exact default task-ready reservation."""
     if intent.get('status') == 'eligible':
         if (intent.get('reservation_schema_version') != RESERVATION_SCHEMA_VERSION_V3
@@ -696,6 +723,8 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
                 or not isinstance(intent.get('signal_job_id'), str)
                 or re.fullmatch(r'signaljob_[0-9a-f]{32}', intent['signal_job_id']) is None):
             raise ValueError('v3 continuation candidate identity is invalid')
+        if not allow_dispatch:
+            return
         session = _attach_continuation_observer(context)
         if session is None:
             return
@@ -716,6 +745,10 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
     if not _has_v3_continuation_intent(intent):
         raise ValueError('v3 continuation response lost its version discriminator')
     receipt, carrier, reservation_id, instruction = _validate_v3_continuation_intent(intent, context)
+    cancellation_pending = (receipt.get('cancel_requested_at') is not None
+        and receipt.get('status') in {'reserved', 'outcome_unknown', 'accepted'})
+    if cancellation_pending:
+        _ensure_v3_cancel_marker(context, reservation_id)
     task_id = intent['task_id']
     if session is None:
         session = _attach_continuation_observer(context)
@@ -724,6 +757,17 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
         boot_id = _require_session_runtime_authority(session)
         if not product_sessions.hold_v3_continuation(session, reservation_id):
             return
+
+    if (session is not None and receipt.get('status') == 'cancelled'
+            and type(receipt.get('dispatch_attempts')) is int
+            and receipt.get('dispatch_attempts') == 0
+            and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled'):
+        if task_continuation_delivery.pending_cancel(context) is None:
+            product_sessions.finish_continuation(session, reservation_id)
+            generation = product_sessions.idle_release_generation(session)
+            if generation is not None:
+                _schedule_idle_release(session, generation)
+        return
 
     def mark(status, **fields):
         return _v3_backend_receipt(backend, task_id, reservation_id, carrier['idempotency_key'],
@@ -775,7 +819,8 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
                 if generation is not None:
                     _schedule_idle_release(session, generation)
             return
-        if receipt.get('status') != 'reserved' or intent.get('may_dispatch') is not True:
+        if (not allow_dispatch or cancellation_pending
+                or receipt.get('status') != 'reserved' or intent.get('may_dispatch') is not True):
             return
         qualification = _continuation_adapter_get(
             f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
@@ -864,7 +909,9 @@ def _consume_v3_task_continuation(context: dict, intent: dict, *, backend) -> No
             or receipt.get('outcome') != outcome
             or receipt.get('settlement_sha256') != settlement_sha256):
         raise ValueError('Backend and Adapter v3 settlement receipts conflict')
-    if session is not None:
+    pending_cancel = task_continuation_delivery.pending_cancel(context)
+    cancel_hold_pending = (pending_cancel is not None and pending_cancel[0] == reservation_id)
+    if session is not None and not cancellation_pending and not cancel_hold_pending:
         product_sessions.finish_continuation(session, reservation_id)
         generation = product_sessions.idle_release_generation(session)
         if generation is not None:
@@ -913,7 +960,7 @@ def _validate_v3_backend_settled_receipt(receipt: dict, carrier: dict, reservati
         raise ValueError('Backend settled v3 receipt digest does not match')
 
 
-def _consume_admitted_task_continuation(context, *, allow_legacy=True):
+def _consume_admitted_task_continuation(context, *, allow_legacy=True, allow_dispatch=True):
     principal = Principal(subject=context['owner'])
     conversation = context['conversation_id']
     workspace = context['workspace_id']
@@ -926,7 +973,8 @@ def _consume_admitted_task_continuation(context, *, allow_legacy=True):
     intent = backend('peek')
     if (intent.get('reservation_schema_version') == 'task-continuation-reservation.v3'
             or _has_v3_continuation_intent(intent)):
-        _consume_v3_task_continuation(context, intent, backend=backend)
+        _consume_v3_task_continuation(
+            context, intent, backend=backend, allow_dispatch=allow_dispatch)
         return
     # The default ordinary Product consumer has no authority to enter any
     # historical F6 flow. Keep legacy liabilities reconcilable only through
@@ -1207,6 +1255,39 @@ def _request_v3_continuation_cancel_fence(context: dict, reservation_id: str) ->
     return body
 
 
+def _v3_never_dispatched_cancel_proof(
+    context: dict, reservation_id: str, *, allow_reserved: bool = False,
+) -> str | None:
+    """Use Backend's exact zero-attempt cancellation plus no Runtime contradiction."""
+    principal = Principal(subject=context['owner'])
+    intent = _catalog_request('POST', f"/internal/task-continuation/{context['conversation_id']}/peek",
+        principal, context['workspace_id'])
+    if not _has_v3_continuation_intent(intent):
+        return None
+    receipt, carrier, exact_id, instruction = _validate_v3_continuation_intent(intent, context)
+    backend_status = receipt.get('status')
+    if (exact_id != reservation_id
+            or backend_status not in ({'cancelled', 'reserved'} if allow_reserved else {'cancelled'})
+            or type(receipt.get('dispatch_attempts')) is not int
+            or receipt.get('dispatch_attempts') != 0):
+        return None
+    adapter_receipt = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/continuation-receipt/{reservation_id}")
+    if adapter_receipt != {'reservation_id': reservation_id, 'status': 'outcome_unknown'}:
+        return None
+    identity_content = json.dumps(
+        {'content': instruction, 'reservation': carrier}, sort_keys=True, separators=(',', ':'))
+    reconciled = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/prompts/reconcile",
+        params={
+            'idempotency_key': reservation_id,
+            'content_sha256': hashlib.sha256(identity_content.encode()).hexdigest(),
+        })
+    if reconciled == {'schema_version': 'prompt-receipt.v1', 'state': 'outcome_unknown'}:
+        return backend_status
+    return None
+
+
 class _V3CancelReceiptConflict(ValueError):
     """Backend and Runtime disagree about the held v3 execution identity."""
 
@@ -1336,7 +1417,8 @@ def _v3_cancel_target(
         if len(active) == 1:
             return 'active', run_id
         return None
-    if (root.get('status') in {'completed', 'failed', 'cancelled', 'interrupted'}
+    if (backend_status == 'settled'
+            and root.get('status') in {'completed', 'failed', 'cancelled', 'interrupted'}
             and root.get('authority_status') == 'closed' and len(terminals) == 1
             and runtime_settled):
         terminal_event, lifecycle = terminals[0]
@@ -1348,7 +1430,51 @@ def _v3_cancel_target(
         if (proof['sequence'] == root.get('terminal_sequence')
                 and proof['event_sha256'] == root.get('terminal_event_sha256')):
             return 'closed', run_id
+    if len(terminals) == 1:
+        terminal_event, lifecycle = terminals[0]
+        if (terminal_event.get('kind') == 'session.cancelled'
+                and (not isinstance(terminal_event.get('payload'), dict)
+                     or terminal_event['payload'].get('mode') != mode)):
+            return None
+        proof = lifecycle_receipt(lifecycle)
+        pending_close = (root.get('status') == 'active'
+            and root.get('authority_status') == 'active'
+            and root.get('terminal_sequence') is None
+            and root.get('terminal_event_sha256') is None)
+        recorded_terminal = (root.get('status') == lifecycle['outcome']
+            and root.get('authority_status') in {'active', 'authority_revoked_unconfirmed', 'closed'}
+            and proof['sequence'] == root.get('terminal_sequence')
+            and proof['event_sha256'] == root.get('terminal_event_sha256'))
+        if pending_close or recorded_terminal:
+            # A precise terminal event may be ready for the existing lifecycle
+            # close/ACK path before task-ready settlement can be produced.
+            return 'terminal', run_id
     return None
+
+
+def _ack_v3_cancel_terminal(context: dict, session: ProductSession, run_id: str, mode: str) -> bool:
+    """Close and ACK one exact terminal event; control-cancel ACK is insufficient."""
+    events = _runtime_events(trace_store.read(context['session_id']),
+        context['session_id'], context['trace_id'])
+    starts = []
+    terminals = []
+    for event in events:
+        if event.get('kind') not in {'session.started', 'session.result', 'session.failed',
+                'session.cancelled', 'session.closed'}:
+            continue
+        lifecycle = project_lifecycle_event(event, context['session_id'], context['trace_id'])
+        if lifecycle is None or lifecycle['root_run_id'] != run_id:
+            continue
+        (starts if lifecycle['outcome'] == 'active' else terminals).append((event, lifecycle))
+    if len(starts) != 1 or len(terminals) != 1:
+        return False
+    terminal_event, lifecycle = terminals[0]
+    if (terminal_event.get('kind') == 'session.cancelled'
+            and (not isinstance(terminal_event.get('payload'), dict)
+                 or terminal_event['payload'].get('mode') != mode)):
+        return False
+    _send_agent_lifecycle(context, lifecycle, expected_boot_id=session.boot_id)
+    return True
 
 
 def _request_v3_runtime_cancel(
@@ -1371,7 +1497,13 @@ def _request_v3_runtime_cancel(
 
 
 def _retry_v3_continuation_cancel(context: dict, reservation_id: str, mode: str) -> bool:
-    backend_body = None
+    try:
+        _ensure_v3_cancel_marker(context, reservation_id)
+    except Exception as exc:
+        logger.warning('v3 continuation cancel marker remains unresolved: error=%s',
+            type(exc).__name__)
+        return False
+
     session = product_sessions.find_owned(
         context['conversation_id'], Principal(subject=context['owner']),
     )
@@ -1382,36 +1514,77 @@ def _retry_v3_continuation_cancel(context: dict, reservation_id: str, mode: str)
             logger.warning('v3 continuation original Runtime is unavailable for cancel reconciliation: error=%s',
                 type(exc).__name__)
             session = None
-    target = None
-    receipt_conflict = False
-    if session is not None:
+    if session is None:
+        # A missing Gateway session/process is not itself proof. Require the
+        # exact zero-attempt Backend receipt and no contrary Runtime evidence.
         try:
-            _validate_v3_product_session(session, context)
-            _require_session_runtime_authority(session)
-            target = _v3_cancel_target(context, reservation_id, session, mode)
-        except _V3CancelReceiptConflict as exc:
-            receipt_conflict = True
-            logger.warning('v3 continuation receipts conflict; cancellation remains held: error=%s',
-                type(exc).__name__)
+            proof = _v3_never_dispatched_cancel_proof(
+                context, reservation_id, allow_reserved=True)
+            if proof == 'cancelled':
+                return True
+            if proof == 'reserved':
+                fenced = _request_v3_continuation_cancel_fence(context, reservation_id)
+                return (fenced.get('status') == 'cancelled'
+                    and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled')
+            intent = _catalog_request('POST',
+                f"/internal/task-continuation/{context['conversation_id']}/peek",
+                Principal(subject=context['owner']), context['workspace_id'])
+            if _has_v3_continuation_intent(intent):
+                receipt, _carrier, exact_id, _instruction = _validate_v3_continuation_intent(
+                    intent, context)
+                if exact_id == reservation_id and receipt.get('status') in {
+                        'outcome_unknown', 'accepted'}:
+                    _request_v3_continuation_cancel_fence(context, reservation_id)
+            return False
         except Exception as exc:
-            logger.warning('v3 continuation exact Runtime cancel target remains unconfirmed: error=%s',
+            logger.warning('v3 no-dispatch cancellation proof remains unresolved: error=%s',
                 type(exc).__name__)
-    if not receipt_conflict:
+            return False
+
+    try:
+        no_start = _v3_never_dispatched_cancel_proof(
+            context, reservation_id, allow_reserved=True)
+    except Exception as exc:
+        logger.warning('v3 no-dispatch cancellation proof remains unresolved: error=%s',
+            type(exc).__name__)
+        no_start = None
+    if no_start in {'reserved', 'cancelled'}:
         try:
-            backend_body = _request_v3_continuation_cancel_fence(context, reservation_id)
+            fenced = ({'status': 'cancelled'} if no_start == 'cancelled'
+                else _request_v3_continuation_cancel_fence(context, reservation_id))
+            if (fenced.get('status') == 'cancelled'
+                    and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled'):
+                if not product_sessions.record_v3_cancel_backend_status(
+                        session, reservation_id, 'cancelled'):
+                    raise ValueError('v3 no-dispatch proof no longer matches the held reservation')
+                product_sessions.finish_continuation(session, reservation_id)
+                generation = product_sessions.idle_release_generation(session)
+                if generation is not None:
+                    _schedule_idle_release(session, generation)
+                return True
         except Exception as exc:
-            logger.warning('v3 continuation Backend cancel fence remains unconfirmed: error=%s',
-                type(exc).__name__)
-    runtime_body = None
-    runtime_target_closed = target is not None and target[0] == 'closed'
-    if (not receipt_conflict and target is not None and target[0] == 'active'
-            and session is not None):
-        try:
-            runtime_body = _request_v3_runtime_cancel(context, target[1], session, mode)
-        except Exception as exc:
-            logger.warning('v3 continuation Runtime exact-root cancel remains unconfirmed: error=%s',
+            logger.warning('v3 no-dispatch cancellation remains unresolved: error=%s',
                 type(exc).__name__)
 
+    try:
+        _validate_v3_product_session(session, context)
+        _require_session_runtime_authority(session)
+        target = _v3_cancel_target(context, reservation_id, session, mode)
+    except _V3CancelReceiptConflict as exc:
+        logger.warning('v3 continuation receipts conflict; cancellation remains held: error=%s',
+            type(exc).__name__)
+        return False
+    except Exception as exc:
+        logger.warning('v3 continuation exact Runtime cancel target remains unconfirmed: error=%s',
+            type(exc).__name__)
+        return False
+
+    backend_body = None
+    try:
+        backend_body = _request_v3_continuation_cancel_fence(context, reservation_id)
+    except Exception as exc:
+        logger.warning('v3 continuation Backend cancel fence remains unconfirmed: error=%s',
+            type(exc).__name__)
     if session is not None:
         _validate_v3_product_session(session, context)
         if session.continuation_reservation != reservation_id:
@@ -1423,10 +1596,56 @@ def _retry_v3_continuation_cancel(context: dict, reservation_id: str, mode: str)
         if backend_body is not None and not product_sessions.record_v3_cancel_backend_status(
                 session, reservation_id, backend_body['status']):
             raise ValueError('v3 Backend cancellation no longer matches the held reservation')
-        if (runtime_body is not None or runtime_target_closed) and not product_sessions.record_v3_cancel_runtime_ack(
-                session, reservation_id):
-            raise ValueError('v3 Runtime cancellation no longer matches the held reservation')
-    return backend_body is not None and (runtime_body is not None or runtime_target_closed)
+
+    if (backend_body is not None and backend_body.get('status') == 'cancelled'
+            and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled'):
+        product_sessions.finish_continuation(session, reservation_id)
+        generation = product_sessions.idle_release_generation(session)
+        if generation is not None:
+            _schedule_idle_release(session, generation)
+        return True
+
+    if target is not None and target[0] == 'active':
+        try:
+            # This is only a control acknowledgement. Keep the sidecar until
+            # exact terminal delivery and Runtime cleanup are acknowledged.
+            _request_v3_runtime_cancel(context, target[1], session, mode)
+            target = _v3_cancel_target(context, reservation_id, session, mode)
+        except Exception as exc:
+            logger.warning('v3 continuation Runtime exact-root cancel remains unconfirmed: error=%s',
+                type(exc).__name__)
+            return False
+
+    if target is not None and target[0] == 'terminal':
+        try:
+            # Runtime task-ready settlement waits for this exact terminal
+            # lifecycle close/ACK; acknowledge it before settlement reconcile.
+            if not _ack_v3_cancel_terminal(context, session, target[1], mode):
+                return False
+            _consume_default_task_continuation(context, allow_dispatch=False)
+            target = _v3_cancel_target(context, reservation_id, session, mode)
+        except Exception as exc:
+            logger.warning('v3 continuation terminal settlement remains unconfirmed after ACK: error=%s',
+                type(exc).__name__)
+            return False
+
+    if target is None or target[0] != 'closed':
+        return False
+    try:
+        confirmed = _v3_cancel_target(context, reservation_id, session, mode)
+    except Exception as exc:
+        logger.warning('v3 continuation terminal ACK or cleanup remains unconfirmed: error=%s',
+            type(exc).__name__)
+        return False
+    if confirmed != ('closed', target[1]):
+        return False
+    if not product_sessions.record_v3_cancel_runtime_ack(session, reservation_id):
+        raise ValueError('v3 terminal ACK no longer matches the held reservation')
+    product_sessions.finish_continuation(session, reservation_id)
+    generation = product_sessions.idle_release_generation(session)
+    if generation is not None:
+        _schedule_idle_release(session, generation)
+    return True
 
 
 def _reconcile_research_receipts(context):
@@ -3521,30 +3740,20 @@ def cancel_product_session(
                 # Product session available for ordinary user turns.
                 runtime_body = _request_v3_runtime_cancel(context, target[1], session, request.mode)
                 runtime_acknowledged = True
-                if reservation_id is not None:
-                    product_sessions.record_v3_cancel_runtime_ack(session, reservation_id)
             except Exception as exc:
                 logger.warning('v3 continuation Runtime exact-root cancel is unconfirmed: error=%s',
                     type(exc).__name__)
 
-        runtime_side_confirmed = runtime_acknowledged or runtime_target_closed
-        durable_cancel_confirmed = backend_fence is not None and runtime_side_confirmed
-        if marker_persisted and durable_cancel_confirmed and reservation_id is not None:
-            try:
-                marker_pending = not task_continuation_delivery.clear_cancel(
-                    context, reservation_id, request.mode)
-            except Exception as exc:
-                marker_pending = True
-                logger.warning('v3 continuation cancel marker remains pending: error=%s',
-                    type(exc).__name__)
+        # The cancellation endpoint ACK is not terminal proof. The poller keeps
+        # the fsynced marker until exact root terminal/Backend close/Runtime ACK
+        # and cleanup, or the exact cancelled-zero-attempt proof is established.
+        durable_cancel_confirmed = False
 
         return {
             'session_id': session.conversation_id,
             'trace_id': session.trace_id,
-            'status': runtime_body.get('status') if runtime_acknowledged else (
-                'closed' if runtime_target_closed and durable_cancel_confirmed else 'outcome_unknown'),
-            'active_prompt': runtime_body.get('active_prompt') if runtime_acknowledged else (
-                False if runtime_target_closed and durable_cancel_confirmed else None),
+            'status': runtime_body.get('status') if runtime_acknowledged else 'outcome_unknown',
+            'active_prompt': runtime_body.get('active_prompt') if runtime_acknowledged else None,
             'continuation_cancel': {
                 'reservation_id': reservation_id,
                 'backend_fence_confirmed': backend_fence is not None,

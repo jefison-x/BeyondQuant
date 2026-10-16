@@ -377,6 +377,70 @@ class ResearchContinuationMixin:
         return task, conversation
 
     @staticmethod
+    def _continuation_permission_revoked(task: dict) -> bool:
+        permission = task.get('continuation_permission')
+        if permission is None:
+            return False
+        if not isinstance(permission, dict) or 'revoked_at' not in permission:
+            raise ValueError('legacy continuation permission is ambiguous')
+        return permission.get('revoked_at') is not None
+
+    @staticmethod
+    def _continuation_revocation_timestamp(task: dict) -> str | None:
+        """Return only an existing, valid revocation time; never invent history."""
+        if not ResearchContinuationMixin._continuation_permission_revoked(task):
+            return None
+        value = task['continuation_permission'].get('revoked_at')
+        try:
+            parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError:
+            parsed = None
+        if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(timezone.utc).isoformat()
+
+    @staticmethod
+    def _cancel_v3_ledger_entry(entry: dict, requested_at: str) -> dict:
+        entry = _validate_v3_ledger_entry(entry)
+        if entry['status'] == 'reserved':
+            if entry.get('dispatch_attempts', 0) != 0:
+                raise ValueError('reserved v3 continuation has an invalid dispatch count')
+            entry['status'] = 'cancelled'
+            entry['cancel_requested_at'] = entry.get('cancel_requested_at') or requested_at
+        elif entry['status'] in {'outcome_unknown', 'accepted'}:
+            entry['cancel_requested_at'] = entry.get('cancel_requested_at') or requested_at
+        return _validate_v3_ledger_entry(entry)
+
+    @staticmethod
+    def _fence_revoked_v3_rows(task: dict, conversation: dict, requested_at: str) -> tuple[list, bool]:
+        """Fence only valid v3 rows bound to this exact task; preserve damaged rows."""
+        raw_rows = task.get('continuation_budget')
+        if not isinstance(raw_rows, list):
+            return raw_rows, False
+        rows = list(raw_rows)
+        changed = False
+        expected_scope = (task['owner_principal'], task['workspace_id'],
+            conversation['conversation_id'], task['task_id'])
+        for index, stored in enumerate(raw_rows):
+            if not _is_v3_ledger_entry(stored):
+                continue
+            try:
+                entry = _validate_v3_ledger_entry(stored)
+                carrier = entry['reservation']
+                scope = (carrier.get('owner_principal'), carrier.get('workspace_id'),
+                    carrier.get('conversation_id'), carrier.get('task_id'))
+                if scope != expected_scope:
+                    continue
+                updated = ResearchContinuationMixin._cancel_v3_ledger_entry(
+                    entry, requested_at)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if updated != stored:
+                rows[index] = updated
+                changed = True
+        return rows, changed
+
+    @staticmethod
     def _permission_blocked_reason(task, conversation):
         ledger = task.get("continuation_permission")
         if ledger is None:
@@ -1013,12 +1077,22 @@ class ResearchContinuationMixin:
             if ledger is None or ledger["grant_version"] != grant_version:
                 raise ValueError("exact continuation grant version required")
             if ledger["revoked_at"] is None:
-                ledger = {**ledger, "revoked_at": datetime.now(timezone.utc).isoformat(),
+                revoked_at = datetime.now(timezone.utc).isoformat()
+                ledger = {**ledger, "revoked_at": revoked_at,
                           "revoked_by": trusted_context["actor_principal"]}
                 execute(connection, "UPDATE research_tasks SET continuation_permission = :ledger WHERE task_id = :task",
                         {"ledger": ledger, "task": task_id})
                 task["continuation_permission"] = ledger
-            return self._continuation_view(task, conversation)
+            revoked_at = self._continuation_revocation_timestamp(task)
+            if revoked_at is not None:
+                rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                if changed:
+                    execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+                        {'budget': rows, 'task': task_id})
+                    task['continuation_budget'] = rows
+        # Build the view after commit. Damaged historical budget JSON may make
+        # its legacy projection fail, but it must not roll back the stop intent.
+        return self._continuation_view(task, conversation)
 
     def reserve_continuation_budget(self, task_id: str, *, trusted_context: dict,
             grant_version: int, event_key: str, input_sha256: str, token_limit: int,
@@ -1219,7 +1293,16 @@ class ResearchContinuationMixin:
             reservation_id = 'continuation_' + identity_digest[:32]
 
             ledger = task.get('continuation_budget') or []
-            for stored in ledger:
+            permission = task.get('continuation_permission')
+            revoked = self._continuation_permission_revoked(task)
+            revoked_at = self._continuation_revocation_timestamp(task) if revoked else None
+            if revoked_at is not None:
+                fenced_rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                if changed:
+                    execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget '
+                        'WHERE task_id=:task', {'budget': fenced_rows, 'task': task['task_id']})
+                    task['continuation_budget'] = fenced_rows
+            for row_index, stored in enumerate(ledger):
                 if not _is_v3_ledger_entry(stored):
                     continue
                 existing = _validate_v3_ledger_entry(stored)
@@ -1228,12 +1311,13 @@ class ResearchContinuationMixin:
                     continue
                 if prior['source_fact_sha256'] != reservation['source_fact_sha256']:
                     raise IdempotencyConflict('signal Job source facts conflict with its existing reservation')
+                if revoked:
+                    current_rows = task.get('continuation_budget') or []
+                    if row_index < len(current_rows) and _is_v3_ledger_entry(current_rows[row_index]):
+                        existing = _validate_v3_ledger_entry(current_rows[row_index])
                 return existing
 
-            permission = task.get('continuation_permission')
             if permission is not None:
-                if not isinstance(permission, dict) or 'revoked_at' not in permission:
-                    raise ValueError('legacy continuation permission is ambiguous')
                 if permission.get('revoked_at') is not None:
                     raise ValueError('explicitly revoked continuation permission blocks a new reservation')
 
@@ -1445,15 +1529,28 @@ class ResearchContinuationMixin:
         with self._transaction() as connection:
             task, conversation = self._continuation_task(
                 connection, entry['reservation']['task_id'], trusted_context, human=False)
-            stored = next((row for row in task.get('continuation_budget') or []
+            rows = task.get('continuation_budget') or []
+            stored_index = next((index for index, row in enumerate(rows)
                 if _is_v3_ledger_entry(row) and row.get('reservation_id') == entry['reservation_id']), None)
-            if stored is None:
+            if stored_index is None:
                 raise ValueError('exact v3 continuation reservation was not persisted')
+            stored = rows[stored_index]
             stored = _validate_v3_ledger_entry(stored)
             if (stored['reservation']['idempotency_key'] != entry['reservation']['idempotency_key']
                     or task['conversation_id'] != conversation_id
                     or task['owner_principal'] != owner or task['workspace_id'] != workspace):
                 raise ValueError('exact v3 continuation reservation binding changed')
+            if self._continuation_permission_revoked(task):
+                revoked_at = self._continuation_revocation_timestamp(task)
+                if revoked_at is not None:
+                    rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                    if changed:
+                        execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget '
+                            'WHERE task_id=:task', {'budget': rows, 'task': task['task_id']})
+                        task['continuation_budget'] = rows
+                    current_rows = task.get('continuation_budget') or []
+                    if stored_index < len(current_rows) and _is_v3_ledger_entry(current_rows[stored_index]):
+                        stored = _validate_v3_ledger_entry(current_rows[stored_index])
             job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
                     j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
                     u.user_id AS owner_user_id, j.trace_id, j.request_hash,
@@ -1478,6 +1575,11 @@ class ResearchContinuationMixin:
         carrier = entry['reservation']
         terminal = entry['status'] in {'settled', 'rejected', 'cancelled'}
         receipt = {**entry, 'idempotency_key': carrier['idempotency_key']}
+        revoked = ResearchContinuationMixin._continuation_permission_revoked(task)
+        if (revoked and not terminal and receipt.get('cancel_requested_at') is None):
+            revoked_at = ResearchContinuationMixin._continuation_revocation_timestamp(task)
+            if revoked_at is not None:
+                receipt['cancel_requested_at'] = revoked_at
         return {
             'status': 'waiting' if terminal else 'intent',
             'task_id': task['task_id'],
@@ -1486,6 +1588,7 @@ class ResearchContinuationMixin:
             'trace_id': conversation['trace_id'],
             'reservation_schema_version': RESERVATION_SCHEMA_VERSION_V3,
             'may_dispatch': not terminal and entry['status'] == 'reserved'
+                and not revoked
                 and entry.get('cancel_requested_at') is None
                 and not ResearchContinuationMixin._event_blocked_by_needs_attention(task, entry['event_key'])
                 and task['status'] in {'planned', 'running'}
@@ -1678,7 +1781,7 @@ class ResearchContinuationMixin:
                 raise ValueError('v3 cancellation requires its original conversation')
             rows = task.get('continuation_budget') or []
             row_index = next((index for index, item in enumerate(rows)
-                if item.get('reservation_id') == reservation_id), None)
+                if isinstance(item, dict) and item.get('reservation_id') == reservation_id), None)
             if row_index is None or not _is_v3_ledger_entry(rows[row_index]):
                 raise ValueError('exact v3 continuation reservation is unavailable')
             row = _validate_v3_ledger_entry(rows[row_index])
@@ -1691,10 +1794,9 @@ class ResearchContinuationMixin:
             if row['status'] == 'reserved':
                 if row.get('dispatch_attempts', 0) != 0:
                     raise ValueError('reserved v3 continuation has an invalid dispatch count')
-                row['status'] = 'cancelled'
+                row = self._cancel_v3_ledger_entry(row, datetime.now(timezone.utc).isoformat())
             elif row['status'] in {'outcome_unknown', 'accepted'}:
-                if row.get('cancel_requested_at') is None:
-                    row['cancel_requested_at'] = datetime.now(timezone.utc).isoformat()
+                row = self._cancel_v3_ledger_entry(row, datetime.now(timezone.utc).isoformat())
             else:
                 # Terminal outcomes are retained exactly; this is an idempotent
                 # cancel acknowledgement, never a refund or state rewrite.
@@ -1710,7 +1812,7 @@ class ResearchContinuationMixin:
             task, conversation = self._continuation_task(connection, task_id, trusted_context, human=False)
             rows = task.get('continuation_budget') or []
             row_index = next((index for index, item in enumerate(rows)
-                if item.get('reservation_id') == reservation_id), None)
+                if isinstance(item, dict) and item.get('reservation_id') == reservation_id), None)
             row = rows[row_index] if row_index is not None else None
             now = datetime.now(timezone.utc)
             if row is not None and _is_v3_ledger_entry(row):
@@ -1721,6 +1823,14 @@ class ResearchContinuationMixin:
                         or carrier['owner_principal'] != task['owner_principal']
                         or carrier['workspace_id'] != task['workspace_id']):
                     raise ValueError('v3 continuation dispatch scope changed')
+                if self._continuation_permission_revoked(task):
+                    revoked_at = self._continuation_revocation_timestamp(task)
+                    if revoked_at is not None:
+                        rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                        if changed:
+                            execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget '
+                                'WHERE task_id=:task', {'budget': rows, 'task': task_id})
+                    return {'dispatch': False}
                 if (row['status'] != 'reserved' or row.get('dispatch_attempts', 0) != 0
                         or row.get('cancel_requested_at') is not None
                         or self._data_ready_blocked_reason(task, conversation) is not None

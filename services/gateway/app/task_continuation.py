@@ -214,17 +214,23 @@ class TaskContinuationDelivery:
             try:
                 context = self._read_context(path)
                 pending_cancel = self.pending_cancel(context)
+                cancellation_processed = pending_cancel is not None
                 if pending_cancel is not None:
                     stage = 'cancel_fence'
                     reservation_id, mode = pending_cancel
                     if (self.cancel_pending is None
                             or self.cancel_pending(context, reservation_id, mode) is not True):
+                        if self.reconcile is not None:
+                            stage = 'reconcile'
+                            self._reconcile_with_backoff(path, context)
                         continue
                     if not self.clear_cancel(context, reservation_id, mode):
                         continue
                 if self.reconcile is not None:
                     stage = 'reconcile'
                     self._reconcile_with_backoff(path, context)
+                if cancellation_processed:
+                    continue
                 if enabled:
                     stage = 'consume'
                     self.consume(context)
