@@ -190,6 +190,22 @@ Backend在INSERT前的密钥字段过滤中将该字段名归一化为含`author
 切片B的确定性无副作用私有拒绝回执另行处理；不能把普通422、超时、5xx或丢响应全部判为无副作用。
 不扩大真实测试、不自动清除旧unknown、不重放业务；旧Root和失败批次不能因后续软件修补改为PASS。
 
+### 审计公开权限判断字段（切片A）：限定离线软件PASS
+
+应用提交 `f6a1c51f0e065cde341677e53b2fbca928341953`，仅修改Backend审计校验及一个新测试模块。
+只在audit detail对象顶层允许精确键`authorization_decision`，值必须为`allowed`、`denied`、`approval_required`之一。
+一般JSON校验不放宽；相似键、嵌套凭据、非法类型、不可序列化/非有限数值、16KiB字节边界和保留ACP-control拒绝仍在。
+两个实际失败输入形状分别通过`record_audit`两层校验进入替身execute边界，不能称为真实数据库写入。
+
+冻结应用/测试SHA分别为`860e4b52a2f3c7f8b471b16b2e958d48e18b26d2f8e68eb199455aa2cc7020a6`、
+`eafbd3196f1f898428851f62c830d396a9fb9804df0bc1afe52bc11dd16c9fdc`，前后不变。
+单次19项全部PASS、0失败/跳过、schema resets和store bootstraps均0；pytest0.03秒，整批含采集清理138秒，小于180秒。
+缓存镜像断网、容器和源码挂载只读、空数据库URL；准确测试容器原生及State退出0、OOMKilled=false，并按准确CID移除。
+原44条运行容器清单前后字节相同；未调用数据库、模型或Product Job，未更新保留服务。
+Tester → 独立Sol → Root限定PASS，私有入口`audit-detail-public-decision-v1/ROOT-OFFLINE-PASS.json`。
+
+当前镜像安装、真实浏览器重验、切片B私有负回执、旧unknown核对及生产均NOT_RUN；本片不能解除旧Root的HOLD。
+
 证据根：`.ci-artifacts/agent-origin-consumer-20261015-v1/`。
 
 - `native-image-readback-v1/ROOT-LOCAL-IMAGE-PASS.json`：原生哈希/权限/目录与体积；首轮权限及观察器失败均保留。
