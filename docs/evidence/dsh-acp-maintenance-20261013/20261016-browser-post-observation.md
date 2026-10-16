@@ -22,6 +22,27 @@
 6. 页面刷新后全文比较；持久消息按差集、角色和顺序核对。允许同轮助手分段，不固定要求新增两条；已存旧消息和旧任务/Job 原件不变。
 7. 任一命令、解析或身份失败即停止该批，保存原件。先核对现有证据和源码语义，再决定有限补查；不重发模型请求修观察器。
 
+## 原生输出格式也必须复用
+
+2026-10-16 后台软取消批次中，Root 重写了日志解析片段，丢掉既有 `GATEWAY-LOG-NATIVE.json` 明确记录的 `plainlogs;exact structuredACK JSON suffix only` 合同。实际日志有 `INFO: terminal_ack_observed ` 前缀；对整行做 JSON 解析并跳过异常，错误地产生空 ACK 列表。原批保留 **FAIL_OBSERVER_STOP**，第二条输入 **NOT_RUN**；不得据此重发模型或创建另一个 Job。
+
+这是采集流程错误。修正使用现有原件、现有命令和下表，不新增框架或功能测试代码。后续原生采集记录必须带回对应模板的 `format`，先确认格式再解释内容；不能只复用 argv 后重新猜解析规则。
+
+| 原件 | 实际格式 | 核对方法 |
+| --- | --- | --- |
+| psql 元数据、三路官方回执、provider journal | JSONL，各行独立对象 | 逐行解析，按实际 `row_type` / `kind` / 请求类型分组；不当作一个 JSON 文档，不固定行数。 |
+| Runtime binding + operations、MAC 验证结果 | 一个 JSON 对象 | 完整解析，再核对当前准确 Root 与 scope；汇总 usage 不替代 provider journal。 |
+| Gateway 日志的 stdout 和 stderr | 普通日志，ACK 是固定前缀后的 JSON | 两个流均保留；仅解析 `terminal_ack_observed ` 后的完整 JSON，精确匹配 schema、Root、SID、trace、boot、序号和摘要。匹配前缀后的格式错误必须停止，不能静默跳过。 |
+| 本地 native 包装回执 | 共同执行字段为 `argv`、`exit_code`；原始 stdout/stderr 另存 | `container_id`、`utc` 与 `utc_started`/`utc_ended` 等仅为各次采集的辅助字段，须先读取实际形状；不得猜额外字段名作为执行或身份合同。准确身份由原生 stdout、白名单 STATE 及 argv 交叉证明。 |
+| Docker `create` | stdout 为一个完整64位容器ID | 从原始 stdout 取准确 CID，与受限 STATE 的 `id`、镜像及 `cp` argv 交叉核对；本地包装回执的额外 `container_id` 不是必备字段。 |
+| Docker `cp ... -` | tar 二进制 | 按 tar 读取目标成员，再核对实际文件内容、SHA、字节与权限；不按文本解析。 |
+| Docker 受限 `inspect --format` | 精确 ID 集的 JSONL | 使用已核准白名单；挂载按 Destination 比较完整对象，不比较数组顺序，不采集完整 Env。 |
+| 浏览器文章快照 | 有序字符串数组 | 全文与顺序比较；持久消息允许同轮助手分段，不固定新增条数。 |
+
+零条匹配 ACK 表示证据尚不足，不表示没有发生 ACK；不得继续发送下一条测试输入。相同身份、序号和摘要的重复 ACK 日志应保留原始次数，并按同一个终态核对，不能计成多次业务执行。清理回执中的原因字段也不能代替真实业务终态。
+
+任一格式错误仍按第7条停止该批。先独立审查保存原件和缺口，限定旧结果的核对与后续新批次分别记录；原 FAIL 不改写。
+
 ## 有限后读
 
 独立 Sol 只读审查后，另批仅各一次读取本轮已存在的 provider journal、精确 scope 签名清理回执和有限 Gateway 日志，未新增输入、模型或 Job。6次请求均 HTTP200，input196814（其中 cache-read187904）、output1174；MAC 验证成功；Root `d64f11fa540940f09574efa367a433f5` 的 ACK30 与 Backend/binding 终态摘要 `da0177a39e53ed7a1b535128b58fe4e9b1a205cf148a08f365e4aad24634b704` 一致。
@@ -31,3 +52,21 @@
 ## 尚未验证
 
 旧显式撤销对已有 v3 派发的围栏仍是独立缺口；双用户、在途进程异常、迟到请求和业务未知结果等未闭合范围不因本片通过。15项参数保存/执行按用户要求延期。完整 CI、推送、合并、生产部署均 NOT_RUN。保留测试环境和当前页面。
+
+## 薄镜像归档校验的同类错误
+
+随后薄镜像读回批次的本地汇总器依赖额外 `container_id` 字段，而分段手工采集和批量采集写出的包装回执并不相同，发生 `KeyError`。该批仍为 **FAIL_OBSERVER_STOP**，未安装服务、未增加模型或 Job。执行方摘要“Backend临时容器保留、Gateway未创建”也被保存原件否定：Backend准确rm已成功，Gateway已创建且3文件/2目录已读回。Root按原生时序记录事实，不采纳该错误摘要。
+
+解决范围只使用已有 CREATE stdout → STATE raw → cp argv → tar 原件，另写派生核对结果，不补写字段、不改原件、不重复 Docker 读回；后续临时容器清理和安装分别准入。所有观察器都以实际输出格式与准确身份为依据，包装摘要不作为原生执行证明。
+
+## 新一轮与只读刷新的不同核对范围
+
+取消后的一次普通输入已完成并取得准确终态ACK247及签名清理证明；1次HTTP200，没有新Job或模型工具调用。旧69条持久消息、23条Root、7个Job及7条ledger原件不变。原批仍保留 **FAIL_BROWSER_HISTORY_PREFIX_STOP**：全43个article前缀比较把两张历史运行卡也当作不可变消息，实际只有它们追加“后续已发起新一轮（不表示原任务已完成）”。
+
+`AgentView.vue`将消息与`aria-label="历史运行记录"`卡片都渲染成article；`workflow.ts`依据更晚的`session.started`设置`laterTurnStarted`。因此必须使用当前Product投影语义：
+
+- 持久消息按准确message_id、角色、顺序及内容摘要核对；页面消息正文与旧正文不变，允许同轮助手分段。
+- 历史运行卡保留原始状态、时间及位置；只允许由准确新轮开始证明的`laterTurnStarted`提示变更，本次仅原第42、43个article的该后缀，不能普遍忽略卡片差异。运行中临时状态不当作持久消息。
+- 无新轮次的只读刷新仍比较当下全部有序article全文；任何差异继续HOLD，不能用前述动态提示规则豁免刷新丢失或重复。
+
+只分析已保存差异、SQL、页面DOM和源码，不重发消息修观察器。原批未执行的刷新保留NOT_RUN，后续仅可另批限定一次只读刷新检查现有回答持久化；不扩大真实模型、Job或双用户测试。

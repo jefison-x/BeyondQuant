@@ -40,3 +40,15 @@ v1、v2 的 HOLD 对象、差异和收据原样保留。v3 因冻结后源码漂
 有限只读补证发现取消标记仍存在，停止后续测试。准确标记为397字节、`soft`、reservation `continuation_8137b08dc0e2b0d88eeb15e1c478644d`，身份匹配。实际通用 `/peek` 返回同一身份范围的旧终态 `continuation_37c78c7b983f7b23c2893b35563843cf`；Gateway准确ID校验拒绝替换，因此无法用该查询完成新标记的退休。此查询选择缺口已经独立审查确认，不推断每次历史tick或未观察的内存状态。
 
 修复计划仅增加受既有 trusted consumer 保护的按会话和 reservation 精确读取，并替换Gateway三个取消核对读取点；普通 `/peek` 的候选顺序不变，未知结果和完整终态证明不放松。三个源码文件已完成实现、语法编译与差异检查，并经独立Sol→Root限定静态PASS（审查SHA-256 `3c013ac7c1edaab52b4fb536e3d5bb36f53c6ade9d2312a33aace62a7899fcd5`）；尚未安装或验证退休与新输入。保留原标记让正常流程在修复后核对，不人工删除、不重放Job。
+
+## 精确读取修复、隔离安装与取消后新输入
+
+修复源码提交为`7e5779f0baa76a1bcfda27e25a54d1924c8ed554`。仅更新隔离Backend/Gateway，实际镜像分别为`sha256:37434d44043a80e3aea448d28c4e66606887b546876e0971d06800efa74aea49`、`sha256:9f79f8d558707bd93ac0350b0d6f1e4d4903ee97230bbbf5dd93fd423a88964d`。原基础镜像加单COPY，层数仍42/26；比前版仅+481/+39字节。12文件及4父目录读回准确，其他14容器与全部16挂载不变；隔离安装经独立Sol→Root PASS。薄镜像汇总曾因本地包装字段假设而失败，原批保留FAIL；只用已存原生原件另行核验，没有重复build/cp。
+
+新exact GET读到正确8137回执；完整结算及用量与原官方回执一致，Runtime清理及槽位闭合，正常poller自行退休原取消标记。没有人工删除、重放Job或新模型请求。当前同CID刷新前后43篇全文和顺序一致、输入可用，限定退休及刷新经独立Sol→Root PASS。
+
+随后仅在原页面发送1次普通消息，Root `ef8ce44ebfa642eb9039eb8a02e4e4a1`、generation `generation-494c29e8948f42a192360a07ca49c072`完成/权限关闭/unknown0；ACK247及事件摘要`6bf05ca433cf56bf48c7f857834379b536a790fcd322a69ebfa4862af5f0ebe4`与Backend、binding一致，签名清理核验成功、进程及原生会话关闭、游标排空、槽位释放。实际1次HTTP200，input33176（已含cache-read26624）、output167；0模型工具/新Job/子Agent/新取消，原23Root、69持久消息、7Job、7ledger全不变。新原生SDK session为`cbb12532-1784-4a59-9b0d-0375b09eabda`，不声称恢复了原子Agent。
+
+本次回复为“BYQ-CANCEL-CONTINUE-20261016-可以继续。”。原输入批因把两张动态运行卡当作不可变消息而保留`FAIL_BROWSER_HISTORY_PREFIX_STOP`，仅该两卡追加准确的后续轮次提示。保存原件与源码核对后，实际重新输入和生命周期经独立Sol→Root限定PASS。另批只读刷新后45篇全文/顺序及卡片label/时间均稳定（40消息、5运行卡），无新input/model/Job/SQL；最终持久化已独立Sol→Root限定PASS（审查SHA-256 `7d6279eb2e30de0345628a74a2af40dad808d39530b3ac4a2dc2a4a503d7f519`，Root收据`ROOT-FINAL-SCOPED-PASS.json`）。详见[观察合同](20261016-browser-post-observation.md)。
+
+该切片只证明已发生的v3软取消、精确标记退休及同一会话新输入；旧显式grant撤销的实际入口、无效历史撤销时间的在途取消、跨用户、进程异常、迟到旧请求、真实业务unknown、其他Job类型及物理provider输出参数来源仍分别未验证。15参数写入/执行延期。Full CI、推送、合并、生产部署仍NOT_RUN。私有原件位于前述目录的`exact-cancel-receipt-fix-v1/`，所有原FAIL保留，测试环境和页面保持打开。
