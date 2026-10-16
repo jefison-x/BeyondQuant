@@ -1,10 +1,10 @@
 # ADR-0104 — Operator process-fence proof for an unresolved ACP root
 
-- Status: **Proposed** (2026-10-06; awaiting maintainer decision). This is a
+- Status: **Proposed** (2026-10-06; revised 2026-10-17; awaiting maintainer decision). This is a
   draft decision point, not an accepted contract. No behavior changes until
   accepted.
-- Scope: the ordinary Product ACP resource group (ADR-0100) and the dedicated
-  judgment ACP root (ADR-0097/0098). Does not change the Backend's
+- First implementation scope: the ordinary Product ACP resource group
+  (ADR-0100) only. Judgment recovery is deferred. Does not change the Backend's
   `process_fence="stopped"` requirement and does not authorize an
   unproven-fence `abandoned` state.
 
@@ -23,30 +23,76 @@ never be forged.
 
 ## Proposed minimal contract
 
-A trusted, runner-owned operator fence-proof entry that proves an **exact old
-runner execution** is stopped and cannot re-execute, without a cleanup receipt:
+This adds an independent **Engineering-origin process-fence proof**, not a
+runner cleanup receipt. Different instance IDs, a new PID namespace, a missing
+PID, or `restart=no` alone do not prove that the old execution cannot continue.
 
-1. **Runner-instance identity.** The runner persists a durable, signed
-   `runner_instance` record on startup (instance id + boot identity + the fixed
-   workspace), separate from any per-scope cleanup receipt.
-2. **Instance-replacement proof.** A later runner instance, on the same durable
-   state, can emit a signed proof that the previous instance owning a scope is
-   no longer the current instance and cannot be running: the container/PID
-   namespace was replaced, so no process of the old instance can survive. The
-   proof binds the old instance id, the new instance id, and the exact scope.
-3. **Old-identity invalidation and scope binding.** The proof binds the exact
-   one-shot scope (task/call/root/boot/epoch), the exact root identity and the
-   old runner instance; a proof for one scope/instance never authorizes another.
-   The old instance's scope is one-shot (`_consume_scope`), so it can never
-   re-execute.
-4. **Business result stays unknown.** The proof settles the business outcome as
-   `unknown`/`interrupted`; it never fabricates a result or a historical EXIT.
-5. **Exact Backend ACK.** The Backend accepts this proof as the process fence
-   only under its existing exact terminal ACK and ingress checks; the receipt
-   never replaces the business result check or the terminal ACK.
-6. **Fail closed.** Missing, corrupt, wrong-scope, wrong-instance or
-   non-replacing proofs keep the root `needs_attention`. No automatic
-   `abandoned` state releases the next turn; an operator must explicitly act.
+1. **Qualified identity before execution.** A qualified runner durably records
+   its signed instance/boot/Workspace identity and holds an exclusive lock on
+   its authoritative state volume for its whole lifetime. Engineering binds
+   that instance to an exact immutable container ID, image, deployment group,
+   start identity, private PID namespace and authoritative volumes while the
+   instance is running, before accepting its first START. Every START durably
+   binds the full exact scope to that instance before dispatch. An old image
+   without these records cannot acquire eligibility retrospectively. Switching,
+   cloning or rolling back the state volume is not a replacement proof.
+2. **Explicit native Engineering verification.** Freeze dispatch for the exact
+   affected Workspace/Root. A bounded one-shot Engineering operation verifies
+   the pre-bound old container: stopped, PID0, not paused/restarting, private
+   PID namespace, and automatic restart disabled. Missing daemon/readback,
+   ambiguous identity or an unverified extra instance is HOLD. A successor must
+   acquire the same volume lock, validate the old instance/scope/consumed facts,
+   and atomically persist an exact old-instance/scope tombstone before ready.
+   Qualified startup and START reject that consumed scope even after a manual
+   restart. Recheck the old container and replacement boundary before finalize.
+   The successor only attests its own lock/tombstone installation; it cannot
+   infer or sign a claim that another container died.
+3. **Existing Engineering execution boundary.** Prefer the existing one-shot
+   private Backend/Runtime CLI and protected reserved control-audit pattern of
+   ADR-0113. Trust comes from restricted local Engineering execution and private
+   Docker/Backend access, not caller-supplied UID/name or a Product/runner
+   credential. UID/name records attribution only. No new HTTP/MCP/browser
+   operation, service, generic recovery framework, database table or scheduler
+   is authorized. Product DSH receives no Docker socket, business DB, host
+   authority, application-source access or permission to issue this proof.
+4. **Closed evidence and idempotency.** The versioned proof binds an operation
+   ID; named operator; full owner/Workspace/session/trace/Root/Adapter boot/
+   epoch/generation/cwd scope; old and new runner instance identities; exact old
+   container/image/deployment/start identity and pre-execution binding digest;
+   authoritative state-volume identity; native stopped/namespace/restart-fence
+   evidence digests and observation times; tombstone digest; and the frozen
+   Backend ingress/registration/claim snapshot digest. Keep native command,
+   exit-code and evidence originals outside model output. Store an unforgeable
+   Backend-owned receipt in the existing protected audit seam. Exact repeats
+   return the same receipt; changed content, scope, authority, snapshot, volumes
+   or evidence is HOLD. Ordinary audit/reset/retention cannot forge or remove
+   required proof. If that seam cannot satisfy this, return to ADR review.
+5. **Business outcome remains separate.** Backend locks and rechecks current
+   authority, exact Root and the complete canonical ingress, native registration
+   and domain-claim snapshot. Pending/unknown business effects, unbound
+   registrations and unsettled claims still block. Process death never makes a
+   business call successful, denied, absent or safe to replay. ADR-0113 audit-only
+   reconciliation, where applicable, remains a separate explicit receipt; it
+   does not authorize reconciling genuine business unknowns.
+6. **Distinct interrupted lifecycle and exact ACK.** Only after proof and all
+   independent business gates pass may the existing lifecycle close this exact
+   Root with a Backend-owned operator-fence/interrupted fact and exact terminal
+   ACK. Do not invent a historical DSH EXIT, model result, cleanup MAC or native
+   close RPC. If no genuine terminal event exists, define the distinct operator
+   event and its closed projection consistently across Backend/Adapter/Gateway;
+   never relabel an old event to fit the existing receipt. Preserve raw history.
+   Release occupancy only after exact ACK, proof and drain are all confirmed.
+   Any interrupted prepare/finalize leaves the fence held until an exact retry.
+7. **New execution only.** Keep the public conversation and durable Jobs/results.
+   If native-close/resume proof is unavailable, a later user instruction starts
+   a fresh native session with verified public history injected once. It may
+   create a new child to read an existing authorized result; it never restores,
+   reconstructs or replays the old child, prompt or unknown business command.
+
+Acceptance would amend ADR-0100's lost-cleanup release boundary and ADR-0113
+item 2 only for this independently proven process fence. Existing signed-cleanup
+recovery and qualified idle restart remain valid. Until acceptance and actual
+verification, the existing missing-cleanup fence remains unchanged.
 
 ## Explicitly rejected
 
@@ -56,11 +102,22 @@ runner execution** is stopped and cannot re-execute, without a cleanup receipt:
   trusted proof.
 - Relaxing the Backend `process_fence="stopped"` requirement for ordinary close.
 
-## Consequences
+## Delivery and verification gate
 
-- Defines the production recovery story for a lost runner: which cases are
-  closable via a runner-instance-replacement proof and which remain
-  `needs_attention`; rebuilding the database is never the recovery.
-- Requires runner durable instance records and a Backend acceptance path; the
-  exact Backend contract is a follow-up decision once this direction is
-  accepted.
+This is maintenance, not Product Phase advancement or production authorization.
+Acceptance would permit only the bounded ordinary-Product implementation above.
+First audit the existing private CLI, binding, lock, lifecycle and reserved-audit
+seams; no broad refactor. Keep proof types closed and independent; syntax/type/
+build checks and independent Sol source review precede any environment update.
+
+Prefer native operations and the retained browser for functional verification.
+First qualify immutable instance binding, exclusive startup and tombstone
+behavior without real model calls; a proof/state conflict must stop safely.
+Only then admit one bounded active-execution-loss case with exact fault target,
+call/Job/time caps, preserved volumes/images/evidence and independent review.
+Verify interruption and fresh-child reads of an existing Job through
+Gateway/Product API, no prompt replay or claim of old-child restoration. Reuse
+the valid idle-restart/read evidence; do not rerun it as active-loss proof.
+True business unknown remains blocked. Fault injection without the qualified
+closing path is NOT_RUN. Merge, production and destructive actions retain their
+separate authorization gates; no database rebuild or volume cleanup is recovery.

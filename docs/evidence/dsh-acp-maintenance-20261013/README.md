@@ -4,6 +4,8 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**下一项的明确合同缺口：** 活动runner丢失且缺signedcleanup时，现有围栏不能仅凭新容器或缺PID释放。已修订Proposed ADR-0104并通过独立Sol→Root设计审查，限定ordinary Product、Engineering原生准确证明、现有私有CLI/audit seam及独立业务重验；真正unknown仍阻塞，无新框架。依据AGENTS15/Accepted0100/0113等待维护者接受，未实现或故障注入；有效的idle-restart新子助手读取PASS不受影响。见[故障前合同核对](20261017-process-loss-admission.md)。
+
 **双用户普通对话与持久请求区间限定PASS：** 复用现有 qualification 配置为 B 加独立 runner/三卷，仅重建实际 `runtime-adapter-f6`；同一现有镜像，无构建/下载，其他15容器和A原挂载不变。当前浏览器各发一条普通消息，两次HTTP200、身份分离、准确ACK/签名清理/刷新持久化闭合，旧24Root/71消息不变，0新Job。瞬时active2/held2采样未命中仍为NOT_PROVEN；仅从同两次持久请求日志补证实际同时在途1718ms，经独立Sol→Root另行限定PASS，无重发。环境和三页保留。见[双用户普通对话](20261017-two-user-ordinary-dialogue.md)。不扩称其余双用户或生产资格。
 
 **任务读取隔离已补齐限定PASS：** 现有B账号任务列表200/空，B读取A准确任务404，A读取同一对象200；3次浏览器只读GET与1次原生日志吻合，独立Sol→Root已验收。原A/B页面不动，额外只读核对页保留，0消息/模型/Job/业务写。见[两用户任务读取隔离](20261017-task-read-isolation.md)。不扩称并发、迟到或未知结果通过。
