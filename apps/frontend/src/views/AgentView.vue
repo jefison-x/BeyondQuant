@@ -26,6 +26,7 @@ const error = ref("");
 const busy = ref(false);
 const loading = ref(false);
 const initialized = ref(false);
+const requestedSessionUnavailable = ref(false);
 const activityOpen = ref(false);
 const historyOpen = ref(false);
 const historyStatus = ref<"active" | "archived">("active");
@@ -327,15 +328,22 @@ function scheduleRunReconciliation(sessionId: string, generation: number) {
   }, 5_000);
 }
 
-async function openSession(sessionId: string, updateRoute = true) {
+async function openSession(sessionId: string, updateRoute = true, strictRequest = false) {
   const generation = ++conversationGeneration;
   stopStream(); stopReconciliation(); localRunStartedAt.value = ""; stopping.value = false;
   softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
+  if (strictRequest) {
+    requestedSessionUnavailable.value = true;
+    agent.clearActiveSession();
+  } else {
+    requestedSessionUnavailable.value = false;
+  }
   loading.value = true; error.value = "";
   try {
     const replay = await getAgentSession(sessionId, auth.token);
     if (generation !== conversationGeneration) return;
+    requestedSessionUnavailable.value = false;
     agent.replaceSession({ ...replay.conversation, session_id: sessionId });
     agent.hydrateSession(sessionId, replayMessages(replay.messages, replay.events), replay.events);
     for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
@@ -369,7 +377,13 @@ async function openSession(sessionId: string, updateRoute = true) {
     scrollConversation();
   } catch (exc) {
     if (generation === conversationGeneration) {
-      error.value = exc instanceof Error ? exc.message : "会话加载失败";
+      if (strictRequest) {
+        requestedSessionUnavailable.value = true;
+        agent.clearActiveSession();
+        error.value = "无法打开此会话。它可能不存在或你无权访问。请从历史会话中选择，或新建会话。";
+      } else {
+        error.value = exc instanceof Error ? exc.message : "会话加载失败";
+      }
     }
   } finally { if (generation === conversationGeneration) loading.value = false; }
 }
@@ -387,6 +401,7 @@ function startNewSession(preservePrompt = false) {
   conversationGeneration += 1;
   stopStream(); stopReconciliation();
   localRunStartedAt.value = ""; stopping.value = false; loading.value = false; error.value = "";
+  requestedSessionUnavailable.value = false;
   softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
   agent.clearActiveSession();
@@ -511,7 +526,7 @@ function navigateCard(event: WorkflowCardEvent) {
 
 async function send(value = prompt.value) {
   const content = value.trim();
-  if (!content || busy.value || runActive.value || softCancelPending.value) return;
+  if (!content || busy.value || loading.value || requestedSessionUnavailable.value || runActive.value || softCancelPending.value) return;
   if (agent.activeSessionId && terminalSessionId.value === agent.activeSessionId) {
     error.value = terminalSessionMessage;
     return;
@@ -632,22 +647,36 @@ async function stopCurrentRun() {
 onMounted(async () => {
   clockTimer = setInterval(() => { clock.value = Date.now(); }, 1000);
   applyRouteDraft(route.query.draft);
+  const initialRequested = typeof route.query.session === "string" ? route.query.session : "";
+  const explicitNew = typeof route.query.new === "string";
+  if (initialRequested && !explicitNew) {
+    requestedSessionUnavailable.value = true;
+    agent.clearActiveSession();
+  }
   try {
     await refreshCatalog();
     const requested = typeof route.query.session === "string" ? route.query.session : "";
     if (typeof route.query.new === "string") startNewSession(typeof route.query.draft === "string");
-    else if (requested && agent.sessions.some((item) => item.session_id === requested)) await openSession(requested, false);
+    else if (requested) await openSession(requested, false, true);
     else if (agent.sessions[0]) await openSession(agent.sessions[0].session_id, false);
     else startNewSession(typeof route.query.draft === "string");
     await retryApprovalContinuation(route.query.approval);
     if (route.query.history) await showHistory();
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : "初始化失败"; }
+  } catch (exc) {
+    if (initialRequested && !explicitNew) {
+      requestedSessionUnavailable.value = true;
+      agent.clearActiveSession();
+      error.value = "无法打开此会话。它可能不存在或你无权访问。请从历史会话中选择，或新建会话。";
+    } else {
+      error.value = exc instanceof Error ? exc.message : "初始化失败";
+    }
+  }
   finally { initialized.value = true; }
 });
 watch(() => route.query.new, (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) startNewSession(typeof route.query.draft === "string"); });
 watch(() => route.query.session, async (value, previous) => {
   if (initialized.value && typeof value === "string" && value !== previous
-      && value !== agent.activeSessionId) await openSession(value, false);
+      && value !== agent.activeSessionId) await openSession(value, false, true);
 });
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
 watch(() => route.query.draft, applyRouteDraft);
@@ -681,7 +710,7 @@ onBeforeUnmount(() => {
       <div v-else-if="!timeline.length" class="conversation-empty">
         <div class="xiaoba-mark">小巴</div><h1>今天想研究什么？</h1>
         <p>从问题出发，小巴会把结论、策略草案、候选股票与回测上下文放在同一条对话时间线中。</p>
-        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" @click="send(starter)">{{ starter }}</button></div>
+        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" :disabled="loading || requestedSessionUnavailable" @click="send(starter)">{{ starter }}</button></div>
       </div>
       <div v-else class="timeline">
         <template v-for="item in timeline" :key="item.key">
@@ -721,7 +750,7 @@ onBeforeUnmount(() => {
     </main>
     <footer class="composer-wrap">
       <form class="agent-composer" @submit.prevent="send()">
-        <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" @keydown="handleComposerKeydown" />
+        <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" :disabled="loading || requestedSessionUnavailable" @keydown="handleComposerKeydown" />
         <el-button
           v-if="runActive"
           class="composer-action composer-stop"
@@ -731,7 +760,7 @@ onBeforeUnmount(() => {
           title="停止本轮"
           @click="stopCurrentRun"
         ><span class="stop-square" aria-hidden="true"></span></el-button>
-        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim()" @click="send()">发送</el-button>
+        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim() || loading || requestedSessionUnavailable" @click="send()">发送</el-button>
       </form>
     </footer>
     <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">
