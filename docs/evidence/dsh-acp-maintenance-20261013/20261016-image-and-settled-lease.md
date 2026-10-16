@@ -156,6 +156,40 @@ Tester → 独立Sol → Root **限定PASS**，私有入口 `continuous-backgrou
 旧V1失败原件不改标。进程异常、空闲释放、两用户/迟到/未知结果剩余范围另行验证；生产/推送/合并NOT_RUN。
 原环境和浏览器页面保持打开。
 
+### 空闲Adapter异常退出：原批采集失败，停止扩大测试
+
+源码 `726ba6b5`；独立Sol准入前完成只读预检：私有PID命名空间、restart=no、仅Uvicorn进程，
+active prompt及执行槽为0；所有未闭合Root/AgentRun、待绑定、未知入口/claim、进行中Job、未结算预留和待处理取消均为0。
+原39消息/16Root/5Job/5预留与V2结束快照字节相同。
+
+`2026-10-16T00:38:58Z`开始，仅对原隔离Adapter准确CID执行一次SIGKILL，再start同一CID。
+原生结果为exited/137、Gateway503，随后ready200；新boot `488d00f535f263b1390318772c82469e`，epoch9→10。
+原页随后一次输入委派只读子助手，返回原SignalJob82的completed、相同快照和“回测尚未执行”，显示RESTART_READ_OK。
+保存的provider journal含11次完整HTTP200、峰值并发1；input359166/cache-read310912/output6020，provider跨度64513毫秒。
+这不证明子助手或Root已闭合，更不表示恢复原子助手。
+
+后置两项只读SQL并行采集时，Root把`-v root=…`追加在`sh -c`脚本之外，psql未收到变量，scope查询退出3。
+另一查询原生0：消息41/Root17/Job5/预留5，旧39消息/16Root/5Job/5预留逐行不变；新Root当时仍active、终态尚空。
+本批保留 **FAIL_OBSERVER_STOP**，立即停止后续采集/模型/故障测试，无输入重发或新Job。
+当时已确认Root采集命令错误，产品原因尚未定位；UI答案不能替代终态ACK。
+后续仅允许先离线验证完整字面命令的参数合同，经独立审查后另批零模型只读核对同一已存在结果。
+准确入口 `process-loss-v1/FAIL-STOP.json`、`NATIVE-RESULTS.json`、`NATIVE-STOP-SUPPLEMENT.json`。
+隔离Adapter已恢复，测试环境与原页面保留；活动child异常、两用户/迟到/未知结果不扩测，仍NOT_RUN。
+
+离线shell参数正反例与Tester/Sol准入后，另批零模型只读执行准确scope查询，原生0；
+父/子AgentRun仍active且authority active，child的两条`byq_agent_audit`入口（seq5/6）为unknown，其他六条入口已settled。
+官方recovery-binding首个GET返回409，立即停止本批后续终态/快照/日志读取；原生stderr保存，未重发模型。
+故已有结果收尾为 **HOLD_REAL_ROOT_NOT_CLOSED**，不能把界面回答当作流程闭合。
+409端点把多种不满足恢复条件的情况映射为同一状态，不能据此认定具体清理根因；两条success audit也不能证明旧unknown入口已结算。
+另经独立Sol准入仅读取原运行时间窗内三服务既有日志：Adapter显示同Root终态查询200被持续重试，Gateway/MCP无精确关联行；无响应正文，不证明ACK成功。
+随后按准确路径、唯一普通文件及16MiB上界核对，仅复制本Root与child的两份既有原生会话记录，SHA一致并以0600保存。
+精确child记录显示：两次audit的run_id正确，但detail含公开字段`authorization_decision`；原生工具返回均为`agent_request_invalid`/422。
+Backend在INSERT前的密钥字段过滤中将该字段名归一化为含`authorization`而拒绝；MCP将无精确负回执的422保守记为unknown，根关闭守卫继续阻断。
+后续省去detail/resource的两次audit成功，不能替代前两次unknown结算；会话身份并未混用。
+当前仅实现切片A：审计detail顶层精确字段及封闭枚举的最小校验修补，保持其他密钥与ACP控制过滤。
+切片B的确定性无副作用私有拒绝回执另行处理；不能把普通422、超时、5xx或丢响应全部判为无副作用。
+不扩大真实测试、不自动清除旧unknown、不重放业务；旧Root和失败批次不能因后续软件修补改为PASS。
+
 证据根：`.ci-artifacts/agent-origin-consumer-20261015-v1/`。
 
 - `native-image-readback-v1/ROOT-LOCAL-IMAGE-PASS.json`：原生哈希/权限/目录与体积；首轮权限及观察器失败均保留。

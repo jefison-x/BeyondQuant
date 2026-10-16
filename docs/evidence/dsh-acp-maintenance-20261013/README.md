@@ -13,6 +13,12 @@
 本批1次输入、1个合成SignalJob、合计10次provider attempts（源5次HTTP200、后台官方收据聚合5次）；两Root完成且授权关闭，预留只派发一次并结算。
 Tester → 独立Sol → Root PASS，详见上述10月16日记录；特定旧终态缺失分支的真实故障注入仍NOT_RUN。
 
+随后空闲Adapter同CID异常退出/启动、boot/epoch轮换及原页只读委派已有结果已观察到；
+后置scope SQL的参数位置错误使原批 **FAIL_OBSERVER_STOP**，终态ACK未验证，不能宣称进程异常切片PASS。
+已停止扩大真实测试。离线核准完整命令后，另批零模型补查确认父/子仍active、两条审计入口unknown，恢复查询409，
+当前为 **HOLD_REAL_ROOT_NOT_CLOSED**；本次原生会话已定位到公开审计字段`authorization_decision`触发422并留下unknown。
+最小字段校验修补进行中，尚未重验；确定性拒绝回执另片处理，环境和页面继续保留。
+
 ## 此前分片验收快照
 
 以下“尚未安装”等描述对应各片当时状态；当前安装和验证范围以上述最新记录为准。
