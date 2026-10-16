@@ -386,7 +386,13 @@ class ConversationCatalogStore(PgStoreMixin):
     def append_user_message(self, owner: object, conversation_id: object, content: object) -> dict[str, object]:
         owner = _owner(owner)
         conversation_id = _identifier(conversation_id, "conversation_id")
-        content = _text(content, field="content", maximum=12_000)
+        if not isinstance(content, str):
+            raise ValueError("content must be a string")
+        content = content.strip()
+        if not content:
+            raise ValueError("content must not be empty")
+        if len(content) > 12_000:
+            raise ValueError("content exceeds 12000 characters")
         now = _now()
         with self._transaction() as connection:
             row = connection.execute(
@@ -399,7 +405,8 @@ class ConversationCatalogStore(PgStoreMixin):
                 raise ConversationConflict("archived conversation cannot receive messages")
             sequence = int(row["message_count"]) + 1
             title = deterministic_title(content) if sequence == 1 else str(row["title"])
-            preview = content if len(content) <= 120 else f"{content[:119]}…"
+            preview_content = _text(content, field="content", maximum=12_000)
+            preview = preview_content if len(preview_content) <= 120 else f"{preview_content[:119]}…"
             message_id = f"message_{uuid.uuid4().hex}"
             connection.execute(
                 text(
