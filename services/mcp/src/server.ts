@@ -23,6 +23,7 @@ import {
 import {
   acpAgentRunRegistrationFetcher,
   addAcpObservationHeader,
+  acpAuditValidationRefusalMatches,
   abortAcpToolIngressBeforeDispatch,
   bindAcpAgentRun,
   fetchAcpAgentAuthorize,
@@ -31,6 +32,7 @@ import {
   observeAcpToolIngress,
   settleAcpToolIngress,
   type AcpAuthorizationDenialReceipt,
+  type AcpAuditValidationRefusalReceipt,
   type AcpToolIngressOutcome,
 } from "./acp-bridge.js";
 
@@ -68,6 +70,7 @@ import {
   fetchByqAgentRoles,
   fetchByqAgentRunStart,
   isValidRuntimeBootId,
+  takeAcpAuditValidationRefusal,
   type AgentResult,
   type AgentContext,
 } from "./agent.js";
@@ -478,6 +481,25 @@ function backtestTaskCreateFetcher(context: CompleteAgentContext): typeof fetch 
   };
 }
 
+function acpAgentAuditFetcher(context: CompleteAgentContext): typeof fetch | undefined {
+  const auth = context[privateAuth];
+  const observationId = context[privateObservationId];
+  if (auth?.kind !== "acp-agent" || !BACKEND_PROOF_TOKEN
+    || !/^[0-9a-f]{32}$/.test(observationId ?? "")) return undefined;
+
+  const trustedFetch = trustedBackendFetcher(context);
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", `Bearer ${BACKEND_PROOF_TOKEN}`);
+    headers.set("x-byq-acp-native-agent-session-id", auth.claims.native_agent_session_id);
+    headers.set("x-byq-acp-native-root-session-id", auth.claims.native_root_session_id);
+    headers.set("x-byq-acp-native-parent-session-id", auth.claims.native_parent_session_id ?? "");
+    headers.set("x-byq-acp-origin", auth.claims.origin);
+    headers.set("x-byq-acp-depth", String(auth.claims.depth));
+    return trustedFetch(input, { ...init, headers });
+  };
+}
+
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
@@ -666,7 +688,12 @@ async function byqAgentAuthorize(args: Record<string, unknown>, extra: unknown) 
 
 async function byqAgentAudit(args: Record<string, unknown>, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqAgentAudit(BACKEND_URL, args, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const isAcpAgent = context[privateAuth]?.kind === "acp-agent";
+  if (!isAcpAgent) return fetchByqAgentAudit(BACKEND_URL, args, context);
+  const fetcher = acpAgentAuditFetcher(context);
+  if (!fetcher) return acpBridgeUnavailable("acp_audit_backend_proof_unavailable");
+  return fetchByqAgentAudit(BACKEND_URL, args, context, fetcher, true);
 }
 
 async function byqAgentAuditGet(args: { run_id: string }, extra: unknown) {
@@ -1069,7 +1096,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                 return acpBridgeUnavailable("acp_ingress_observation_unavailable");
               }
               let handlerResult: unknown;
-              let refusalReceipt: AcpAuthorizationDenialReceipt | undefined;
+              let refusalReceipt: AcpAuthorizationDenialReceipt | AcpAuditValidationRefusalReceipt | undefined;
               try {
                 if (judgmentCall) {
                   const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
@@ -1104,6 +1131,17 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = acpAgentAuthorizationDenied();
                   } else {
                     handlerResult = acpAgentAuthorizationSuccess(authorization.authorization);
+                  }
+                } else if (auth.kind === "acp-agent" && name === "byq_agent_audit") {
+                  const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
+                  handlerResult = await (callback as (...args: unknown[]) => unknown)(
+                    toolArgs, callContext, ...callArgs.slice(2));
+                  const candidate = takeAcpAuditValidationRefusal(handlerResult);
+                  if (acpAuditValidationRefusalMatches(candidate, auth.claims, ingress, ingressArgs)) {
+                    refusalReceipt = candidate;
+                    // The proof remains private. The model receives the same
+                    // bounded public validation error as an ordinary 422.
+                    handlerResult = acpBridgeUnavailable("agent_request_invalid");
                   }
                 } else {
                   handlerResult = await (callback as (...args: unknown[]) => unknown)(...callArgs);
@@ -1361,7 +1399,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         detail: z.record(z.string(), z.unknown()).optional(),
       },
     },
-    (args) => byqAgentAudit(args, trustedContext),
+    (args, extra) => byqAgentAudit(args, auth?.kind === "acp-agent" ? extra : trustedContext),
   );
   registerTool(
     "byq_agent_audit_get",

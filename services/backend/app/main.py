@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import anyio
 from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from collections.abc import Callable
@@ -5842,8 +5843,43 @@ def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[st
     return _agent_call(operation)
 
 
-@app.post("/v1/agents/audit")
-def record_agent_audit(payload: dict[str, Any], request: Request) -> dict[str, object]:
+@app.post("/v1/agents/audit", response_model=None)
+def record_agent_audit(payload: dict[str, Any], request: Request) -> Any:
+    observation_header_present = "x-byq-acp-observation-id" in request.headers
+    acp_identity_headers_present = any(name in request.headers for name in _ACP_RUN_HEADERS)
+    supplied_backend_proof = bool(MCP_BACKEND_PROOF_TOKEN) and secrets.compare_digest(
+        request.headers.get("authorization", "").encode("utf-8"),
+        f"Bearer {MCP_BACKEND_PROOF_TOKEN}".encode("utf-8"),
+    )
+    if (observation_header_present or acp_identity_headers_present
+            or supplied_backend_proof):
+        if not observation_header_present:
+            raise HTTPException(status_code=422, detail="ACP audit identity requires its exact ingress observation")
+        if any(name not in request.headers for name in _ACP_RUN_HEADERS):
+            raise HTTPException(status_code=401, detail="exact trusted ACP native Agent headers are required")
+        observation_id = request.headers.get("x-byq-acp-observation-id")
+        if not isinstance(observation_id, str) or re.fullmatch(r"[0-9a-f]{32}", observation_id) is None:
+            raise HTTPException(status_code=422, detail="invalid exact ACP audit observation id")
+        depth_value = request.headers.get("x-byq-acp-depth")
+        if depth_value not in {"0", "1"}:
+            raise HTTPException(status_code=422, detail="invalid exact ACP Agent depth")
+        scope = _acp_private_scope(request)
+        trusted_identity = {
+            "root_run_id": scope["root"],
+            "runtime_boot_id": scope["boot_id"],
+            "native_root_session_id": request.headers.get("x-byq-acp-native-root-session-id"),
+            "native_agent_session_id": request.headers.get("x-byq-acp-native-agent-session-id"),
+            "native_parent_session_id": request.headers.get("x-byq-acp-native-parent-session-id") or None,
+            "origin": request.headers.get("x-byq-acp-origin"),
+            "depth": int(depth_value),
+        }
+        result = _agent_call(lambda: agent_store.record_acp_agent_audit(
+            payload, trusted_scope=scope, trusted_identity=trusted_identity,
+            mcp_request_id=observation_id))
+        if result.get("status") == "validation_refused":
+            return JSONResponse(status_code=422, content={"detail": result["refusal_receipt"]})
+        return {"audit": result["audit"]}
+
     context = _required_agent_context(request, payload)
     return _agent_call(lambda: {"audit": agent_store.record_audit(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},

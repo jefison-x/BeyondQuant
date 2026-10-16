@@ -27,6 +27,16 @@ function result(payload: unknown, isError: boolean): AgentResult {
   return { content: [{ type: "text", text: JSON.stringify(payload) }], isError };
 }
 
+const acpAuditValidationRefusals = new WeakMap<object, unknown>();
+
+/** Consume one private refusal captured from the exact ACP audit 422 response. */
+export function takeAcpAuditValidationRefusal(value: unknown): unknown {
+  if (!value || typeof value !== "object") return undefined;
+  const refusal = acpAuditValidationRefusals.get(value);
+  acpAuditValidationRefusals.delete(value);
+  return refusal;
+}
+
 /** Keep the public MCP result shape stable when ACP uses its private authorize route. */
 export function acpAgentAuthorizationSuccess(authorization: Record<string, unknown>): AgentResult {
   return result({ service: "beyondquant-mcp", status: "ok", authorization }, false);
@@ -73,6 +83,7 @@ async function requestAgent(
   init: RequestInit,
   context: AgentContext | undefined,
   fetcher: Fetcher,
+  captureAcpAuditRefusal = false,
 ): Promise<AgentResult> {
   try {
     const response = await fetcher(`${backendUrl}${path}`, {
@@ -97,7 +108,14 @@ async function requestAgent(
       return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
     }
     if (!response.ok) {
-      return result({ service: "beyondquant-mcp", status: "error", backend: { status: errorStatus(response.status), http_status: response.status } }, true);
+      const agentResult = result({ service: "beyondquant-mcp", status: "error",
+        backend: { status: errorStatus(response.status), http_status: response.status } }, true);
+      const errorPayload = payload as Record<string, unknown>;
+      if (captureAcpAuditRefusal && response.status === 422
+        && Object.keys(errorPayload).length === 1 && Object.hasOwn(errorPayload, "detail")) {
+        acpAuditValidationRefusals.set(agentResult, errorPayload.detail);
+      }
+      return agentResult;
     }
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
@@ -148,8 +166,10 @@ export function fetchByqAgentAudit(
   request: Record<string, unknown>,
   context: AgentContext,
   fetcher: Fetcher = fetch,
+  captureAcpValidationRefusal = false,
 ): Promise<AgentResult> {
-  return requestAgent(backendUrl, "/v1/agents/audit", { method: "POST", body: JSON.stringify(request) }, context, fetcher);
+  return requestAgent(backendUrl, "/v1/agents/audit", { method: "POST", body: JSON.stringify(request) },
+    context, fetcher, captureAcpValidationRefusal);
 }
 
 export function fetchByqAgentAuditGet(

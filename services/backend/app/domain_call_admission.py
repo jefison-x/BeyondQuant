@@ -17,6 +17,8 @@ _ACP_REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
 _ACP_ROOT_ID = re.compile(r"^[0-9a-f]{32}$")
 _ACP_TOOL_NAME = re.compile(r"^byq_[a-z0-9_]{1,96}$")
 _ACP_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_ACP_AUDIT_REFUSAL_SCHEMA = "byq-acp-audit-validation-refusal.v1"
+_ACP_AUDIT_MARKER_SCHEMA = "byq-acp-audit-validation-marker.v1"
 
 
 def acp_binding_sha256(value: dict) -> str:
@@ -982,6 +984,10 @@ class DomainCallEvidenceMixin:
                     **identity_fields}
                 if any(prior.get(key) != value for key, value in expected_prior.items()):
                     raise AgentConflict("ACP tool ingress request id was reused for changed input or identity")
+                if prior["status"] == "pending" and prior.get("settlement_json") is not None:
+                    raise AgentConflict("pending ACP tool ingress with a settlement marker cannot be redispatched")
+                if self._acp_audit_refusal_marker(prior) is not None:
+                    raise AgentConflict("ACP audit validation refusal already consumed this request")
                 if (prior.get("settlement_json") or {}).get("outcome") == "aborted_before_dispatch":
                     raise AgentConflict("ACP tool ingress request was aborted before dispatch")
                 return prior["receipt_json"]
@@ -1090,6 +1096,10 @@ class DomainCallEvidenceMixin:
             if prior is not None:
                 if any(prior.get(key) != value for key, value in expected_prior.items()):
                     raise AgentConflict("ACP tool ingress abort conflicts with the exact request identity")
+                if prior["status"] == "pending" and prior.get("settlement_json") is not None:
+                    raise AgentConflict("pending ACP tool ingress with a settlement marker cannot be overwritten")
+                if self._acp_audit_refusal_marker(prior) is not None:
+                    raise AgentConflict("ACP audit validation refusal cannot be overwritten by an abort")
                 previous_abort = prior.get("settlement_json")
                 if (prior["status"] == "settled" and isinstance(previous_abort, dict)
                         and previous_abort.get("outcome") == "aborted_before_dispatch"):
@@ -1181,6 +1191,104 @@ class DomainCallEvidenceMixin:
             "arguments_sha256": row["arguments_sha256"], "sequence": row["sequence"],
             "event_sha256": row["event_sha256"], "outcome": "aborted_before_dispatch"}
         return {**base, "abort_sha256": acp_binding_sha256(base)}
+
+    @staticmethod
+    def _acp_audit_refusal_marker(row: dict) -> dict | None:
+        """Return an internal audit refusal marker, including malformed markers for fail-closed handling."""
+        settlement = row.get("settlement_json")
+        if not isinstance(settlement, dict):
+            return None
+        if settlement.get("schema_version") == _ACP_AUDIT_MARKER_SCHEMA:
+            return settlement
+        if "audit_validation_refusal_marker" in settlement:
+            marker = settlement.get("audit_validation_refusal_marker")
+            return marker if isinstance(marker, dict) else {"schema_version": _ACP_AUDIT_MARKER_SCHEMA}
+        return None
+
+    @staticmethod
+    def _acp_audit_ingress_event_and_receipt(row: dict) -> tuple[dict, dict]:
+        event = {"sequence": row["sequence"], "owner_principal": row["owner_principal"],
+            "workspace_id": row["workspace_id"], "actor_principal": row["actor_principal"],
+            "session_id": row["session_id"], "trace_id": row["trace_id"],
+            "dsh_run_id": row["dsh_run_id"], "agent_run_id": row["agent_run_id"],
+            "root_run_id": row["root_run_id"], "runtime_boot_id": row["runtime_boot_id"],
+            "native_root_session_id": row["native_root_session_id"],
+            "native_agent_session_id": row["native_agent_session_id"],
+            "native_parent_session_id": row["native_parent_session_id"],
+            "origin": row["origin"], "depth": row["depth"],
+            "tool_name": row["tool_name"], "arguments_sha256": row["arguments_sha256"]}
+        receipt = {"schema_version": "byq-acp-tool-ingress-receipt.v1",
+            "mcp_request_id": row["mcp_request_id"], "root_run_id": row["root_run_id"],
+            "runtime_boot_id": row["runtime_boot_id"],
+            "native_root_session_id": row["native_root_session_id"],
+            "native_agent_session_id": row["native_agent_session_id"],
+            "native_parent_session_id": row["native_parent_session_id"],
+            "origin": row["origin"], "depth": row["depth"],
+            "tool_name": row["tool_name"], "agent_run_id": row["agent_run_id"],
+            "sequence": row["sequence"], "event_sha256": row["event_sha256"]}
+        return event, receipt
+
+    def _verify_acp_audit_validation_refusal(self, receipt: object, row: dict) -> tuple[dict, dict]:
+        """Verify a deterministic no-insert receipt against its immutable locked ingress marker."""
+        from .agent_research import AgentConflict
+
+        marker = self._acp_audit_refusal_marker(row)
+        marker_fields = {"schema_version", "refusal_receipt", "marker_sha256"}
+        if not isinstance(marker, dict) or set(marker) != marker_fields:
+            raise AgentConflict("ACP audit validation refusal has no exact persisted marker")
+        marker_base = {key: value for key, value in marker.items() if key != "marker_sha256"}
+        if (marker.get("schema_version") != _ACP_AUDIT_MARKER_SCHEMA
+                or not isinstance(marker.get("marker_sha256"), str)
+                or _ACP_SHA256.fullmatch(marker["marker_sha256"]) is None
+                or acp_binding_sha256(marker_base) != marker["marker_sha256"]):
+            raise AgentConflict("ACP audit validation refusal marker is invalid")
+
+        fields = {"schema_version", "mcp_request_id", "owner_principal", "workspace_id",
+            "actor_principal", "session_id", "trace_id", "dsh_run_id", "root_run_id",
+            "runtime_boot_id", "native_root_session_id", "native_agent_session_id",
+            "native_parent_session_id", "origin", "depth", "agent_run_id", "tool_name",
+            "arguments_sha256", "sequence", "event_sha256", "reason", "outcome", "receipt_sha256"}
+        if not isinstance(receipt, dict) or set(receipt) != fields:
+            raise AgentConflict("ACP audit validation refusal is not a closed exact object")
+        expected = {"schema_version": _ACP_AUDIT_REFUSAL_SCHEMA,
+            "mcp_request_id": row["mcp_request_id"], "owner_principal": row["owner_principal"],
+            "workspace_id": row["workspace_id"], "actor_principal": row["actor_principal"],
+            "session_id": row["session_id"], "trace_id": row["trace_id"],
+            "dsh_run_id": row["dsh_run_id"], "root_run_id": row["root_run_id"],
+            "runtime_boot_id": row["runtime_boot_id"],
+            "native_root_session_id": row["native_root_session_id"],
+            "native_agent_session_id": row["native_agent_session_id"],
+            "native_parent_session_id": row["native_parent_session_id"],
+            "origin": row["origin"], "depth": row["depth"], "agent_run_id": row["agent_run_id"],
+            "tool_name": "byq_agent_audit", "arguments_sha256": row["arguments_sha256"],
+            "sequence": row["sequence"], "event_sha256": row["event_sha256"],
+            "outcome": "denied"}
+        if (row.get("tool_name") != "byq_agent_audit" or not row.get("agent_run_id")
+                or any(receipt.get(key) != value for key, value in expected.items())
+                or receipt.get("reason") not in {"invalid_audit_payload", "invalid_audit_detail"}
+                or type(receipt.get("sequence")) is not int
+                or not isinstance(receipt.get("arguments_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["arguments_sha256"]) is None
+                or not isinstance(receipt.get("event_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["event_sha256"]) is None
+                or not isinstance(receipt.get("receipt_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["receipt_sha256"]) is None):
+            raise AgentConflict("ACP audit validation refusal does not match its exact ingress")
+
+        event, observed_receipt = self._acp_audit_ingress_event_and_receipt(row)
+        receipt_base = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+        if (acp_binding_sha256(event) != row["event_sha256"]
+                or row.get("receipt_json") != observed_receipt
+                or receipt.get("receipt_sha256") != acp_binding_sha256(receipt_base)
+                or marker.get("refusal_receipt") != receipt):
+            raise AgentConflict("ACP audit validation refusal hash or persisted proof is invalid")
+        return receipt, marker
+
+    @staticmethod
+    def _public_acp_tool_ingress_settlement(settlement: dict) -> dict:
+        """Keep the pre-insert proof private while preserving the existing wire projection."""
+        return {key: value for key, value in settlement.items()
+                if key != "audit_validation_refusal_marker"}
 
     def _verify_acp_authorization_denial_receipt(self, connection, receipt: object,
                                                 ingress: dict) -> dict:
@@ -1296,12 +1404,23 @@ class DomainCallEvidenceMixin:
                 raise AgentConflict("ACP tool ingress settlement does not match the exact receipt")
             if row["status"] == "unknown" and outcome == "denied":
                 raise AgentConflict("unknown ACP tool ingress cannot be rewritten as a known denial")
+            audit_marker = self._acp_audit_refusal_marker(row)
+            if audit_marker is not None:
+                stored_refusal = (audit_marker.get("refusal_receipt")
+                                  if isinstance(audit_marker, dict) else None)
+                _, audit_marker = self._verify_acp_audit_validation_refusal(stored_refusal, row)
             denial_receipt = None
             if outcome == "denied":
-                if tool_name != "byq_agent_authorize":
-                    raise AgentConflict("known denial settlement is limited to Agent authorization")
-                denial_receipt = self._verify_acp_authorization_denial_receipt(
-                    connection, payload["refusal_receipt"], row)
+                if tool_name == "byq_agent_authorize":
+                    denial_receipt = self._verify_acp_authorization_denial_receipt(
+                        connection, payload["refusal_receipt"], row)
+                elif tool_name == "byq_agent_audit":
+                    denial_receipt, audit_marker = self._verify_acp_audit_validation_refusal(
+                        payload["refusal_receipt"], row)
+                else:
+                    raise AgentConflict("known denial settlement is limited to exact ACP refusals")
+            elif audit_marker is not None and row["status"] == "pending" and outcome != "unknown":
+                raise AgentConflict("ACP audit validation refusal cannot be settled as a success")
             if row["status"] in {"settled", "unknown"}:
                 if (row["status"] != ("settled" if outcome == "denied" else outcome)
                         or row["settlement_json"] is None
@@ -1309,7 +1428,7 @@ class DomainCallEvidenceMixin:
                         or (outcome == "denied" and row["settlement_json"].get("refusal_receipt_sha256")
                             != denial_receipt["receipt_sha256"])):
                     raise AgentConflict("ACP tool ingress settlement outcome is already fixed")
-                return row["settlement_json"]
+                return self._public_acp_tool_ingress_settlement(row["settlement_json"])
             root = fetch_one(connection, """SELECT status,authority_status,authority_boot_id
                 FROM agent_runtime_turns WHERE root_run_id=:root""", {"root": identity["root_run_id"]})
             if (root is None or root["status"] != "active" or root["authority_status"] != "active"
@@ -1331,10 +1450,12 @@ class DomainCallEvidenceMixin:
             if denial_receipt is not None:
                 receipt["refusal_receipt_sha256"] = denial_receipt["receipt_sha256"]
             stored_status = "settled" if outcome == "denied" else outcome
+            stored_receipt = ({**receipt, "audit_validation_refusal_marker": audit_marker}
+                              if audit_marker is not None else receipt)
             execute(connection, """UPDATE agent_acp_tool_ingress_observations
                 SET status=:status,settlement_json=CAST(:settlement AS jsonb),settled_at=CURRENT_TIMESTAMP
                 WHERE mcp_request_id=:id AND status='pending'""",
-                {"status": stored_status, "settlement": json.dumps(receipt, allow_nan=False), "id": request_id})
+                {"status": stored_status, "settlement": json.dumps(stored_receipt, allow_nan=False), "id": request_id})
             return receipt
 
     def _acp_terminal_evidence_snapshot(self, connection, root_run_id: str) -> dict[str, object]:

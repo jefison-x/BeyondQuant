@@ -100,6 +100,34 @@ export type AcpAuthorizationDenialReceipt = {
   receipt_sha256: string;
 };
 
+export type AcpAuditValidationRefusalReceipt = {
+  schema_version: "byq-acp-audit-validation-refusal.v1";
+  mcp_request_id: string;
+  owner_principal: string;
+  workspace_id: string;
+  actor_principal: string;
+  session_id: string;
+  trace_id: string;
+  dsh_run_id: string;
+  root_run_id: string;
+  runtime_boot_id: string;
+  native_root_session_id: string;
+  native_agent_session_id: string;
+  native_parent_session_id: string | null;
+  origin: "root" | "subagent";
+  depth: number;
+  agent_run_id: string;
+  tool_name: "byq_agent_audit";
+  arguments_sha256: string;
+  sequence: number;
+  event_sha256: string;
+  reason: "invalid_audit_payload" | "invalid_audit_detail";
+  outcome: "denied";
+  receipt_sha256: string;
+};
+
+type AcpToolIngressDenialReceipt = AcpAuthorizationDenialReceipt | AcpAuditValidationRefusalReceipt;
+
 export type AcpAgentAuthorizationResponse =
   | { status: "ok"; authorization: Record<string, unknown> }
   | { status: "denied"; authorization: Record<string, unknown>;
@@ -192,6 +220,51 @@ function denialReceiptMatches(value: unknown, claims: AcpAgentClaims, ingress: A
     && receipt.event_sha256 === ingress.event_sha256 && SHA256.test(String(receipt.event_sha256))
     && receipt.reason === "role_tool_not_allowed" && receipt.outcome === "denied"
     && typeof receipt.audit_id === "string" && AUDIT_ID.test(receipt.audit_id)
+    && typeof suppliedHash === "string" && SHA256.test(suppliedHash) && suppliedHash === expectedHash;
+}
+
+/** Validate the Backend's no-insert proof without making it model-visible. */
+export function acpAuditValidationRefusalMatches(value: unknown, claims: AcpAgentClaims,
+  ingress: AcpToolIngressReceipt, args?: Record<string, unknown>): value is AcpAuditValidationRefusalReceipt {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const receipt = value as Record<string, unknown>;
+  const fields = ["schema_version", "mcp_request_id", "owner_principal", "workspace_id", "actor_principal",
+    "session_id", "trace_id", "dsh_run_id", "root_run_id", "runtime_boot_id",
+    "native_root_session_id", "native_agent_session_id", "native_parent_session_id", "origin", "depth",
+    "agent_run_id", "tool_name", "arguments_sha256", "sequence", "event_sha256", "reason", "outcome",
+    "receipt_sha256"];
+  if (!hasExactKeys(receipt, fields)) return false;
+  const { receipt_sha256: suppliedHash, ...base } = receipt;
+  const expectedHash = canonicalAcpSha256(base);
+  return claims.aud === "byq-product-mcp"
+    && receipt.schema_version === "byq-acp-audit-validation-refusal.v1"
+    && receipt.mcp_request_id === ingress.mcp_request_id && MCP_REQUEST_ID.test(String(receipt.mcp_request_id))
+    && receipt.owner_principal === claims.owner_principal
+    && receipt.workspace_id === claims.workspace_id
+    && receipt.actor_principal === claims.actor_principal
+    && receipt.session_id === claims.session_id
+    && receipt.trace_id === claims.trace_id
+    && receipt.dsh_run_id === claims.dsh_run_id
+    && receipt.root_run_id === claims.root_run_id && receipt.root_run_id === ingress.root_run_id
+    && receipt.runtime_boot_id === claims.runtime_boot_id && receipt.runtime_boot_id === ingress.runtime_boot_id
+    && receipt.native_root_session_id === claims.native_root_session_id
+      && receipt.native_root_session_id === ingress.native_root_session_id
+    && receipt.native_agent_session_id === claims.native_agent_session_id
+      && receipt.native_agent_session_id === ingress.native_agent_session_id
+    && receipt.native_parent_session_id === claims.native_parent_session_id
+      && receipt.native_parent_session_id === ingress.native_parent_session_id
+    && receipt.origin === claims.origin && receipt.origin === ingress.origin
+    && receipt.depth === claims.depth && receipt.depth === ingress.depth
+    && receipt.agent_run_id === ingress.agent_run_id && typeof receipt.agent_run_id === "string"
+      && RUN_ID.test(receipt.agent_run_id)
+    && receipt.tool_name === "byq_agent_audit" && ingress.tool_name === "byq_agent_audit"
+    && typeof receipt.arguments_sha256 === "string" && SHA256.test(receipt.arguments_sha256)
+    && (!args || canonicalAcpSha256(args) === receipt.arguments_sha256)
+    && receipt.sequence === ingress.sequence && Number.isSafeInteger(receipt.sequence)
+      && (receipt.sequence as number) > 0
+    && receipt.event_sha256 === ingress.event_sha256 && SHA256.test(String(receipt.event_sha256))
+    && (receipt.reason === "invalid_audit_payload" || receipt.reason === "invalid_audit_detail")
+    && receipt.outcome === "denied"
     && typeof suppliedHash === "string" && SHA256.test(suppliedHash) && suppliedHash === expectedHash;
 }
 
@@ -529,11 +602,18 @@ export async function settleAcpToolIngress(
   ingress: AcpToolIngressReceipt,
   outcome: AcpToolIngressOutcome,
   fetcher: Fetcher = fetch,
-  refusalReceipt?: AcpAuthorizationDenialReceipt,
+  refusalReceipt?: AcpToolIngressDenialReceipt,
 ): Promise<AcpToolIngressSettlementReceipt | undefined> {
   if ((outcome === "denied") !== Boolean(refusalReceipt)) return undefined;
-  if (refusalReceipt && (claims.aud !== "byq-product-mcp"
-    || !denialReceiptMatches(refusalReceipt, claims, ingress))) return undefined;
+  if (refusalReceipt) {
+    if (claims.aud !== "byq-product-mcp") return undefined;
+    const matches = refusalReceipt.schema_version === "byq-acp-authorization-denial-receipt.v1"
+      ? ingress.tool_name === "byq_agent_authorize"
+        && denialReceiptMatches(refusalReceipt, claims, ingress as AcpToolIngressReceipt)
+      : ingress.tool_name === "byq_agent_audit"
+        && acpAuditValidationRefusalMatches(refusalReceipt, claims, ingress as AcpToolIngressReceipt);
+    if (!matches) return undefined;
+  }
   const headers = scopeHeaders(claims, proofToken);
   const body = {
     schema_version: "byq-acp-tool-ingress-settle.v1",

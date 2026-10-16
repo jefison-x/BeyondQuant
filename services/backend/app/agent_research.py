@@ -34,7 +34,8 @@ from packages.contracts.approval_policy import approval_level_for_tool
 
 from .db import PgStoreMixin, execute, fetch_one, transaction
 from .domain_call_admission import (
-    DomainCallEvidenceMixin, DOMAIN_CALL_DDL, _acp_binding_fields, acp_binding_sha256,
+    DomainCallEvidenceMixin, DOMAIN_CALL_DDL, _acp_binding_fields, _canonical_acp_arguments,
+    acp_binding_sha256,
 )
 from .research_task_actions import (
     approval_decision_digest,
@@ -1634,6 +1635,140 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 resource_id=context["resource_id"], detail={"acp_control": binding},
                 connection=connection)
             return {"status": "ok", "authorization": result}
+
+    def record_acp_agent_audit(self, payload: object, *, trusted_scope: dict,
+                               trusted_identity: dict, mcp_request_id: object) -> dict[str, object]:
+        """Record one audit only after the exact ACP ingress and bound run are locked."""
+        from .domain_call_admission import _ACP_AUDIT_MARKER_SCHEMA
+
+        if not isinstance(mcp_request_id, str) or re.fullmatch(r"[0-9a-f]{32}", mcp_request_id) is None:
+            raise AgentUnauthorized("exact ACP audit observation is required")
+        identity = self._normalize_acp_agent_identity(trusted_identity)
+        if (identity["root_run_id"] != trusted_scope.get("root")
+                or identity["runtime_boot_id"] != trusted_scope.get("boot_id")):
+            raise AgentUnauthorized("ACP audit identity does not match the trusted runtime")
+        arguments_sha256, _ = _canonical_acp_arguments(payload)
+        scope = {"owner": trusted_scope["owner"], "workspace": trusted_scope["workspace"],
+            "actor": trusted_scope["actor"], "session": trusted_scope["session"],
+            "trace": trusted_scope["trace"], "generation": trusted_scope["generation"]}
+
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
+            authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
+            self._lifecycle_lock(connection, "acp-mcp-request:" + mcp_request_id)
+            self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR SHARE""", {"root": identity["root_run_id"]})
+            if root is None:
+                raise AgentNotFound("ACP Backend root not found")
+            if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]
+                    ) != (scope["owner"], scope["workspace"], scope["session"], scope["trace"]):
+                raise AgentUnauthorized("ACP audit does not match the exact Backend root scope")
+            if (root["status"] != "active" or root.get("authority_status", "active") != "active"
+                    or root.get("authority_boot_id") != authority["boot_id"]):
+                raise AgentConflict("ACP audit root is not active under current Backend authority")
+            self._require_judgment_tool_scope(
+                connection, identity, trusted_scope, "byq_agent_audit", payload, new_dispatch=False)
+            agent_run_id = self._acp_tool_ingress_agent_run(
+                connection, identity, scope, "byq_agent_audit", bootstrap=False)
+            ingress = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                WHERE mcp_request_id=:id FOR UPDATE""", {"id": mcp_request_id})
+            if ingress is None:
+                raise AgentNotFound("ACP audit ingress not found")
+            exact_ingress = {"mcp_request_id": mcp_request_id, "owner_principal": scope["owner"],
+                "workspace_id": scope["workspace"], "actor_principal": scope["actor"],
+                "session_id": scope["session"], "trace_id": scope["trace"],
+                "dsh_run_id": scope["generation"], "runtime_boot_id": identity["runtime_boot_id"],
+                "root_run_id": identity["root_run_id"],
+                "native_root_session_id": identity["native_root_session_id"],
+                "native_agent_session_id": identity["native_agent_session_id"],
+                "native_parent_session_id": identity["native_parent_session_id"],
+                "origin": identity["origin"], "depth": identity["depth"],
+                "agent_run_id": agent_run_id, "tool_name": "byq_agent_audit",
+                "arguments_sha256": arguments_sha256, "status": "pending",
+                "settlement_json": None, "settled_at": None}
+            if any(ingress.get(key) != value for key, value in exact_ingress.items()):
+                raise AgentConflict("ACP audit ingress is not the exact pending request")
+            event, observed_receipt = self._acp_audit_ingress_event_and_receipt(ingress)
+            if (acp_binding_sha256(event) != ingress["event_sha256"]
+                    or ingress.get("receipt_json") != observed_receipt):
+                raise AgentConflict("ACP audit ingress proof is internally inconsistent")
+
+            run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:run FOR SHARE",
+                            {"run": agent_run_id})
+            if (run is None or run["root_run_id"] != identity["root_run_id"]
+                    or run["owner_principal"] != scope["owner"]
+                    or run["actor_principal"] != scope["actor"]
+                    or run["session_id"] != scope["session"]
+                    or run["trace_id"] != scope["trace"]
+                    or run["dsh_run_id"] != scope["generation"]
+                    or run.get("authority_boot_id") != identity["runtime_boot_id"]
+                    or run["status"] != "active"
+                    or run.get("authority_status", "active") != "active"):
+                raise AgentConflict("ACP audit AgentRun is not active in the exact ingress scope")
+
+            refusal_reason: str | None = None
+            if not isinstance(payload, dict):
+                refusal_reason = "invalid_audit_payload"
+                values: dict[str, object] = {}
+            else:
+                try:
+                    allowed = {"run_id", "action", "outcome", "resource_type", "resource_id", "detail"}
+                    if set(payload) - allowed:
+                        raise ValueError("unknown audit request fields")
+                    run_id = _entity_id(payload.get("run_id"), field="run_id", prefix="agent_run")
+                    if run_id != agent_run_id:
+                        raise AgentForbidden("ACP audit must target its exact bound AgentRun")
+                    action = _text(payload.get("action"), field="action", max_length=128)
+                    outcome = _text(payload.get("outcome"), field="outcome", max_length=64)
+                    resource_type = (_text(payload.get("resource_type"), field="resource_type", max_length=64)
+                        if payload.get("resource_type") is not None else None)
+                    resource_id = (_text(payload.get("resource_id"), field="resource_id", max_length=128)
+                        if payload.get("resource_id") is not None else None)
+                    values = {"run_id": run_id, "action": action, "outcome": outcome,
+                        "resource_type": resource_type, "resource_id": resource_id}
+                except ValueError:
+                    refusal_reason = "invalid_audit_payload"
+                    values = {}
+                if refusal_reason is None:
+                    try:
+                        detail, _ = _audit_detail_object(payload.get("detail", {}), field="detail")
+                        _reject_reserved_acp_control(detail)
+                        values["detail"] = detail
+                    except ValueError:
+                        refusal_reason = "invalid_audit_detail"
+            if refusal_reason is None:
+                # Revalidate through the same insertion helper before its only side effect.
+                audit = self._record_audit_row(run, action=values["action"], outcome=values["outcome"],
+                    resource_type=values["resource_type"], resource_id=values["resource_id"],
+                    detail=values["detail"], connection=connection)
+                return {"status": "ok", "audit": audit}
+
+            refusal_base = {"schema_version": "byq-acp-audit-validation-refusal.v1",
+                "mcp_request_id": ingress["mcp_request_id"],
+                "owner_principal": ingress["owner_principal"], "workspace_id": ingress["workspace_id"],
+                "actor_principal": ingress["actor_principal"], "session_id": ingress["session_id"],
+                "trace_id": ingress["trace_id"], "dsh_run_id": ingress["dsh_run_id"],
+                "root_run_id": ingress["root_run_id"], "runtime_boot_id": ingress["runtime_boot_id"],
+                "native_root_session_id": ingress["native_root_session_id"],
+                "native_agent_session_id": ingress["native_agent_session_id"],
+                "native_parent_session_id": ingress["native_parent_session_id"],
+                "origin": ingress["origin"], "depth": ingress["depth"],
+                "agent_run_id": ingress["agent_run_id"], "tool_name": ingress["tool_name"],
+                "arguments_sha256": ingress["arguments_sha256"], "sequence": ingress["sequence"],
+                "event_sha256": ingress["event_sha256"], "reason": refusal_reason, "outcome": "denied"}
+            refusal = {**refusal_base, "receipt_sha256": acp_binding_sha256(refusal_base)}
+            marker_base = {"schema_version": _ACP_AUDIT_MARKER_SCHEMA, "refusal_receipt": refusal}
+            marker = {**marker_base, "marker_sha256": acp_binding_sha256(marker_base)}
+            updated = execute(connection, """UPDATE agent_acp_tool_ingress_observations
+                SET settlement_json=CAST(:marker AS jsonb)
+                WHERE mcp_request_id=:id AND status='pending' AND settlement_json IS NULL
+                  AND settled_at IS NULL RETURNING mcp_request_id""",
+                {"marker": json.dumps(marker, allow_nan=False), "id": mcp_request_id})
+            if len(updated) != 1:
+                raise AgentConflict("ACP audit refusal marker lost its pending ingress race")
+            return {"status": "validation_refused", "refusal_receipt": refusal}
 
     def record_audit(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
