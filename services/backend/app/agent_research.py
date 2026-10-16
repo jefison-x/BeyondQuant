@@ -69,6 +69,7 @@ _SECRET_KEY_FRAGMENTS = (
     "credential",
     "authorization",
 )
+_AUDIT_AUTHORIZATION_DECISIONS = frozenset({"allowed", "denied", "approval_required"})
 _PLAN_BINDING_FIELDS = (
     "plan_task_id", "plan_workspace_id", "plan_version", "plan_task_version",
     "plan_action", "plan_resource_kind", "plan_resource_id", "plan_params_digest",
@@ -409,6 +410,24 @@ def _json_object(value: object, *, field: str) -> tuple[dict[str, object], str]:
     if not isinstance(value, dict):
         raise ValueError(f"{field} must be an object")
     _reject_secret_keys(value)
+    return _encode_json_object(value, field=field)
+
+
+def _audit_detail_object(value: object, *, field: str = "detail") -> tuple[dict[str, object], str]:
+    """Validate audit detail while allowing one bounded policy metadata field."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} must be an object")
+    if "authorization_decision" in value:
+        decision = value["authorization_decision"]
+        if type(decision) is not str or decision not in _AUDIT_AUTHORIZATION_DECISIONS:
+            raise ValueError("detail.authorization_decision must be an approved decision value")
+        _reject_secret_keys({key: nested for key, nested in value.items() if key != "authorization_decision"})
+    else:
+        _reject_secret_keys(value)
+    return _encode_json_object(value, field=field)
+
+
+def _encode_json_object(value: dict[str, object], *, field: str) -> tuple[dict[str, object], str]:
     try:
         encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError) as exc:
@@ -1626,7 +1645,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         run_id = _entity_id(payload.get("run_id"), field="run_id", prefix="agent_run")
         action = _text(payload.get("action"), field="action", max_length=128)
         outcome = _text(payload.get("outcome"), field="outcome", max_length=64)
-        detail, _ = _json_object(payload.get("detail", {}), field="detail")
+        detail, _ = _audit_detail_object(payload.get("detail", {}), field="detail")
         _reject_reserved_acp_control(detail)
         row = self._fetch_one("SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
         if row is None:
@@ -2276,7 +2295,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         outcome_text = _text(outcome, field="outcome", max_length=64)
         resource_type_text = _text(resource_type, field="resource_type", max_length=64) if resource_type is not None else None
         resource_id_text = _text(resource_id, field="resource_id", max_length=128) if resource_id is not None else None
-        detail_value, _ = _json_object(detail, field="detail")
+        detail_value, _ = _audit_detail_object(detail, field="detail")
         audit_id = audit_id or _new_id("agent_audit")
         created_at = _now()
         params = {
