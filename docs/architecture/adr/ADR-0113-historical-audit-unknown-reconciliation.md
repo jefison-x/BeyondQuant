@@ -5,7 +5,8 @@
   it does not itself authorize an unreviewed recovery operation.
 - Scope: DSH/ACP maintenance, not Product Phase advancement or production deployment.
 - Amends the unresolved audit-ingress fence in ADR-0100/0109/0112 only through
-  the explicit reconciliation below. ADR-0104 remains Proposed and is not enabled.
+  the explicit reconciliation below. Accepted ADR-0104 separately defines the
+  ordinary-Product lost-cleanup proof exception, subject to its qualification gates.
 
 ## Confirmed gap
 
@@ -43,7 +44,9 @@ effects, financial outcomes, pending requests, or unknown non-audit tools.
    open. No hard public conversation cancel, prompt replay, or reconstructed
    child process is permitted. Missing/unknown cleanup keeps the fence closed.
    A container restart or absent PID alone never supplies this proof. Lost
-   runner receipt recovery remains outside this ADR, under Proposed ADR-0104.
+   runner receipt recovery remains outside this ADR, under Accepted ADR-0104;
+   only its independently qualified Engineering-origin proof can supply that
+   distinct process-fence fact, without fabricating a signed cleanup receipt.
 3. Under existing authority/Root/ingress locks, Backend rechecks the exact
    frozen scope, fence, cleanup and full snapshot. Prefer the existing
    `agent_audit` insertion seam and its reserved `detail.acp_control` namespace

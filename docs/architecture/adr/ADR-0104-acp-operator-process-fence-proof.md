@@ -1,8 +1,10 @@
 # ADR-0104 — Operator process-fence proof for an unresolved ACP root
 
-- Status: **Proposed** (2026-10-06; revised 2026-10-17; awaiting maintainer decision). This is a
-  draft decision point, not an accepted contract. No behavior changes until
-  accepted.
+- Status: **Accepted** (2026-10-17; maintainer: "接受 ADR-0104，继续实现并验证").
+  The maintainer accepted the independently reviewed 2026-10-17 revision and
+  authorized one bounded fault/replacement verification of the isolated
+  `byq-dev-e8b02b5475` A Product runner after implementation, review and admission.
+  Preserve database, volumes, images and pages. Production/push/merge are excluded.
 - First implementation scope: the ordinary Product ACP resource group
   (ADR-0100) only. Judgment recovery is deferred. Does not change the Backend's
   `process_fence="stopped"` requirement and does not authorize an
@@ -21,7 +23,7 @@ receipt (ADR-0099 / the option-c mechanism); when no receipt exists there is no
 operator path. "No current process" is not a proof and a historical EXIT must
 never be forged.
 
-## Proposed minimal contract
+## Accepted minimal contract
 
 This adds an independent **Engineering-origin process-fence proof**, not a
 runner cleanup receipt. Different instance IDs, a new PID namespace, a missing
@@ -89,10 +91,10 @@ PID, or `restart=no` alone do not prove that the old execution cannot continue.
    create a new child to read an existing authorized result; it never restores,
    reconstructs or replays the old child, prompt or unknown business command.
 
-Acceptance would amend ADR-0100's lost-cleanup release boundary and ADR-0113
+This amends ADR-0100's lost-cleanup release boundary and ADR-0113
 item 2 only for this independently proven process fence. Existing signed-cleanup
-recovery and qualified idle restart remain valid. Until acceptance and actual
-verification, the existing missing-cleanup fence remains unchanged.
+recovery and qualified idle restart remain valid. Until implementation and actual
+qualification, the existing missing-cleanup fence remains unchanged.
 
 ## Explicitly rejected
 
@@ -105,7 +107,7 @@ verification, the existing missing-cleanup fence remains unchanged.
 ## Delivery and verification gate
 
 This is maintenance, not Product Phase advancement or production authorization.
-Acceptance would permit only the bounded ordinary-Product implementation above.
+Acceptance permits only the bounded ordinary-Product implementation above.
 First audit the existing private CLI, binding, lock, lifecycle and reserved-audit
 seams; no broad refactor. Keep proof types closed and independent; syntax/type/
 build checks and independent Sol source review precede any environment update.
