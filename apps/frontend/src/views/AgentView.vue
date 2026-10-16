@@ -3,13 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } fro
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  AGENT_EXECUTION_OPTIONS_SCHEMA, AgentRequestError, cancelSession, createAgentSession, deleteAgentSession,
-  getAgentExecutionOptions, getAgentSession, listAgentSessions, resumeSession, streamWorkflowEvents, submitTurn,
-  updateAgentExecutionOptions, updateAgentSession,
+  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession,
+  listAgentSessions, resumeSession, streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { continueApproval } from "@/api/research";
 import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState, workflowWaiting } from "@/api/workflow";
-import type { AgentExecutionOptionsRecord, AgentExecutionOptionsUpdate } from "@/api/agent";
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
 import ResearchReceiptPanel from "@/components/agent/ResearchReceiptPanel.vue";
@@ -25,11 +23,6 @@ const router = useRouter();
 const agent = useAgentStore();
 const prompt = ref("");
 const error = ref("");
-const executionOptions = ref<AgentExecutionOptionsRecord | null>(null);
-const executionOptionsFor = ref("");
-const executionOptionsLoadingFor = ref("");
-const executionOptionsSavingFor = ref(new Set<string>());
-const executionOptionsError = ref("");
 const busy = ref(false);
 const loading = ref(false);
 const initialized = ref(false);
@@ -47,8 +40,6 @@ const clock = ref(Date.now());
 const conversationRef = ref<HTMLElement | null>(null);
 const starters = ["筛选一组可研究的股票候选", "起草一个可验证的量化策略", "根据最近回测提出优化建议"];
 let conversationGeneration = 0;
-let executionOptionsReadGeneration = 0;
-const executionOptionsSaveOperations = new Map<string, symbol>();
 let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 let approvalContinuationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,14 +54,8 @@ const softCancelRunId = ref("");
 const activeRunId = ref("");
 const agentMessageRunIds = new WeakMap<object, string>();
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
-const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。关闭自动接续可阻止后续事件。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
+const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。可在系统设置中关闭后续自动接续。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
-const numericExecutionOptionFields = [
-  "max_provider_calls", "max_provider_attempts", "max_tool_calls", "max_concurrent_provider_calls",
-  "max_input_bytes_per_call", "max_input_bytes_total", "max_output_tokens_per_call", "max_output_tokens_total",
-  "max_tool_payload_bytes_per_call", "max_tool_payload_bytes_total", "max_continuations", "max_runtime_seconds",
-  "max_no_progress_seconds", "max_child_runtime_seconds", "max_child_no_progress_seconds",
-] as const;
 // A known, fully-settled model-budget exhaustion closes the failed root but
 // leaves the live conversation promptable. The browser must not treat it as a
 // terminal session and must not attempt a failed-run resume; an explicit new
@@ -78,10 +63,6 @@ const numericExecutionOptionFields = [
 const budgetExhaustedCode = "budget-exhausted";
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
-const executionOptionsLoading = computed(() => executionOptionsLoadingFor.value === agent.activeSessionId
-  && Boolean(agent.activeSessionId));
-const executionOptionsSaving = computed(() => Boolean(agent.activeSessionId)
-  && executionOptionsSavingFor.value.has(agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
 const activities = computed(() => workflowActivities(agent.events));
 const activeActivityCount = computed(() => activities.value.filter((item) =>
@@ -346,140 +327,17 @@ function scheduleRunReconciliation(sessionId: string, generation: number) {
   }, 5_000);
 }
 
-function isCurrentExecutionOptionsTarget(conversationId: string, generation: number): boolean {
-  return !viewDisposed && generation === conversationGeneration
-    && conversationId === agent.activeSessionId;
-}
-
-function hasCurrentExecutionOptions(
-  value: unknown,
-  conversationId: string,
-): value is AgentExecutionOptionsRecord {
-  if (typeof value !== "object" || value === null) return false;
-  const record = value as Record<string, unknown>;
-  if (record.schema_version !== AGENT_EXECUTION_OPTIONS_SCHEMA
-      || record.conversation_id !== conversationId
-      || typeof record.revision !== "number" || !Number.isSafeInteger(record.revision) || record.revision < 0
-      || typeof record.options !== "object" || record.options === null) return false;
-  const options = record.options as unknown as Record<string, unknown>;
-  const expectedFields = ["auto_continue", ...numericExecutionOptionFields];
-  if (Object.keys(options).length !== expectedFields.length
-      || expectedFields.some((field) => !Object.prototype.hasOwnProperty.call(options, field))
-      || typeof options.auto_continue !== "boolean") return false;
-  return numericExecutionOptionFields.every((field) => {
-    const limit = options[field];
-    return limit === null || (typeof limit === "number" && Number.isSafeInteger(limit) && limit > 0);
-  });
-}
-
-async function readExecutionOptions(conversationId: string, generation: number): Promise<boolean> {
-  if (!conversationId) return false;
-  const readGeneration = ++executionOptionsReadGeneration;
-  executionOptionsLoadingFor.value = conversationId;
-  executionOptions.value = null;
-  executionOptionsFor.value = "";
-  executionOptionsError.value = "";
-  try {
-    const current = await getAgentExecutionOptions(conversationId, auth.token);
-    if (!isCurrentExecutionOptionsTarget(conversationId, generation)
-        || readGeneration !== executionOptionsReadGeneration) return false;
-    if (!hasCurrentExecutionOptions(current, conversationId)) {
-      throw new Error("Product API 返回的会话参数无效或超出浏览器可精确保存范围");
-    }
-    executionOptions.value = current;
-    executionOptionsFor.value = conversationId;
-    return true;
-  } catch (exc) {
-    if (isCurrentExecutionOptionsTarget(conversationId, generation)
-        && readGeneration === executionOptionsReadGeneration) {
-      const detail = exc instanceof Error ? exc.message : "读取失败";
-      executionOptionsError.value = `自动接续状态未知：${detail}。请重试读取。`;
-    }
-    return false;
-  } finally {
-    if (generation === conversationGeneration && readGeneration === executionOptionsReadGeneration
-        && executionOptionsLoadingFor.value === conversationId) {
-      executionOptionsLoadingFor.value = "";
-    }
-  }
-}
-
-async function changeAutoContinue(value: unknown) {
-  const conversationId = agent.activeSessionId;
-  const generation = conversationGeneration;
-  const current = executionOptions.value;
-  if (typeof value !== "boolean" || !conversationId || !current
-      || executionOptionsFor.value !== conversationId
-      || executionOptionsSaveOperations.has(conversationId)) return;
-
-  const payload: AgentExecutionOptionsUpdate = {
-    schema_version: AGENT_EXECUTION_OPTIONS_SCHEMA,
-    expected_revision: current.revision,
-    options: { ...current.options, auto_continue: value },
-  };
-  const operation = Symbol(conversationId);
-  executionOptionsSaveOperations.set(conversationId, operation);
-  executionOptionsSavingFor.value.add(conversationId);
-  executionOptionsError.value = "";
-  try {
-    const updated = await updateAgentExecutionOptions(conversationId, payload, auth.token);
-    if (!isCurrentExecutionOptionsTarget(conversationId, generation)) return;
-    if (!hasCurrentExecutionOptions(updated, conversationId)) {
-      throw new Error("Product API 未确认更新后的会话参数");
-    }
-    executionOptions.value = updated;
-    executionOptionsFor.value = conversationId;
-  } catch (exc) {
-    if (!isCurrentExecutionOptionsTarget(conversationId, generation)) return;
-    const detail = exc instanceof Error ? exc.message : "保存失败";
-    // A stale revision or lost response is reconciled with one authoritative
-    // read. Never replay the PUT automatically.
-    try {
-      const refreshed = await getAgentExecutionOptions(conversationId, auth.token);
-      if (!isCurrentExecutionOptionsTarget(conversationId, generation)) return;
-      if (!hasCurrentExecutionOptions(refreshed, conversationId)) {
-        throw new Error("Product API 返回的当前参数无效或超出浏览器可精确保存范围");
-      }
-      executionOptions.value = refreshed;
-      executionOptionsFor.value = conversationId;
-      executionOptionsError.value = `设置保存未确认：${detail}。已重新读取当前值；如需更改，请再次操作。`;
-    } catch (refreshError) {
-      if (!isCurrentExecutionOptionsTarget(conversationId, generation)) return;
-      executionOptions.value = null;
-      executionOptionsFor.value = "";
-      const refreshDetail = refreshError instanceof Error ? refreshError.message : "读取失败";
-      executionOptionsError.value = `设置保存未确认，当前值也无法读取：${refreshDetail}。请重试读取。`;
-    }
-  } finally {
-    if (executionOptionsSaveOperations.get(conversationId) === operation) {
-      executionOptionsSaveOperations.delete(conversationId);
-      executionOptionsSavingFor.value.delete(conversationId);
-    }
-    if (!viewDisposed && generation !== conversationGeneration && agent.activeSessionId === conversationId) {
-      await readExecutionOptions(conversationId, conversationGeneration);
-    }
-  }
-}
-
-function retryExecutionOptions() {
-  const conversationId = agent.activeSessionId;
-  if (conversationId) void readExecutionOptions(conversationId, conversationGeneration);
-}
-
 async function openSession(sessionId: string, updateRoute = true) {
   const generation = ++conversationGeneration;
   stopStream(); stopReconciliation(); localRunStartedAt.value = ""; stopping.value = false;
   softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
-  executionOptions.value = null; executionOptionsFor.value = "";
-  executionOptionsLoadingFor.value = sessionId; executionOptionsError.value = "";
   loading.value = true; error.value = "";
   try {
     const replay = await getAgentSession(sessionId, auth.token);
     if (generation !== conversationGeneration) return;
     agent.replaceSession({ ...replay.conversation, session_id: sessionId });
     agent.hydrateSession(sessionId, replayMessages(replay.messages, replay.events), replay.events);
-    void readExecutionOptions(sessionId, generation);
     for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
       if (event.kind === "session.started") {
         activeRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
@@ -512,8 +370,6 @@ async function openSession(sessionId: string, updateRoute = true) {
   } catch (exc) {
     if (generation === conversationGeneration) {
       error.value = exc instanceof Error ? exc.message : "会话加载失败";
-      executionOptionsError.value = "会话设置无法读取；自动接续状态未知。";
-      executionOptionsLoadingFor.value = "";
     }
   } finally { if (generation === conversationGeneration) loading.value = false; }
 }
@@ -533,8 +389,6 @@ function startNewSession(preservePrompt = false) {
   localRunStartedAt.value = ""; stopping.value = false; loading.value = false; error.value = "";
   softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
-  executionOptions.value = null; executionOptionsFor.value = "";
-  executionOptionsLoadingFor.value = ""; executionOptionsError.value = "";
   agent.clearActiveSession();
   if (!preservePrompt) prompt.value = "";
 }
@@ -866,34 +720,6 @@ onBeforeUnmount(() => {
       <ResearchReceiptPanel v-if="agent.activeSessionId" :conversation-id="agent.activeSessionId" />
     </main>
     <footer class="composer-wrap">
-      <section class="execution-options-strip" aria-label="会话自动接续设置">
-        <div class="execution-options-main">
-          <strong>自动接续</strong>
-          <template v-if="!agent.activeSessionId">
-            <span>发送第一条消息后才能读取和设置此会话选项</span>
-          </template>
-          <template v-else-if="executionOptionsLoading">
-            <span role="status">正在读取会话设置…</span>
-          </template>
-          <template v-else-if="executionOptions && executionOptionsFor === agent.activeSessionId">
-            <el-switch
-              class="execution-options-switch"
-              aria-label="允许自动接续"
-              :model-value="executionOptions.options.auto_continue"
-              :disabled="executionOptionsSaving"
-              @change="changeAutoContinue"
-            />
-            <span role="status">{{ executionOptionsSaving ? "正在保存…"
-              : executionOptions.options.auto_continue ? "已开启" : "已关闭" }}</span>
-          </template>
-          <template v-else>
-            <span role="status">自动接续状态未知；未使用本地默认值</span>
-            <el-button text size="small" :disabled="executionOptionsLoading" @click="retryExecutionOptions">重试读取</el-button>
-          </template>
-        </div>
-        <small class="execution-options-note">设置只作用于后续自动接续事件；已运行任务的参数快照不变，也不会取消任务。</small>
-        <small v-if="executionOptionsError" class="execution-options-error" role="alert">{{ executionOptionsError }}</small>
-      </section>
       <form class="agent-composer" @submit.prevent="send()">
         <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" @keydown="handleComposerKeydown" />
         <el-button
@@ -950,7 +776,7 @@ onBeforeUnmount(() => {
 .starter-grid { display: grid; gap: .65rem; grid-template-columns: repeat(3, 1fr); }.starter-grid button { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: var(--byq-radius); color: var(--byq-text-muted); cursor: pointer; line-height: 1.5; padding: .85rem; text-align: left; }.starter-grid button:hover { border-color: var(--byq-brand); color: var(--byq-text); }
 .timeline { display: grid; gap: 1.15rem; margin: 0 auto; max-width: 860px; }.conversation-message { display: grid; gap: .7rem; grid-template-columns: minmax(42px, max-content) minmax(0, 1fr); }.message-author { align-items: center; background: var(--byq-surface-muted); border-radius: 12px; color: var(--byq-text-muted); display: flex; font-size: 11px; font-weight: 850; height: 36px; justify-content: center; max-width: 96px; min-width: 36px; overflow: hidden; padding: 0 7px; text-overflow: ellipsis; white-space: nowrap; }.conversation-message.agent .message-author { background: var(--byq-brand-contrast); color: var(--byq-on-brand); width: 36px; }.message-body { color: var(--byq-text); line-height: 1.75; padding: .35rem 0; white-space: pre-wrap; }.conversation-message.user .message-body { background: var(--byq-brand-soft); border-radius: 16px; justify-self: start; padding: .7rem .9rem; }
 .thinking-status { align-items: flex-start; display: grid; gap: .15rem; padding: .35rem 0; }.thinking-summary { align-items: center; background: transparent; border: 0; color: var(--byq-text-muted); cursor: pointer; display: flex; font: inherit; gap: .55rem; padding: 0; text-align: left; }.thinking-summary strong { color: var(--byq-text); font-size: 13px; }.thinking-summary > span:last-child, .thinking-status small { color: var(--byq-text-soft); font-size: 11px; }.thinking-spark { align-items: center; display: inline-flex; gap: 3px; height: 16px; }.thinking-spark i { animation: thinking-dot 1.15s ease-in-out infinite; background: var(--byq-brand); border-radius: 50%; display: block; height: 5px; width: 5px; }.thinking-spark i:nth-child(2) { animation-delay: .16s; }.thinking-spark i:nth-child(3) { animation-delay: .32s; }
-.composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.execution-options-strip { display: grid; gap: .3rem; margin: 0 auto .65rem; max-width: 860px; }.execution-options-main { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: .5rem; min-height: 28px; }.execution-options-main strong { color: var(--byq-text); font-size: 12px; }.execution-options-main > span, .execution-options-note, .execution-options-error { font-size: 11px; line-height: 1.5; }.execution-options-note { color: var(--byq-text-soft); }.execution-options-error { color: var(--el-color-danger); }.agent-composer { align-items: center; background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); display: flex; gap: .65rem; padding: .65rem .7rem .65rem .9rem; }.composer-input { flex: 1; min-width: 0; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; line-height: 1.55; padding: .35rem 0; resize: none; }.composer-action { align-self: center; flex: 0 0 auto; margin-left: 0; }
+.composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.agent-composer { align-items: center; background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); display: flex; gap: .65rem; padding: .65rem .7rem .65rem .9rem; }.composer-input { flex: 1; min-width: 0; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; line-height: 1.55; padding: .35rem 0; resize: none; }.composer-action { align-self: center; flex: 0 0 auto; margin-left: 0; }
 .composer-stop { background: var(--byq-text); border-color: var(--byq-text); color: var(--byq-surface); }.stop-square { background: currentColor; border-radius: 2px; display: block; height: 10px; width: 10px; }
 @keyframes thinking-dot { 0%, 60%, 100% { opacity: .28; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 .history-tools { display: grid; gap: .75rem; }.history-batch-bar { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; margin: .75rem 0; }.history-count { color: var(--byq-text-soft); flex: 1; font-size: 11px; min-width: 130px; }.history-catalog { display: grid; gap: .55rem; }.history-item { align-items: center; border: 1px solid var(--byq-border-subtle); border-radius: var(--byq-radius-sm); display: flex; gap: .25rem; padding: .35rem .5rem .35rem .75rem; }.history-item > button { background: transparent; border: 0; cursor: pointer; display: grid; flex: 1; gap: .25rem; min-width: 0; padding: .35rem; text-align: left; }.history-item strong, .history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.history-item span, .history-item small { color: var(--byq-text-soft); }.conversation-state { margin: 2rem auto; max-width: 860px; }

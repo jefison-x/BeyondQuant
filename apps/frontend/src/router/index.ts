@@ -53,6 +53,14 @@ const router = createRouter({
             { path: "feedback", redirect: { name: "agent" } },
           ],
         },
+        {
+          path: "settings/agent-runtime",
+          component: () => import("@/components/layout/SystemSettingsLayout.vue"),
+          meta: { title: "Agent运行参数", kicker: "会话设置", subtitle: "配置本人会话的自动接续" },
+          children: [
+            { path: "", name: "agent-runtime-settings", component: () => import("@/views/AgentRuntimeSettingsView.vue") },
+          ],
+        },
         { path: "system-status", redirect: "/settings/system/overview", meta: { requiresAdmin: true } },
         {
           path: "agent",

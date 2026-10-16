@@ -4,14 +4,17 @@ import { useRoute, useRouter } from "vue-router";
 import { Close } from "@element-plus/icons-vue";
 import {
   findSystemSettingsItem,
-  systemSettingsGroups,
+  systemSettingsGroupsForRole,
 } from "@/router/systemSettingsNavigation";
+import { useAuthStore } from "@/stores/auth";
 
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
 const isMobile = ref(false);
 
 const activeItem = computed(() => findSystemSettingsItem(route.path));
+const visibleGroups = computed(() => systemSettingsGroupsForRole(auth.isAdmin));
 
 function updateViewport() {
   isMobile.value = window.innerWidth <= 767;
@@ -27,9 +30,13 @@ function safeReturnPath(): string {
   if (
     candidate.startsWith("/") &&
     !candidate.startsWith("//") &&
-    !candidate.startsWith("/settings/system") &&
+    !candidate.startsWith("/settings/") &&
     !candidate.startsWith("/admin")
   ) return candidate;
+  const conversationId = typeof route.query.conversation_id === "string" ? route.query.conversation_id : "";
+  if (route.path === "/settings/agent-runtime" && conversationId) {
+    return `/agent?session=${encodeURIComponent(conversationId)}`;
+  }
   return "/agent";
 }
 
@@ -58,9 +65,9 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
     <template #header="{ titleId }">
       <header class="settings-header">
         <div>
-          <span>管理员工作区</span>
+          <span>{{ auth.isAdmin ? "管理员工作区" : "会话设置" }}</span>
           <h1 :id="titleId">系统设置</h1>
-          <p>Product API 去敏投影 · RBAC 与审计保持有效</p>
+          <p>管理个人会话及你有权访问的系统设置</p>
         </div>
         <el-button aria-label="关闭系统设置" circle @click="closeSettings">
           <el-icon><Close /></el-icon>
@@ -76,7 +83,7 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
         aria-label="系统设置分区"
         @change="navigate"
       >
-        <el-option-group v-for="group in systemSettingsGroups" :key="group.label" :label="group.label">
+        <el-option-group v-for="group in visibleGroups" :key="group.label" :label="group.label">
           <el-option v-for="item in group.items" :key="item.path" :label="item.label" :value="item.path" />
         </el-option-group>
       </el-select>
@@ -84,7 +91,7 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
 
     <div class="settings-grid">
       <nav class="settings-nav" aria-label="系统设置导航">
-        <section v-for="group in systemSettingsGroups" :key="group.label">
+        <section v-for="group in visibleGroups" :key="group.label">
           <span class="group-label">{{ group.label }}</span>
           <button
             v-for="item in group.items"
@@ -107,7 +114,7 @@ onUnmounted(() => window.removeEventListener("resize", updateViewport));
             <h2 :id="`settings-title-${activeItem.path.split('/').pop()}`">{{ activeItem.label }}</h2>
             <p>{{ activeItem.description }}</p>
           </div>
-          <el-tag effect="plain">管理员专用</el-tag>
+          <el-tag effect="plain">{{ auth.isAdmin && route.path.startsWith("/settings/system/") ? "管理员专用" : "本人会话" }}</el-tag>
         </div>
         <div class="section-body"><RouterView /></div>
       </section>

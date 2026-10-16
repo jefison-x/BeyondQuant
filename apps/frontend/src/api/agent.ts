@@ -41,6 +41,36 @@ export interface AgentExecutionOptionsUpdate {
   options: AgentExecutionOptions;
 }
 
+const executionOptionLimitFields = [
+  "max_provider_calls", "max_provider_attempts", "max_tool_calls", "max_concurrent_provider_calls",
+  "max_input_bytes_per_call", "max_input_bytes_total", "max_output_tokens_per_call", "max_output_tokens_total",
+  "max_tool_payload_bytes_per_call", "max_tool_payload_bytes_total", "max_continuations", "max_runtime_seconds",
+  "max_no_progress_seconds", "max_child_runtime_seconds", "max_child_no_progress_seconds",
+] as const;
+
+export function isAgentExecutionOptionsRecord(
+  value: unknown,
+  conversationId: string,
+): value is AgentExecutionOptionsRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (record.schema_version !== AGENT_EXECUTION_OPTIONS_SCHEMA
+      || record.conversation_id !== conversationId
+      || typeof record.owner_principal !== "string"
+      || typeof record.workspace_id !== "string"
+      || typeof record.revision !== "number" || !Number.isSafeInteger(record.revision) || record.revision < 0
+      || typeof record.options !== "object" || record.options === null) return false;
+  const options = record.options as Record<string, unknown>;
+  const expectedFields = ["auto_continue", ...executionOptionLimitFields];
+  if (Object.keys(options).length !== expectedFields.length
+      || expectedFields.some((field) => !Object.prototype.hasOwnProperty.call(options, field))
+      || typeof options.auto_continue !== "boolean") return false;
+  return executionOptionLimitFields.every((field) => {
+    const limit = options[field];
+    return limit === null || (typeof limit === "number" && Number.isSafeInteger(limit) && limit > 0);
+  });
+}
+
 export class AgentRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
