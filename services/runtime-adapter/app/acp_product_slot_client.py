@@ -7,11 +7,13 @@ both the runner proves cleanup and Backend acknowledges the exact root.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
 import re
 import socket
+import stat
 import threading
 import time
 from dataclasses import dataclass, field
@@ -19,10 +21,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from packages.contracts.acp_product_slot import (
+    PRODUCT_CLEANUP_RECEIPT_DIRECTORY,
+    PRODUCT_CLEANUP_RECEIPT_MAX_BYTES,
     PRODUCT_SCOPE_KEYS,
     product_scope_digest,
     validate_product_environment,
     validate_product_scope,
+    verify_product_cleanup_receipt,
 )
 
 from . import research_judgment_acp_runner_client as wire
@@ -77,6 +82,66 @@ class ProductSlotRejected(ProductSlotError):
 
 class ProductSlotLeaseMismatch(ProductSlotError):
     """An ACK or cleanup receipt did not identify the held root exactly."""
+
+
+def read_product_cleanup_receipt_with_sha256(
+    control_directory: str | os.PathLike[str], control_key: bytes,
+    expected_scope: Mapping[str, str],
+) -> tuple[dict[str, object], str]:
+    """Read one exact signed receipt and return its source-file digest."""
+
+    scope = validate_product_scope(expected_scope)
+    directory = Path(control_directory)
+    receipt_dir = directory / PRODUCT_CLEANUP_RECEIPT_DIRECTORY
+    for candidate in (directory, receipt_dir):
+        try:
+            info = os.lstat(candidate)
+        except OSError as exc:
+            raise ProductSlotLeaseMismatch("Product cleanup receipt is unavailable") from exc
+        if not stat.S_ISDIR(info.st_mode):
+            raise ProductSlotLeaseMismatch("Product cleanup receipt directory is unsafe")
+
+    path = receipt_dir / f"{product_scope_digest(scope)}.json"
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_size > PRODUCT_CLEANUP_RECEIPT_MAX_BYTES):
+            raise ProductSlotLeaseMismatch("Product cleanup receipt file is unsafe")
+        descriptor = os.open(path, flags)
+        try:
+            opened = os.fstat(descriptor)
+            if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                    or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                    or opened.st_size > PRODUCT_CLEANUP_RECEIPT_MAX_BYTES):
+                raise ProductSlotLeaseMismatch("Product cleanup receipt changed while opening")
+            with os.fdopen(descriptor, "rb", closefd=False) as source:
+                raw = source.read(PRODUCT_CLEANUP_RECEIPT_MAX_BYTES + 1)
+        finally:
+            os.close(descriptor)
+    except ProductSlotLeaseMismatch:
+        raise
+    except OSError as exc:
+        raise ProductSlotLeaseMismatch("Product cleanup receipt is unavailable") from exc
+    try:
+        receipt = verify_product_cleanup_receipt(
+            raw, control_key=control_key, expected_scope=scope,
+        )
+    except ValueError as exc:
+        raise ProductSlotLeaseMismatch("Product cleanup receipt did not verify") from exc
+    return receipt, hashlib.sha256(raw).hexdigest()
+
+
+def read_product_cleanup_receipt(
+    control_directory: str | os.PathLike[str], control_key: bytes,
+    expected_scope: Mapping[str, str],
+) -> dict[str, object]:
+    """Read one exact signed cleanup receipt from the private runner volume."""
+
+    receipt, _digest = read_product_cleanup_receipt_with_sha256(
+        control_directory, control_key, expected_scope,
+    )
+    return receipt
 
 
 @dataclass(frozen=True)

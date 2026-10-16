@@ -79,6 +79,13 @@ effects, financial outcomes, pending requests, or unknown non-audit tools.
    no service may ignore added reconciliation evidence. An interrupted Root may
    close through the exact Backend ACK plus proven runner cleanup. Do not
    fabricate the old successful completion or claim the failed trial passed.
+   The close outcome must follow the unique existing normalized lifecycle
+   event; `interrupted` above is permitted, not mandatory. For the retained
+   Root, a read-only Gateway read proves an original `session.result` with
+   outcome `completed`, sequence 167. Preserving that real model-loop outcome
+   is allowed; audit append uncertainty remains explicitly acknowledged and
+   unknown, and the failed qualification batch stays FAIL. Do not relabel or
+   invent a historical event merely to force an interrupted outcome.
 5. An exact repeat returns the original reconciliation receipt. Changed
    identity, request set, arguments, settlement, cursor or process proof fails
    closed. A concurrent append invalidates the frozen snapshot. Never infer a
