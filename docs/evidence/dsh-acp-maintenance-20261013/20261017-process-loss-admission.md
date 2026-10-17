@@ -138,3 +138,16 @@ prebind 写入前须先确保现有 Backend reader 具备对应保护。工程�
 独立 Sol→Root 接受复用并取消整个额外 reader 采集。原件在 `R1B-PREBIND-QUALIFICATION-v1/READER-VERSION-READBACK-v1/`：`ROOT-FAIL-STOP.json`、`CAUSE-AND-MINIMAL-REDESIGN.md`、`EVIDENCE-REUSE-DECISION.json`（独审SHA256 `9736b335542430f3dfb776b95002941ad5a43b49b363efdcadc2e1847ee1de4e`）与 `ROOT-REUSE-DECISION.json`。失败、未执行的替代草稿和已通过的fresh18原件都保留。此后0新Docker/DB/API/模型/Job/START/浏览器输入，不重跑镜像/出生资格。
 
 当前下一门：核对所有同逻辑DB reader，再对必要的隔离Backend更新给出准确命令、独审和Root操作准入；更新后才做候选source读回/新容器基线与私有prebind。不能拿一份候选helper镜像代替已部署reader，不能预先写入资格审计行。R2、活动故障和浏览器恢复仍 NOT_RUN；环境、页面、账号、数据库及卷均保持。
+
+
+## 两条只读数据库身份采集通过（2026-10-17）
+
+沿用隔离工作树，准确源码/文档起点 `c12dfc24d6d97e5623ddf27d86bf3bba42baf0ab`，未修改功能源码。保存配置无法证明保留的 base Backend 与当前页面的 F6 Backend 分库；因此先单独审查两条固定 CID 的只读身份查询，不重启服务、不复活已取消的 reader-source 采集。
+
+独立 Sol 完整静审准入后，Root 各执行一次 `docker exec -i <exact CID> python3 -`，输入已冻结的26行 SQLAlchemy payload。只在容器内使用现有连接 URL，不输出/哈希凭据；PostgreSQL 启动选项强制默认只读、statement5秒/connect3秒，只选择当前库名及只读状态，不 import App/Store，不查询业务表或写入/DDL。驱动初始化可能包含其他元数据读取，不将总SQL数伪称为一条。每次独占持久化 raw stdout/stderr、native exit、UTC并fsync。第一条实际 Root 验收并保存标志后才派发第二条；总上限120秒、每个CID一次，错误停止且不重试。
+
+实际两条 native/host均exit0、stderr0，strict JSON均为 `{"database":"byq_domain","read_only":true}`；各0.985774/0.941225秒，完整UTC跨度15.235307秒。独立 Sol→Root仅 **只读身份采集合同 PASS**。同库名只能要求将两者按潜在共享 reader 处理，不能声称已经证明同一服务器/完整拓扑；只更新F6不足以关闭共享reader门。第一PASS标志没有issuanceUTC，不冒充独立测得其创建时刻，实际派发顺序由Root执行记录及两个窗口支持。
+
+私有证据 `runner-foundation-v1/R1B-DB-IDENTITY-v1/`：payload SHA256 `997efef49fc9c8e93c9fe1514d754ca53b787e531ccae800a805a566e21cb8b7`，实际结果 `17f77770a36bf3e535f7f86cbe6accc71adf139c93af42affcff4c5e91c20bd3`，Sol实际独审 `141ef42bd4b790b7ede27b6b3ef0da4a196397956db643e6e9644e9a52021d61`，Root PASS `79ea46917d9d534c3d50b8e1c93b84af1aa34f573e2f4cb23d9107127f023b89`。原FAIL/HOLD与fresh18限定PASS不变。0模型/Job/START/API/业务写入/资源变更。三个页面保持打开，只读观察当前B会话历史正常，不将它记为新的恢复测试PASS。
+
+下一门为两处潜在共享 Backend reader 的准确隔离更新准入；正常Backend重启有现有Store schema bootstrap、管理员幂等检查及retention生命周期，不能将部署本身伪称只读或仅两条审计写入。私有prebind、R2、活动故障和浏览器恢复仍 NOT_RUN；当前未给服务更新或受保护审计写入GO。
