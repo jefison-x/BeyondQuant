@@ -4,6 +4,8 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**R1b-c Backend 激活锚点源码限定 PASS：** `c6b8a804` 私有 activate 已接通既有审计表，准确 immutable/idempotent 激活并保护普通入口。Mount.Mode 真实格式 P2 已修正，独立 Sol→Root 仅源码通过；不等于 START 可执行。Runner 交付、Backend 只读 admission 和 Runtime 持久绑定接入实施中，未恢复原生/模型/浏览器测试。见[Backend 激活锚点](20261017-process-loss-admission.md#r1b-cbackend-激活锚点源码2026-10-17)。
+
 **R1b-b2 非激活安装源码限定 PASS：** `4b5233eb` 增加出生 opt-in、私有安装及签名 START 的准确实例绑定形状，激活未完成时仍拒绝执行。安装重试 fsync 的 P2 修正后通过 Sol→Root；未构建更新环境，未恢复原生/模型/浏览器测试。继续实现 Backend 激活和 Runtime 接入，原失败及全部保留资源不变。见[预绑定安装](20261017-process-loss-admission.md#r1b-b2预绑定安装与默认拒绝2026-10-17)。
 
 **R1b-b1 runner基础源码限定PASS：** `205a55c9`新增socket前原子signed实例descriptor、consume前持久化instance-started marker；复用fsync缺口修正后经独立Sol→Root通过。未更新环境/未恢复测试，安装激活与Runtime pre-START持久化接入继续实施，旧FAIL保持。见[当前实例与事前标记](20261017-process-loss-admission.md#r1b-b1当前实例与事前执行标记2026-10-17)。

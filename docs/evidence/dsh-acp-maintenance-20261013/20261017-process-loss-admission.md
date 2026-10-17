@@ -39,6 +39,14 @@
 
 合格模式仍拒绝 START；prepared/安装回执不是执行授权，Backend 激活及 Runtime 接入正在继续。legacy 默认行为未转换为事后工程资格。镜像只新增必要小文件 COPY，未构建或加载本片镜像。功能、原生及浏览器故障验证均 NOT_RUN，本批未恢复测试；原17容器、三页、草稿和专用停机探针保留。不能把源码通过当作恢复链路已经完成。
 
+## R1b-c：Backend 激活锚点源码（2026-10-17）
+
+源码 `c6b8a804` 在既有私有 CLI 与 `operations_audit` 内完成 activate：准确核对受保护 prepared 原件、签名实例/出生/安装、工程采集的容器与完整卷绑定，锁内追加唯一 immutable active 回执，准确重复返回原件，冲突拒绝。普通 budget 入口拒绝两类保留 namespace，overview 只投影安全摘要。Backend 不声称自行访问 Docker；可信本地工程执行及原始证据是 native 采集边界，Product MAC 和 UID 不会升级为工程权威。
+
+源码审查发现固定 Mount.Mode=rw 会拒绝已有探针实际 Mode=z，已改为保留有界原值、独立核对 RW=true；原 FAIL 和第一版结果保留。其他实际字段及原始输出/解析数据摘要已分别收敛，语法/diff、独立 Sol V2→Root 源码限定 PASS。没有运行功能或原生测试，active 锚点单独仍不能执行 START。
+
+下一步只接通现有 Runner 私有交付、Backend admission 和 Runtime pre-START 持久绑定，三处一人一写者。Runtime 写入不确定必须保留准确 lease/scope/fence，不能进入“尚未启动”的快速清理；R2 后续核清证明的关闭前快照、自身行排除、受控关闭后差异和准确幂等设计已独审修正。所有 native/活动故障/浏览器恢复均 NOT_RUN，原17容器及三页不变。
+
 以下保留接受之前的设计审计与当时状态，不覆盖本节接受记录。
 
 前一项双用户普通对话及持久请求区间已限定 PASS。此片只审计与修订 Proposed ADR，没有新增模型、Job、容器操作或故障注入，不推进 Product Phase。
