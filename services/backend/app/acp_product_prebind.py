@@ -1,13 +1,14 @@
-"""Private one-shot Engineering preparation of an ACP runner prebind receipt.
+"""Private one-shot Engineering preparation/activation of ACP runner prebind.
 
-`prepared` is deliberately non-authorizing. This module has no activation
-path until a separately reviewed runner-install and native-readback contract
-exists. It is not imported by the Backend HTTP application.
+Prepared is non-authorizing. Activation records an Engineering-collected
+actual-facts anchor; it does not by itself authorize Product START. This
+module is not imported by the Backend HTTP application.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
@@ -25,8 +26,10 @@ from packages.contracts.acp_product_instance import (
     validate_instance,
 )
 from packages.contracts.acp_product_prebind import (
+    ACTIVATE_ACTION, ACTIVATE_IDEMPOTENCY_PREFIX,
     PREPARE_ACTION, PREPARE_IDEMPOTENCY_PREFIX, PREPARE_SCHEMA,
-    canonical_json, digest, validate_prepare_request,
+    BACKEND_ACTIVE_SCHEMA, canonical_json, digest, validate_activation_request,
+    validate_backend_active_receipt, validate_prepare_request, validate_prepared_receipt,
 )
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -165,14 +168,40 @@ def _run_prepare(arguments_file: str, product_key_fd: int) -> None:
     sys.stdout.buffer.flush()
 
 
-def _run_activate(_arguments_file: str) -> None:
-    # No reviewed installer/readback contract currently exists. In particular,
-    # a prepared receipt cannot be interpreted as eligibility or START authority.
-    raise PrebindHold("activation is unavailable until install and native readback are qualified")
+def _run_activate(arguments_file: str, product_key_fd: int) -> None:
+    product_key = _read_product_key(product_key_fd)
+    raw = _read_regular_json(arguments_file)
+    try:
+        if not isinstance(raw.get("install_record"), dict):
+            raise PrebindHold("installed runner readback is missing")
+        prepared_raw = raw["install_record"].get("prepared_receipt")
+        if not isinstance(raw.get("instance"), dict):
+            raise PrebindHold("signed current runner instance is missing")
+        prepared = validate_prepared_receipt(prepared_raw, instance=raw.get("instance"))
+        if raw.get("prepared_receipt_sha256") != prepared.get("receipt_sha256"):
+            raise PrebindHold("prepared receipt digest differs")
+        request = validate_activation_request(
+            raw, product_key=product_key, prepared_receipt=prepared,
+        )
+    except (ProductInstanceContractError, PrebindHold):
+        raise
+    except Exception as exc:
+        raise PrebindHold("activation facts or runner readback are invalid") from exc
+    operator_uid, operator_name = _engineering_operator()
+    store = _PrebindOperationsStore()
+    try:
+        receipt = store.activate_prebind(
+            request=request, prepared_receipt=prepared,
+            operator_uid=operator_uid, operator_name=operator_name,
+        )
+    finally:
+        store.close()
+    sys.stdout.buffer.write(canonical_json(receipt))
+    sys.stdout.buffer.flush()
 
 
 class _PrebindOperationsStore(_ExistingSchemaOperationsStore):
-    """Append-only writer for the single reserved, non-active prepare action."""
+    """Append-only writer for the reserved prebind and activation actions."""
 
     def prepare_prebind(
         self, *, request: dict[str, Any], operator_uid: int, operator_name: str,
@@ -253,6 +282,125 @@ class _PrebindOperationsStore(_ExistingSchemaOperationsStore):
         except SQLAlchemyError as exc:
             raise OperationsPersistenceError("prebind storage is unavailable") from exc
 
+    def activate_prebind(
+        self, *, request: dict[str, Any], prepared_receipt: dict[str, Any],
+        operator_uid: int, operator_name: str,
+    ) -> dict[str, Any]:
+        activation_id = request["activation_id"]
+        key = ACTIVATE_IDEMPOTENCY_PREFIX + activation_id
+        instance = request["instance"]
+        scope = f"acp-prebind:v1:{prepared_receipt['workspace_id']}:{instance['runner_instance_id']}"
+        request_hash = hashlib.sha256(canonical_json({
+            "request": request,
+            "operator": {"uid": operator_uid, "name": operator_name},
+        })).hexdigest()
+        prepare_key = PREPARE_IDEMPOTENCY_PREFIX + prepared_receipt["operation_id"]
+        try:
+            with self._transaction() as connection:
+                execute(connection,
+                        "SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))",
+                        {"scope": scope})
+                prepared_row = fetch_one(
+                    connection,
+                    """SELECT action, request_sha256, detail_json, response_json FROM operations_audit
+                       WHERE idempotency_key = :key""",
+                    {"key": prepare_key},
+                )
+                if (prepared_row is None or prepared_row.get("action") != PREPARE_ACTION
+                        or not isinstance(prepared_row.get("response_json"), dict)
+                        or prepared_row["response_json"] != prepared_receipt
+                        or prepared_row.get("request_sha256") != prepared_receipt.get("request_sha256")
+                        or not isinstance(prepared_row.get("detail_json"), dict)
+                        or prepared_row["detail_json"].get("prepared") != prepared_receipt
+                        or prepared_row["response_json"].get("receipt_sha256")
+                        != request["prepared_receipt_sha256"]):
+                    raise PrebindHold("exact prepared Backend receipt is unavailable")
+
+                prior = fetch_one(
+                    connection,
+                    """SELECT action, request_sha256, response_json FROM operations_audit
+                       WHERE idempotency_key = :key""",
+                    {"key": key},
+                )
+                if prior is not None:
+                    if (prior.get("action") != ACTIVATE_ACTION
+                            or prior.get("request_sha256") != request_hash
+                            or not isinstance(prior.get("response_json"), dict)):
+                        raise PrebindHold("activation idempotency conflict")
+                    response = prior["response_json"]
+                    validate_backend_active_receipt(
+                        response, prepared_receipt=prepared_receipt,
+                        install_record=request["install_record"],
+                    )
+                    return response
+
+                existing = fetch_one(
+                    connection,
+                    """SELECT audit_id FROM operations_audit
+                       WHERE action = :action AND resource_type = 'acp_runner_instance'
+                         AND resource_id = :instance LIMIT 1""",
+                    {"action": ACTIVATE_ACTION, "instance": instance["runner_instance_id"]},
+                )
+                if existing is not None:
+                    raise PrebindHold("runner instance already has an activation receipt")
+
+                receipt = {
+                    "schema_version": BACKEND_ACTIVE_SCHEMA,
+                    "status": "active",
+                    "activation_id": activation_id,
+                    "workspace_id": prepared_receipt["workspace_id"],
+                    "runner_instance_id": instance["runner_instance_id"],
+                    "runner_boot_id": instance["runner_boot_id"],
+                    "state_generation": instance["state_generation"],
+                    "signed_instance_sha256": digest(instance),
+                    "prepared_receipt_sha256": prepared_receipt["receipt_sha256"],
+                    "backend_binding_nonce": prepared_receipt["backend_binding_nonce"],
+                    "install_receipt_sha256": digest(request["install_record"]),
+                    "native_binding_sha256": digest({
+                        "native_facts": request["native_facts"],
+                        "engineering_observation": request["engineering_observation"],
+                    }),
+                    "activated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                }
+                receipt["receipt_sha256"] = digest(receipt)
+                validate_backend_active_receipt(
+                    receipt, prepared_receipt=prepared_receipt,
+                    install_record=request["install_record"],
+                )
+                audit_id = "ops_acp_activate_" + hashlib.sha256(key.encode()).hexdigest()
+                execute(
+                    connection,
+                    """INSERT INTO operations_audit
+                       (audit_id, actor_principal, action, resource_type, resource_id,
+                        outcome, idempotency_key, request_sha256, detail_json,
+                        response_json, created_at)
+                       VALUES (:audit_id, :actor, :action, 'acp_runner_instance',
+                               :instance, 'active', :key, :request_hash,
+                               :detail, :response, now())""",
+                    {
+                        "audit_id": audit_id,
+                        "actor": f"engineering:{operator_name}:{operator_uid}",
+                        "action": ACTIVATE_ACTION,
+                        "instance": instance["runner_instance_id"],
+                        "key": key,
+                        "request_hash": request_hash,
+                        "detail": {
+                            "active": receipt,
+                            "native_facts": request["native_facts"],
+                            "engineering_observation": request["engineering_observation"],
+                            "install_record": request["install_record"],
+                        },
+                        "response": receipt,
+                    },
+                )
+                return receipt
+        except PrebindHold:
+            raise
+        except OperationsPersistenceError:
+            raise
+        except SQLAlchemyError as exc:
+            raise OperationsPersistenceError("prebind activation storage is unavailable") from exc
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -262,12 +410,13 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--product-key-fd", required=True, type=int)
     activate = commands.add_parser("activate")
     activate.add_argument("--arguments-file", required=True)
+    activate.add_argument("--product-key-fd", required=True, type=int)
     args = parser.parse_args(argv)
     try:
         if args.command == "prepare":
             _run_prepare(args.arguments_file, args.product_key_fd)
         else:
-            _run_activate(args.arguments_file)
+            _run_activate(args.arguments_file, args.product_key_fd)
     except Exception as exc:
         frames = [frame for frame in traceback.extract_tb(exc.__traceback__)
                   if Path(frame.filename).resolve().parent == Path(__file__).resolve().parent]

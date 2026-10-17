@@ -1,7 +1,7 @@
-"""Closed Backend contract for a non-authorizing ACP runner prebind intent.
+"""Closed Backend contract for ACP runner prebind and Engineering activation.
 
-This contract records an Engineering-prepared candidate only. It does not
-qualify a runner, authorize START, or attest native Docker facts by itself.
+Prepared records are non-authorizing. Active records anchor a closed
+Engineering-collected native fact set, but do not alone authorize START.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from typing import Any
 PREPARE_SCHEMA = "byq-acp-product-runner-prebind.v1"
 PREPARE_ACTION = "acp_operator_runner_prebind"
 PREPARE_IDEMPOTENCY_PREFIX = "acp-operator-prebind:"
+ACTIVATE_ACTION = "acp_operator_runner_prebind_activate"
+ACTIVATE_IDEMPOTENCY_PREFIX = "acp-operator-activate:"
 PREPARE_FIELDS = frozenset({"schema_version", "operation_id", "workspace_id",
                             "instance", "deployment", "state_volume"})
 INSTANCE_FIELDS = frozenset({"schema_version", "workspace_id", "runner_instance_id",
@@ -69,10 +71,155 @@ PREPARED_RECEIPT_FIELDS = frozenset({"schema_version", "status", "authorizes_sta
                                      "signed_instance_sha256", "deployment", "state_volume",
                                      "backend_binding_nonce", "request_sha256",
                                      "receipt_sha256"})
+ACTIVATE_REQUEST_SCHEMA = "byq-acp-product-runner-activate-request.v1"
+ACTIVATE_REQUEST_FIELDS = frozenset({"schema_version", "activation_id",
+                                     "prepared_receipt_sha256", "instance",
+                                     "birth_mode", "install_record", "native_facts",
+                                     "engineering_observation"})
+NATIVE_FACT_FIELDS = frozenset({"deployment", "state_volume", "state_mount",
+                                "container_state", "runner_readback"})
+RUNNER_READBACK_FIELDS = frozenset({"instance", "birth_mode", "install_record",
+                                    "started_marker_absent"})
+STATE_MOUNT_FIELDS = frozenset({"type", "name", "source", "destination", "driver",
+                                "mode", "rw", "propagation"})
+CONTAINER_STATE_FIELDS = frozenset({"running", "paused", "restarting", "pid",
+                                    "pid_mode", "pid1_entrypoint"})
+ENGINEERING_OBSERVATION_FIELDS = frozenset({"collected_at", "commands",
+                                             "runner_readback_sha256"})
+ENGINEERING_COMMAND_FIELDS = frozenset({"kind", "argv", "exit_code",
+                                        "stdout_sha256", "stderr_sha256"})
+_PREBIND_RUNNER_ENTRYPOINTS = {
+    ("python3", "/opt/byq/acp_product_runner/server.py"),
+    ("/usr/bin/python3", "/opt/byq/acp_product_runner/server.py"),
+}
 
 
 class PrebindContractError(ValueError):
     """The Engineering prebind request is not closed or valid."""
+
+
+def validate_activation_request(raw: object, *, product_key: bytes,
+                                prepared_receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate an Engineering-collected actual-facts candidate for activation.
+
+    This validates a closed fact record and its equality with the prepared
+    intent. Trust in native collection comes only from the restricted local
+    Engineering invocation; this contract does not claim that Backend ran
+    Docker commands itself.
+    """
+    if not isinstance(raw, Mapping) or set(raw) != ACTIVATE_REQUEST_FIELDS:
+        raise PrebindContractError("activation request fields are invalid")
+    value = dict(raw)
+    if (value.get("schema_version") != ACTIVATE_REQUEST_SCHEMA
+            or not isinstance(value.get("activation_id"), str)
+            or _HEX32.fullmatch(value["activation_id"]) is None
+            or value.get("prepared_receipt_sha256") != prepared_receipt.get("receipt_sha256")):
+        raise PrebindContractError("activation request identity is invalid")
+    instance = value.get("instance")
+    birth = value.get("birth_mode")
+    install = value.get("install_record")
+    try:
+        from packages.contracts.acp_product_instance import validate_instance
+        from packages.contracts.acp_product_instance import ProductInstanceContractError
+        validate_instance(instance, key=product_key)
+        validate_birth_mode(birth, key=product_key, instance=instance)
+        validate_install_record(install, key=product_key, instance=instance, birth_mode=birth)
+    except (ProductInstanceContractError, PrebindContractError, TypeError, KeyError) as exc:
+        raise PrebindContractError("activation runner signatures are invalid") from exc
+    if (birth.get("require_prebind") is not True
+            or instance.get("workspace_id") != prepared_receipt.get("workspace_id")
+            or install.get("prepared_receipt_sha256") != prepared_receipt.get("receipt_sha256")
+            or install.get("prepared_receipt") != dict(prepared_receipt)):
+        raise PrebindContractError("activation is not bound to the prepared runner")
+    native = value.get("native_facts")
+    if not isinstance(native, Mapping) or set(native) != NATIVE_FACT_FIELDS:
+        raise PrebindContractError("activation native fact fields are invalid")
+    runner_readback = native.get("runner_readback")
+    if (not isinstance(runner_readback, Mapping)
+            or set(runner_readback) != RUNNER_READBACK_FIELDS
+            or runner_readback.get("instance") != dict(instance)
+            or runner_readback.get("birth_mode") != dict(birth)
+            or runner_readback.get("install_record") != dict(install)
+            or runner_readback.get("started_marker_absent") is not True):
+        raise PrebindContractError("current runner readback differs from installation candidate")
+    if (native.get("deployment") != prepared_receipt.get("deployment")
+            or native.get("state_volume") != prepared_receipt.get("state_volume")):
+        raise PrebindContractError("activation native facts differ from prepared intent")
+    mount = native.get("state_mount")
+    if not isinstance(mount, Mapping) or set(mount) != STATE_MOUNT_FIELDS:
+        raise PrebindContractError("activation state mount fields are invalid")
+    volume = prepared_receipt["state_volume"]
+    _bounded_text(mount.get("mode"), "state_mount.mode", 128)
+    if (mount.get("type") != "volume" or mount.get("name") != volume.get("name")
+            or mount.get("source") != volume.get("source")
+            or mount.get("destination") != volume.get("mount_destination")
+            or mount.get("driver") != volume.get("driver")
+            or mount.get("rw") is not True
+            or not isinstance(mount.get("propagation"), str)):
+        raise PrebindContractError("activation state mount is not the authoritative private volume")
+    state = native.get("container_state")
+    if (not isinstance(state, Mapping) or set(state) != CONTAINER_STATE_FIELDS
+            or state.get("running") is not True or state.get("paused") is not False
+            or state.get("restarting") is not False or isinstance(state.get("pid"), bool)
+            or not isinstance(state.get("pid"), int) or state["pid"] <= 0
+            or state.get("pid_mode") not in {"", "private"}
+            or not isinstance(state.get("pid1_entrypoint"), list)
+            or tuple(state["pid1_entrypoint"]) not in _PREBIND_RUNNER_ENTRYPOINTS):
+        raise PrebindContractError("activation container process facts are invalid")
+
+    observation = value.get("engineering_observation")
+    if not isinstance(observation, Mapping) or set(observation) != ENGINEERING_OBSERVATION_FIELDS:
+        raise PrebindContractError("Engineering observation fields are invalid")
+    collected_at = _bounded_text(observation.get("collected_at"), "collected_at", 64)
+    from datetime import datetime
+    try:
+        parsed_collection_time = datetime.fromisoformat(collected_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise PrebindContractError("Engineering collection time is invalid") from exc
+    if parsed_collection_time.tzinfo is None or parsed_collection_time.utcoffset().total_seconds() != 0:
+        raise PrebindContractError("Engineering collection time must be UTC")
+    if observation.get("runner_readback_sha256") != digest(runner_readback):
+        raise PrebindContractError("canonical runner readback fact digest differs")
+    commands = observation.get("commands")
+    if not isinstance(commands, list) or len(commands) != 4:
+        raise PrebindContractError("Engineering native command evidence is incomplete")
+    indexed: dict[str, Mapping[str, Any]] = {}
+    for command in commands:
+        if not isinstance(command, Mapping) or set(command) != ENGINEERING_COMMAND_FIELDS:
+            raise PrebindContractError("Engineering native command fields are invalid")
+        kind = command.get("kind")
+        if (kind not in {"daemon", "container", "volume", "runner-readback"}
+                or kind in indexed or type(command.get("exit_code")) is not int
+                or command.get("exit_code") != 0):
+            raise PrebindContractError("Engineering native command evidence is invalid")
+        argv = command.get("argv")
+        if (not isinstance(argv, list) or not argv or len(argv) > 32
+                or any(not isinstance(part, str) or not part or "\x00" in part
+                       or len(part.encode("utf-8")) > 4096 for part in argv)):
+            raise PrebindContractError("Engineering native argv evidence is invalid")
+        for field in ("stdout_sha256", "stderr_sha256"):
+            if not isinstance(command.get(field), str) or _HEX64.fullmatch(command[field]) is None:
+                raise PrebindContractError("Engineering native output digest is invalid")
+        indexed[kind] = command
+    cid = prepared_receipt["deployment"]["container_id"]
+    volume_name = prepared_receipt["state_volume"]["name"]
+    readback_argv = indexed["runner-readback"]["argv"]
+    daemon_argv = indexed["daemon"]["argv"]
+    container_argv = indexed["container"]["argv"]
+    volume_argv = indexed["volume"]["argv"]
+    try:
+        inspect_at = container_argv.index("inspect")
+        volume_inspect_at = volume_argv.index("inspect")
+        exec_at = readback_argv.index("exec")
+    except ValueError:
+        raise PrebindContractError("Engineering Docker argv does not target the prepared deployment") from None
+    if (daemon_argv[0] != "docker" or "info" not in daemon_argv[1:]
+            or container_argv[0] != "docker" or cid not in container_argv[inspect_at + 1:]
+            or volume_argv[0] != "docker" or "volume" not in volume_argv[1:]
+            or volume_name not in volume_argv[volume_inspect_at + 1:]
+            or readback_argv[0] != "docker" or cid not in readback_argv[exec_at + 1:]):
+        raise PrebindContractError("Engineering Docker argv does not target the prepared deployment")
+    return value
 
 
 def _sign_record(raw: object, *, key: bytes, fields: frozenset[str], schema: str,
@@ -155,6 +302,8 @@ def validate_prepare_request(raw: object) -> dict[str, Any]:
     for field in ("daemon_id", "deployment_id", "service", "container_id",
                   "started_at", "pid_namespace_id"):
         _bounded_text(deployment.get(field), field)
+    if _HEX64.fullmatch(deployment["container_id"]) is None:
+        raise PrebindContractError("native container identity must be a full Docker ID")
     image_digest = deployment.get("image_digest")
     if not isinstance(image_digest, str) or _DIGEST.fullmatch(image_digest) is None:
         raise PrebindContractError("native image identity is invalid")
