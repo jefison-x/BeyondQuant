@@ -229,3 +229,13 @@ Backend独审v1三项P2（generation精确连接、直接reset guard、same stat
 四个文件补齐私有successor命令、准确old-scope/new-instance签名tombstone和socket/ready/START前屏障。PID1等待时持原state卷lifetime锁、不占admission锁；原false/null字段、历史原件和consumed scope不变。installer核旧、新signed install/activation及started/ownership链，PID1独立读回并正向fsync；不依赖最终Backend proof/ACK，不把Product MAC或UID当Engineering原生死亡证明。最终Backend仍独立核实际registeredRoot/AgentRun及业务unknown。无新服务、路由、表、依赖、harness或验证工具。
 
 Worker语法与diff-check exit0，独立Sol完整源码审查PASS（`SOL-R2-RUNNER-SOURCE-REVIEW-v1.json` SHA256 `53c4a590c8b52aad1abae21df9a0c691e94465e5345fa9da81b6df95e5489788`），Root限定SOURCE PASS。准确四文件冻结在`runner-foundation-v1/R2-RUNNER-FROZEN-v1/`。没有构建或更新环境，没有功能/native/START/故障/浏览器恢复测试；原v3绑定FAIL保持，不能将源码PASS作资格PASS。下一最小门仅是原8e/5401+ab83保留fixture的新birth prebind闭合，另行独立准入，不需先更新服务。环境与三个页面保持，不推进Product Phase。
+
+## v4 再次出现 Root 临时成功断言，停止绑定测试（2026-10-17）
+
+R2 Runner 功能源已在隔离分支提交 `993392f4`，SOURCE限定PASS不变。独立Sol另行附条件准入仅用旧已准入8e/5401+ab83和同fixture的新birth prebind闭合（32native/600秒，无镜像/服务更新）。实际库存/停机profile/三卷/两个Backend健康门通过，启动后签名读回native exit0，返回`PASS_READBACK_ONLY`、install=false、activation=false；Root却在临时执行文本再加`status == PASS`断言，宿主退出1。根因是Root没有遵守“取消整层消费入口外重复validator”的既定整改；不能把它当Product故障，不能只改字符串后再次测试。
+
+立即停止后续验证，仅一次停止准确fixture，inspect证明exited/PID0，原17全九字段canonical映射保持。11条native全exit0/stderr0，首条开始至最后结束84.503705秒；没有新prepare/install/activate写入、START、模型、Job或A故障。实际原件`runner-foundation-v1/R1B-PREBIND-DIRECT-NATIVE-v4-retained/ACTUAL-STOP-RESULT.json` SHA256 `c46dd9180e30860d6d09f9a58b0d0fc2a97e67a668b56f0fb284a49750512b7a`，原v3部分写入、失败及所有旧原件保持。
+
+整体整改记录`CAUSE-AND-MINIMAL-REDESIGN.md`：Root仅协调/验收；必要Luna fallback Tester依准确既有原生命令执行，独立Sol须审实际命令文本，而非仅设计计划；消费者原生exit和原始结构化输出不再加Root自定义成功schema、别名或receipt判据。保留已有库存语义比较器，不新增采集/调度/验证框架。本批不修字符串重试，身份绑定为FAIL/未完成，Runtime START/ACK、活动故障与浏览器恢复NOT_RUN。测试环境、账号、数据库、卷、镜像和三个页面保留；Product Phase未推进。
+
+独立Sol实际STOP审查SHA256 `a8d7d37475d168c18599ea4b118e4614b70d3763356edca62636cae6adc6a74c`及补充`b567d1593e95721e961066473c1b4aaaa715ea357ef6a71208861d05151a27ec`已确认上述原始事实与整改，Root接受STOP，不授予新测试GO。
