@@ -215,3 +215,11 @@ Root取消整套执行元JSON生成器、位置参数helper和短标签搜索，
 收尾一次准确stop及PID0 inspect通过。保留库存命令初次因Root把IDs嵌为list而在argv编码前报错，0native；随后只完成原已准入的准确17只读采集，没有第二次stop。共23native全部exit0/stderr0、全批setup至最后native307.317392秒，原17字段相同，三个卷/env保留。Backend两条原生receipt是局部证据，未用它们冒充最终安装/资格。原始文件在 `runner-foundation-v1/R1B-PREBIND-DIRECT-NATIVE-v3-retained/`；实际STOP SHA256 `bfe1be3334dc97270a4313db15b68e6b6a6e13b9140fae102a3eb7fb5e60933f`，Sol实际独审 `43c2285ae806225b8fd4052820a49e9fc3d5d931a71ef672de16cab6d9e35d50`。
 
 整改收敛为取消整类Root在既有消费CLI/读回入口前的重复手写校验，采集只保存原生命令事实；不继续修补临时wrapper后试跑。本批live门关闭，继续实际R2源码闭环和独审。无生产/更新服务/账号重置/删除；环境与三个页面保持。
+
+## R2 Backend / Runtime / Gateway 功能源限定源码通过（2026-10-17）
+
+源码提交 `f7ee8dc201dfaf598dfe36dcc5634fe2df80dfad`，只在隔离维护分支。实现 protected proof/ACK namespace、真实Root与active AgentRun原子中断/完整前后像、保留已终态child、未知业务阻断、direct/phased reset保护；现有私有CLI只接真实Runtime响应；Runtime既有terminal-receipt仅operator分支增加现有control-plane Bearer校验，持久operator ACK/drain后释放准确lease，保留旧普通failed回执并精确supersede；Gateway只消费精确proof/ACK摘要，原始事件不改名，公开会话恢复后只建fresh root。未新增服务、HTTP/MCP入口、表、通用harness或验证工具。
+
+Backend独审v1三项P2（generation精确连接、直接reset guard、same state-generation）已一次修正，v2源码PASS，SHA256 `b69a2cc94189cca658c20250c67318e6d4a76c10aa2c59842e7aaa0414104633`。Runtime v1四项P2、v2一项序号残余HOLD均保留；v3定向源码PASS `4661404a35e2097b7aab234cac9142f5f2c6cb344d69fdbacc362e0ac0ec06b5`，旧V2原字节/hash不变，独立final cursor允许合法迟到domain ACK顺序，retry正向fsync文件和目录并重核authority，仅真实failed可supersede。Gateway源码PASS `434843248a3560523b149b209cf23b14efbfefeb4ff89e247cc1d1994c400ff1`。Worker对各自文件py_compile/diff-check均exit0；Gateway既有pytest首次路径收集FAIL，换cwd后FastAPI缺失，功能测试NOT_RUN，未安装依赖。
+
+最终10文件SHA与原始冻结版本保存在 `runner-foundation-v1/R2-BACKEND-RUNTIME-GATEWAY-FROZEN-v1/` 及Runtime v2/v3冻结目录。Root限定源码PASS收据 `ROOT-R2-BACKEND-RUNTIME-GATEWAY-SOURCE-PASS.json` SHA256 `f857a9e3b20ddd9fbb943aa316cfd9f4ea098c8e49c7c5907f24e6f86f72dadc`。这不授予镜像、环境更新、START、故障或浏览器恢复准入。准确fixture绑定仍为FAIL/最终activate未完成；另已实核Runner缺少successor在ready前写exact old-scope tombstone及自身attestation的生产者，下一源码片仅补该缺口。0 Product真实模型/Job/故障/生产操作；Engineering成本UNKNOWN。环境与三个页面继续保留，不推进Product Phase。
