@@ -61,6 +61,14 @@ D 后续缺席判据补充：全链路核对发现 installer 的 `lexists` 会�
 
 两源 hash、实际语法/diff、独立 Sol→Root 仅源码 PASS。DB/HTTP/qualified START/浏览器实际均 NOT_RUN。Runtime 四文件仍在接入，环境、页面和原失败全部保留。
 
+## R1b-f：Runtime 事前绑定与准确退休源码（2026-10-17）
+
+源码 `8e80c0ce` 仅修改既有 Runtime 四文件：从确认的 producer 权限读取签名 descriptor，在 socket connect/START 前独立核对 Backend v2 admission 并持久化完整 scope/active 引用。新 Root base 在同锁内 CAS 准确前驱，使用明确的新 generation/cwd 和未执行事实；旧终态字节与内存快照单独保留。正向未启动或已认证 prelaunch 拒绝必须先完成代理关闭、guard 退休、准确 binding 恢复/删除及文件/父目录 fsync，再通过 typed receipt 释放 lease；未知写入、权限、authority、CAS 或退休失败继续保留 fence。没有新增服务、表、HTTP/MCP 或通用 harness。
+
+已闭合 qualified v2 在跨 Adapter boot 补保存 settlement 时，准确 CAS 只补回执，保留原执行 scope/boot/epoch，后续普通持久化也不混写新身份；未结算 v2 恢复仍 HOLD，不能称恢复原子 Agent。legacy 分支原调用保持。初审三项 P2 与 V2 的一项新 Root 旧终态污染均有原件，修正后 V3 独立 Sol→Root 仅源码 PASS，Root 实际语法/diff exit0、四源 hash 与冻结快照一致。原编译及两次源码 FAIL 不覆盖。
+
+私有原件：`R1B-F-RUNTIME-IMPLEMENTATION-v1/`、`-v2/`、`-v3/`、`SOL-R1B-F-SOURCE-REVIEW[-V2|-V3].json`、`R1B-F-ROOT-V3-SYNTAX-NATIVE.json`、`ROOT-R1B-F-SOURCE-PASS.json`，均在既有 runner-foundation-v1 目录。原失败原生批次仍停止；新的无模型原生命令/观察合同待准入。实际 DB/HTTP、qualified START、活动故障、浏览器恢复、生产及推送合并均 NOT_RUN。原17容器、三页和草稿未变。
+
 以下保留接受之前的设计审计与当时状态，不覆盖本节接受记录。
 
 前一项双用户普通对话及持久请求区间已限定 PASS。此片只审计与修订 Proposed ADR，没有新增模型、Job、容器操作或故障注入，不推进 Product Phase。

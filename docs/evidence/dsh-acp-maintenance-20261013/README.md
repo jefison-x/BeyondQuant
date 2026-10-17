@@ -4,7 +4,7 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
-**当前未准入 live：** Runner 缺席判据补丁 `462ba0a1` 已经独立 Sol→Root 源码通过（只把 ENOENT 当不存在）。Runtime F 四文件初审有三项 P2：producer 身份误配、完整退休前释放 lease、settled v2 跨 boot 身份混写；正集中修正，尚未通过源码门。原始编译与源码 FAIL 保留，未开始模型、原生、浏览器故障验证，环境和三页保留。
+**Runtime F 源码限定 PASS，live 尚未准入：** `8e80c0ce` 接通准确实例读取、Backend 资格核验及 START 前持久绑定，确认未启动时完成全部退休后才释放 lease，跨 boot 补结算保留旧 scope/身份。初审三项 P2 及复审发现的新 Root 携带旧终态问题均已修正，Sol V3→Root 仅源码通过；语法/diff 通过，原 FAIL 全部保留。原生资格、实际 START、活动故障和浏览器恢复均 NOT_RUN，环境和三页保留。见[Runtime 接入](20261017-process-loss-admission.md#r1b-f-runtime-事前绑定与准确退休源码2026-10-17)。
 
 **R1b-e Backend 只读 admission 源码限定 PASS：** `b00d8fc0` 在既有 authenticated 路由独立核验唯一 active 锚点及当前 authority/完整 scope；不带资格字段时保留 v1。Sol→Root 仅源码通过，Runtime 接入尚未完成，实际 DB/HTTP/START/故障浏览器仍 NOT_RUN。见[只读 admission](20261017-process-loss-admission.md#r1b-e现有-backend-admission-的只读资格分支2026-10-17)。
 

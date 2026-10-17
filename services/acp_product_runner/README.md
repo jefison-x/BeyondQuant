@@ -18,9 +18,10 @@ The runner exclusively locks its private state volume for its lifetime and
 persists signed runner-instance and per-START scope records before launching a
 DSH process. These local records retain which instance accepted a scope; they
 do not prove that any earlier container or PID namespace stopped. The records
-explicitly carry `operator_qualified: false` and empty deployment/Backend
-binding references until the separate Engineering prebind seam is implemented
-and reviewed. Existing legacy `.used` tombstones are never upgraded into
+explicitly retain `operator_qualified: false` and empty deployment/Backend
+binding references. The separate immutable Engineering prebind chain described
+below supplies qualification without rewriting those original records.
+Existing legacy `.used` tombstones are never upgraded into
 scope-ownership records. The lifetime lock is local exclusion only: it does
 not detect state-volume clones or rollback and must not release a Backend
 fence.
@@ -38,7 +39,7 @@ Before the first scope tombstone/ownership write, START durably creates a
 Product-MACed per-instance `started` marker under the admission lock. Later
 normal roots validate and reuse that same marker. Its meaning is only that the
 instance may have accepted execution; it is not evidence of process death,
-cleanup, or absence of business effects. A future Engineering prebind must
+cleanup, or absence of business effects. Engineering prebind must
 refuse any instance with this marker. The retained marker is
 `instances/<runner_instance_id>.started.json` in the private state volume.
 
