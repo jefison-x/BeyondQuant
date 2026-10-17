@@ -49,6 +49,22 @@ At startup the container requires:
 - `BYQ_ACP_PRODUCT_WORKSPACE_ID`: the one workspace configured for this slot.
 - `BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET`: independent URL-safe base64 secret,
   at least 32 decoded bytes.
+- Optional `BYQ_ACP_PRODUCT_REQUIRE_PREBIND=1` opts a newly born runner into
+  prebind-required mode. The runner writes a separate signed birth-mode record;
+  it does not rewrite or qualify the original immutable instance record.
+  Unset/`0` keeps the existing baseline. A previously started or legacy runner
+  cannot be upgraded by a later environment change.
+
+For an opted-in instance, Engineering may invoke the private container-exec
+entry point `python3 /opt/byq/acp_product_runner/install_prebind.py install
+<prepared-receipt-path>` with a root-owned mode-0600 prepared receipt. It
+serializes with START admission, verifies the current signed instance and
+birth-mode records, refuses any instance with a started marker, then writes an
+immutable signed `installed_nonactive` readback. That record explicitly does
+not authorize START. The Backend active-receipt producer and activation
+delivery are not implemented in this slice; opted-in START therefore returns
+a signed prelaunch rejection even when a prepared candidate was installed.
+No Product API, MCP, or adapter operation can run the installer.
 
 The daemon derives its session root as
 `/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/<workspace_id>`. The session

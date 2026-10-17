@@ -182,8 +182,10 @@ COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
 # product runner's shared-helper import and sys.path[0] resolution are unchanged.
 COPY services/acp_judgment_runner/server.py /opt/byq/acp_judgment_runner/server.py
 COPY services/acp_product_runner/server.py /opt/byq/acp_product_runner/server.py
+COPY services/acp_product_runner/install_prebind.py /opt/byq/acp_product_runner/install_prebind.py
 COPY packages/contracts/acp_product_slot.py /opt/byq/acp_product_runner/packages/contracts/acp_product_slot.py
 COPY packages/contracts/acp_product_instance.py /opt/byq/acp_product_runner/packages/contracts/acp_product_instance.py
+COPY packages/contracts/acp_product_prebind.py /opt/byq/acp_product_runner/packages/contracts/acp_product_prebind.py
 COPY packages/contracts/product_turn_request.py /opt/byq/acp_product_runner/packages/contracts/product_turn_request.py
 COPY packages/contracts/agent_execution_options.py /opt/byq/acp_product_runner/packages/contracts/agent_execution_options.py
 COPY packages/contracts/continuation_request.py /opt/byq/acp_product_runner/packages/contracts/continuation_request.py

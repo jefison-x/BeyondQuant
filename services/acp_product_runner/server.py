@@ -40,6 +40,13 @@ from packages.contracts.acp_product_instance import (
     sign_scope_binding,
     validate_instance_started,
 )
+from packages.contracts.acp_product_prebind import (
+    BIRTH_SCHEMA,
+    digest as prebind_digest,
+    sign_birth_mode,
+    validate_start_binding_shape,
+    PrebindContractError,
+)
 from packages.contracts.product_turn_request import (
     PRODUCT_TURN_LIMITS,
     product_turn_execution_output_cap,
@@ -87,6 +94,8 @@ _START_KEYS = frozenset({
     "v", "challenge", "nonce", "scope", "env", "deadline_at_ms", "mac",
 })
 _START_OPTIONAL_KEYS = frozenset({"guard_b64"})
+_START_PREBIND_KEY = "operator_binding"
+PRODUCT_REQUIRE_PREBIND_ENV = "BYQ_ACP_PRODUCT_REQUIRE_PREBIND"
 MAX_GUARD_BYTES = 16_384
 _GUARD_SCHEMA_NAME = "file:///opt/byq/runtime/byq-continuation-budget.js"
 _GUARD_RESERVATION = re.compile(r"continuation_[0-9a-f]{32}\Z")
@@ -589,12 +598,16 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         prepare_roots: bool = True,
         ready_file: Path = CONTROL_READY,
         instance_descriptor: Path | None = None,
+        require_prebind: bool = False,
     ) -> None:
         if not isinstance(secret, bytes) or len(secret) < 32:
             raise ValueError("Product runner control secret is invalid")
         if not isinstance(workspace_id, str) or _WORKSPACE_ID.fullmatch(workspace_id) is None:
             raise ValueError("Product runner workspace identity is invalid")
         self.secret = secret
+        if type(require_prebind) is not bool:
+            raise ValueError("Product runner prebind mode is invalid")
+        self.require_prebind = require_prebind
         # One opaque identity per runner process for the signed cleanup receipt.
         self.instance_id = os.urandom(32).hex()
         self.workspace_id = workspace_id
@@ -634,6 +647,7 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         self._acquire_state_locks()
         try:
             self._persist_instance_record()
+            self._persist_birth_mode_record()
             if self.launcher is None:
                 self.launcher = _helpers._make_launcher(self.runtime_root, self.profile_patch)
             self._remove_stale_file(self.ready_file, socket_file=False,
@@ -755,6 +769,59 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.json", record,
         )
         self._instance_record = record
+
+    def _persist_birth_mode_record(self) -> None:
+        if self._instance_record is None:
+            raise OSError("Product runner instance record is unavailable")
+        record = sign_birth_mode({
+            "schema_version": BIRTH_SCHEMA,
+            "workspace_id": self.workspace_id,
+            "runner_instance_id": self.instance_id,
+            "runner_boot_id": self._instance_record["runner_boot_id"],
+            "state_generation": self._instance_record["state_generation"],
+            "instance_sha256": prebind_digest(self._instance_record),
+            "require_prebind": self.require_prebind,
+        }, key=self.secret)
+        self._persist_immutable_record(
+            self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.birth-mode.json",
+            record,
+        )
+
+    def _read_local_install_record(self, path: Path) -> dict[str, Any]:
+        """Read only this instance's authenticated nonactive install record."""
+        if path != (self.state_dir / _INSTANCE_DIRECTORY
+                    / f"{self.instance_id}.prebind-install.json"):
+            raise OSError("Product runner install path is invalid")
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != self.runner_uid or before.st_gid != self.state_gid
+                or stat.S_IMODE(before.st_mode) != 0o600 or before.st_size > 65536):
+            raise OSError("Product runner install record permissions are invalid")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(fd)
+            if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                    or opened.st_size > 65536):
+                raise OSError("Product runner install record changed")
+            raw = bytearray()
+            while len(raw) <= 65536:
+                chunk = os.read(fd, min(8192, 65537 - len(raw)))
+                if not chunk:
+                    break
+                raw.extend(chunk)
+            if len(raw) > 65536:
+                raise OSError("Product runner install record exceeds its bound")
+        finally:
+            os.close(fd)
+        value = json.loads(bytes(raw).decode("utf-8"), object_pairs_hook=_strict_object,
+                           parse_constant=_reject_constant)
+        from packages.contracts.acp_product_prebind import validate_install_record
+        birth_path = self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.birth-mode.json"
+        birth_raw = birth_path.read_bytes()
+        birth = json.loads(birth_raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                           parse_constant=_reject_constant)
+        return validate_install_record(value, key=self.secret,
+                                       instance=self._instance_record or {}, birth_mode=birth)
 
     def _publish_instance_descriptor(self) -> None:
         if self._instance_record is None:
@@ -1196,7 +1263,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             challenge_reply["mac"] = _reply_mac(challenge_reply, self.server.secret)
             _helpers._send_json(connection, CHALLENGE, challenge_reply)
             value = _helpers._read_json_frame(connection, START)
-            scope, raw_env, deadline, nonce, guard = self._validate_start(
+            scope, raw_env, deadline, nonce, guard, operator_binding = self._validate_start(
                 value, challenge, self.server.secret,
             )
         except (OSError, ProductSlotError, _helpers.ProtocolError,
@@ -1205,6 +1272,29 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
 
         if scope["workspace_id"] != self.server.workspace_id:
             self._reject(connection, "workspace_mismatch", challenge, nonce,
+                         product_scope_digest(scope))
+            return
+        if self.server.require_prebind:
+            install_path = (self.server.state_dir / _INSTANCE_DIRECTORY
+                            / f"{self.server.instance_id}.prebind-install.json")
+            # This runner slice can install only a prepared, non-authorizing
+            # candidate. Backend has no active-receipt producer yet, so no
+            # local state can authorize a qualified START.
+            try:
+                validate_start_binding_shape(
+                    operator_binding,
+                    instance=self.server._instance_record or {},
+                    install_record=self.server._read_local_install_record(install_path),
+                )
+            except (OSError, PrebindContractError, TypeError, KeyError):
+                self._reject(connection, "operator_binding_invalid", challenge, nonce,
+                             product_scope_digest(scope))
+                return
+            self._reject(connection, "prebind_activation_unavailable", challenge, nonce,
+                         product_scope_digest(scope))
+            return
+        if operator_binding is not None:
+            self._reject(connection, "prebind_not_enabled", challenge, nonce,
                          product_scope_digest(scope))
             return
         try:
@@ -1322,8 +1412,11 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
 
     @staticmethod
     def _validate_start(value: dict[str, Any], challenge: str, secret: bytes) -> tuple[
-            dict[str, str], object, float | None, str, dict | None]:
-        if set(value) not in {_START_KEYS, _START_KEYS | _START_OPTIONAL_KEYS} \
+            dict[str, str], object, float | None, str, dict | None, object]:
+        optional = _START_OPTIONAL_KEYS | frozenset({_START_PREBIND_KEY})
+        if set(value) not in {_START_KEYS, _START_KEYS | _START_OPTIONAL_KEYS,
+                              _START_KEYS | {_START_PREBIND_KEY},
+                              _START_KEYS | optional} \
                 or type(value.get("v")) is not int \
                 or value["v"] != PROTOCOL_VERSION:
             raise ProductSlotError("START fields are invalid")
@@ -1407,7 +1500,8 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             # Archived/F6 profiles keep their existing finite runner boundary.
             deadline = time.monotonic() + min(
                 remaining_ms, LEGACY_MAX_RUN_SECONDS * 1000) / 1000.0
-        return (scope, value.get("env"), deadline, nonce, guard)
+        return (scope, value.get("env"), deadline, nonce, guard,
+                value.get(_START_PREBIND_KEY))
 
     def _reject(self, connection: socket.socket, code: str, challenge: str,
                 nonce: str, digest: str) -> None:
@@ -1494,8 +1588,12 @@ def main() -> int:
     if not _helpers._prctl_child_subreaper(enabled=True) or not _helpers._prctl_child_subreaper():
         raise RuntimeError("Product ACP runner could not enable child subreaper")
     workspace_id = os.environ.get(PRODUCT_WORKSPACE_ENV, "")
+    require_prebind_raw = os.environ.get(PRODUCT_REQUIRE_PREBIND_ENV, "0")
+    if require_prebind_raw not in {"0", "1"}:
+        raise RuntimeError("Product runner prebind mode is invalid")
     secret = _load_secret()
-    server = ProductSlotServer(secret=secret, workspace_id=workspace_id)
+    server = ProductSlotServer(secret=secret, workspace_id=workspace_id,
+                               require_prebind=require_prebind_raw == "1")
     exit_code = 0
     try:
         server.serve_forever(poll_interval=0.2)
