@@ -15,6 +15,8 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from packages.contracts.acp_product_prebind import PREPARE_IDEMPOTENCY_PREFIX, PREPARE_ACTION
+
 from .db import PgStoreMixin, execute, fetch_one
 
 
@@ -189,6 +191,26 @@ class OperationsStore(PgStoreMixin):
                        FROM operations_audit
                        ORDER BY created_at DESC, audit_id DESC LIMIT 30""",
                 )
+                # The reserved prebind row stores exact native deployment and
+                # volume identity for later Engineering readback. Keep that
+                # private detail out of the admin overview projection.
+                operations_audit = [
+                    ({
+                        "audit_id": row.get("audit_id"),
+                        "action": row.get("action"),
+                        "outcome": row.get("outcome"),
+                        "resource_type": row.get("resource_type"),
+                        "created_at": row.get("created_at"),
+                        "detail_json": {
+                            key: row["detail_json"]["prepared"].get(key)
+                            for key in ("schema_version", "status", "authorizes_start",
+                                        "receipt_sha256")
+                        } if isinstance(row.get("detail_json"), dict)
+                             and isinstance(row["detail_json"].get("prepared"), dict)
+                        else {},
+                    } if row.get("action") == PREPARE_ACTION else row)
+                    for row in operations_audit
+                ]
                 stock_pool_producers = execute(
                     connection,
                     """SELECT producer_kind,status,COUNT(*)::bigint AS count
@@ -300,6 +322,8 @@ class OperationsStore(PgStoreMixin):
         key = self._text(payload.get("idempotency_key"), "idempotency_key", 128)
         if not _IDEMPOTENCY.fullmatch(key):
             raise ValueError("idempotency_key has an invalid format")
+        if key.startswith(PREPARE_IDEMPOTENCY_PREFIX):
+            raise OperationsForbidden("idempotency namespace is reserved")
         canonical = {
             "enabled": enabled,
             "alert_total_tokens": total_tokens,
