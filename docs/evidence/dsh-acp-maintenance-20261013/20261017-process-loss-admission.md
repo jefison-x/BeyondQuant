@@ -53,6 +53,8 @@
 
 针对重复出现的持久化边界已统一核对八类原件。两项 P2 一次修正：复用既有 state-generation 前确认同 inode 文件及 state 父目录 fsync；认证 activation 后在 marker 前确认其同 inode/原字节及 instances 父目录 fsync。原 marker 的目录 fsync 原本会在 dispatch 前覆盖 activation，因此不能宣称已发生不持久启动；其他 instance/birth/descriptor/install/marker/used/ownership 的既有覆盖或拒绝路径均留有审查说明。原 FAIL/第一版保留，Sol V2→Root 仅源码 PASS；语法/diff 通过，无测试、模型、Job、镜像构建或环境变更。
 
+D 后续缺席判据补充：全链路核对发现 installer 的 `lexists` 会把非 ENOENT 查询错误当作缺席；其中两处直接影响 started-marker 门，另两处已有 O_EXCL 兜底。源码 `462ba0a1` 将四处统一为精确 lstat，仅 ENOENT 为缺席，其他错误拒绝；旧 PASS 与新增 HOLD 均保留，定向 Sol V2→Root 源码通过。无功能/原生测试，未声称出现过不安全执行。Runtime F 的三项独审 P2 仍在集中修正，全部 live 门保持关闭。
+
 ## R1b-e：现有 Backend admission 的只读资格分支（2026-10-17）
 
 源码 `b00d8fc0` 扩展既有 authenticated agent-admission，不带资格参数的 v1 行为原样保留；v2 严格要求两类 JSON、四个唯一 query、准确 header 与八项 scope。锁内核对当前 authority/epoch/boot receipt、owner/Workspace、准确 Root（首次 prospective 可无记录）和其他未闭合 Root；从唯一受保护 prepare/install/active 链派生 closed START binding，不采信请求自报 native 状态，不读 Product key/Docker、不签发 activation。缺失、重复或冲突均拒绝，不选 latest。

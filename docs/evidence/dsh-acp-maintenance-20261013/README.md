@@ -4,6 +4,8 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**当前未准入 live：** Runner 缺席判据补丁 `462ba0a1` 已经独立 Sol→Root 源码通过（只把 ENOENT 当不存在）。Runtime F 四文件初审有三项 P2：producer 身份误配、完整退休前释放 lease、settled v2 跨 boot 身份混写；正集中修正，尚未通过源码门。原始编译与源码 FAIL 保留，未开始模型、原生、浏览器故障验证，环境和三页保留。
+
 **R1b-e Backend 只读 admission 源码限定 PASS：** `b00d8fc0` 在既有 authenticated 路由独立核验唯一 active 锚点及当前 authority/完整 scope；不带资格字段时保留 v1。Sol→Root 仅源码通过，Runtime 接入尚未完成，实际 DB/HTTP/START/故障浏览器仍 NOT_RUN。见[只读 admission](20261017-process-loss-admission.md#r1b-e现有-backend-admission-的只读资格分支2026-10-17)。
 
 **R1b-d Runner 交付源码限定 PASS：** `25229f95` 私有激活交付与 START 锁内核验接通；八类持久记录审查后，修正 state-generation 复用和 activation 的事前 fsync 边界。原 FAIL 保留，未执行测试或更新环境。Backend admission 与 Runtime v2 接入仍在实施，浏览器活动故障 NOT_RUN。见[Runner交付记录](20261017-process-loss-admission.md#r1b-drunner-交付与-start-校验源码2026-10-17)。
