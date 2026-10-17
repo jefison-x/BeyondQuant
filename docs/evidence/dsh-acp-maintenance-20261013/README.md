@@ -4,6 +4,10 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**Fresh 原生批 FAIL，已停止实际测试：** 一次无业务批次创建2检查容器/3新建专用卷，7.876秒/19条native均exit0。观察代码把Docker输出的`CAP_CHOWN`等规范名与CLI裸名比较而误判；已准确停止并保留两个检查容器（exited/PID0），原17容器及全部挂载保持，0DB/API/模型/Job/START/浏览器输入。Backend镜像6文件实际读回通过；ACP文件、ready、签名实例/锁、prebind、活动故障与浏览器恢复尚未执行。原FAIL保留；整组观察合同已完成源码/保存数据离线修正及独审→Root限定PASS，入口固定拒绝native，不准入重跑。见[本批失败及边界](20261017-process-loss-admission.md#r1b-fresh-原生验证权限名观察合同失败2026-10-17)。
+
+以下同日记录保留当时状态；上述原生 FAIL 与最新收据优先，先前“image内文件均未运行”现须区分Backend部分已采集与ACP未运行。
+
 **镜像元数据与环境保留限定 PASS：** 没有重建镜像；修正可选字段及无换行 IID 文件边界后，固定两条只读收尾在23.298秒内完成，独立 Sol→Root 通过。ACP `5401edd1…` 增加114591字节、50→51层；Backend `ab83d14b…` 增加110380字节、42→43层，准确继承 base 层与启动配置，原17容器及完整挂载不变。两个原采集批 FAIL 保留；实际 image 文件/权限、prebind、START及活动故障/浏览器恢复仍 NOT_RUN，未更新环境。见[镜像检查与构建记录](20261017-process-loss-admission.md#r1b-候选镜像构建及观察入口2026-10-17)。
 
 **Runtime F 源码限定 PASS，live 尚未准入：** `8e80c0ce` 接通准确实例读取、Backend 资格核验及 START 前持久绑定，确认未启动时完成全部退休后才释放 lease，跨 boot 补结算保留旧 scope/身份。初审三项 P2 及复审发现的新 Root 携带旧终态问题均已修正，Sol V3→Root 仅源码通过；语法/diff 通过，原 FAIL 全部保留。原生资格、实际 START、活动故障和浏览器恢复均 NOT_RUN，环境和三页保留。见[Runtime 接入](20261017-process-loss-admission.md#r1b-f-runtime-事前绑定与准确退休源码2026-10-17)。

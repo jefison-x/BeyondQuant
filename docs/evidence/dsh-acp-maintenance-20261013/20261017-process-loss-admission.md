@@ -81,6 +81,22 @@ D 后续缺席判据补充：全链路核对发现 installer 的 `lexists` 会�
 
 这项 PASS 不证明 image 内文件的实际字节/权限、runner 出生/锁/私有 prebind、qualified START、活动故障或浏览器恢复；这些仍 NOT_RUN。没有更新原测试服务、页面、账号或数据库，Product Phase 未推进。
 
+## R1b fresh 原生验证：权限名观察合同失败（2026-10-17）
+
+精确源码 `8e80c0ce`、文档 HEAD `f5ce82c5`，候选镜像沿用上一项已核对 IID，没有重建或更新现有服务。v2/v3 命令与观察入口的静态阻断均保留；独立 Sol 准入 v4 与 Root 准入后，仅执行一次固定无业务批次。计划 SHA256 `b4dd19dec65df478c88efcaa1165db10e3a8802e52dff5a76bcce7292b73b92c`，v4 SHA256 `34f5c91fca1821ca733a54da4b88ab4f2f59d6b0db9be60e97f68abade8e5ff4`。
+
+**原批 FAIL，实际测试已停止，不重跑或扩大。** 共 7.876 秒、19 条 native 命令，全部 exit0/stderr0；固定脚本退出2，失败点为 `runner-inspect`。Docker 将请求中的 `CHOWN/KILL/SETGID/SETUID` 在 inspect 中规范化为 `CAP_CHOWN/CAP_KILL/CAP_SETGID/CAP_SETUID`；Root 的观察代码按裸名集合比较，误报 security config mismatch。实际原始字段已先保存。这是工程观察合同缺陷；Root 和前次独审均漏判，不是已证明的 Product 权限缺陷。
+
+创建并保留两个无网络/只读检查容器和三个新建专用卷。两容器均通过准确 CID 停止及停后 inspect 确认 exited/PID0/not paused/not restarting；原17容器九字段及完整挂载与前清单、既有 PASS 基线一致。Backend 六个镜像文件实际 SHA/字节/uid0/gid0/0444 读回通过，但不提升原批为 PASS。ACP 文件读回、ready、PID namespace 内部读回、签名实例/出生/锁/noSTART 核验尚未执行；Backend prepare/activate、Runtime START/ACK、R2、活动 A 故障和浏览器恢复仍 NOT_RUN。0 DB/API/模型/Job/START/浏览器输入，无生产、推送、合并或 Product Phase 推进。
+
+本轮只用已保存原件全面审计字段合同：准确区分 CLI 请求表示与 Docker 输出表示、限定四项 capability 的已知别名、拒绝重复/额外权限/畸形类型、拒绝未知 PID mode、额外 security options、冲突 tmpfs 与不明确空值；挂载与卷读回准确绑定，不猜 `Mode` 或目录前缀。后续修正只允许 saved-only 观察判定和独立审查，不构成 native 重跑准入。Backend helper 的历史 stopped 投影缺少 tmpfs，保持 NOT_OBSERVED；runner stopped 已采集该字段且与 running 一致。现有测试环境和三个页面继续保留。
+
+原件位于上述 runner-foundation-v1：`R1B-FRESH-INSTANCE-QUALIFICATION-v1/native-run-fresh-20261017-v1/`、`ROOT-R1B-FRESH-NATIVE-FAIL-STOP.json`、`SOL-R1B-FRESH-INSTANCE-FAILURE-ANALYSIS.json`。独立失败分析 SHA256 `92c94a066b44ea4a067b7a45b6234f4185174c8896c47db95695c7e183f78a68`；19 条原生命令和全部 raw 原件不覆盖。
+
+保存原件上的观察合同随后完成源码/离线限定收口：已闭合有限 capability 等价与去重、准确阶段字段/类型、tmpfs token、卷读回绑定与挂载按 Destination 比较；停止投影不把 `RW=1/1.0` 当作布尔 true。v5/v6 的静态 HOLD 原件保留，v7 经独立 Sol→Root 仅 saved-contract PASS，source SHA256 `692d456cbd0ff853e0fadeec9dd18a86afeaa466c249d345afbe07c333c26785`，独审 SHA256 `a4bab4926c7d39d429577263238dc61ee766e7ed9f4f0f785d18baf77327dac9`。入口固定 `NOT_ADMITTED_SAVED_ONLY`；没有重新运行 Docker 或真实模型，没有新 native GO。原生资格 FAIL 与缺失项保持；私有收据 `ROOT-R1B-SAVED-CONTRACT-PASS.json`。
+
+另：R2 的 global operations_audit 独立 proof + ACK-confirm、全部 reset 入口锁序/保留/安全投影方案仅通过有限设计审查，未实施。收据 `SOL-R2-RETAINED-PROOF-DESIGN-REVIEW.json` SHA256 `c825dbf762632798f97c5546eebaa51fd47c8a8ba8da90ab7f326206ebb632d6`；不能把此设计 GO 当作恢复资格。
+
 以下保留接受之前的设计审计与当时状态，不覆盖本节接受记录。
 
 前一项双用户普通对话及持久请求区间已限定 PASS。此片只审计与修订 Proposed ADR，没有新增模型、Job、容器操作或故障注入，不推进 Product Phase。
