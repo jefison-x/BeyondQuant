@@ -17,6 +17,28 @@
 
 私有原件均位于 `.ci-artifacts/agent-origin-consumer-20261015-v1/process-loss-admission-20261017-v1/runner-foundation-v1/`：`ROOT-SOURCE-PASS.json`、`SOL-SOURCE-REVIEW-V2.json`、`OBSERVER-FAIL-STOP.json`、`NATIVE-RESULT.json`、`SOL-FAILED-PROBE-DIAGNOSIS.json`、`failed-probe-diagnosis/`、`FAILURE-SAFETY-PASS.json`、`READY-OBSERVATION-CONTRACT-V3.json`。生产/推送/合并及Product Phase均未推进。
 
+
+## R1b-a：Backend 非授权准备记录（2026-10-17）
+
+`agent_audit` 依赖AgentRun，而首START前尚无该业务记录；不伪造AgentRun。独立Sol→Root确认在Accepted ADR-0104内复用既有全局 `operations_audit` 的私有受保护记录，无需新增表、HTTP/MCP或用户审批。
+
+源码 `3f132e0b` 新增闭合candidate合同与私有一次性 `prepare` CLI，沿用无DDL既有schema模式，准确幂等与Backend nonce；普通budget入口在查询/写入前拒绝保留namespace，管理员overview仅返回安全摘要。`prepared` 明确 `authorizes_start=false / native_facts_verified=false / runner_install_verified=false`，activate固定HOLD；不能把保存候选当作工程实例资格。初审误要求Docker启动时间等于runner实例生成时间的P2已最小删除，两个原始时间分别保留，未新增时间精度或排序假设。语法/diff与独立Sol→Root源码限定PASS，原FAIL保留。
+
+无功能测试或live操作。本片不实现native收集验证、runner安装/读回、START锁协同、Backend激活/admission或围栏释放，以上均NOT_RUN。继续实现runner当前实例descriptor与事前started marker基础，尚未准入环境更新或故障注入。私有原件：`R1B-A-RESULT.md`、`SOL-R1B-A-SOURCE-REVIEW.json`、`SOL-R1B-A-SOURCE-REVIEW-V2.json`、`ROOT-R1B-A-SOURCE-PASS.json`，目录同上。
+
+
+## R1b-b1：当前实例与事前执行标记（2026-10-17）
+
+源码 `205a55c9` 在清除旧workspace ready后、socket接受连接前，原子发布同一R1a签名实例的私有control descriptor；原始state实例记录及false字段不改。START在原admission锁内先写signed/fsynced本实例started marker，再消费scope、写归属和dispatch。marker仅表示可能接受过执行，不能证明业务结果、进程已死或实例资格。已认证marker复用前也补齐同inode文件及私有父目录fsync；初审持久化P2与原FAIL保留，修正后语法/独立Sol→Root源码限定PASS。正常关闭/初始化失败仅清理本实例inode的control pointer，state原件保留。
+
+无新增功能测试、容器、模型或Job。Runtime读取、安装/激活、START expected binding、实际MAC/状态卷互斥/故障与浏览器恢复仍未资格。后续集成设计已独审明确：实际runner及prepare/active引用必须先原子写入既有Runtime pre-START binding，成功后才能发START；旧草案把持久化放在dispatch后的一项顺序HOLD另存，不改原件。下一片仅在相同ADR内实现闭合预绑定安装/消费链，不提前加载测试环境或恢复模型测试。原件 `R1B-B1-RESULT.md`、`SOL-R1B-B1-SOURCE-REVIEW[-V2].json`、`ROOT-R1B-B1-SOURCE-PASS.json` 与集成顺序两份独审收据均在同一私有目录。
+
+## R1b-b2：预绑定安装与默认拒绝（2026-10-17）
+
+源码 `4b5233eb` 增加 opt-in 出生记录及工程私有安装入口：准确匹配当前 signed instance、Backend prepared 回执与 nonce，在既有 admission 锁内确认未接受 START，持久保存非激活安装回执。新发布及准确重试均认证 canonical bytes、同 inode/nlink1，再 fsync 文件与父目录；独立 Sol 初审的持久化 P2 已修正，原 FAIL 保留。六个源码 hash、语法/diff、Sol V2 与 Root 源码限定 PASS 收据均在既有 runner-foundation-v1 私有目录。
+
+合格模式仍拒绝 START；prepared/安装回执不是执行授权，Backend 激活及 Runtime 接入正在继续。legacy 默认行为未转换为事后工程资格。镜像只新增必要小文件 COPY，未构建或加载本片镜像。功能、原生及浏览器故障验证均 NOT_RUN，本批未恢复测试；原17容器、三页、草稿和专用停机探针保留。不能把源码通过当作恢复链路已经完成。
+
 以下保留接受之前的设计审计与当时状态，不覆盖本节接受记录。
 
 前一项双用户普通对话及持久请求区间已限定 PASS。此片只审计与修订 Proposed ADR，没有新增模型、Job、容器操作或故障注入，不推进 Product Phase。

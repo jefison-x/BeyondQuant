@@ -4,6 +4,12 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**R1b-b2 非激活安装源码限定 PASS：** `4b5233eb` 增加出生 opt-in、私有安装及签名 START 的准确实例绑定形状，激活未完成时仍拒绝执行。安装重试 fsync 的 P2 修正后通过 Sol→Root；未构建更新环境，未恢复原生/模型/浏览器测试。继续实现 Backend 激活和 Runtime 接入，原失败及全部保留资源不变。见[预绑定安装](20261017-process-loss-admission.md#r1b-b2预绑定安装与默认拒绝2026-10-17)。
+
+**R1b-b1 runner基础源码限定PASS：** `205a55c9`新增socket前原子signed实例descriptor、consume前持久化instance-started marker；复用fsync缺口修正后经独立Sol→Root通过。未更新环境/未恢复测试，安装激活与Runtime pre-START持久化接入继续实施，旧FAIL保持。见[当前实例与事前标记](20261017-process-loss-admission.md#r1b-b1当前实例与事前执行标记2026-10-17)。
+
+**R1b-a非授权准备记录源码限定PASS：** `3f132e0b`复用既有全局运维审计表新增private prepare，普通budget拒绝保留namespace、overview安全摘要；prepared不授权，activate仍HOLD。独立Sol→Root源码通过，未执行功能测试/live；当前实例与事前started marker基础继续实施，原采集FAIL不改、无新故障。详见[Backend准备记录](20261017-process-loss-admission.md#r1b-abackend-非授权准备记录2026-10-17)。
+
 **R1a源码限定PASS，原生采集FAIL后已停批：** `ff8540d2`增加状态卷锁及签名instance/START归属；语法/独立Sol/Root源码通过，全部operator_qualified=false。无Health字段模板与缺ready栅栏的两个采集失败原件保留；仅一探针/三专用卷，探针已停PID0，原17容器/挂载与三个页面不变，0模型/Job。探针薄镜像仅一层、Size+15868字节。ready先行及具名原值采集合同已修正但未执行，不重测或扩围；工程prebind/活动故障/恢复仍NOT_RUN。继续同一ADR既有接缝审计。见[准确状态与边界](20261017-process-loss-admission.md#r1a-源码与原生探针2026-10-17)。
 
 **活动进程恢复合同已接受，开始小切片实施：** 维护者明确接受已通过独立Sol→Root设计审查的 ADR-0104，并授权资格完成后的一次隔离A runner故障/替换验证。首先实施持久instance/事前START归属/状态卷排他锁，不提前释放旧围栏；真正业务unknown继续阻塞。相关ADR引用和5项静态架构检查已完成，尚未更新容器或注入故障；有效的idle-restart新子助手读取PASS不受影响。见[故障前合同核对](20261017-process-loss-admission.md)。
