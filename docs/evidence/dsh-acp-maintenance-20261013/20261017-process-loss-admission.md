@@ -118,3 +118,13 @@ AGENTS.md 第15条及 Accepted ADR-0100/0113 要求维护者先接受这个具�
 私有原件位于 `R1B-FRESH-INSTANCE-QUALIFICATION-v1/native-stopped-readback-v1/`：计划 `PLAN-v2.json` SHA256 `6168f213e6f252a5d2f881f724c66dc436c88d6ecc311abe4ab6a1a7a335d6ef`，采集入口 `capture-classify-v2.py` SHA256 `a714acca95eaca5a542dbfb0fbaa38b3037c74c3493b50f319b84eac0d89b7eb`，实际结果 SHA256 `ed7e053334d278f56fcc6bcfd16c07f03d517d7330eb8c59b81583b0ed5c4fc0`，独审 SHA256 `2170411030564b2d760c2f529432c7ecd63e0067b2195a30342f29d1540d87bd`，`ROOT-PASS.json` SHA256 `4f8bc2472c1d777ec42cf836bac12c21895a61e963bd1c6cfc01c4f4beb4c4ed`。
 
 下一片单独准入真正 fresh ACP runner：只补 ACP10文件、ready 后 PID namespace、签名出生/锁/noSTART；复用已通过的 Backend6文件证据。上限1新runner/3新卷/32原生命令/300秒，无 Backend helper、安装/激活、START、模型、Job或DB。当前尚未准入或创建资源，R2与活动故障/浏览器恢复均 NOT_RUN。原17容器和三个当前浏览器页签保留。
+
+## Fresh ACP-only 原生片限定通过（2026-10-17）
+
+上述下一片随后完成独立准入与一次实际执行。v1 命令顺序与固定 Workspace、v2 的清单计数缺陷均在执行前 HOLD，保留原件；10个镜像路径来自8个源文件，两个合同各复制到两个准确目的地，不能要求10个不同源路径。v3 复用原始 source/readback/capture 与纯判定，仅修正这些固定接缝；完整 `load_static()` 实际输入预检 exit0/stderr0，未访问 Docker 或凭据。随后 Sol→Root 只准入该冻结批次，未扩展通用工具。
+
+实际 host exit0，18条原生命令全部 exit0/stderr0、无超时，15工作/3收尾、5.76秒。只新建1个无网络/只读 runner 和3个独立卷；ACP 镜像沿用 `sha256:5401edd1c741aab92021c8cf12621fc8941dab29c3fc09ae091b8959de9df8bd`，未重建镜像。镜像内10个准确路径、612793字节的 SHA/uid0/gid0/0444读回匹配；ready 后核对 PID1/PID namespace，签名 descriptor/instance/birth一致、require_prebind=true、lifetime lock忙、admission lock可取得，准确当前 started marker 缺席且 install/activation均无记录。停止本次准确 CID 后确认 exited/PID0/not running/not paused/not restarting，原17容器九字段及完整 Destination挂载图前后同基线。
+
+源码仍 `8e80c0ce`，执行时 HEAD `29055725c2c14721dbcb878a7e30362c0cf754b9`。原件 `R1B-FRESH-ACP-ONLY-v3/`：计划 SHA256 `e2b8f433112b6f6dac106bfd91ece3dc108b32a644a9e0047089c375e28792b7`，固定入口 `fa5823d4f6b30a070436f570e99f4bb689b87342b895d1c168c768c8f6172062`，准入独审 `69396382d35ac59112e622c02df6fe967275d1ea6faafd1e92f8eaa9c6d55423`，实际结果 `6dcdb21771a594337cc03f87f41d04a6876840c49bd894e310a89599726e9b3d`，实际独审 `d8a0c1e89ea754c34b335b1150b1d088efa659b8f919bddfbef1890f556ffc9a`，`ROOT-PASS.json` 为 `62a83ed3629f16edc11fb1a530edf4e343c1592d6205d7d26a9d676066c13883`，包含全部 raw/exit/UTC摘要。stop stdout包含 Docker旧参数弃用提示，exit0/stderr0及准确停后状态另有原件，没有忽略失败。PLAN内历史 native-v2 标签不作执行依据，实际目录固定为 native-v3。
+
+**Sol→Root 仅 fresh ACP 镜像读回/出生/noSTART PASS。** 原批 FAIL及静态HOLD不升级；Backend6实际读回证据复用，0新Backend helper、DB/API/模型/Job/START/浏览器输入。探针停后不称同instance接续；Backend prepare/install/activate、Runtime qualified admission/START/ACK、R2、活动 A 故障和浏览器恢复均 NOT_RUN。下一步只读核对现有私有 prebind CLI 的最小验证片，未经单独准入不操作。原测试环境、三个浏览器页签、草稿、全部卷/镜像及原探针保持；无生产、推送、合并或 Product Phase 推进。
