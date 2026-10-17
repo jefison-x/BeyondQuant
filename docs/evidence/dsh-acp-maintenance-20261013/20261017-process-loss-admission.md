@@ -128,3 +128,13 @@ AGENTS.md 第15条及 Accepted ADR-0100/0113 要求维护者先接受这个具�
 源码仍 `8e80c0ce`，执行时 HEAD `29055725c2c14721dbcb878a7e30362c0cf754b9`。原件 `R1B-FRESH-ACP-ONLY-v3/`：计划 SHA256 `e2b8f433112b6f6dac106bfd91ece3dc108b32a644a9e0047089c375e28792b7`，固定入口 `fa5823d4f6b30a070436f570e99f4bb689b87342b895d1c168c768c8f6172062`，准入独审 `69396382d35ac59112e622c02df6fe967275d1ea6faafd1e92f8eaa9c6d55423`，实际结果 `6dcdb21771a594337cc03f87f41d04a6876840c49bd894e310a89599726e9b3d`，实际独审 `d8a0c1e89ea754c34b335b1150b1d088efa659b8f919bddfbef1890f556ffc9a`，`ROOT-PASS.json` 为 `62a83ed3629f16edc11fb1a530edf4e343c1592d6205d7d26a9d676066c13883`，包含全部 raw/exit/UTC摘要。stop stdout包含 Docker旧参数弃用提示，exit0/stderr0及准确停后状态另有原件，没有忽略失败。PLAN内历史 native-v2 标签不作执行依据，实际目录固定为 native-v3。
 
 **Sol→Root 仅 fresh ACP 镜像读回/出生/noSTART PASS。** 原批 FAIL及静态HOLD不升级；Backend6实际读回证据复用，0新Backend helper、DB/API/模型/Job/START/浏览器输入。探针停后不称同instance接续；Backend prepare/install/activate、Runtime qualified admission/START/ACK、R2、活动 A 故障和浏览器恢复均 NOT_RUN。下一步只读核对现有私有 prebind CLI 的最小验证片，未经单独准入不操作。原测试环境、三个浏览器页签、草稿、全部卷/镜像及原探针保持；无生产、推送、合并或 Product Phase 推进。
+
+## 停止并取消多余的 reader 采集（2026-10-17）
+
+prebind 写入前须先确保现有 Backend reader 具备对应保护。工程侧为此另备两条只读采集，但入口错误复用了 fresh v3→v7 的生命周期 helper；其返回的新旧 plan 形状和局部变量发生混淆。静态审阅发现 KeyError 接缝后，唯一一次纯输入预检实际 exit1/NameError（`old` 与 `_old`），未进入 Batch/native。Root随即停止该入口及重试；原 stdout/stderr/exit 保留，未见第二次预检、native输出目录不存在。失败时入口SHA与UTC没有完整记录，明确 NOT_CAPTURED，不把事后hash或mtime当作失败时事实。另一次 Root 源配置审计使用普通 PyYAML 读取 Compose `!override` 标签失败，未取得DB同异结论，未重试或据此操作。这些均属工程审计入口缺陷，不是已证明的 Product 缺陷。
+
+全面复核后不再修此入口或新增替代采集：已保存的 `explicit-revoke-fence-20261016-v1/exact-cancel-receipt-fix-v1/install-v1/RUNNING-READBACK-RESULT.json` 准确绑定当前 Backend CID `274826fbc7365f8bf794c00fff595dcc14ec5b3cb947f850aa648a808096de24`、IID `sha256:37434d44043a80e3aea448d28c4e66606887b546876e0971d06800efa74aea49`、源码 `7e5779f0` 及两关键 reader 的实际字节；Git语义确认缺少本轮 qualified v2 admission/active-anchor reader。fresh18又证明同CID/IID和无source挂载保持。无需再读第三文件来决定是否升级；这些证据只关闭“需要更新”的决策门，不声明泄漏或旧版安全PASS。
+
+独立 Sol→Root 接受复用并取消整个额外 reader 采集。原件在 `R1B-PREBIND-QUALIFICATION-v1/READER-VERSION-READBACK-v1/`：`ROOT-FAIL-STOP.json`、`CAUSE-AND-MINIMAL-REDESIGN.md`、`EVIDENCE-REUSE-DECISION.json`（独审SHA256 `9736b335542430f3dfb776b95002941ad5a43b49b363efdcadc2e1847ee1de4e`）与 `ROOT-REUSE-DECISION.json`。失败、未执行的替代草稿和已通过的fresh18原件都保留。此后0新Docker/DB/API/模型/Job/START/浏览器输入，不重跑镜像/出生资格。
+
+当前下一门：核对所有同逻辑DB reader，再对必要的隔离Backend更新给出准确命令、独审和Root操作准入；更新后才做候选source读回/新容器基线与私有prebind。不能拿一份候选helper镜像代替已部署reader，不能预先写入资格审计行。R2、活动故障和浏览器恢复仍 NOT_RUN；环境、页面、账号、数据库及卷均保持。
