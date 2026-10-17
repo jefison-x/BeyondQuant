@@ -6,6 +6,7 @@ import base64
 import binascii
 import contextlib
 import datetime as dt
+import errno
 import fcntl
 import hashlib
 import hmac
@@ -38,7 +39,10 @@ from packages.contracts.acp_product_instance import (
     sign_instance,
     sign_instance_started,
     sign_scope_binding,
+    validate_instance,
     validate_instance_started,
+    validate_scope_binding,
+    validate_successor_tombstone,
 )
 from packages.contracts.acp_product_prebind import (
     BIRTH_SCHEMA,
@@ -47,6 +51,9 @@ from packages.contracts.acp_product_prebind import (
     validate_activation_record,
     validate_birth_mode,
     validate_start_binding,
+    validate_start_binding_shape,
+    validate_install_record,
+    validate_prepared_receipt,
     PrebindContractError,
 )
 from packages.contracts.product_turn_request import (
@@ -98,6 +105,7 @@ _START_KEYS = frozenset({
 _START_OPTIONAL_KEYS = frozenset({"guard_b64"})
 _START_PREBIND_KEY = "operator_binding"
 PRODUCT_REQUIRE_PREBIND_ENV = "BYQ_ACP_PRODUCT_REQUIRE_PREBIND"
+PRODUCT_REQUIRE_SUCCESSOR_TOMBSTONE_ENV = "BYQ_ACP_PRODUCT_REQUIRE_SUCCESSOR_TOMBSTONE"
 MAX_GUARD_BYTES = 16_384
 _GUARD_SCHEMA_NAME = "file:///opt/byq/runtime/byq-continuation-budget.js"
 _GUARD_RESERVATION = re.compile(r"continuation_[0-9a-f]{32}\Z")
@@ -651,6 +659,7 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         ready_file: Path = CONTROL_READY,
         instance_descriptor: Path | None = None,
         require_prebind: bool = False,
+        require_successor_tombstone: bool = False,
     ) -> None:
         if not isinstance(secret, bytes) or len(secret) < 32:
             raise ValueError("Product runner control secret is invalid")
@@ -659,7 +668,11 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         self.secret = secret
         if type(require_prebind) is not bool:
             raise ValueError("Product runner prebind mode is invalid")
+        if type(require_successor_tombstone) is not bool or (require_successor_tombstone
+                                                             and not require_prebind):
+            raise ValueError("Product runner successor mode requires prebind")
         self.require_prebind = require_prebind
+        self.require_successor_tombstone = require_successor_tombstone
         # One opaque identity per runner process for the signed cleanup receipt.
         self.instance_id = os.urandom(32).hex()
         self.workspace_id = workspace_id
@@ -720,6 +733,8 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             # Publish the current signed instance before bind/listen makes the
             # control socket accept any Adapter connection.
             self._publish_instance_descriptor()
+            if self.require_successor_tombstone:
+                self._await_successor_tombstone()
             super().__init__(str(self.socket_path), _ProductRequestHandler,
                              bind_and_activate=True)
             self._socket_identity = self._path_identity(self.socket_path)
@@ -838,6 +853,308 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.birth-mode.json",
             record,
         )
+
+    def _read_successor_file(self, path: Path, *, uid: int, gid: int, mode: int,
+                             limit: int = 65536) -> tuple[bytes, tuple[int, int]]:
+        """Read one bounded private inode without following links."""
+        directory = path.parent
+        _canonical_directory(directory)
+        directory_info = os.lstat(directory)
+        expected_directory = ((self.runner_uid, self.control_gid, 0o710)
+                              if directory == self.control_directory else
+                              (self.runner_uid, self.state_gid, 0o700))
+        if (directory_info.st_uid, directory_info.st_gid,
+                stat.S_IMODE(directory_info.st_mode)) != expected_directory:
+            raise OSError("Product successor parent directory is not private")
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != uid or before.st_gid != gid
+                or stat.S_IMODE(before.st_mode) != mode or before.st_size > limit):
+            raise OSError("Product successor record permissions are invalid")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(fd)
+            if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                    or opened.st_nlink != 1 or opened.st_size > limit
+                    or opened.st_uid != uid or opened.st_gid != gid
+                    or stat.S_IMODE(opened.st_mode) != mode):
+                raise OSError("Product successor record changed while opening")
+            data = bytearray()
+            while len(data) <= limit:
+                chunk = os.read(fd, min(8192, limit + 1 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
+            after = os.fstat(fd)
+            if (len(data) > limit or len(data) != after.st_size
+                    or (opened.st_dev, opened.st_ino, opened.st_size,
+                        opened.st_mtime_ns, opened.st_ctime_ns)
+                    != (after.st_dev, after.st_ino, after.st_size,
+                        after.st_mtime_ns, after.st_ctime_ns)):
+                raise OSError("Product successor record changed while reading")
+            return bytes(data), (opened.st_dev, opened.st_ino)
+        finally:
+            os.close(fd)
+
+    def _read_successor_instance_chain(self, instance_id: str) -> dict[str, Any]:
+        if _HEX64.fullmatch(instance_id) is None:
+            raise OSError("Product successor instance identity is invalid")
+        directory = self.state_dir / _INSTANCE_DIRECTORY
+        _canonical_directory(directory)
+        directory_info = os.lstat(directory)
+        if (directory_info.st_uid != self.runner_uid or directory_info.st_gid != self.state_gid
+                or stat.S_IMODE(directory_info.st_mode) != 0o700):
+            raise OSError("Product successor instance directory is not private")
+        paths = {
+            "instance": directory / f"{instance_id}.json",
+            "birth": directory / f"{instance_id}.birth-mode.json",
+            "install": directory / f"{instance_id}.prebind-install.json",
+            "activation": directory / f"{instance_id}.activation.json",
+        }
+        result: dict[str, Any] = {}
+        for name, path in paths.items():
+            raw, identity = self._read_successor_file(
+                path, uid=self.runner_uid, gid=self.state_gid,
+                mode=0o600, limit=65536,
+            )
+            value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                               parse_constant=_reject_constant)
+            if canonical_instance_json(value) != raw:
+                raise OSError(f"Product successor {name} encoding is not canonical")
+            result[name] = value
+            result[name + "_bytes"] = raw
+            result[name + "_identity"] = identity
+        instance = validate_instance(result["instance"], key=self.secret)
+        if (instance["workspace_id"] != self.workspace_id
+                or instance["runner_instance_id"] != instance_id):
+            raise OSError("Product successor instance identity differs")
+        birth = validate_birth_mode(result["birth"], key=self.secret, instance=instance)
+        if birth["require_prebind"] is not True:
+            raise OSError("Product successor birth mode is not prebind qualified")
+        install = validate_install_record(result["install"], key=self.secret,
+                                          instance=instance, birth_mode=birth)
+        prepared = validate_prepared_receipt(install["prepared_receipt"], instance=instance)
+        activation = validate_activation_record(
+            result["activation"], key=self.secret, instance=instance,
+            birth_mode=birth, prepared_receipt=prepared, install_record=install,
+        )
+        result.update(instance=instance, birth=birth, install=install,
+                      prepared=prepared, activation=activation)
+        return result
+
+    def _await_successor_tombstone(self) -> None:
+        """Withhold bind/listen and readiness until this IID's exact fence exists."""
+        if self._instance_record is None or self._state_lock_fd is None:
+            raise OSError("Product successor startup identity is unavailable")
+        self._verify_successor_lifetime_lock()
+        self._verify_current_instance_descriptor()
+
+        path = (self.state_dir / _INSTANCE_DIRECTORY
+                / f"{self.instance_id}.successor-tombstone.json")
+        while True:
+            try:
+                info = os.lstat(path)
+            except OSError as exc:
+                if exc.errno != errno.ENOENT:
+                    raise
+                time.sleep(0.2)
+                continue
+            # The immutable writer briefly has a staging hard link and the
+            # destination. Wait for its unlink+directory fsync before reading;
+            # a persistent extra link never becomes ready.
+            if (stat.S_ISREG(info.st_mode) and info.st_nlink == 2
+                    and info.st_uid == self.runner_uid and info.st_gid == self.state_gid
+                    and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size <= 65536):
+                time.sleep(0.05)
+                continue
+            raw, identity = self._read_successor_file(
+                path, uid=self.runner_uid, gid=self.state_gid, mode=0o600,
+            )
+            self._verify_successor_tombstone(raw)
+            self._verify_successor_lifetime_lock()
+            self._verify_current_instance_descriptor()
+            # A visible link is not enough. PID 1 completes durability for the
+            # exact inode and parent before it opens the socket or publishes ready.
+            _fsync_exact_private_file(path, raw, identity=identity,
+                                      uid=self.runner_uid, gid=self.state_gid,
+                                      mode=0o600)
+            return
+
+    def _verify_successor_lifetime_lock(self) -> None:
+        if self._state_lock_fd is None:
+            raise OSError("Product successor lifetime lock descriptor is unavailable")
+        lock_path = self.state_dir / _STATE_LOCK_NAME
+        lock_info = os.lstat(lock_path)
+        held_info = os.fstat(self._state_lock_fd)
+        if ((lock_info.st_dev, lock_info.st_ino) != (held_info.st_dev, held_info.st_ino)
+                or not stat.S_ISREG(held_info.st_mode) or held_info.st_nlink != 1
+                or held_info.st_uid != self.runner_uid or held_info.st_gid != self.state_gid
+                or stat.S_IMODE(held_info.st_mode) != 0o600):
+            raise OSError("Product successor state-volume lock identity changed")
+        probe = os.open(lock_path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            probe_info = os.fstat(probe)
+            if ((probe_info.st_dev, probe_info.st_ino) != (held_info.st_dev, held_info.st_ino)
+                    or not stat.S_ISREG(probe_info.st_mode) or probe_info.st_nlink != 1
+                    or probe_info.st_uid != self.runner_uid
+                    or probe_info.st_gid != self.state_gid
+                    or stat.S_IMODE(probe_info.st_mode) != 0o600):
+                raise OSError("Product successor lifetime lock path changed")
+            try:
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                fcntl.flock(probe, fcntl.LOCK_UN)
+                raise OSError("Product successor lifetime lock is not held")
+        finally:
+            os.close(probe)
+
+    def _verify_current_instance_descriptor(self) -> None:
+        if self._instance_record is None:
+            raise OSError("Product successor instance is unavailable")
+        descriptor_raw, descriptor_identity = self._read_successor_file(
+            self.instance_descriptor, uid=self.runner_uid, gid=self.control_gid,
+            mode=0o640, limit=4096,
+        )
+        if (descriptor_identity != self._instance_descriptor_identity
+                or descriptor_raw != canonical_instance_json(self._instance_record)):
+            raise OSError("Product successor descriptor is not current")
+        _fsync_exact_private_file(
+            self.instance_descriptor, descriptor_raw, identity=descriptor_identity,
+            uid=self.runner_uid, gid=self.control_gid, mode=0o640, parent_mode=0o710,
+        )
+
+    def _verify_successor_tombstone(self, raw: bytes) -> None:
+        if self._instance_record is None:
+            raise OSError("Product successor instance is unavailable")
+        try:
+            tombstone = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                                   parse_constant=_reject_constant)
+            if canonical_instance_json(tombstone) != raw:
+                raise ProductInstanceContractError("successor tombstone is not canonical")
+            tombstone = validate_successor_tombstone(tombstone, key=self.secret)
+        except (UnicodeError, ValueError, TypeError, ProductInstanceContractError) as exc:
+            raise OSError("Product successor tombstone is invalid") from exc
+        successor = self._read_successor_instance_chain(self.instance_id)
+        instance = successor["instance"]
+        state_generation, state_generation_identity = self._read_successor_file(
+            self.state_dir / ".state-generation", uid=self.runner_uid,
+            gid=self.state_gid, mode=0o600, limit=65,
+        )
+        if state_generation != (instance["state_generation"] + "\n").encode("ascii"):
+            raise OSError("Product successor state generation marker differs")
+        if (tombstone["successor_runner_instance_id"] != self.instance_id
+                or tombstone["successor_runner_boot_id"] != instance["runner_boot_id"]
+                or tombstone["successor_state_generation"] != instance["state_generation"]
+                or tombstone["workspace_id"] != self.workspace_id
+                or tombstone["successor_instance_sha256"] != prebind_digest(instance)
+                or tombstone["successor_birth_mode_sha256"] != prebind_digest(successor["birth"])
+                or tombstone["successor_install_record_sha256"]
+                != hashlib.sha256(successor["install_bytes"]).hexdigest()
+                or tombstone["successor_activation_record_sha256"]
+                != hashlib.sha256(successor["activation_bytes"]).hexdigest()
+                or tombstone["successor_active_binding_receipt_sha256"]
+                != successor["activation"]["backend_receipt"]["receipt_sha256"]):
+            raise OSError("Product successor anchors differ from current instance")
+        binding = {
+            "schema_version": "byq-acp-product-runner-start-binding.v1",
+            "runner_instance_id": instance["runner_instance_id"],
+            "runner_boot_id": instance["runner_boot_id"],
+            "state_generation": instance["state_generation"],
+            "signed_instance_sha256": prebind_digest(instance),
+            "prepared_receipt_sha256": successor["prepared"]["receipt_sha256"],
+            "backend_binding_nonce": successor["prepared"]["backend_binding_nonce"],
+            "install_receipt_sha256": prebind_digest(successor["install"]),
+            "backend_activation_id": successor["activation"]["backend_receipt"]["activation_id"],
+            "backend_activation_receipt_sha256": successor["activation"]["backend_receipt"]["receipt_sha256"],
+        }
+        validate_start_binding_shape(binding, instance=instance,
+                                     install_record=successor["install"])
+        if (tombstone["successor_prestart_binding"] != binding
+                or tombstone["successor_prestart_binding_sha256"] != prebind_digest(binding)):
+            raise OSError("Product successor START anchor differs")
+
+        old_id = tombstone["old_runner_instance_id"]
+        old = self._read_successor_instance_chain(old_id)
+        if (old["instance"]["runner_boot_id"] != tombstone["old_runner_boot_id"]
+                or old["instance"]["state_generation"] != instance["state_generation"]
+                or tombstone["old_instance_sha256"] != prebind_digest(old["instance"])
+                or tombstone["old_birth_mode_sha256"] != prebind_digest(old["birth"])
+                or tombstone["old_install_record_sha256"]
+                != hashlib.sha256(old["install_bytes"]).hexdigest()
+                or tombstone["old_activation_record_sha256"]
+                != hashlib.sha256(old["activation_bytes"]).hexdigest()
+                or tombstone["old_active_binding_receipt_sha256"]
+                != old["activation"]["backend_receipt"]["receipt_sha256"]):
+            raise OSError("Product predecessor anchors differ")
+        old_started_path = (self.state_dir / _INSTANCE_DIRECTORY
+                            / f"{old_id}.started.json")
+        started_raw, _ = self._read_successor_file(
+            old_started_path, uid=self.runner_uid, gid=self.state_gid,
+            mode=0o600, limit=4096,
+        )
+        started = json.loads(started_raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                             parse_constant=_reject_constant)
+        validate_instance_started(started, key=self.secret, instance=old["instance"])
+        if hashlib.sha256(started_raw).hexdigest() != tombstone["old_started_marker_sha256"]:
+            raise OSError("Product predecessor START marker differs")
+        scope = tombstone["scope"]
+        scope_digest = product_scope_digest(scope)
+        if scope_digest != tombstone["scope_digest"]:
+            raise OSError("Product predecessor scope digest differs")
+        scope_path = self.state_dir / _SCOPE_BINDING_DIRECTORY / f"{scope_digest}.json"
+        scope_raw, _ = self._read_successor_file(
+            scope_path, uid=self.runner_uid, gid=self.state_gid, mode=0o600,
+            limit=16384,
+        )
+        scope_record = json.loads(scope_raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                                  parse_constant=_reject_constant)
+        validate_scope_binding(scope_record, key=self.secret, instance=old["instance"])
+        if (scope_record.get("scope") != scope
+                or hashlib.sha256(scope_raw).hexdigest()
+                != tombstone["old_scope_ownership_sha256"]):
+            raise OSError("Product predecessor scope ownership differs")
+        consumed_raw, _ = self._read_successor_file(
+            self.state_dir / f"{scope_digest}.used", uid=self.runner_uid,
+            gid=self.state_gid, mode=0o600, limit=128,
+        )
+        if (consumed_raw != b"byq-acp-product-slot-one-shot.v1\n"
+                or hashlib.sha256(consumed_raw).hexdigest()
+                != tombstone["consumed_scope_marker_sha256"]):
+            raise OSError("Product predecessor scope consumption differs")
+        old_binding = validate_start_binding(
+            tombstone["old_prestart_binding"], activation_record=old["activation"])
+        if prebind_digest(old_binding) != tombstone["old_prestart_binding_sha256"]:
+            raise OSError("Product predecessor preSTART anchor differs")
+        if self._private_successor_entry_exists(
+                self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.started.json"):
+            raise OSError("Product successor already crossed START admission")
+        for name in ("instance", "birth", "install", "activation"):
+            anchor_path = self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.json"
+            if name != "instance":
+                suffix = {"birth": ".birth-mode.json", "install": ".prebind-install.json",
+                          "activation": ".activation.json"}[name]
+                anchor_path = self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}{suffix}"
+            _fsync_exact_private_file(
+                anchor_path, successor[name + "_bytes"],
+                identity=successor[name + "_identity"], uid=self.runner_uid,
+                gid=self.state_gid, mode=0o600,
+            )
+        _fsync_exact_private_file(
+            self.state_dir / ".state-generation", state_generation,
+            identity=state_generation_identity, uid=self.runner_uid,
+            gid=self.state_gid, mode=0o600,
+        )
+
+    def _private_successor_entry_exists(self, path: Path) -> bool:
+        try:
+            os.lstat(path)
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return False
+            raise
+        return True
 
     def _read_local_install_record(self, path: Path) -> dict[str, Any]:
         """Read only this instance's authenticated nonactive install record."""
@@ -1732,9 +2049,15 @@ def main() -> int:
     require_prebind_raw = os.environ.get(PRODUCT_REQUIRE_PREBIND_ENV, "0")
     if require_prebind_raw not in {"0", "1"}:
         raise RuntimeError("Product runner prebind mode is invalid")
+    successor_raw = os.environ.get(PRODUCT_REQUIRE_SUCCESSOR_TOMBSTONE_ENV, "0")
+    if successor_raw not in {"0", "1"}:
+        raise RuntimeError("Product runner successor mode is invalid")
+    if successor_raw == "1" and require_prebind_raw != "1":
+        raise RuntimeError("Product runner successor mode requires prebind mode")
     secret = _load_secret()
     server = ProductSlotServer(secret=secret, workspace_id=workspace_id,
-                               require_prebind=require_prebind_raw == "1")
+                               require_prebind=require_prebind_raw == "1",
+                               require_successor_tombstone=successor_raw == "1")
     exit_code = 0
     try:
         server.serve_forever(poll_interval=0.2)

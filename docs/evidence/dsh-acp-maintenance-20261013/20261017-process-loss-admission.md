@@ -223,3 +223,9 @@ Root取消整套执行元JSON生成器、位置参数helper和短标签搜索，
 Backend独审v1三项P2（generation精确连接、直接reset guard、same state-generation）已一次修正，v2源码PASS，SHA256 `b69a2cc94189cca658c20250c67318e6d4a76c10aa2c59842e7aaa0414104633`。Runtime v1四项P2、v2一项序号残余HOLD均保留；v3定向源码PASS `4661404a35e2097b7aab234cac9142f5f2c6cb344d69fdbacc362e0ac0ec06b5`，旧V2原字节/hash不变，独立final cursor允许合法迟到domain ACK顺序，retry正向fsync文件和目录并重核authority，仅真实failed可supersede。Gateway源码PASS `434843248a3560523b149b209cf23b14efbfefeb4ff89e247cc1d1994c400ff1`。Worker对各自文件py_compile/diff-check均exit0；Gateway既有pytest首次路径收集FAIL，换cwd后FastAPI缺失，功能测试NOT_RUN，未安装依赖。
 
 最终10文件SHA与原始冻结版本保存在 `runner-foundation-v1/R2-BACKEND-RUNTIME-GATEWAY-FROZEN-v1/` 及Runtime v2/v3冻结目录。Root限定源码PASS收据 `ROOT-R2-BACKEND-RUNTIME-GATEWAY-SOURCE-PASS.json` SHA256 `f857a9e3b20ddd9fbb943aa316cfd9f4ea098c8e49c7c5907f24e6f86f72dadc`。这不授予镜像、环境更新、START、故障或浏览器恢复准入。准确fixture绑定仍为FAIL/最终activate未完成；另已实核Runner缺少successor在ready前写exact old-scope tombstone及自身attestation的生产者，下一源码片仅补该缺口。0 Product真实模型/Job/故障/生产操作；Engineering成本UNKNOWN。环境与三个页面继续保留，不推进Product Phase。
+
+## R2 Runner 替换证明生产者限定源码通过（2026-10-17）
+
+四个文件补齐私有successor命令、准确old-scope/new-instance签名tombstone和socket/ready/START前屏障。PID1等待时持原state卷lifetime锁、不占admission锁；原false/null字段、历史原件和consumed scope不变。installer核旧、新signed install/activation及started/ownership链，PID1独立读回并正向fsync；不依赖最终Backend proof/ACK，不把Product MAC或UID当Engineering原生死亡证明。最终Backend仍独立核实际registeredRoot/AgentRun及业务unknown。无新服务、路由、表、依赖、harness或验证工具。
+
+Worker语法与diff-check exit0，独立Sol完整源码审查PASS（`SOL-R2-RUNNER-SOURCE-REVIEW-v1.json` SHA256 `53c4a590c8b52aad1abae21df9a0c691e94465e5345fa9da81b6df95e5489788`），Root限定SOURCE PASS。准确四文件冻结在`runner-foundation-v1/R2-RUNNER-FROZEN-v1/`。没有构建或更新环境，没有功能/native/START/故障/浏览器恢复测试；原v3绑定FAIL保持，不能将源码PASS作资格PASS。下一最小门仅是原8e/5401+ab83保留fixture的新birth prebind闭合，另行独立准入，不需先更新服务。环境与三个页面保持，不推进Product Phase。
