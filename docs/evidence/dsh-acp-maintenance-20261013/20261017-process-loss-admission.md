@@ -151,3 +151,35 @@ prebind 写入前须先确保现有 Backend reader 具备对应保护。工程�
 私有证据 `runner-foundation-v1/R1B-DB-IDENTITY-v1/`：payload SHA256 `997efef49fc9c8e93c9fe1514d754ca53b787e531ccae800a805a566e21cb8b7`，实际结果 `17f77770a36bf3e535f7f86cbe6accc71adf139c93af42affcff4c5e91c20bd3`，Sol实际独审 `141ef42bd4b790b7ede27b6b3ef0da4a196397956db643e6e9644e9a52021d61`，Root PASS `79ea46917d9d534c3d50b8e1c93b84af1aa34f573e2f4cb23d9107127f023b89`。原FAIL/HOLD与fresh18限定PASS不变。0模型/Job/START/API/业务写入/资源变更。三个页面保持打开，只读观察当前B会话历史正常，不将它记为新的恢复测试PASS。
 
 下一门为两处潜在共享 Backend reader 的准确隔离更新准入；正常Backend重启有现有Store schema bootstrap、管理员幂等检查及retention生命周期，不能将部署本身伪称只读或仅两条审计写入。私有prebind、R2、活动故障和浏览器恢复仍 NOT_RUN；当前未给服务更新或受保护审计写入GO。
+
+
+## Backend 配置预览在静审阶段停止（2026-10-17）
+
+两处潜在共享reader的更新准备没有进入实际操作。`R1B-BACKEND-UPDATE-v1/` 的完整独立Sol静审发现两个确定问题：采集入口切换到artifact目录，而继承的命令仍使用相对wrapper路径；其次原生调用超时/启动异常在追加安全调用摘要前抛出，导致该次尝试缺失。Sol收据SHA256 `7ac0b854074ca16f104f37c98d25e23249f5f88e15dae1d7f3c89129f0b3dadd`，Root以 `ROOT-HOLD.json` 接受HOLD。
+
+这是验证入口准备缺陷，不能归因于Product。两项均在执行前发现：0预检、0配置预览原生调用、0服务更新、0模型/Job/故障。按维护者“同类问题再出现先停下来重新思考”的要求，停止该批次，保留v1，先统一核对命令实际工作目录/绝对入口及全部异常路径，实施最小源码修正后再独立审查；不扩大工具或测试范围，不重启已取消的reader-source采集。前述DB身份合同PASS及fresh18限定PASS不受影响。页面、账号和环境保持；活动故障/浏览器恢复仍NOT_RUN。
+
+
+## 配置预览采集通过，端口比较 HOLD 原样保留（2026-10-17）
+
+v1在静审阶段的两处入口缺陷修正后，v2完整独审通过；实际只运行一次三条只读配置命令，均native exit0/stderr0，无超时/启动失败，外层exit3/`HOLD_CONFIG_DIFFERENCE`。环境变量完整内存比较、命令/入口/用户/工作目录、挂载子集、健康、项目、重启策略与候选镜像均匹配；只有base端口比较为false。含凭据的原生配置stdout/stderr明确不保存、不哈希，只保留脱敏调用摘要，不冒充完整raw。
+
+独立复核确认判据混用了新计划发布端口和旧 `HostConfig.PortBindings` 创建请求，不能从false声称实际发布端口漂移或猜测旧请求为0。Root停止该批次、不重跑或修补预览；复用同CID历史 `NetworkSettings.Ports` 的32769事实选择固定端口计划，由实际更新必要的即时before/post补当前发布事实。独立Sol实际审查 `90c7a2ff67f2bfaae4e42ea44f3e00a325604cb34f2ffb1bb6be816f29e37f49`；Root限定采集合同PASS，配置HOLD不改写。
+
+## 两处隔离 Backend reader 更新通过（2026-10-17）
+
+实际更新准备的v1完整静审拦住可选Health、完整Compose标签及替换后网络动态字段三处合同问题；v2又拦住人工复制的截断CID，均0操作命令。v3从冻结argv唯一权威纯生成五份字面shell并逐项验证全数组一致，不增加运行调度器、验证框架或测试套件。保留全部HOLD，不用实机或真实模型试观察器。原生Health通过安全index读取，缺席为null；两目标配置标签按实际24个-f输入精确匹配；网络固定NetworkID/名称及稳定别名，允许已声明的EndpointID/MAC/CID派生DNS变化。
+
+条件Sol→Root准入后，实际7条命令全exit0，134.480346秒：即时原17基线全匹配、Runtime ready/active0/slot占用0，Root持久前提PASS后，仅 `backend`、`backend-f6` 使用已构建镜像 `sha256:ab83d14bd78c14d2c64cea44048861ebb9207ea37faab86166503fe3c3030c30` 正常重建，无build/pull/新凭据。即时数据确认旧base创建请求0、实际发布32769；替换后请求固定32769，实际仍127.0.0.1:32769。两目标健康、完整挂载/安全及资源设置保持，其余15容器所有采集字段保持。两新CID各6个实际源码路径、655149字节、SHA/uid0/gid0/0444及HTTP200通过，最终Runtime完整operations JSON与前值相同。没有发起Product输入、Job、START、私有prebind写入或故障操作。正常Backend启动的既有DDL/provision/retention不能声称只读；原数据库、卷、镜像及页面保留。
+
+F6新CID `a6783f714f3a1df8b0db16a1349eb06d4fae245f1bbc1e9f149fe5a0b79b44e3`，base新CID `de34580c076d5aa55d0aa743dd8af8938e77a3937de5fc04ef8f5cfc4b740daf`。功能源仍 `8e80c0ceff799774da3923b74e298751e981ef33`，本片文档起点 `16e6d8af`。私有证据 `runner-foundation-v1/R1B-TWO-BACKEND-APPLY-v3/`：实际结果 `c2f1112faa3e5f3df37c80e817e2564972ff7efcd91469d6bd97a7e6610e4e4e`；Sol实际独审 `a6f2451a01780b4edc60d350f3ae46744fa4782f57f1355191b35c048e807f67`；Root限定更新PASS `a26b5af071e4b903e453c2b7b3ec415b0885c450df0e304f59bd0487272f656e`。由实际after原件派生的新17容器九字段基线SHA256 `ffa16d605a76f4d8b281ecbdf1fe47d392a041f7763532bc3367c3af79a91e51`，不是第二次测量；旧两个Backend CID后续不得再作当前目标。
+
+边界：环境值后验未独立采集，复用完整预览匹配及相同冻结配置；一次过早读取进行中捕获的exit/end文件尚不存在，不作为原生命令重试或成功依据。实际Root前置断言均成功，但宿主文本未set-e的失败反事实未验证、不保证；后续依赖操作改为先独立验工具exit0再单独派发。未用重复执行改变这些边界。
+
+## 更新后当前浏览器普通接续通过（2026-10-17）
+
+更新Root PASS后，单独准入当前browser2/tab4的B原会话 `conversation_4e1a48c747ee422886e9783de1115453`：1次UI提交、2次刷新、120秒窗口。输入要求为不调用业务工具/子助手、不请求Job，只回复准确标记。实际准入至持久性观察84.114784秒；原2篇对话变4篇，新增用户消息及准确回复 `BYQ-BACKEND-UPDATE-20261017-可以继续。`，刷新后新旧助手回复各一次，回复出现后与刷新后完整DOM相同，B身份/会话与可用输入框正常。截图和DOM/facts保存，三个页签均标记保留；A和B新对话页面没有导航/输入。
+
+证据 `runner-foundation-v1/BACKEND-UPDATE-BROWSER-v1/`：实际结果SHA256 `b8cd50b5c7e2eaa6b1bdb33fe97a4691127b0ced5d5baac8b7b9b8335932692b`，Sol独审 `684530c2765a0566a0df574df09342722b7745ce54f3d46c223b272d01a49e6b`，Root限定普通接续/持久性PASS `82ee8f760fa3b114d5331033fb9f7f43750b3f7746a0eacada5300685b75455f`。真实provider请求次数、原始HTTP状态未观察；未独立测量业务DB中Job实际零，不将“1次UI提交/无业务请求或界面步骤”冒充严格模型/DB计数。另保留页的当前输入为空，历史summary的123没有本轮before测量，故123保留NOT_PROVEN；未赋予清空原因或覆盖内容。
+
+本片未推进Product Phase，未push/merge/生产部署。双Backend reader及当前普通浏览器兼容通过，不等于私有prepare/install/activate、Runtime qualified START/ACK、R2或活动进程故障恢复。下一片仅准备最小fresh-fixture私有prebind资格，不重复已合格镜像/出生/普通对话，不重启旧探针，不声称恢复原子Agent。测试环境和三个页面保持打开。
