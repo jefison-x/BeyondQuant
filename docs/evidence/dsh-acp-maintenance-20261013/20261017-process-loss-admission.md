@@ -197,3 +197,21 @@ Root取消整套执行元JSON生成器、位置参数helper和短标签搜索，
 独立Sol只读原件确认：17个准确CID相同，只有A/B runner的mounts数组排列不同，各自三个唯一Destination下的完整entry全部相同，另外15行九字段相同，无资源漂移证据。根因是Root用临时列表严格相等替代了之前已明确验收的无序Mounts合同；去掉文档生成器并没有保证实际比较复用原合同。宿主assert来自本会话实际工具请求，未独立捕获其stdin原字节或UTC，不虚构源码hash。实际失败原件与原批次FAIL保留，不能用保存数据的语义一致分析改写成资格PASS。
 
 最小整改是直接复用已有纯 `image-closeout-r1b-v1/classify.py` 的rows/inventory语义：按唯一完整CID及唯一Destination比较完整对象，严格保留所有九字段及JSON类型；config_files顺序和effective ports口径不变，重复/未知/缺失值仍HOLD。没有新建validator或框架，没有为修判据再采集。源侧补充另存 `DIRECT-NATIVE-PLAN-SEMANTIC-REUSE.md`，SHA256 `2f6c2b692abf8c96ec03d43e6d83a50c1d73f558293694ac57ab3caebf3f9cde`；原准入短清单恢复并校验原SHA不变。独立失败复核 `16ba6df308f68fe8b7b97f31ec34ad075d18ad452950e72cab972b921c2b4124`；Root STOP `d6f0499226b1856b58b8044dd4f9da13da310ceab6e082982f15075b802f250f`。本批5只读native，0探针/卷/密钥/审计写入/模型/Job/START；身份绑定与浏览器恢复仍NOT_RUN。环境、账号、数据库、卷、镜像和三个页面保留；当前只继续源侧整改，不准本批再次测试。
+
+## v2在冗余PID1判据失败，停止原生测试并补实际恢复缺口（2026-10-17）
+
+功能源仍为 `8e80c0ceff799774da3923b74e298751e981ef33`，文档起点 `1b4b659a21fd6e3fc9af234b96cf61d28f5160eb`。本批复用已有库存比较器，17容器完整九字段及无序Mounts比较实际通过。新建一次隔离fixture及三个卷，ready入口通过；PID namespace原始结果为 `/usr/bin/python3 /opt/byq/acp_product_runner/server.py`。Root又添加仅接受 `python3` 的重复判据，错误拒绝现有合同明确允许的路径。立即停止，取消这一类重复手写判据，后续直接复用已有helper/合同，不逐个补别名或扩写观察器。
+
+18条原生命令均exit0/stderr0，setup至最后native共344.750974秒；一次准确stop后inspect证明新探针exited/PID0。Docker弃用提示出现在stdout，整段stdout等于CID的临时判据也不可靠，没有第二次stop。原17容器保持，三个新卷、私有env和全部原始证据保留；没有Backend审计写入、模型、Job或A故障。daemon/signed readback、prepare/install/activate、qualified START/ACK、故障和浏览器恢复均NOT_RUN。
+
+证据 `runner-foundation-v1/R1B-PREBIND-DIRECT-NATIVE-v2/`：实际STOP结果SHA256 `3fcc372a356b94ef0606d19df35fd892cb19c57a600a4f4e92cdbb53b1d27b78`，独立Sol复核 `ebe77c58b8f63ce43739c7a336a34a56ebe3952dd599a911907222b9b65df01c`，Root STOP `edc169390748b3e250baefd60c1239e4c7641d691bcb43876d49bb5e3e678343`。仅接受停止/准确保留事实，原批次FAIL不改写成绑定PASS。
+
+随后继续必要功能源码：Accepted ADR-0104要求的Backend protected proof与真实Root/AgentRun原子中断、Runtime持久operator ACK/drain/slot释放及reset保护仍未完整实现。当前先补最小Backend片，独立Sol早审要求ACK不能由调用者JSON冒充持久Runtime事实，历史execution boot与当前authority必须分开。现场Runtime仍是旧代码，已审current source含qualified START但尚未更新；源码、镜像、实际执行和浏览器证据分别报告。未准入新原生批次，未部署/重启相关服务，不推进Product Phase；环境与三个页面保留。
+
+## 准确保留fixture的首次绑定仍未完成（2026-10-17）
+
+独立Sol准入仅复用准确停机CID/卷/env的一次新instance首次绑定（36native/600秒，无新资源/模型/Job/START）。原旧IID签名/birth及三条准确marker/install/activation缺失通过；新IID签名/birth/lifetime lock/noSTART、Backend prepare、runner install读回、Backend activate实际成功。Root在最终传递前再次多余直接调用validator且漏两个必填keyword，宿主退出1，本wrapper没有执行新native。立即停止，不补参重试。最终runner activate/readback、START/ACK及故障/浏览器恢复均NOT_RUN，不能报告绑定PASS。
+
+收尾一次准确stop及PID0 inspect通过。保留库存命令初次因Root把IDs嵌为list而在argv编码前报错，0native；随后只完成原已准入的准确17只读采集，没有第二次stop。共23native全部exit0/stderr0、全批setup至最后native307.317392秒，原17字段相同，三个卷/env保留。Backend两条原生receipt是局部证据，未用它们冒充最终安装/资格。原始文件在 `runner-foundation-v1/R1B-PREBIND-DIRECT-NATIVE-v3-retained/`；实际STOP SHA256 `bfe1be3334dc97270a4313db15b68e6b6a6e13b9140fae102a3eb7fb5e60933f`，Sol实际独审 `43c2285ae806225b8fd4052820a49e9fc3d5d931a71ef672de16cab6d9e35d50`。
+
+整改收敛为取消整类Root在既有消费CLI/读回入口前的重复手写校验，采集只保存原生命令事实；不继续修补临时wrapper后试跑。本批live门关闭，继续实际R2源码闭环和独审。无生产/更新服务/账号重置/删除；环境与三个页面保持。
