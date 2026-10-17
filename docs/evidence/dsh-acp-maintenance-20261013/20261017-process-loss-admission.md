@@ -108,3 +108,13 @@ D 后续缺席判据补充：全链路核对发现 installer 的 `lexists` 会�
 独立 Sol 设计 PASS：私有原件 `.ci-artifacts/agent-origin-consumer-20261015-v1/process-loss-admission-20261017-v1/SOL-ADR-0104-DESIGN-REVIEW.json`，SHA256 `e595f5207ca85805d46ff7685a00cdde90b0a2f35c7d8d9f29604c4cb2ce9b5d`；被审 ADR SHA256 `04357de411c4e42e761a6036090114d3faaaac24fd1aeb51d3c6f7a9455a9265`。Root 接受此限定设计审查，**不等于实现或故障操作授权**。
 
 AGENTS.md 第15条及 Accepted ADR-0100/0113 要求维护者先接受这个具体例外合同。ADR 仍为 Proposed；实现、实际活动故障验证、进程丢失后的新子助手读取均 NOT_RUN。当前双用户隔离环境及三个页面继续保留。
+
+## 重新准入：停止探针的两条只读采集（2026-10-17）
+
+本节是前述失败之后的新证据。准确 HEAD `631f80b9ce0a39299b9c85a32bc00c3851922024`，未修改功能源码。独立 Sol 准入固定两条 stopped inspect；每条先独占保存 stdout/stderr、退出码和起止 UTC，再运行已审纯判定。非空 stderr、非零退出、超时、类型或语义不符立即停止，不派发后续工作。原19命令 FAIL 和所有静态 HOLD 保留。
+
+实际两条原生命令均 exit0/stderr0，合计0.051秒，精确旧 helper/runner CID、停止状态和全部已采集字段匹配。runner 的挂载输出顺序实际变化，按准确 Destination 的完整对象比较通过；runner tmpfs 已观察且匹配，helper 原 stopped 投影缺少该字段，仍为 NOT_OBSERVED。独立 Sol→Root 仅 **stopped metadata 采集合同 PASS**，不是 fresh runner、START 或恢复资格。0资源变更、0模型/Job/DB/API/浏览器输入；没有重启旧探针。
+
+私有原件位于 `R1B-FRESH-INSTANCE-QUALIFICATION-v1/native-stopped-readback-v1/`：计划 `PLAN-v2.json` SHA256 `6168f213e6f252a5d2f881f724c66dc436c88d6ecc311abe4ab6a1a7a335d6ef`，采集入口 `capture-classify-v2.py` SHA256 `a714acca95eaca5a542dbfb0fbaa38b3037c74c3493b50f319b84eac0d89b7eb`，实际结果 SHA256 `ed7e053334d278f56fcc6bcfd16c07f03d517d7330eb8c59b81583b0ed5c4fc0`，独审 SHA256 `2170411030564b2d760c2f529432c7ecd63e0067b2195a30342f29d1540d87bd`，`ROOT-PASS.json` SHA256 `4f8bc2472c1d777ec42cf836bac12c21895a61e963bd1c6cfc01c4f4beb4c4ed`。
+
+下一片单独准入真正 fresh ACP runner：只补 ACP10文件、ready 后 PID namespace、签名出生/锁/noSTART；复用已通过的 Backend6文件证据。上限1新runner/3新卷/32原生命令/300秒，无 Backend helper、安装/激活、START、模型、Job或DB。当前尚未准入或创建资源，R2与活动故障/浏览器恢复均 NOT_RUN。原17容器和三个当前浏览器页签保留。
