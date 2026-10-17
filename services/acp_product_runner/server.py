@@ -36,7 +36,9 @@ from packages.contracts.acp_product_instance import (
     ProductInstanceContractError,
     canonical_json as canonical_instance_json,
     sign_instance,
+    sign_instance_started,
     sign_scope_binding,
+    validate_instance_started,
 )
 from packages.contracts.product_turn_request import (
     PRODUCT_TURN_LIMITS,
@@ -69,6 +71,7 @@ PRODUCT_STATE_ROOT = Path("/var/lib/byq/acp-product-runner-state")
 CONTROL_DIRECTORY = Path("/run/byq-acp-product-runner")
 CONTROL_SOCKET = CONTROL_DIRECTORY / "control.sock"
 CONTROL_READY = CONTROL_DIRECTORY / "ready"
+CONTROL_INSTANCE = CONTROL_DIRECTORY / "instance.json"
 PRODUCT_PROFILE_PATCH = Path("/opt/byq/profiles/byq-product.patch.yml")
 PRODUCT_WORKSPACE_ENV = "BYQ_ACP_PRODUCT_WORKSPACE_ID"
 PRODUCT_SECRET_ENV = "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET"
@@ -585,6 +588,7 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         state_gid: int = 0,
         prepare_roots: bool = True,
         ready_file: Path = CONTROL_READY,
+        instance_descriptor: Path | None = None,
     ) -> None:
         if not isinstance(secret, bytes) or len(secret) < 32:
             raise ValueError("Product runner control secret is invalid")
@@ -607,6 +611,10 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         self.socket_path = Path(socket_path)
         self.control_directory = Path(control_directory)
         self.ready_file = Path(ready_file)
+        self.instance_descriptor = (Path(instance_descriptor) if instance_descriptor is not None
+                                    else self.control_directory / CONTROL_INSTANCE.name)
+        if self.instance_descriptor.parent != self.control_directory:
+            raise ValueError("Product runner instance descriptor must be in its control directory")
         self.retire_requested = False
         self.launcher = launcher
         self._state_lock_fd: int | None = None
@@ -614,6 +622,7 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         self._instance_record: dict[str, object] | None = None
         self._socket_identity: tuple[int, int] | None = None
         self._ready_identity: tuple[int, int] | None = None
+        self._instance_descriptor_identity: tuple[int, int] | None = None
 
         if self.session_root.name != workspace_id or self.session_root.parent != self.session_base:
             raise ValueError("Product runner session root is not workspace-canonical")
@@ -631,6 +640,20 @@ class ProductSlotServer(socketserver.UnixStreamServer):
                                     group=self.control_gid, mode=0o600)
             self._remove_stale_file(self.socket_path, socket_file=True,
                                     group=self.control_gid, mode=0o660)
+            self._remove_stale_file(self.instance_descriptor, socket_file=False,
+                                    group=self.control_gid, mode=0o640)
+            control_dir_fd = os.open(
+                self.control_directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+            try:
+                # Make removal of the old workspace-only ready sentinel durable
+                # before a new instance pointer can become visible.
+                os.fsync(control_dir_fd)
+            finally:
+                os.close(control_dir_fd)
+            # Publish the current signed instance before bind/listen makes the
+            # control socket accept any Adapter connection.
+            self._publish_instance_descriptor()
             super().__init__(str(self.socket_path), _ProductRequestHandler,
                              bind_and_activate=True)
             self._socket_identity = self._path_identity(self.socket_path)
@@ -732,6 +755,83 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.json", record,
         )
         self._instance_record = record
+
+    def _publish_instance_descriptor(self) -> None:
+        if self._instance_record is None:
+            raise OSError("Product runner instance record is unavailable")
+        directory = self.instance_descriptor.parent
+        _canonical_directory(directory)
+        temporary = directory / f".{self.instance_descriptor.name}.{os.urandom(8).hex()}.tmp"
+        data = canonical_instance_json(self._instance_record)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(temporary, flags, 0o600)
+        try:
+            os.fchown(descriptor, self.runner_uid, self.control_gid)
+            os.fchmod(descriptor, 0o640)
+            view = memoryview(data)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("short write to Product runner control instance")
+                view = view[written:]
+            os.fsync(descriptor)
+        except BaseException:
+            os.close(descriptor)
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+            raise
+        else:
+            os.close(descriptor)
+        temporary_info = os.lstat(temporary)
+        if (not stat.S_ISREG(temporary_info.st_mode) or temporary_info.st_nlink != 1
+                or temporary_info.st_uid != self.runner_uid
+                or temporary_info.st_gid != self.control_gid
+                or stat.S_IMODE(temporary_info.st_mode) != 0o640):
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+            raise OSError("Product runner control instance staging file is invalid")
+        # Record the staged inode before linking so startup-failure cleanup can
+        # remove the pointer even if the post-link verification itself fails.
+        self._instance_descriptor_identity = (temporary_info.st_dev, temporary_info.st_ino)
+        try:
+            # link() publishes without replacing a retained or concurrent
+            # control pointer. The temporary is removed after the link.
+            os.link(temporary, self.instance_descriptor, follow_symlinks=False)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+        directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        info = os.lstat(self.instance_descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != self.runner_uid or info.st_gid != self.control_gid
+                or stat.S_IMODE(info.st_mode) != 0o640):
+            raise OSError("Product runner control instance permissions are invalid")
+        read_fd = os.open(self.instance_descriptor,
+                          os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(read_fd)
+            raw = bytearray()
+            while len(raw) <= len(data):
+                block = os.read(read_fd, min(4096, len(data) + 1 - len(raw)))
+                if not block:
+                    break
+                raw.extend(block)
+            after = os.fstat(read_fd)
+            if ((opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino)
+                    or bytes(raw) != data or len(raw) != after.st_size):
+                raise OSError("Product runner control instance changed while publishing")
+        finally:
+            os.close(read_fd)
 
     def _state_generation(self) -> str:
         path = self.state_dir / ".state-generation"
@@ -843,6 +943,125 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             self.state_dir / _SCOPE_BINDING_DIRECTORY / f"{digest}.json", record,
         )
 
+    def _persist_instance_started_marker(self) -> None:
+        """Durably record that this instance may have accepted a START."""
+        if self._instance_record is None:
+            raise OSError("Product runner instance record is unavailable")
+        path = (self.state_dir / _INSTANCE_DIRECTORY
+                / f"{self.instance_id}.started.json")
+        try:
+            raw, identity = self._read_instance_started_marker(path)
+        except FileNotFoundError:
+            marker = sign_instance_started({
+                "schema_version": "byq-acp-product-runner-started.v1",
+                "workspace_id": self.workspace_id,
+                "runner_instance_id": self.instance_id,
+                "runner_boot_id": self._instance_record["runner_boot_id"],
+                "state_generation": self._instance_record["state_generation"],
+                "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            }, key=self.secret, instance=self._instance_record)
+            try:
+                self._persist_immutable_record(path, marker)
+            except FileExistsError:
+                # A concurrent/previous write is reusable only if it is the
+                # exact authenticated marker for this immutable instance.
+                pass
+            # Read back the exact immutable inode. This also lets recovery from
+            # a prior parent-directory fsync error finish durability before
+            # START proceeds.
+            raw, identity = self._read_instance_started_marker(path)
+        try:
+            validate_instance_started(raw, key=self.secret, instance=self._instance_record)
+        except ProductInstanceContractError as exc:
+            raise OSError("Product runner started marker is invalid") from exc
+        self._fsync_instance_started_marker(path, identity)
+
+    def _read_instance_started_marker(
+        self, path: Path,
+    ) -> tuple[object, tuple[int, int]]:
+        try:
+            before = os.lstat(path)
+        except FileNotFoundError:
+            raise
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != self.runner_uid or before.st_gid != self.state_gid
+                or stat.S_IMODE(before.st_mode) != 0o600 or before.st_size > 4096):
+            raise OSError("Product runner started marker permissions are invalid")
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(descriptor)
+            if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                    or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                    or opened.st_uid != self.runner_uid or opened.st_gid != self.state_gid
+                    or stat.S_IMODE(opened.st_mode) != 0o600 or opened.st_size > 4096):
+                raise OSError("Product runner started marker changed while opening")
+            raw = bytearray()
+            while len(raw) <= 4096:
+                block = os.read(descriptor, min(4096, 4097 - len(raw)))
+                if not block:
+                    break
+                raw.extend(block)
+            after = os.fstat(descriptor)
+            if (len(raw) > 4096 or len(raw) != after.st_size
+                    or (opened.st_dev, opened.st_ino, opened.st_size,
+                        opened.st_mtime_ns, opened.st_ctime_ns)
+                    != (after.st_dev, after.st_ino, after.st_size,
+                        after.st_mtime_ns, after.st_ctime_ns)):
+                raise OSError("Product runner started marker changed while reading")
+        finally:
+            os.close(descriptor)
+        try:
+            value = json.loads(bytes(raw).decode("utf-8"), object_pairs_hook=_strict_object,
+                               parse_constant=_reject_constant)
+        except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+            raise OSError("Product runner started marker JSON is invalid") from exc
+        return value, (opened.st_dev, opened.st_ino)
+
+    def _fsync_instance_started_marker(
+        self, path: Path, expected_identity: tuple[int, int],
+    ) -> None:
+        expected_path = (self.state_dir / _INSTANCE_DIRECTORY
+                         / f"{self.instance_id}.started.json")
+        if path != expected_path:
+            raise OSError("Product runner started marker path is invalid")
+        directory = path.parent
+        _canonical_directory(directory)
+        directory_info = os.lstat(directory)
+        if (directory_info.st_uid != self.runner_uid
+                or directory_info.st_gid != self.state_gid
+                or stat.S_IMODE(directory_info.st_mode) != 0o700):
+            raise OSError("Product runner started marker directory is not private")
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            info = os.fstat(descriptor)
+            if ((info.st_dev, info.st_ino) != expected_identity
+                    or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or info.st_uid != self.runner_uid or info.st_gid != self.state_gid
+                    or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 4096):
+                raise OSError("Product runner started marker changed before fsync")
+            os.fsync(descriptor)
+            after = os.fstat(descriptor)
+            if ((after.st_dev, after.st_ino) != expected_identity
+                    or after.st_size != info.st_size):
+                raise OSError("Product runner started marker changed during fsync")
+        finally:
+            os.close(descriptor)
+        directory_fd = os.open(
+            directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            opened_directory = os.fstat(directory_fd)
+            if ((opened_directory.st_dev, opened_directory.st_ino)
+                    != (directory_info.st_dev, directory_info.st_ino)
+                    or opened_directory.st_uid != self.runner_uid
+                    or opened_directory.st_gid != self.state_gid
+                    or stat.S_IMODE(opened_directory.st_mode) != 0o700):
+                raise OSError("Product runner started marker directory changed")
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
     @staticmethod
     def _remove_stale_file(path: Path, *, socket_file: bool,
                            group: int, mode: int) -> None:
@@ -875,17 +1094,21 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             os.unlink(path)
 
     def _close_owned_startup_resources(self) -> None:
-        try:
-            if hasattr(self, "socket"):
-                socketserver.UnixStreamServer.server_close(self)
-        finally:
+        if hasattr(self, "socket"):
             try:
-                self._unlink_if_owned(self.socket_path, self._socket_identity,
-                                      socket_file=True)
-                self._unlink_if_owned(self.ready_file, self._ready_identity,
-                                      socket_file=False)
-            finally:
-                self._release_state_locks()
+                socketserver.UnixStreamServer.server_close(self)
+            except BaseException:
+                pass
+        for path, identity, socket_file in (
+            (self.socket_path, self._socket_identity, True),
+            (self.ready_file, self._ready_identity, False),
+            (self.instance_descriptor, self._instance_descriptor_identity, False),
+        ):
+            try:
+                self._unlink_if_owned(path, identity, socket_file=socket_file)
+            except OSError:
+                pass
+        self._release_state_locks()
 
     def _publish_ready(self) -> None:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
@@ -944,10 +1167,21 @@ class ProductSlotServer(socketserver.UnixStreamServer):
     def server_close(self) -> None:
         try:
             super().server_close()
-            self._unlink_if_owned(self.socket_path, self._socket_identity, socket_file=True)
-            self._unlink_if_owned(self.ready_file, self._ready_identity, socket_file=False)
         finally:
-            self._release_state_locks()
+            try:
+                self._unlink_if_owned(self.socket_path, self._socket_identity,
+                                      socket_file=True)
+            finally:
+                try:
+                    self._unlink_if_owned(self.ready_file, self._ready_identity,
+                                          socket_file=False)
+                finally:
+                    try:
+                        self._unlink_if_owned(self.instance_descriptor,
+                                              self._instance_descriptor_identity,
+                                              socket_file=False)
+                    finally:
+                        self._release_state_locks()
 
 
 class _ProductRequestHandler(_helpers._RunnerRequestHandler):
@@ -981,6 +1215,11 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             return
         try:
             with self.server._admission_guard():
+                # This durable per-instance fact precedes tombstone consumption,
+                # scope ownership, and any child dispatch. It only means this
+                # instance may have accepted START; it is not cleanup or proof
+                # that no business effect occurred.
+                self.server._persist_instance_started_marker()
                 digest = self.server._consume_scope(scope)
                 self.server._persist_scope_ownership(scope, digest)
         except FileExistsError:

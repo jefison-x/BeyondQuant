@@ -25,6 +25,23 @@ scope-ownership records. The lifetime lock is local exclusion only: it does
 not detect state-volume clones or rollback and must not release a Backend
 fence.
 
+For the trusted Adapter, startup atomically publishes `instance.json` in the
+private control directory before creating/listening on the control socket. The
+descriptor is a byte-identical copy of the signed instance record retained in
+the state volume, with mode `0640` and the control GID; the original state
+record is not rewritten or widened. Startup first removes its stale ready
+sentinel, so a prior workspace-only `ready` file cannot establish the current
+instance. Normal close removes only this process's descriptor inode and leaves
+the retained state record intact.
+
+Before the first scope tombstone/ownership write, START durably creates a
+Product-MACed per-instance `started` marker under the admission lock. Later
+normal roots validate and reuse that same marker. Its meaning is only that the
+instance may have accepted execution; it is not evidence of process death,
+cleanup, or absence of business effects. A future Engineering prebind must
+refuse any instance with this marker. The retained marker is
+`instances/<runner_instance_id>.started.json` in the private state volume.
+
 ## Fixed identity and storage
 
 At startup the container requires:

@@ -17,8 +17,10 @@ from .acp_product_slot import product_scope_digest, validate_product_scope
 
 INSTANCE_SCHEMA = "byq-acp-product-runner-instance.v1"
 SCOPE_SCHEMA = "byq-acp-product-runner-scope-binding.v1"
+STARTED_SCHEMA = "byq-acp-product-runner-started.v1"
 INSTANCE_HMAC_PREFIX = b"byq-acp-product-runner-instance-v1\0"
 SCOPE_HMAC_PREFIX = b"byq-acp-product-runner-scope-v1\0"
+STARTED_HMAC_PREFIX = b"byq-acp-product-runner-started-v1\0"
 
 INSTANCE_FIELDS = frozenset({
     "schema_version", "workspace_id", "runner_instance_id", "runner_boot_id",
@@ -29,6 +31,10 @@ SCOPE_FIELDS = frozenset({
     "schema_version", "scope_digest", "scope", "runner_instance_id",
     "runner_boot_id", "state_generation", "operator_qualified",
     "deployment_binding_sha256", "backend_binding_nonce", "dispatch_state",
+})
+STARTED_FIELDS = frozenset({
+    "schema_version", "workspace_id", "runner_instance_id", "runner_boot_id",
+    "state_generation", "started_at",
 })
 
 _HEX32 = re.compile(r"[0-9a-f]{32}\Z")
@@ -101,6 +107,26 @@ def validate_instance(raw: object, *, key: bytes) -> dict[str, object]:
             or value["deployment_binding_sha256"] is not None
             or value["backend_binding_nonce"] is not None):
         raise ProductInstanceContractError("Product runner instance identity is invalid")
+    return value
+
+
+def sign_instance_started(value: Mapping[str, object], *, key: bytes,
+                          instance: Mapping[str, object]) -> dict[str, object]:
+    result = _sign(value, key=key, prefix=STARTED_HMAC_PREFIX,
+                   fields=STARTED_FIELDS, schema=STARTED_SCHEMA)
+    validate_instance_started(result, key=key, instance=instance)
+    return result
+
+
+def validate_instance_started(raw: object, *, key: bytes,
+                               instance: Mapping[str, object]) -> dict[str, object]:
+    value = _verify(raw, key=key, prefix=STARTED_HMAC_PREFIX,
+                    fields=STARTED_FIELDS, schema=STARTED_SCHEMA)
+    checked_instance = validate_instance(instance, key=key)
+    if (any(value[field] != checked_instance[field] for field in (
+            "workspace_id", "runner_instance_id", "runner_boot_id", "state_generation"))
+            or not isinstance(value["started_at"], str) or not value["started_at"]):
+        raise ProductInstanceContractError("Product runner started marker identity is invalid")
     return value
 
 
