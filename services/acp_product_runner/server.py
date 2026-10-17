@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import datetime as dt
+import fcntl
 import hashlib
 import hmac
 import importlib.util
@@ -26,6 +29,14 @@ from packages.contracts.acp_product_slot import (
     product_scope_digest,
     validate_product_environment,
     validate_product_scope,
+)
+from packages.contracts.acp_product_instance import (
+    INSTANCE_SCHEMA,
+    SCOPE_SCHEMA,
+    ProductInstanceContractError,
+    canonical_json as canonical_instance_json,
+    sign_instance,
+    sign_scope_binding,
 )
 from packages.contracts.product_turn_request import (
     PRODUCT_TURN_LIMITS,
@@ -79,6 +90,10 @@ _GUARD_RESERVATION = re.compile(r"continuation_[0-9a-f]{32}\Z")
 # Product-scope cleanup proof, distinct from the judgment receipt contract.
 _PRODUCT_CLEANUP_RECEIPT_SCHEMA = "byq-acp-product-runner-cleanup.v1"
 _CLEANUP_RECEIPT_DIR = "cleanup-receipts"
+_INSTANCE_DIRECTORY = "instances"
+_SCOPE_BINDING_DIRECTORY = "scope-bindings"
+_STATE_LOCK_NAME = ".runner-lifetime.lock"
+_ADMISSION_LOCK_NAME = ".runner-admission.lock"
 
 
 def _valid_local_proxy_url(value: object) -> bool:
@@ -594,26 +609,45 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         self.ready_file = Path(ready_file)
         self.retire_requested = False
         self.launcher = launcher
+        self._state_lock_fd: int | None = None
+        self._admission_lock_fd: int | None = None
+        self._instance_record: dict[str, object] | None = None
+        self._socket_identity: tuple[int, int] | None = None
+        self._ready_identity: tuple[int, int] | None = None
 
         if self.session_root.name != workspace_id or self.session_root.parent != self.session_base:
             raise ValueError("Product runner session root is not workspace-canonical")
         if prepare_roots:
             self._prepare_roots()
-        if self.launcher is None:
-            self.launcher = _helpers._make_launcher(self.runtime_root, self.profile_patch)
-        self._remove_stale_file(self.ready_file, socket_file=False,
-                                group=self.control_gid, mode=0o600)
-        self._remove_stale_file(self.socket_path, socket_file=True,
-                                group=self.control_gid, mode=0o660)
-        super().__init__(str(self.socket_path), _ProductRequestHandler, bind_and_activate=True)
-        os.chown(self.socket_path, self.runner_uid, self.control_gid, follow_symlinks=False)
-        os.chmod(self.socket_path, 0o660, follow_symlinks=False)
-        info = os.stat(self.socket_path, follow_symlinks=False)
-        if (not stat.S_ISSOCK(info.st_mode) or info.st_uid != self.runner_uid
-                or info.st_gid != self.control_gid or stat.S_IMODE(info.st_mode) != 0o660):
-            self.server_close()
-            raise RuntimeError("Product ACP control socket permissions are invalid")
-        self._publish_ready()
+        # Acquire the private state-volume lock before touching any old control
+        # socket or readiness marker. It protects this volume for the complete
+        # runner lifetime; it is not evidence that another container stopped.
+        self._acquire_state_locks()
+        try:
+            self._persist_instance_record()
+            if self.launcher is None:
+                self.launcher = _helpers._make_launcher(self.runtime_root, self.profile_patch)
+            self._remove_stale_file(self.ready_file, socket_file=False,
+                                    group=self.control_gid, mode=0o600)
+            self._remove_stale_file(self.socket_path, socket_file=True,
+                                    group=self.control_gid, mode=0o660)
+            super().__init__(str(self.socket_path), _ProductRequestHandler,
+                             bind_and_activate=True)
+            self._socket_identity = self._path_identity(self.socket_path)
+            os.chown(self.socket_path, self.runner_uid, self.control_gid, follow_symlinks=False)
+            os.chmod(self.socket_path, 0o660, follow_symlinks=False)
+            info = os.stat(self.socket_path, follow_symlinks=False)
+            if (not stat.S_ISSOCK(info.st_mode) or info.st_uid != self.runner_uid
+                    or info.st_gid != self.control_gid
+                    or stat.S_IMODE(info.st_mode) != 0o660):
+                raise RuntimeError("Product ACP control socket permissions are invalid")
+            self._publish_ready()
+        except BaseException:
+            try:
+                self._close_owned_startup_resources()
+            except BaseException:
+                pass
+            raise
 
     def _prepare_roots(self) -> None:
         _prepare_root_directory(self.state_dir, uid=self.runner_uid,
@@ -624,6 +658,190 @@ class ProductSlotServer(socketserver.UnixStreamServer):
                                 gid=self.child_gid, mode=0o770)
         _prepare_root_directory(self.control_directory, uid=self.runner_uid,
                                 gid=self.control_gid, mode=0o710)
+
+    def server_bind(self) -> None:
+        # Capture the filesystem socket identity immediately after bind, before
+        # server_activate or later permission/readiness steps can fail.
+        super().server_bind()
+        self._socket_identity = self._path_identity(self.socket_path)
+
+    def _acquire_state_locks(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        _canonical_directory(self.state_dir)
+        state_info = os.lstat(self.state_dir)
+        if (state_info.st_uid != self.runner_uid or state_info.st_gid != self.state_gid
+                or stat.S_IMODE(state_info.st_mode) != 0o700):
+            raise RuntimeError("Product runner private state directory is invalid")
+        try:
+            for name, target in ((_STATE_LOCK_NAME, "state"),
+                                 (_ADMISSION_LOCK_NAME, "admission")):
+                path = self.state_dir / name
+                flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+                descriptor = os.open(path, flags, 0o600)
+                info = os.fstat(descriptor)
+                if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                        or info.st_uid != self.runner_uid or info.st_gid != self.state_gid
+                        or stat.S_IMODE(info.st_mode) != 0o600):
+                    os.close(descriptor)
+                    raise RuntimeError("Product runner private state lock is invalid")
+                if target == "state":
+                    try:
+                        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except OSError:
+                        os.close(descriptor)
+                        raise RuntimeError("Product runner state volume is already owned") from None
+                    self._state_lock_fd = descriptor
+                else:
+                    self._admission_lock_fd = descriptor
+            instances = self.state_dir / _INSTANCE_DIRECTORY
+            bindings = self.state_dir / _SCOPE_BINDING_DIRECTORY
+            _prepare_root_directory(instances, uid=self.runner_uid,
+                                    gid=self.state_gid, mode=0o700)
+            _prepare_root_directory(bindings, uid=self.runner_uid,
+                                    gid=self.state_gid, mode=0o700)
+        except BaseException:
+            self._release_state_locks()
+            raise
+
+    def _release_state_locks(self) -> None:
+        for name in ("_admission_lock_fd", "_state_lock_fd"):
+            descriptor = getattr(self, name)
+            if descriptor is not None:
+                setattr(self, name, None)
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+
+    def _persist_instance_record(self) -> None:
+        assert self._state_lock_fd is not None
+        record = sign_instance({
+            "schema_version": INSTANCE_SCHEMA,
+            "workspace_id": self.workspace_id,
+            "runner_instance_id": self.instance_id,
+            "runner_boot_id": os.urandom(16).hex(),
+            "state_generation": self._state_generation(),
+            "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "operator_qualified": False,
+            # Reserved for the later Engineering/Backend prebind. A null value
+            # explicitly means this instance is not process-proof qualified.
+            "deployment_binding_sha256": None,
+            "backend_binding_nonce": None,
+        }, key=self.secret)
+        self._persist_immutable_record(
+            self.state_dir / _INSTANCE_DIRECTORY / f"{self.instance_id}.json", record,
+        )
+        self._instance_record = record
+
+    def _state_generation(self) -> str:
+        path = self.state_dir / ".state-generation"
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            value = os.urandom(32).hex()
+            descriptor = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0), 0o600,
+            )
+            try:
+                os.fchown(descriptor, self.runner_uid, self.state_gid)
+                os.fchmod(descriptor, 0o600)
+                payload = (value + "\n").encode("ascii")
+                if os.write(descriptor, payload) != len(payload):
+                    raise OSError("short write to Product runner state generation")
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            directory_fd = os.open(self.state_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            return value
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != self.runner_uid or info.st_gid != self.state_gid
+                or stat.S_IMODE(info.st_mode) != 0o600):
+            raise RuntimeError("Product runner state generation is invalid")
+        raw = path.read_bytes()
+        if len(raw) != 65 or raw[-1:] != b"\n":
+            raise RuntimeError("Product runner state generation is invalid")
+        value = raw[:-1].decode("ascii", errors="strict")
+        if _HEX64.fullmatch(value) is None:
+            raise RuntimeError("Product runner state generation is invalid")
+        return value
+
+    def _persist_immutable_record(self, path: Path, record: dict[str, object]) -> None:
+        directory = path.parent
+        _canonical_directory(directory)
+        temporary = directory / f".{path.name}.{os.urandom(8).hex()}.tmp"
+        data = canonical_instance_json(record)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(temporary, flags, 0o600)
+        try:
+            os.fchown(descriptor, self.runner_uid, self.state_gid)
+            os.fchmod(descriptor, 0o600)
+            view = memoryview(data)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("short write to Product runner state")
+                view = view[written:]
+            os.fsync(descriptor)
+        except BaseException:
+            os.close(descriptor)
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+            raise
+        else:
+            os.close(descriptor)
+        try:
+            # link() gives immutable O_EXCL semantics; rename would overwrite a
+            # retained identity or consumed scope if a digest were reused.
+            os.link(temporary, path, follow_symlinks=False)
+        finally:
+            os.unlink(temporary)
+        directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        info = os.lstat(path)
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != self.runner_uid or info.st_gid != self.state_gid
+                or stat.S_IMODE(info.st_mode) != 0o600):
+            raise OSError("Product runner state record permissions are invalid")
+
+    @contextlib.contextmanager
+    def _admission_guard(self):
+        descriptor = self._admission_lock_fd
+        if descriptor is None:
+            raise RuntimeError("Product runner admission lock is unavailable")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+    def _persist_scope_ownership(self, scope: dict[str, str], digest: str) -> None:
+        if self._instance_record is None:
+            raise OSError("Product runner instance record is unavailable")
+        record = sign_scope_binding({
+            "schema_version": SCOPE_SCHEMA,
+            "scope_digest": digest,
+            "scope": dict(scope),
+            "runner_instance_id": self.instance_id,
+            "runner_boot_id": self._instance_record["runner_boot_id"],
+            "state_generation": self._instance_record["state_generation"],
+            "operator_qualified": False,
+            "deployment_binding_sha256": None,
+            "backend_binding_nonce": None,
+            "dispatch_state": "may_have_dispatched",
+        }, key=self.secret, instance=self._instance_record)
+        self._persist_immutable_record(
+            self.state_dir / _SCOPE_BINDING_DIRECTORY / f"{digest}.json", record,
+        )
 
     @staticmethod
     def _remove_stale_file(path: Path, *, socket_file: bool,
@@ -638,15 +856,55 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             raise RuntimeError("stale Product runner control path is not private")
         os.unlink(path)
 
+    @staticmethod
+    def _path_identity(path: Path) -> tuple[int, int]:
+        info = os.lstat(path)
+        return info.st_dev, info.st_ino
+
+    @staticmethod
+    def _unlink_if_owned(path: Path, identity: tuple[int, int] | None,
+                         *, socket_file: bool) -> None:
+        if identity is None:
+            return
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            return
+        correct_type = stat.S_ISSOCK(info.st_mode) if socket_file else stat.S_ISREG(info.st_mode)
+        if correct_type and (info.st_dev, info.st_ino) == identity:
+            os.unlink(path)
+
+    def _close_owned_startup_resources(self) -> None:
+        try:
+            if hasattr(self, "socket"):
+                socketserver.UnixStreamServer.server_close(self)
+        finally:
+            try:
+                self._unlink_if_owned(self.socket_path, self._socket_identity,
+                                      socket_file=True)
+                self._unlink_if_owned(self.ready_file, self._ready_identity,
+                                      socket_file=False)
+            finally:
+                self._release_state_locks()
+
     def _publish_ready(self) -> None:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(self.ready_file, flags, 0o600)
-        os.fchown(descriptor, self.runner_uid, self.control_gid)
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as output:
-            output.write((self.workspace_id + "\n").encode("ascii"))
-            output.flush()
-            os.fsync(output.fileno())
+        try:
+            info = os.fstat(descriptor)
+            self._ready_identity = (info.st_dev, info.st_ino)
+            os.fchown(descriptor, self.runner_uid, self.control_gid)
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write((self.workspace_id + "\n").encode("ascii"))
+                output.flush()
+                os.fsync(output.fileno())
+        except BaseException:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            raise
 
     def _consume_scope(self, scope: dict[str, str]) -> str:
         digest = product_scope_digest(scope)
@@ -684,15 +942,12 @@ class ProductSlotServer(socketserver.UnixStreamServer):
             raise RetireSlot(70)
 
     def server_close(self) -> None:
-        super().server_close()
-        for path, socket_file in ((self.socket_path, True), (self.ready_file, False)):
-            try:
-                info = os.lstat(path)
-                valid = stat.S_ISSOCK(info.st_mode) if socket_file else stat.S_ISREG(info.st_mode)
-                if valid and info.st_uid == self.runner_uid:
-                    os.unlink(path)
-            except FileNotFoundError:
-                pass
+        try:
+            super().server_close()
+            self._unlink_if_owned(self.socket_path, self._socket_identity, socket_file=True)
+            self._unlink_if_owned(self.ready_file, self._ready_identity, socket_file=False)
+        finally:
+            self._release_state_locks()
 
 
 class _ProductRequestHandler(_helpers._RunnerRequestHandler):
@@ -725,12 +980,14 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
                          product_scope_digest(scope))
             return
         try:
-            digest = self.server._consume_scope(scope)
+            with self.server._admission_guard():
+                digest = self.server._consume_scope(scope)
+                self.server._persist_scope_ownership(scope, digest)
         except FileExistsError:
             self._reject(connection, "scope_consumed", challenge, nonce,
                          product_scope_digest(scope))
             return
-        except OSError:
+        except (OSError, ProductInstanceContractError):
             self._reject(connection, "state_unavailable", challenge, nonce,
                          product_scope_digest(scope))
             return

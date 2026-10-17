@@ -106,6 +106,8 @@ COPY services/acp_judgment_runner/server.py /opt/byq/acp_judgment_runner/server.
 COPY services/acp_product_runner/server.py /opt/byq/acp_product_runner/server.py
 COPY packages/contracts/acp_product_slot.py \
     /opt/byq/acp_product_runner/packages/contracts/acp_product_slot.py
+COPY packages/contracts/acp_product_instance.py \
+    /opt/byq/acp_product_runner/packages/contracts/acp_product_instance.py
 # ADR-0106: the runner validates the ordinary Product overlay with the exact
 # product-turn.v1 limits, so the closed contract module must ship with it.
 COPY packages/contracts/product_turn_request.py \

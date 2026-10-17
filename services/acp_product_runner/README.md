@@ -14,6 +14,17 @@ requirement. It owns no Backend authority or business decisions. The Adapter
 remains responsible for user authorization, idempotency, unknown outcomes, and
 the exact terminal ACK before it submits the next root.
 
+The runner exclusively locks its private state volume for its lifetime and
+persists signed runner-instance and per-START scope records before launching a
+DSH process. These local records retain which instance accepted a scope; they
+do not prove that any earlier container or PID namespace stopped. The records
+explicitly carry `operator_qualified: false` and empty deployment/Backend
+binding references until the separate Engineering prebind seam is implemented
+and reviewed. Existing legacy `.used` tombstones are never upgraded into
+scope-ownership records. The lifetime lock is local exclusion only: it does
+not detect state-volume clones or rollback and must not release a Backend
+fence.
+
 ## Fixed identity and storage
 
 At startup the container requires:
