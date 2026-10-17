@@ -33,8 +33,37 @@ from packages.contracts.agent_run_lifecycle import (
 )
 from packages.contracts.acp_product_slot import (
     PRODUCT_SCOPE_KEYS,
+    ProductSlotContractError,
     validate_product_scope,
     verify_product_cleanup_receipt,
+)
+from packages.contracts.acp_product_prebind import (
+    ACTIVATE_ACTION,
+    ACTIVATE_IDEMPOTENCY_PREFIX,
+    ACTIVATE_REQUEST_FIELDS,
+    ACTIVATE_REQUEST_SCHEMA,
+    BACKEND_ACTIVE_FIELDS,
+    BACKEND_ACTIVE_SCHEMA,
+    BIRTH_FIELDS,
+    BIRTH_SCHEMA,
+    ENGINEERING_OBSERVATION_FIELDS,
+    INSTANCE_FIELDS,
+    INSTALL_FIELDS,
+    INSTALL_SCHEMA,
+    NATIVE_FACT_FIELDS,
+    PREPARE_ACTION,
+    PREPARE_FIELDS,
+    PREPARE_IDEMPOTENCY_PREFIX,
+    PREPARE_SCHEMA,
+    RUNNER_READBACK_FIELDS,
+    START_BINDING_FIELDS,
+    START_BINDING_SCHEMA,
+    PrebindContractError,
+    canonical_json as prebind_canonical_json,
+    digest as prebind_digest,
+    validate_backend_active_receipt,
+    validate_prepared_receipt,
+    validate_start_binding,
 )
 from packages.contracts.research_plan_approval import (
     AGENT_APPROVAL_PLAN_ACTION,
@@ -131,6 +160,59 @@ _HISTORICAL_RECONCILIATION_OUTCOME = "audit_append_outcome_unknown_acknowledged"
 _HISTORICAL_BACKEND_SCOPE_SCHEMA = "byq-acp-product-cleanup-scope.v1"
 _HISTORICAL_BACKEND_SNAPSHOT_SCHEMA = "byq-acp-historical-audit-backend-snapshot.v1"
 _HISTORICAL_CONTROL_KEY_SHA_ENV = "BYQ_ACP_PRODUCT_CONTROL_KEY_SHA256"
+
+_QUALIFIED_ADMISSION_RUNNER_IDENTITY_FIELDS = frozenset({
+    "runner_instance_id", "runner_boot_id", "state_generation",
+    "signed_instance_sha256",
+})
+
+
+def _strict_query_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("qualified admission JSON contains duplicate fields")
+        value[key] = item
+    return value
+
+
+def _reject_query_constant(value: str) -> None:
+    raise ValueError(f"qualified admission JSON contains non-finite value: {value}")
+
+
+def _is_bounded_utf8_text(value: object, max_bytes: int) -> bool:
+    if not isinstance(value, str) or not value or "\x00" in value:
+        return False
+    try:
+        return len(value.encode("utf-8")) <= max_bytes
+    except UnicodeError:
+        return False
+
+
+def _parse_qualified_admission_json(
+    raw: object, *, field: str, expected_fields: frozenset[str], max_bytes: int,
+) -> dict[str, Any]:
+    if not isinstance(raw, str) or not raw:
+        raise ValueError(f"{field} must be bounded JSON")
+    try:
+        encoded = raw.encode("utf-8")
+    except UnicodeError as exc:
+        raise ValueError(f"{field} is not valid UTF-8") from exc
+    if len(encoded) > max_bytes:
+        raise ValueError(f"{field} exceeds its size limit")
+    try:
+        value = json.loads(
+            raw,
+            object_pairs_hook=_strict_query_object,
+            parse_constant=_reject_query_constant,
+        )
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise ValueError(f"{field} JSON is invalid") from exc
+    if (not isinstance(value, dict) or set(value) != expected_fields
+            or any(not isinstance(key, str) or not isinstance(item, str)
+                   for key, item in value.items())):
+        raise ValueError(f"{field} fields or values are invalid")
+    return value
 _HISTORICAL_AUTHORITY_EPOCH = 10
 _HISTORICAL_AUDIT_ACTIONS = {
     "5e8e9f1701b9843fbce73ab218fa748a": ("byq_research_get", "research_task"),
@@ -1835,6 +1917,365 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         return {"schema_version": "byq-workspace-agent-admission.v1", "workspace_id": workspace,
                 "boot_id": boot, "root_run_id": root_run_id,
                 "can_start": not bool(blocked["blocked"])}
+
+    @staticmethod
+    def _qualified_admission_operator(actor_principal: object) -> dict[str, object]:
+        prefix = "engineering:"
+        if not isinstance(actor_principal, str) or not actor_principal.startswith(prefix):
+            raise AgentConflict("qualified admission activation actor is invalid")
+        name, separator, uid_text = actor_principal[len(prefix):].rpartition(":")
+        if (not separator or not _is_bounded_utf8_text(name, 256)
+                or not uid_text.isascii() or not uid_text.isdecimal()
+                or len(uid_text) > 20 or (len(uid_text) > 1 and uid_text[0] == "0")):
+            raise AgentConflict("qualified admission activation actor is invalid")
+        uid = int(uid_text)
+        if not 0 <= uid <= 2**32 - 1:
+            raise AgentConflict("qualified admission activation actor is invalid")
+        return {"uid": uid, "name": name}
+
+    def _qualified_admission_start_binding(
+        self, connection: Any, *, workspace_id: str, runner_identity: dict[str, str],
+    ) -> dict[str, object]:
+        """Verify the one private stored prepare/install/native activation chain.
+
+        Keyed Runner records were checked by the private activation command
+        before these reserved rows were written. This reader checks their
+        persisted closed shapes and digest chain without loading a Product key.
+        """
+        identity = runner_identity
+        instance_id = identity["runner_instance_id"]
+        activation_rows = execute(connection, """SELECT audit_id,actor_principal,action,
+                resource_type,resource_id,outcome,idempotency_key,request_sha256,
+                detail_json,response_json FROM operations_audit
+            WHERE action=:action AND resource_id=:instance
+            ORDER BY created_at,audit_id FOR SHARE""",
+            {"action": ACTIVATE_ACTION, "instance": instance_id})
+        prepared_rows = execute(connection, """SELECT audit_id,actor_principal,action,
+                resource_type,resource_id,outcome,idempotency_key,request_sha256,
+                detail_json,response_json FROM operations_audit
+            WHERE action=:action AND resource_id=:instance
+            ORDER BY created_at,audit_id FOR SHARE""",
+            {"action": PREPARE_ACTION, "instance": instance_id})
+        if len(activation_rows) != 1 or len(prepared_rows) != 1:
+            raise AgentConflict("qualified admission has no unique active runner anchor")
+
+        activation_row = activation_rows[0]
+        if (activation_row["outcome"] != "active"
+                or not isinstance(activation_row["detail_json"], dict)
+                or set(activation_row["detail_json"])
+                != {"active", "native_facts", "engineering_observation", "install_record"}
+                or not isinstance(activation_row["response_json"], dict)):
+            raise AgentConflict("qualified admission active runner anchor is malformed")
+        detail = activation_row["detail_json"]
+        active = detail["active"]
+        native_facts = detail["native_facts"]
+        engineering_observation = detail["engineering_observation"]
+        install_record = detail["install_record"]
+        if (not isinstance(active, dict) or set(active) != BACKEND_ACTIVE_FIELDS
+                or active.get("schema_version") != BACKEND_ACTIVE_SCHEMA
+                or activation_row["response_json"] != active
+                or not isinstance(native_facts, dict)
+                or set(native_facts) != NATIVE_FACT_FIELDS
+                or not isinstance(engineering_observation, dict)
+                or set(engineering_observation) != ENGINEERING_OBSERVATION_FIELDS
+                or not isinstance(install_record, dict)
+                or set(install_record) != INSTALL_FIELDS | {"mac"}
+                or install_record.get("schema_version") != INSTALL_SCHEMA):
+            raise AgentConflict("qualified admission active runner anchor is malformed")
+
+        runner_readback = native_facts.get("runner_readback")
+        if (not isinstance(runner_readback, dict)
+                or set(runner_readback) != RUNNER_READBACK_FIELDS
+                or runner_readback.get("started_marker_absent") is not True):
+            raise AgentConflict("qualified admission runner readback is invalid")
+        instance = runner_readback.get("instance")
+        birth_mode = runner_readback.get("birth_mode")
+        if (not isinstance(instance, dict) or set(instance) != INSTANCE_FIELDS
+                or not isinstance(birth_mode, dict)
+                or set(birth_mode) != BIRTH_FIELDS | {"mac"}
+                or birth_mode.get("schema_version") != BIRTH_SCHEMA
+                or birth_mode.get("require_prebind") is not True
+                or birth_mode.get("workspace_id") != workspace_id
+                or birth_mode.get("runner_instance_id") != identity["runner_instance_id"]
+                or birth_mode.get("runner_boot_id") != identity["runner_boot_id"]
+                or birth_mode.get("state_generation") != identity["state_generation"]
+                or birth_mode.get("instance_sha256") != prebind_digest(instance)
+                or not isinstance(birth_mode.get("mac"), str)
+                or _SHA256_PATTERN.fullmatch(birth_mode["mac"]) is None):
+            raise AgentConflict("qualified admission runner birth binding is invalid")
+
+        try:
+            prepared = validate_prepared_receipt(
+                install_record.get("prepared_receipt"), instance=instance,
+            )
+        except (PrebindContractError, TypeError, KeyError) as exc:
+            raise AgentConflict("qualified admission prepared runner receipt is invalid") from exc
+        expected_identity = {
+            "runner_instance_id": instance.get("runner_instance_id"),
+            "runner_boot_id": instance.get("runner_boot_id"),
+            "state_generation": instance.get("state_generation"),
+            "signed_instance_sha256": prebind_digest(instance),
+        }
+        if (any(identity.get(field) != value for field, value in expected_identity.items())
+                or prepared.get("workspace_id") != workspace_id
+                or prepared.get("runner_instance_id") != identity["runner_instance_id"]
+                or prepared.get("runner_boot_id") != identity["runner_boot_id"]
+                or prepared.get("state_generation") != identity["state_generation"]
+                or prepared.get("signed_instance_sha256") != identity["signed_instance_sha256"]):
+            raise AgentConflict("qualified admission runner identity differs from its active anchor")
+
+        expected_install = {
+            "status": "installed_nonactive",
+            "authorizes_start": False,
+            "workspace_id": workspace_id,
+            "runner_instance_id": identity["runner_instance_id"],
+            "runner_boot_id": identity["runner_boot_id"],
+            "state_generation": identity["state_generation"],
+            "signed_instance_sha256": prebind_digest(instance),
+            "birth_mode_sha256": prebind_digest(birth_mode),
+            "prepared_receipt_sha256": prepared["receipt_sha256"],
+            "backend_binding_nonce": prepared["backend_binding_nonce"],
+            "prepared_receipt": prepared,
+            "readback_sha256": prebind_digest({
+                "instance_sha256": prebind_digest(instance),
+                "birth_mode_sha256": prebind_digest(birth_mode),
+                "prepared_receipt_sha256": prepared["receipt_sha256"],
+                "backend_binding_nonce": prepared["backend_binding_nonce"],
+            }),
+        }
+        if (any(install_record.get(field) != value for field, value in expected_install.items())
+                or not isinstance(install_record.get("mac"), str)
+                or _SHA256_PATTERN.fullmatch(install_record["mac"]) is None
+                or not isinstance(install_record.get("installed_at"), str)
+                or not install_record["installed_at"]):
+            raise AgentConflict("qualified admission install record differs from its prepared anchor")
+        if (runner_readback.get("install_record") != install_record
+                or native_facts.get("deployment") != prepared.get("deployment")
+                or native_facts.get("state_volume") != prepared.get("state_volume")
+                or engineering_observation.get("runner_readback_sha256")
+                != prebind_digest(runner_readback)):
+            raise AgentConflict("qualified admission native facts differ from the prepared anchor")
+
+        prepared_row = prepared_rows[0]
+        prepare_key = PREPARE_IDEMPOTENCY_PREFIX + prepared["operation_id"]
+        prepare_request = {
+            "schema_version": PREPARE_SCHEMA,
+            "operation_id": prepared["operation_id"],
+            "workspace_id": workspace_id,
+            "instance": instance,
+            "deployment": prepared["deployment"],
+            "state_volume": prepared["state_volume"],
+        }
+        if set(prepare_request) != PREPARE_FIELDS:
+            raise AgentConflict("qualified admission prepare request fields are invalid")
+        prepared_request_sha256 = hashlib.sha256(prebind_canonical_json({
+            "request": prepare_request, "operator": prepared["operator"],
+        })).hexdigest()
+        expected_prepare_audit_id = "ops_acp_prebind_" + hashlib.sha256(
+            prepare_key.encode("ascii")
+        ).hexdigest()
+        if (prepared_row["audit_id"] != expected_prepare_audit_id
+                or prepared_row["action"] != PREPARE_ACTION
+                or prepared_row["resource_type"] != "acp_runner_instance"
+                or prepared_row["resource_id"] != identity["runner_instance_id"]
+                or prepared_row["outcome"] != "prepared"
+                or prepared_row["idempotency_key"] != prepare_key
+                or prepared_row["request_sha256"] != prepared_request_sha256
+                or prepared.get("request_sha256") != prepared_request_sha256
+                or prepared_row["response_json"] != prepared
+                or prepared_row["detail_json"] != {"prepared": prepared}
+                or prepared_row["actor_principal"]
+                != f"engineering:{prepared['operator']['name']}:{prepared['operator']['uid']}"):
+            raise AgentConflict("qualified admission prepared audit anchor is inconsistent")
+
+        try:
+            validated_active = validate_backend_active_receipt(
+                active, prepared_receipt=prepared, install_record=install_record,
+            )
+        except (PrebindContractError, TypeError, KeyError) as exc:
+            raise AgentConflict("qualified admission Backend activation receipt is invalid") from exc
+        if (native_facts.get("deployment") != prepared["deployment"]
+                or native_facts.get("state_volume") != prepared["state_volume"]
+                or validated_active.get("native_binding_sha256") != prebind_digest({
+                    "native_facts": native_facts,
+                    "engineering_observation": engineering_observation,
+                })):
+            raise AgentConflict("qualified admission native evidence digest is inconsistent")
+
+        activation_key = ACTIVATE_IDEMPOTENCY_PREFIX + validated_active["activation_id"]
+        activation_operator = self._qualified_admission_operator(
+            activation_row["actor_principal"],
+        )
+        activation_request = {
+            "schema_version": ACTIVATE_REQUEST_SCHEMA,
+            "activation_id": validated_active["activation_id"],
+            "prepared_receipt_sha256": prepared["receipt_sha256"],
+            "instance": instance,
+            "birth_mode": birth_mode,
+            "install_record": install_record,
+            "native_facts": native_facts,
+            "engineering_observation": engineering_observation,
+        }
+        if (set(activation_request) != ACTIVATE_REQUEST_FIELDS
+                or activation_row["audit_id"] != "ops_acp_activate_" + hashlib.sha256(
+                    activation_key.encode("ascii")
+                ).hexdigest()
+                or activation_row["action"] != ACTIVATE_ACTION
+                or activation_row["resource_type"] != "acp_runner_instance"
+                or activation_row["resource_id"] != identity["runner_instance_id"]
+                or activation_row["outcome"] != "active"
+                or activation_row["idempotency_key"] != activation_key
+                or activation_row["request_sha256"] != hashlib.sha256(
+                    prebind_canonical_json({
+                        "request": activation_request,
+                        "operator": activation_operator,
+                    })
+                ).hexdigest()
+                or not isinstance(activation_row["request_sha256"], str)
+                or _SHA256_PATTERN.fullmatch(activation_row["request_sha256"]) is None):
+            raise AgentConflict("qualified admission activation audit anchor is inconsistent")
+
+        activation_record = {
+            "runner_instance_id": validated_active["runner_instance_id"],
+            "runner_boot_id": validated_active["runner_boot_id"],
+            "state_generation": validated_active["state_generation"],
+            "signed_instance_sha256": validated_active["signed_instance_sha256"],
+            "prepared_receipt_sha256": validated_active["prepared_receipt_sha256"],
+            "backend_binding_nonce": validated_active["backend_binding_nonce"],
+            "install_receipt_sha256": validated_active["install_receipt_sha256"],
+            "backend_receipt": validated_active,
+        }
+        start_binding = {
+            "schema_version": START_BINDING_SCHEMA,
+            "runner_instance_id": identity["runner_instance_id"],
+            "runner_boot_id": identity["runner_boot_id"],
+            "state_generation": identity["state_generation"],
+            "signed_instance_sha256": identity["signed_instance_sha256"],
+            "prepared_receipt_sha256": validated_active["prepared_receipt_sha256"],
+            "backend_binding_nonce": validated_active["backend_binding_nonce"],
+            "install_receipt_sha256": validated_active["install_receipt_sha256"],
+            "backend_activation_id": validated_active["activation_id"],
+            "backend_activation_receipt_sha256": validated_active["receipt_sha256"],
+        }
+        if set(start_binding) != START_BINDING_FIELDS:
+            raise AgentConflict("qualified admission START binding fields are invalid")
+        try:
+            return validate_start_binding(
+                start_binding, activation_record=activation_record,
+            )
+        except (PrebindContractError, TypeError, KeyError) as exc:
+            raise AgentConflict("qualified admission START binding is invalid") from exc
+
+    def workspace_agent_admission_qualified(
+        self, *, owner_principal: object, workspace_id: object,
+        root_run_id: object, session_id: object, trace_id: object,
+        boot_id: object, runner_identity_json: object, operator_scope_json: object,
+    ) -> dict[str, object]:
+        """Return a v2 admission only for one private, exact active runner anchor."""
+        owner = _principal(owner_principal, field="owner_principal")
+        workspace = _trace(workspace_id, field="workspace_id")
+        session = _trace(session_id, field="session_id")
+        trace = _trace(trace_id, field="trace_id")
+        boot = _runtime_boot_id(boot_id)
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("invalid exact root run identity")
+        identity = _parse_qualified_admission_json(
+            runner_identity_json, field="runner_identity",
+            expected_fields=_QUALIFIED_ADMISSION_RUNNER_IDENTITY_FIELDS,
+            max_bytes=1024,
+        )
+        for field, pattern in (
+            ("runner_instance_id", r"[0-9a-f]{64}"),
+            ("runner_boot_id", r"[0-9a-f]{32}"),
+            ("state_generation", r"[0-9a-f]{64}"),
+            ("signed_instance_sha256", r"[0-9a-f]{64}"),
+        ):
+            if re.fullmatch(pattern, identity[field]) is None:
+                raise ValueError(f"runner_identity.{field} is invalid")
+        raw_scope = _parse_qualified_admission_json(
+            operator_scope_json, field="operator_scope",
+            expected_fields=PRODUCT_SCOPE_KEYS,
+            max_bytes=4096,
+        )
+        try:
+            scope = validate_product_scope(raw_scope)
+        except ProductSlotContractError as exc:
+            raise ValueError("operator_scope is invalid") from exc
+        if (scope["owner_principal"] != owner or scope["workspace_id"] != workspace
+                or scope["session_id"] != session or scope["trace_id"] != trace
+                or scope["root_run_id"] != root_run_id
+                or scope["runtime_boot_id"] != boot):
+            raise AgentConflict("qualified admission scope differs from trusted runtime context")
+
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            self._require_current_runtime_boot(connection, boot, required=True)
+            authority = self._current_authority_row(connection, for_update=True)
+            if authority is None or authority["boot_id"] != boot:
+                raise AgentConflict("qualified admission runtime authority changed")
+            authority_receipt = authority.get("receipt_json")
+            if (not isinstance(authority_receipt, dict)
+                    or set(authority_receipt) != {
+                        "schema_version", "boot_id", "authority_epoch",
+                        "revoked_root_count", "revoked_agent_run_count", "status",
+                    }
+                    or authority_receipt.get("schema_version") != "byq-runtime-authority-receipt.v1"
+                    or authority_receipt.get("boot_id") != boot
+                    or authority_receipt.get("authority_epoch") != authority["epoch"]
+                    or type(authority_receipt.get("authority_epoch")) is not int
+                    or authority_receipt["authority_epoch"] < 1
+                    or authority_receipt.get("status") != "current"
+                    or type(authority_receipt.get("revoked_root_count")) is not int
+                    or authority_receipt["revoked_root_count"] < 0
+                    or type(authority_receipt.get("revoked_agent_run_count")) is not int
+                    or authority_receipt["revoked_agent_run_count"] < 0):
+                raise AgentConflict("qualified admission current authority receipt is invalid")
+            boot_receipt = fetch_one(connection, """SELECT epoch,receipt_json
+                FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot FOR SHARE""",
+                {"boot": boot})
+            if (boot_receipt is None or boot_receipt["epoch"] != authority["epoch"]
+                    or boot_receipt["receipt_json"] != authority_receipt):
+                raise AgentConflict("qualified admission authority receipt chain is inconsistent")
+
+            self._require_lifecycle_workspace(connection, owner, workspace, terminal_cleanup=False)
+            self._lifecycle_lock(connection, "root:" + root_run_id)
+            self._lifecycle_lock(
+                connection,
+                f"acp-prebind:v1:{workspace}:{identity['runner_instance_id']}",
+            )
+            current_root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR SHARE""", {"root": root_run_id})
+            if current_root is not None and (
+                    current_root["owner_principal"] != owner
+                    or current_root["workspace_id"] != workspace
+                    or current_root["session_id"] != session
+                    or current_root["trace_id"] != trace
+                    or current_root["authority_boot_id"] != boot
+                    or current_root["status"] != "active"
+                    or current_root["authority_status"] != "active"):
+                raise AgentConflict("qualified admission candidate root is not active in this scope")
+
+            operator_binding = self._qualified_admission_start_binding(
+                connection, workspace_id=workspace, runner_identity=identity,
+            )
+            blocked = fetch_one(connection, """SELECT EXISTS (
+                SELECT 1 FROM agent_runtime_turns
+                WHERE workspace_id=:workspace AND root_run_id<>:root
+                  AND (status='active' OR authority_status<>'closed')
+            ) AS blocked""", {"workspace": workspace, "root": root_run_id})
+            can_start = not bool(blocked["blocked"])
+            authority_epoch = authority["epoch"]
+
+        return {
+            "schema_version": "byq-workspace-agent-admission.v2",
+            "workspace_id": workspace,
+            "boot_id": boot,
+            "authority_epoch": authority_epoch,
+            "root_run_id": root_run_id,
+            "can_start": can_start,
+            "operator_scope": scope,
+            "operator_binding": operator_binding,
+        }
 
     def _require_current_runtime_boot(self, connection, trusted_boot_id: str | None,
                                       *, required: bool = False):

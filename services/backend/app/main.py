@@ -793,12 +793,27 @@ def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], requ
 
 @app.get("/internal/runtime-authority/workspaces/{workspace_id}/agent-admission")
 def workspace_agent_admission(workspace_id: str, root_run_id: str, session_id: str,
-                              request: Request) -> dict[str, object]:
+                              request: Request, runner_identity: str | None = None,
+                              operator_scope: str | None = None) -> dict[str, object]:
     _require_runtime_authority_bearer(request)
-    return _agent_call(lambda: agent_store.workspace_agent_admission(
+    if runner_identity is None and operator_scope is None:
+        return _agent_call(lambda: agent_store.workspace_agent_admission(
+            owner_principal=request.headers.get("x-byq-owner-principal"),
+            workspace_id=workspace_id, root_run_id=root_run_id, session_id=session_id,
+            boot_id=request.headers.get("x-byq-runtime-boot-id")))
+    if runner_identity is None or operator_scope is None:
+        raise HTTPException(status_code=422,
+                            detail="runner_identity and operator_scope must be provided together")
+    query_names = {"root_run_id", "session_id", "runner_identity", "operator_scope"}
+    if (set(request.query_params.keys()) != query_names
+            or any(len(request.query_params.getlist(name)) != 1 for name in query_names)):
+        raise HTTPException(status_code=422, detail="qualified admission query fields are invalid")
+    return _agent_call(lambda: agent_store.workspace_agent_admission_qualified(
         owner_principal=request.headers.get("x-byq-owner-principal"),
         workspace_id=workspace_id, root_run_id=root_run_id, session_id=session_id,
-        boot_id=request.headers.get("x-byq-runtime-boot-id")))
+        trace_id=request.headers.get("x-byq-trace-id"),
+        boot_id=request.headers.get("x-byq-runtime-boot-id"),
+        runner_identity_json=runner_identity, operator_scope_json=operator_scope))
 
 
 @app.post("/internal/runtime-authority/roots/{root_run_id}/transfer")
