@@ -4,6 +4,10 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**R1b-e Backend 只读 admission 源码限定 PASS：** `b00d8fc0` 在既有 authenticated 路由独立核验唯一 active 锚点及当前 authority/完整 scope；不带资格字段时保留 v1。Sol→Root 仅源码通过，Runtime 接入尚未完成，实际 DB/HTTP/START/故障浏览器仍 NOT_RUN。见[只读 admission](20261017-process-loss-admission.md#r1b-e现有-backend-admission-的只读资格分支2026-10-17)。
+
+**R1b-d Runner 交付源码限定 PASS：** `25229f95` 私有激活交付与 START 锁内核验接通；八类持久记录审查后，修正 state-generation 复用和 activation 的事前 fsync 边界。原 FAIL 保留，未执行测试或更新环境。Backend admission 与 Runtime v2 接入仍在实施，浏览器活动故障 NOT_RUN。见[Runner交付记录](20261017-process-loss-admission.md#r1b-drunner-交付与-start-校验源码2026-10-17)。
+
 **R1b-c Backend 激活锚点源码限定 PASS：** `c6b8a804` 私有 activate 已接通既有审计表，准确 immutable/idempotent 激活并保护普通入口。Mount.Mode 真实格式 P2 已修正，独立 Sol→Root 仅源码通过；不等于 START 可执行。Runner 交付、Backend 只读 admission 和 Runtime 持久绑定接入实施中，未恢复原生/模型/浏览器测试。见[Backend 激活锚点](20261017-process-loss-admission.md#r1b-cbackend-激活锚点源码2026-10-17)。
 
 **R1b-b2 非激活安装源码限定 PASS：** `4b5233eb` 增加出生 opt-in、私有安装及签名 START 的准确实例绑定形状，激活未完成时仍拒绝执行。安装重试 fsync 的 P2 修正后通过 Sol→Root；未构建更新环境，未恢复原生/模型/浏览器测试。继续实现 Backend 激活和 Runtime 接入，原失败及全部保留资源不变。见[预绑定安装](20261017-process-loss-admission.md#r1b-b2预绑定安装与默认拒绝2026-10-17)。
