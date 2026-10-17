@@ -13,6 +13,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from .conversation_catalog import ConversationCatalogStore
 from .db import PgStoreMixin, execute, fetch_one, transaction
 from .workspace_reset import WorkspaceResetBlocked, WorkspaceResetStore
+from .operator_process_fence import (
+    OperatorProcessFenceHold,
+    require_workspace_process_fence_ack,
+)
 
 
 MAX_RESET_SESSIONS = 1000
@@ -171,6 +175,13 @@ class WorkspaceRuntimeResetStore(PgStoreMixin):
                 with self._lock, self.engine.begin() as connection:
                     execute(connection, "SET LOCAL lock_timeout = '5s'")
                     self._advisory_lock(connection, "runtime-authority:current")
+                    self._advisory_lock(connection, f"workspace-reset|{workspace}")
+                    try:
+                        require_workspace_process_fence_ack(connection, workspace)
+                    except OperatorProcessFenceHold as error:
+                        raise WorkspaceRuntimeResetConflict(
+                            "operator process-fence proof has no exact durable ACK and slot release"
+                        ) from error
                     self._require_schema(connection)
                     row = self._assert_live_identity(self._workspace(
                         connection, owner=owner, workspace=workspace))
@@ -267,6 +278,13 @@ class WorkspaceRuntimeResetStore(PgStoreMixin):
                 with self._lock, self.engine.begin() as connection:
                     execute(connection, "SET LOCAL lock_timeout = '5s'")
                     self._advisory_lock(connection, "runtime-authority:current")
+                    self._advisory_lock(connection, f"workspace-reset|{workspace}")
+                    try:
+                        require_workspace_process_fence_ack(connection, workspace)
+                    except OperatorProcessFenceHold as error:
+                        raise WorkspaceRuntimeResetConflict(
+                            "operator process-fence proof has no exact durable ACK and slot release"
+                        ) from error
                     self._require_schema(connection)
                     row = self._assert_live_identity(self._workspace(
                         connection, owner=owner, workspace=workspace))
@@ -286,6 +304,15 @@ class WorkspaceRuntimeResetStore(PgStoreMixin):
                     expected_sessions = sorted(item["session_id"] for item in sessions)
                     if supplied_sessions != expected_sessions:
                         raise WorkspaceRuntimeResetConflict("Gateway release proof does not match the exact reset scope")
+
+                    # Recheck the global proof namespace before any lifecycle,
+                    # archive, or Workspace mutation at the finalization edge.
+                    try:
+                        require_workspace_process_fence_ack(connection, workspace)
+                    except OperatorProcessFenceHold as error:
+                        raise WorkspaceRuntimeResetConflict(
+                            "operator process-fence proof has no exact durable ACK and slot release"
+                        ) from error
 
                     now = _now()
                     # Revoke status is a BYQ interruption fact only. External
@@ -513,6 +540,13 @@ class WorkspaceRuntimeResetStore(PgStoreMixin):
                     if supplied != sorted(item["session_id"] for item in sessions):
                         raise WorkspaceRuntimeResetConflict(
                             "Gateway release proof does not match the exact reset scope")
+
+                    try:
+                        require_workspace_process_fence_ack(connection, workspace)
+                    except OperatorProcessFenceHold as error:
+                        raise WorkspaceRuntimeResetConflict(
+                            "operator process-fence proof has no exact durable ACK and slot release"
+                        ) from error
 
                     now = _now()
                     execute(connection, """UPDATE agent_runtime_turns AS r

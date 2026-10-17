@@ -34,6 +34,15 @@ from packages.contracts.acp_product_slot import (
     product_scope_digest,
     validate_product_scope,
 )
+from packages.contracts.acp_operator_process_fence import (
+    FENCE_CLOSE_RECEIPT_SCHEMA as _R2_CLOSE_RECEIPT_SCHEMA,
+    OPERATOR_OBSERVATION_SCHEMA as _R2_OPERATOR_OBSERVATION_SCHEMA,
+    OperatorProcessFenceContractError as _R2FenceContractError,
+    digest as _r2_digest,
+    validate_fence_close_receipt as _r2_validate_close_receipt,
+    validate_operator_observation as _r2_validate_operator_observation,
+    validate_operator_observation_record as _r2_validate_operator_observation_record,
+)
 from packages.contracts.conversation_rehydration import (
     ConversationContextMessage,
     normalize_conversation_context,
@@ -99,6 +108,7 @@ _TASK_READY_IDEMPOTENCY_KEY_RE = re.compile(r'task-ready-event:([0-9a-f]{64})')
 _ACP_HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 _ACP_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _ACP_ROOT_BINDING_V2_SCHEMA = "byq-acp-root-binding.v2"
+_ACP_ROOT_BINDING_V3_SCHEMA = "byq-acp-root-binding.v3"
 
 
 def _process_boot_id() -> str:
@@ -355,6 +365,8 @@ class RuntimeSession:
     qualified_runtime_generation: str | None = field(default=None, repr=False)
     qualified_cwd: str | None = field(default=None, repr=False)
     qualified_authority_epoch: int | None = field(default=None, repr=False)
+    operator_observation: dict[str, Any] | None = field(default=None, repr=False)
+    operator_superseded_terminal_receipts: dict[str, str] = field(default_factory=dict, repr=False)
     current_generation: RuntimeGeneration | None = field(default=None, repr=False)
 
     def _generation(self) -> RuntimeGeneration:
@@ -1320,7 +1332,8 @@ class RuntimeAdapter:
     ) -> str:
         record = self._get(session_id)
         with record.lock:
-            if record.cleanup_unconfirmed:
+            if (record.cleanup_unconfirmed
+                    and not self._operator_fence_matches_current_root(record)):
                 raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
         if not record.model_resolution:
             with record.lock:
@@ -1404,7 +1417,7 @@ class RuntimeAdapter:
                         "cleanup_unconfirmed", "settlement_receipt",
                         "qualified_operator_scope", "qualified_operator_binding",
                         "qualified_runtime_generation", "qualified_cwd",
-                        "qualified_authority_epoch",
+                        "qualified_authority_epoch", "operator_observation",
                     )
                 }
                 try:
@@ -1632,11 +1645,13 @@ class RuntimeAdapter:
             if self._root_scoped and (record.process_used or has_continuation):
                 if record.workspace_id and conversation_context is None and not reuse_native:
                     raise SessionConflict("new root requires a fresh public conversation projection")
-                if (record.process_closing or not record.process_closed
-                        or not record.continuation_proxy_closed):
+                operator_fenced_previous = self._operator_fence_matches_current_root(record)
+                if (record.process_closing or not record.continuation_proxy_closed
+                        or (not operator_fenced_previous and not record.process_closed)):
                     raise SessionConflict("previous runtime process cleanup is not complete")
                 if (self._acp and record.process_used and record.current_generation is not None
-                        and not record.current_generation.process_exit_confirmed):
+                        and not record.current_generation.process_exit_confirmed
+                        and not operator_fenced_previous):
                     raise SessionConflict("previous ACP process exit is not confirmed")
                 if record.continuation_budget is not None:
                     old_reservation = record.continuation_budget
@@ -1662,7 +1677,7 @@ class RuntimeAdapter:
                         "cleanup_unconfirmed", "settlement_receipt",
                         "qualified_operator_scope", "qualified_operator_binding",
                         "qualified_runtime_generation", "qualified_cwd",
-                        "qualified_authority_epoch",
+                        "qualified_authority_epoch", "operator_observation",
                     )
                 }
                 if qualified_prebind:
@@ -1964,6 +1979,7 @@ class RuntimeAdapter:
                 installed.harness = harness
                 record.recovery_cwd = str(session_root)
                 record.settlement_receipt = None
+                record.operator_observation = None
                 record.cleanup_unconfirmed = False
                 record.cleanup_harness = None
                 installed.continuation_budget = budget if budget is not None else task_ready_budget
@@ -2469,6 +2485,9 @@ class RuntimeAdapter:
         the previous BYQ root has been closed by Backend. Its retry receipt is
         bounded to the same Adapter boot.
         """
+        if (isinstance(receipt, dict)
+                and receipt.get("schema_version") == _R2_CLOSE_RECEIPT_SCHEMA):
+            return self._acknowledge_operator_process_fence(session_id, receipt)
         try:
             record = self._get(session_id)
         except KeyError:
@@ -2479,6 +2498,8 @@ class RuntimeAdapter:
             if (not isinstance(root, str) or type(receipt.get("sequence")) is not int
                     or record.terminal_receipts.get(root) != receipt):
                 raise SessionConflict("terminal receipt does not match this runtime turn")
+            if root in record.operator_superseded_terminal_receipts:
+                raise SessionConflict("terminal receipt was superseded by an operator process-fence ACK")
             evidence = self._terminal_evidence_for(record, root)
             current_root = record.process_root_id
             if self._acp and root == current_root:
@@ -2510,6 +2531,409 @@ class RuntimeAdapter:
                     record.reuse_native_session_ready = False
         self._maybe_reap_released(record)
         return acknowledged
+
+    def _acknowledge_operator_process_fence(
+        self, session_id: str, raw_close_receipt: object,
+    ) -> dict[str, Any]:
+        """Persist and return one exact R2 observation, then release its slot."""
+        try:
+            close = _r2_validate_close_receipt(raw_close_receipt)
+        except _R2FenceContractError as exc:
+            raise SessionConflict("operator process-fence close receipt is invalid") from exc
+        scope = close["scope"]
+        if (not self._acp or not self._acp_product_slots
+                or close["workspace_id"] != scope["workspace_id"]
+                or scope["session_id"] != session_id):
+            raise SessionConflict("operator process-fence scope is unavailable")
+        try:
+            record = self._get(session_id)
+        except KeyError:
+            record = None
+
+        # A persisted V3 is the only retry authority after the initial
+        # in-memory drain/lease handoff. It is bound to the exact close receipt.
+        binding = self._read_acp_binding(session_id)
+        if binding["schema_version"] == _ACP_ROOT_BINDING_V3_SCHEMA:
+            try:
+                observation = _r2_validate_operator_observation(
+                    binding["operator_observation"], close_receipt=close)
+            except _R2FenceContractError as exc:
+                raise SessionConflict("operator process-fence retry does not match its durable observation") from exc
+            current_epoch = self.require_current_backend_authority()
+            if (binding["session_id"] != session_id
+                    or binding["workspace_id"] != scope["workspace_id"]
+                    or binding["root_run_id"] != scope["root_run_id"]
+                    or observation["runtime_binding_sha256"] != close["runtime_binding_sha256"]
+                    or close["authority"]["current_boot_id"] != self.boot_id
+                    or close["authority"]["current_epoch"] != current_epoch):
+                raise SessionConflict("operator process-fence retry binding changed")
+            raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+            lock_path = raw_path.with_suffix(".lock")
+            expected_v3_raw = json.dumps(
+                binding, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+            lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
+                              | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                file_before = os.lstat(raw_path)
+                parent_before = os.lstat(raw_path.parent)
+                raw_before = self._read_locked_acp_binding_payload(raw_path)
+                file_after = os.lstat(raw_path)
+                parent_after = os.lstat(raw_path.parent)
+                try:
+                    parsed_before = json.loads(
+                        raw_before.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                        parse_constant=_reject_json_constant,
+                    )
+                except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                    raise SessionConflict("operator process-fence retry binding is invalid") from exc
+                if (not isinstance(parsed_before, dict)
+                        or parsed_before != binding
+                        or not hmac.compare_digest(raw_before, expected_v3_raw)
+                        or parsed_before.get("schema_version") != _ACP_ROOT_BINDING_V3_SCHEMA
+                        or not stat.S_ISREG(file_before.st_mode)
+                        or file_before.st_uid != os.getuid() or file_before.st_gid != os.getgid()
+                        or stat.S_IMODE(file_before.st_mode) != 0o600 or file_before.st_nlink != 1
+                        or not stat.S_ISDIR(parent_before.st_mode)
+                        or (file_after.st_dev, file_after.st_ino, file_after.st_size)
+                        != (file_before.st_dev, file_before.st_ino, file_before.st_size)
+                        or (parent_after.st_dev, parent_after.st_ino)
+                        != (parent_before.st_dev, parent_before.st_ino)
+                        or self.require_current_backend_authority() != current_epoch):
+                    raise SessionConflict("operator process-fence retry binding changed")
+                file_identity = (file_before.st_dev, file_before.st_ino)
+                parent_identity = (parent_before.st_dev, parent_before.st_ino)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+            def confirm_existing_observation() -> None:
+                writer_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
+                                    | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                try:
+                    fcntl.flock(writer_fd, fcntl.LOCK_EX)
+                    if self.require_current_backend_authority() != current_epoch:
+                        raise SessionConflict("operator process-fence retry lost current authority")
+                    current_path = os.lstat(raw_path)
+                    current_parent = os.lstat(raw_path.parent)
+                    if ((current_path.st_dev, current_path.st_ino) != file_identity
+                            or (current_parent.st_dev, current_parent.st_ino) != parent_identity):
+                        raise SessionConflict("operator process-fence retry file identity changed")
+                    file_fd = os.open(raw_path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+                    try:
+                        opened = os.fstat(file_fd)
+                        if ((opened.st_dev, opened.st_ino) != file_identity
+                                or not stat.S_ISREG(opened.st_mode)
+                                or opened.st_uid != os.getuid() or opened.st_gid != os.getgid()
+                                or stat.S_IMODE(opened.st_mode) != 0o600 or opened.st_nlink != 1
+                                or opened.st_size != len(raw_before)
+                                or not hmac.compare_digest(
+                                    self._read_locked_acp_binding_payload(raw_path), raw_before)):
+                            raise SessionConflict("operator process-fence retry file is unsafe")
+                        os.fsync(file_fd)
+                        after_file = os.fstat(file_fd)
+                        path_after_file = os.lstat(raw_path)
+                        if ((after_file.st_dev, after_file.st_ino) != file_identity
+                                or after_file.st_uid != os.getuid() or after_file.st_gid != os.getgid()
+                                or stat.S_IMODE(after_file.st_mode) != 0o600 or after_file.st_nlink != 1
+                                or after_file.st_size != len(raw_before)
+                                or (path_after_file.st_dev, path_after_file.st_ino) != file_identity
+                                or not hmac.compare_digest(
+                                    self._read_locked_acp_binding_payload(raw_path), raw_before)
+                                or self.require_current_backend_authority() != current_epoch):
+                            raise SessionConflict("operator process-fence retry file durability is uncertain")
+                    finally:
+                        os.close(file_fd)
+                    parent_fd = os.open(raw_path.parent, os.O_RDONLY | os.O_DIRECTORY
+                                        | getattr(os, "O_NOFOLLOW", 0))
+                    try:
+                        opened_parent = os.fstat(parent_fd)
+                        if ((opened_parent.st_dev, opened_parent.st_ino) != parent_identity
+                                or not stat.S_ISDIR(opened_parent.st_mode)):
+                            raise SessionConflict("operator process-fence retry parent changed")
+                        os.fsync(parent_fd)
+                        after_parent = os.fstat(parent_fd)
+                        final_path = os.lstat(raw_path)
+                        if ((after_parent.st_dev, after_parent.st_ino) != parent_identity
+                                or (final_path.st_dev, final_path.st_ino) != file_identity
+                                or not hmac.compare_digest(
+                                    self._read_locked_acp_binding_payload(raw_path), raw_before)
+                                or self.require_current_backend_authority() != current_epoch):
+                            raise SessionConflict("operator process-fence retry parent durability is uncertain")
+                    finally:
+                        os.close(parent_fd)
+                finally:
+                    fcntl.flock(writer_fd, fcntl.LOCK_UN)
+                    os.close(writer_fd)
+
+            # The callback completes positive file and parent durability while
+            # the registry lock still protects any exact lease deletion.
+            released = self._compatibility.product_slots.release_operator_fence(
+                scope, persist_observation=confirm_existing_observation)
+            if not released:
+                # No lease remained to delete; still prove durability before
+                # confirming this idempotent retry.
+                confirm_existing_observation()
+            if record is not None:
+                with record.lock:
+                    self._adopt_operator_observation(record, binding, observation)
+            return {"operator_observation": observation}
+
+        if binding["schema_version"] != _ACP_ROOT_BINDING_V2_SCHEMA or record is None:
+            raise SessionConflict("operator process-fence requires the live qualified Runtime root")
+        with record.lock:
+            current_epoch = self.require_current_backend_authority()
+            self._validate_operator_close_record(record, binding, close, current_epoch)
+            raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+            lock_path = raw_path.with_suffix(".lock")
+            lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
+                              | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                original_raw = self._read_locked_acp_binding_payload(raw_path)
+                original_sha256 = hashlib.sha256(original_raw).hexdigest()
+                if (not hmac.compare_digest(
+                        original_sha256, close["runtime_binding_sha256"])
+                        or self.require_current_backend_authority() != current_epoch):
+                    raise SessionConflict("operator process-fence binding changed before acknowledgement")
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+            observation = self._build_operator_observation(record, close, original_sha256)
+
+            def persist_observation() -> None:
+                writer_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
+                                    | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                try:
+                    fcntl.flock(writer_fd, fcntl.LOCK_EX)
+                    if self.require_current_backend_authority() != current_epoch:
+                        raise SessionConflict("operator process-fence writer lost current authority")
+                    current_raw = self._read_locked_acp_binding_payload(raw_path)
+                    if not hmac.compare_digest(current_raw, original_raw):
+                        raise SessionConflict("operator process-fence binding changed before write")
+                    try:
+                        current_value = json.loads(
+                            current_raw.decode("utf-8"),
+                            object_pairs_hook=_strict_json_object,
+                            parse_constant=_reject_json_constant,
+                        )
+                    except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                        raise SessionConflict(
+                            "operator process-fence binding is invalid before write") from exc
+                    if (not isinstance(current_value, dict)
+                            or current_value != binding
+                            or current_value.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA):
+                        raise SessionConflict(
+                            "operator process-fence binding changed before write")
+                    # Preserve the original V2 anchor bytes; carry the later
+                    # observed cursor separately in the Runtime-only V3 record.
+                    current_value["schema_version"] = _ACP_ROOT_BINDING_V3_SCHEMA
+                    current_value["final_live_sequence"] = record.sequence
+                    current_value["operator_observation"] = observation
+                    payload = json.dumps(
+                        current_value, sort_keys=True, separators=(",", ":"),
+                    ).encode("utf-8")
+                    self._replace_acp_binding_payload(raw_path, payload)
+                    persisted = self._read_locked_acp_binding_payload(raw_path)
+                    if (not hmac.compare_digest(persisted, payload)
+                            or self.require_current_backend_authority() != current_epoch):
+                        raise SessionConflict("operator process-fence durable write is uncertain")
+                    self._adopt_operator_observation(record, current_value, observation)
+                finally:
+                    fcntl.flock(writer_fd, fcntl.LOCK_UN)
+                    os.close(writer_fd)
+
+            released = self._compatibility.product_slots.release_operator_fence(
+                scope, persist_observation=persist_observation)
+            if not released:
+                raise SessionConflict("operator process-fence slot lease is unavailable")
+            return {"operator_observation": observation}
+
+    def _validate_operator_close_record(
+        self, record: RuntimeSession, binding: dict[str, Any],
+        close: dict[str, Any], current_epoch: int,
+    ) -> None:
+        scope = close["scope"]
+        authority = close["authority"]
+        generation = record.current_generation
+        start_binding = binding.get("operator_binding")
+        # The V2 lifecycle cursor is a before-START anchor and may trail live
+        # events. Domain cursors are checkpointed by each evidence ACK, so both
+        # domain values must still match the live Runtime record exactly.
+        if (binding.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA
+                or binding.get("operator_scope") != scope
+                or record.qualified_operator_scope != scope
+                or not isinstance(start_binding, dict)
+                or start_binding != record.qualified_operator_binding
+                or record.session_id != scope["session_id"]
+                or record.trace_id != scope["trace_id"]
+                or record.owner_principal != scope["owner_principal"]
+                or record.workspace_id != scope["workspace_id"]
+                or record.process_root_id != scope["root_run_id"]
+                or record.runtime_generation != scope["generation_id"]
+                or record.qualified_runtime_generation != scope["generation_id"]
+                or generation is None
+                or not isinstance(record.recovery_cwd, str)
+                or Path(record.recovery_cwd).name != scope["cwd_leaf"]
+                or record.qualified_authority_epoch != authority["previous_epoch"]
+                or binding.get("previous_authority_epoch") != authority["previous_epoch"]
+                or binding.get("previous_boot_id") != authority["previous_boot_id"]
+                or binding.get("native_session_close_confirmed") is not generation.native_session_close_confirmed
+                or binding.get("process_exit_confirmed") is not generation.process_exit_confirmed
+                or binding.get("cleanup_unconfirmed") is not record.cleanup_unconfirmed
+                or binding.get("closed") is not False
+                or binding.get("domain_call_sequence") != record.domain_call_sequence
+                or binding.get("domain_call_drained_sequence") != record.domain_call_drained_sequence
+                or type(binding.get("sequence")) is not int
+                or binding.get("sequence") > record.sequence
+                or binding.get("settlement_receipt") is not None
+                or record.settlement_receipt is not None
+                or record.conversation_ended or record.release_finalized
+                or record.active_run is not None
+                or record.status in SessionStatus.ACTIVE_PROMPT
+                or generation.process_root_id != scope["root_run_id"]
+                or generation.generation_id != scope["generation_id"]
+                or generation.process_closing
+                or generation.continuation_proxy_closed is not True
+                or start_binding.get("runner_instance_id") != close["runner"]["old_runner_instance_id"]
+                or authority["current_boot_id"] != self.boot_id
+                or authority["current_epoch"] != current_epoch):
+            raise SessionConflict("operator process-fence does not match the live Runtime root")
+        pending = record.pending_terminal_receipts
+        if pending not in (set(), {scope["root_run_id"]}):
+            raise SessionConflict("operator process-fence has unrelated pending terminal receipts")
+        if pending:
+            receipt = record.terminal_receipts.get(scope["root_run_id"])
+            if (not isinstance(receipt, dict)
+                    or set(receipt) != {"schema_version", "root_run_id", "sequence", "event_sha256"}
+                    or receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                    or receipt.get("root_run_id") != scope["root_run_id"]
+                    or type(receipt.get("sequence")) is not int
+                    or receipt["sequence"] > record.sequence
+                    or not isinstance(receipt.get("event_sha256"), str)):
+                raise SessionConflict("operator process-fence pending terminal receipt is unproven")
+            evidence = self._terminal_evidence_for(record, scope["root_run_id"])
+            terminal_event = None
+            for event in reversed(record.history):
+                projected = project_lifecycle_event(event, record.session_id, record.trace_id)
+                if (projected is not None
+                        and projected["root_run_id"] == scope["root_run_id"]
+                        and projected["outcome"] != "active"):
+                    terminal_event = event
+                    break
+            if (evidence["receipt"] != receipt
+                    or evidence["outcome"] != "failed"
+                    or not isinstance(terminal_event, dict)
+                    or terminal_event.get("kind") != "session.failed"):
+                raise SessionConflict("operator process-fence pending terminal receipt is unproven")
+        elif scope["root_run_id"] in record.terminal_receipts:
+            raise SessionConflict("operator process-fence terminal receipt is not pending")
+
+    def _build_operator_observation(
+        self, record: RuntimeSession, close: dict[str, Any], root_binding_sha256: str,
+    ) -> dict[str, Any]:
+        scope = close["scope"]
+        root_run_id = scope["root_run_id"]
+        now = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        close_sha256 = _r2_digest(close)
+        superseded_terminal = None
+        if record.pending_terminal_receipts:
+            receipt = record.terminal_receipts[root_run_id]
+            superseded_terminal = {
+                "schema_version": "byq-runtime-superseded-terminal.v1",
+                "root_run_id": root_run_id,
+                "sequence": receipt["sequence"],
+                "event_sha256": receipt["event_sha256"],
+                "receipt_sha256": _r2_digest(receipt),
+            }
+        drain = {
+            "schema_version": "byq-runtime-domain-call-drain.v1",
+            "root_run_id": root_run_id,
+            "last_domain_sequence": record.domain_call_sequence,
+            "drained_sequence": record.domain_call_drained_sequence,
+        }
+        drain["drain_receipt_sha256"] = _r2_digest(drain)
+        runtime_ack = {
+            "schema_version": "byq-runtime-operator-terminal-ack.v1",
+            "root_run_id": root_run_id,
+            "runtime_boot_id": scope["runtime_boot_id"],
+            "scope_sha256": _r2_digest(scope),
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "operator_interruption_receipt_sha256": close["operator_interruption"]["receipt_sha256"],
+            "root_binding_sha256": root_binding_sha256,
+            "terminal_ack_sha256": close_sha256,
+            "acknowledged_at": now,
+        }
+        slot_release = {
+            "schema_version": "byq-acp-operator-process-fence-slot-release.v1",
+            "workspace_id": scope["workspace_id"],
+            "root_run_id": root_run_id,
+            "scope_sha256": _r2_digest(scope),
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "tombstone_sha256": close["runner"]["tombstone_sha256"],
+            "drained_sequence": record.domain_call_drained_sequence,
+            "status": "released",
+            "released_at": now,
+        }
+        slot_release["release_receipt_sha256"] = _r2_digest(slot_release)
+        observation = {
+            "schema_version": _R2_OPERATOR_OBSERVATION_SCHEMA,
+            "operation_id": close["operation_id"],
+            "close_receipt_sha256": close_sha256,
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "operator_interruption_receipt_sha256": close["operator_interruption"]["receipt_sha256"],
+            "scope": scope,
+            "authority": close["authority"],
+            "runner": close["runner"],
+            "engineering_evidence_sha256": close["engineering_evidence_sha256"],
+            "runtime_binding_sha256": root_binding_sha256,
+            "runtime_ack": runtime_ack,
+            "domain_call_drain": drain,
+            "slot_release": slot_release,
+            "observed_at": now,
+            "superseded_terminal": superseded_terminal,
+        }
+        try:
+            return _r2_validate_operator_observation(observation, close_receipt=close)
+        except _R2FenceContractError as exc:
+            raise SessionConflict("operator process-fence observation is inconsistent") from exc
+
+    @staticmethod
+    def _adopt_operator_observation(
+        record: RuntimeSession, binding: dict[str, Any], observation: dict[str, Any],
+    ) -> None:
+        scope = observation["scope"]
+        if (record.session_id != scope["session_id"]
+                or record.trace_id != scope["trace_id"]
+                or record.workspace_id != scope["workspace_id"]
+                or record.process_root_id != scope["root_run_id"]
+                or binding.get("root_run_id") != scope["root_run_id"]
+                or binding.get("operator_observation") != observation
+                or record.settlement_receipt is not None
+                or (record.operator_observation is not None
+                    and record.operator_observation != observation)):
+            raise SessionConflict("operator process-fence observation belongs to another Runtime root")
+        pending = record.pending_terminal_receipts
+        if pending not in (set(), {scope["root_run_id"]}):
+            raise SessionConflict("operator process-fence observation has unrelated pending receipts")
+        superseded = observation["superseded_terminal"]
+        if pending:
+            receipt = record.terminal_receipts.get(scope["root_run_id"])
+            if (superseded is None or not isinstance(receipt, dict)
+                    or receipt.get("sequence") != superseded["sequence"]
+                    or receipt.get("event_sha256") != superseded["event_sha256"]
+                    or _r2_digest(receipt) != superseded["receipt_sha256"]):
+                raise SessionConflict("operator process-fence receipt conflicts with Runtime pending state")
+        record.operator_observation = dict(observation)
+        if superseded is not None:
+            record.operator_superseded_terminal_receipts[scope["root_run_id"]] = superseded["receipt_sha256"]
+            record.pending_terminal_receipts.discard(scope["root_run_id"])
+        record.reuse_native_session_ready = False
+        if record.current_generation is not None:
+            record.current_generation.state = GenerationState.INTERRUPTED
+        record.status = SessionStatus.IDLE
 
     def _acp_native_reuse_is_proven(
         self, record: RuntimeSession, root_run_id: str, receipt: object,
@@ -2945,6 +3369,21 @@ class RuntimeAdapter:
         return value
 
     @staticmethod
+    def _operator_fence_matches_current_root(record: RuntimeSession) -> bool:
+        observation = record.operator_observation
+        if not isinstance(observation, dict):
+            return False
+        scope = observation.get("scope")
+        return (
+            isinstance(scope, dict)
+            and scope.get("session_id") == record.session_id
+            and scope.get("workspace_id") == record.workspace_id
+            and scope.get("root_run_id") == record.process_root_id
+            and scope.get("generation_id") == record.qualified_runtime_generation
+            and record.qualified_operator_scope == scope
+        )
+
+    @staticmethod
     def _read_locked_acp_binding_payload(path: Path) -> bytes:
         try:
             before = os.lstat(path)
@@ -3077,6 +3516,8 @@ class RuntimeAdapter:
 
         if not self._acp:
             return
+        if self._operator_fence_matches_current_root(record) and not starting_new_root:
+            raise SessionConflict("operator-fenced ACP root cannot be rewritten as a normal binding")
         root = record.process_root_id
         if re.fullmatch(r"[0-9a-f]{32}", root) is None or record.authority_epoch is None:
             raise SessionConflict("ACP recovery binding has no exact root authority")
@@ -3441,6 +3882,15 @@ class RuntimeAdapter:
                 checked = self._read_acp_binding(record.session_id)
             except (UnicodeError, ValueError, TypeError, RecursionError, KeyError) as exc:
                 raise SessionConflict("ACP predecessor binding is invalid") from exc
+            observation = parsed.get("operator_observation") if isinstance(parsed, dict) else None
+            operator_candidate = (
+                isinstance(parsed, dict)
+                and parsed.get("schema_version") == _ACP_ROOT_BINDING_V3_SCHEMA
+                and isinstance(observation, dict)
+                and observation == record.operator_observation
+                and observation.get("scope", {}).get("root_run_id") == expected_root_id
+                and record.process_root_id == expected_root_id
+            )
             if (not isinstance(parsed, dict)
                     or parsed.get("session_id") != record.session_id
                     or parsed.get("trace_id") != record.trace_id
@@ -3448,7 +3898,7 @@ class RuntimeAdapter:
                     or parsed.get("workspace_id") != record.workspace_id
                     or parsed.get("root_run_id") != expected_root_id
                     or parsed.get("closed") is not False
-                    or parsed.get("cleanup_unconfirmed") is not False
+                    or (parsed.get("cleanup_unconfirmed") is not False and not operator_candidate)
                     or checked.get("root_run_id") != expected_root_id):
                 raise SessionConflict("ACP predecessor binding does not match this Runtime root")
             normalized = dict(parsed)
@@ -3459,7 +3909,16 @@ class RuntimeAdapter:
             if normalized != checked:
                 raise SessionConflict("ACP predecessor binding changed during capture")
             if record.process_used:
-                if (parsed.get("settlement_receipt") != record.settlement_receipt
+                operator_retired = (
+                    operator_candidate
+                    and record.active_run is None
+                    and not record.pending_terminal_receipts
+                    and record.domain_call_sequence == record.domain_call_drained_sequence
+                    and parsed.get("cleanup_unconfirmed") is record.cleanup_unconfirmed
+                    and parsed.get("settlement_receipt") == record.settlement_receipt
+                )
+                if not operator_retired and (
+                        parsed.get("settlement_receipt") != record.settlement_receipt
                         or not parsed.get("settlement_receipt")
                         or parsed.get("native_session_close_confirmed") is not True
                         or parsed.get("process_exit_confirmed") is not True
@@ -3628,19 +4087,30 @@ class RuntimeAdapter:
                        "domain_call_drained_sequence", "native_session_close_confirmed",
                        "process_exit_confirmed", "cleanup_unconfirmed", "closed"}
         schema_version = value.get("schema_version") if isinstance(value, dict) else None
-        expected_fields = (base_fields | {"operator_scope", "operator_binding"}
-                           if schema_version == _ACP_ROOT_BINDING_V2_SCHEMA else base_fields)
+        qualified_fields = base_fields | {"operator_scope", "operator_binding"}
+        expected_fields = (
+            qualified_fields | {"operator_observation", "final_live_sequence"}
+            if schema_version == _ACP_ROOT_BINDING_V3_SCHEMA else
+            qualified_fields if schema_version == _ACP_ROOT_BINDING_V2_SCHEMA else base_fields
+        )
         if (not isinstance(value, dict)
                 or set(value) != expected_fields
-                or schema_version not in {"byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA}
+                or schema_version not in {
+                    "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA,
+                    _ACP_ROOT_BINDING_V3_SCHEMA,
+                }
                 or value["session_id"] != session_id
                 or re.fullmatch(r"[0-9a-f]{32}", str(value["root_run_id"])) is None
                 or re.fullmatch(r"[0-9a-f]{32}", str(value["previous_boot_id"])) is None
                 or type(value["previous_authority_epoch"]) is not int
                 or type(value["sequence"]) is not int
+                or not 0 <= value["sequence"] < 2**63
                 or type(value["domain_call_sequence"]) is not int
                 or type(value["domain_call_drained_sequence"]) is not int
                 or not 0 <= value["domain_call_drained_sequence"] <= value["domain_call_sequence"]
+                or (schema_version == _ACP_ROOT_BINDING_V3_SCHEMA
+                    and (type(value.get("final_live_sequence")) is not int
+                         or not value["sequence"] <= value["final_live_sequence"] < 2**63))
                 or type(value["native_session_close_confirmed"]) is not bool
                 or type(value["process_exit_confirmed"]) is not bool
                 or type(value["cleanup_unconfirmed"]) is not bool
@@ -3657,7 +4127,7 @@ class RuntimeAdapter:
             # found under a different group's volume is not proof of authority.
             if path != self._acp_binding_path(session_id, value["workspace_id"]):
                 raise SessionConflict("ACP recovery binding is not in its declared resource group")
-        if schema_version == _ACP_ROOT_BINDING_V2_SCHEMA:
+        if schema_version in {_ACP_ROOT_BINDING_V2_SCHEMA, _ACP_ROOT_BINDING_V3_SCHEMA}:
             try:
                 scope = validate_product_scope(value["operator_scope"])
             except (TypeError, ValueError):
@@ -3687,12 +4157,67 @@ class RuntimeAdapter:
                     or _ACP_HEX32.fullmatch(binding["backend_activation_id"]) is None):
                 raise SessionConflict("ACP qualified recovery binding scope is invalid")
             value["operator_scope"] = scope
+            if schema_version == _ACP_ROOT_BINDING_V3_SCHEMA:
+                try:
+                    observation = _r2_validate_operator_observation_record(
+                        value["operator_observation"])
+                except _R2FenceContractError as exc:
+                    raise SessionConflict("ACP operator recovery observation is invalid") from exc
+                predecessor = dict(value)
+                predecessor.pop("operator_observation")
+                predecessor.pop("final_live_sequence")
+                predecessor["schema_version"] = _ACP_ROOT_BINDING_V2_SCHEMA
+                predecessor_sha256 = hashlib.sha256(
+                    canonical_product_json(predecessor)).hexdigest()
+                drain = observation["domain_call_drain"]
+                release = observation["slot_release"]
+                if (observation["scope"] != scope
+                        or observation["runtime_binding_sha256"] != predecessor_sha256
+                        or observation["runtime_ack"]["root_binding_sha256"] != predecessor_sha256
+                        or observation["runtime_ack"]["root_run_id"] != value["root_run_id"]
+                        or observation["runtime_ack"]["runtime_boot_id"] != value["previous_boot_id"]
+                        or observation["authority"]["previous_boot_id"] != value["previous_boot_id"]
+                        or observation["authority"]["previous_epoch"] != value["previous_authority_epoch"]
+                        or drain["root_run_id"] != value["root_run_id"]
+                        or drain["last_domain_sequence"] != value["domain_call_sequence"]
+                        or drain["drained_sequence"] != value["domain_call_drained_sequence"]
+                        or release["workspace_id"] != value["workspace_id"]
+                        or release["root_run_id"] != value["root_run_id"]
+                        or release["scope_sha256"] != _r2_digest(scope)
+                        or release["drained_sequence"] != value["domain_call_drained_sequence"]
+                        or release["tombstone_sha256"] != observation["runner"]["tombstone_sha256"]
+                        or (observation["superseded_terminal"] is not None
+                            and (observation["superseded_terminal"]["sequence"]
+                                 > value["final_live_sequence"]))):
+                    raise SessionConflict("ACP operator recovery observation binding changed")
+                value["operator_observation"] = observation
         return value
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:
         binding = self._read_acp_binding(session_id)
         if binding["closed"]:
             raise SessionConflict("BYQ session was ended")
+        if binding["schema_version"] == _ACP_ROOT_BINDING_V3_SCHEMA:
+            observation = binding["operator_observation"]
+            return {
+                "schema_version": "byq-runtime-recovery-binding.v1",
+                "state": "operator_interrupted",
+                "session_id": binding["session_id"],
+                "trace_id": binding["trace_id"],
+                "owner_principal": binding["owner_principal"],
+                "workspace_id": binding["workspace_id"],
+                "root_run_id": binding["root_run_id"],
+                "previous_boot_id": binding["previous_boot_id"],
+                "previous_authority_epoch": binding["previous_authority_epoch"],
+                "sequence": binding["final_live_sequence"],
+                "operator_interruption": {
+                    "operation_id": observation["operation_id"],
+                    "process_fence_receipt_sha256": observation["process_fence_receipt_sha256"],
+                    "close_receipt_sha256": observation["close_receipt_sha256"],
+                    "runtime_ack_sha256": _r2_digest(observation["runtime_ack"]),
+                },
+                "superseded_terminal": observation["superseded_terminal"],
+            }
         if binding["cleanup_unconfirmed"]:
             raise SessionConflict("ACP recovery is blocked by unconfirmed process cleanup")
         if not binding["process_exit_confirmed"]:
@@ -3706,9 +4231,102 @@ class RuntimeAdapter:
                 **public,
                 **({"settlement_receipt": binding["settlement_receipt"]} if settled else {})}
 
+    def _recover_operator_interrupted_session(
+        self, session_id: str, receipt: dict[str, Any], initial_sequence: int,
+    ) -> dict[str, Any]:
+        """Attach the public session without restoring its interrupted ACP child."""
+        binding = self._read_acp_binding(session_id)
+        if (binding.get("schema_version") != _ACP_ROOT_BINDING_V3_SCHEMA
+                or binding.get("closed") is not False
+                or binding.get("settlement_receipt") is not None
+                or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")):
+            raise SessionConflict("operator-interrupted ACP binding is not eligible for fresh execution")
+        expected = self.recovery_binding(session_id)
+        if receipt != expected:
+            raise SessionConflict("operator-interrupted recovery receipt does not match the durable binding")
+        if (type(initial_sequence) is not int
+                or initial_sequence < binding["final_live_sequence"]
+                or initial_sequence >= 2**63):
+            raise SessionConflict("operator-interrupted recovery sequence is not proven")
+        current_epoch = self.require_current_backend_authority()
+        model_resolution = self._resolve_model(
+            owner_principal=binding["owner_principal"],
+            session_id=session_id,
+            trace_id=binding["trace_id"],
+        )
+        if (str(model_resolution.get("provider") or self._provider) != binding["model_provider"]
+                or str(model_resolution.get("model") or self._model) != binding["model_id"]):
+            raise SessionConflict("operator-interrupted session model route changed")
+        observation = binding["operator_observation"]
+        with self._lock:
+            existing = self._sessions.get(session_id)
+            if existing is not None:
+                with existing.lock:
+                    if (existing.boot_id != self.boot_id
+                            or existing.process_root_id != binding["root_run_id"]
+                            or existing.operator_observation != observation
+                            or existing.active_run is not None):
+                        raise SessionConflict("operator-interrupted Runtime session changed")
+                    return {**self.describe_session(existing), "resumed_from_run_id": None}
+
+            record = RuntimeSession(
+                session_id=session_id,
+                trace_id=binding["trace_id"],
+                boot_id=self.boot_id,
+                owner_principal=binding["owner_principal"],
+                workspace_id=binding["workspace_id"],
+                model_resolution=model_resolution,
+                status=SessionStatus.IDLE,
+                sequence=initial_sequence,
+                continuity=continuity.REATTACHED,
+                authority_epoch=current_epoch,
+                recovery_cwd=binding["cwd"],
+                settlement_receipt=None,
+                domain_call_sequence=binding["domain_call_sequence"],
+                domain_call_drained_sequence=binding["domain_call_drained_sequence"],
+                cleanup_unconfirmed=binding["cleanup_unconfirmed"],
+                qualified_operator_scope=dict(binding["operator_scope"]),
+                qualified_operator_binding=dict(binding["operator_binding"]),
+                qualified_runtime_generation=binding["runtime_generation"],
+                qualified_cwd=binding["cwd"],
+                qualified_authority_epoch=binding["previous_authority_epoch"],
+                operator_observation=dict(observation),
+            )
+            # This identity is retained only as the exact predecessor for the
+            # next V2 CAS. No harness is built or resumed for the old native ID.
+            self._install_generation(
+                record,
+                native_session_id=binding["native_session_id"],
+                executor_epoch=0,
+                process_root_id=binding["root_run_id"],
+                generation_id=binding["runtime_generation"],
+            )
+            generation = record.current_generation
+            if generation is None:
+                raise SessionConflict("operator-interrupted Runtime generation is unavailable")
+            generation.state = GenerationState.INTERRUPTED
+            generation.harness = None
+            generation.native_session_close_confirmed = binding["native_session_close_confirmed"]
+            generation.process_exit_confirmed = binding["process_exit_confirmed"]
+            generation.process_closed = binding["process_exit_confirmed"]
+            generation.process_closing = False
+            generation.continuation_proxy_closed = True
+            record.process_used = True
+            record.reuse_native_session_ready = False
+            superseded = observation["superseded_terminal"]
+            if superseded is not None:
+                record.operator_superseded_terminal_receipts[
+                    binding["root_run_id"]] = superseded["receipt_sha256"]
+            self._sessions[session_id] = record
+        return {**self.describe_session(record), "resumed_from_run_id": None}
+
     def recover_acp_session(self, session_id: str, receipt: object,
                             initial_sequence: int) -> dict[str, Any]:
         """Reattach one exact root after Backend transfer, without prompt replay."""
+
+        if isinstance(receipt, dict) and receipt.get("state") == "operator_interrupted":
+            return self._recover_operator_interrupted_session(
+                session_id, receipt, initial_sequence)
 
         with self._lock:
             existing = self._sessions.get(session_id)

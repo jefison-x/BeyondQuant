@@ -63,6 +63,7 @@ TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
 # respond, then confirms process exit before returning the exact receipt.
 # Keep this internal request alive through the Adapter's bounded attempt.
 TRACE_TERMINAL_ACK_TIMEOUT_SECONDS = 75.0
+_OPERATOR_SUPERSEDED_LIFECYCLE = object()
 
 
 @asynccontextmanager
@@ -1140,6 +1141,8 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
         if (session is None or not _valid_runtime_boot_id(session.boot_id)
                 or session.boot_id != snapshot.get("boot_id")):
             raise RuntimeError("active lifecycle event has no current Adapter boot binding")
+        if session is not None and _operator_fence_for_root(session, event["root_run_id"]) is not None:
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
         reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
             Principal(subject=context["owner"]), context["workspace_id"], payload={
                 "session_id": context["session_id"], "trace_id": context["trace_id"],
@@ -1151,6 +1154,24 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
     session = product_sessions.find_owned(
         context["conversation_id"], Principal(subject=context["owner"]),
     )
+    if event["outcome"] != "active":
+        if session is None:
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        operator_fence = _operator_fence_for_root(session, event["root_run_id"])
+        if operator_fence is not None:
+            superseded = operator_fence["superseded_terminal"]
+            expected_receipt = lifecycle_receipt(event)
+            receipt_sha256 = hashlib.sha256(json.dumps(
+                expected_receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if (event["outcome"] != "failed" or superseded is None
+                    or superseded["root_run_id"] != event["root_run_id"]
+                    or superseded["sequence"] != event["sequence"]
+                    or superseded["event_sha256"] != expected_receipt["event_sha256"]
+                    or superseded["receipt_sha256"] != receipt_sha256):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+            # Keep the historical trace event untouched, but do not replay its
+            # ordinary Backend close or Runtime terminal ACK after operator ACK.
+            return _OPERATOR_SUPERSEDED_LIFECYCLE
     boot_id = expected_boot_id or (session.boot_id if session is not None else snapshot.get("boot_id"))
     if snapshot.get("ready") is not True or not _valid_runtime_boot_id(boot_id):
         raise RuntimeError("runtime authority is unavailable for terminal close")
@@ -1475,7 +1496,9 @@ def _ack_v3_cancel_terminal(context: dict, session: ProductSession, run_id: str,
             and (not isinstance(terminal_event.get('payload'), dict)
                  or terminal_event['payload'].get('mode') != mode)):
         return False
-    _send_agent_lifecycle(context, lifecycle, expected_boot_id=session.boot_id)
+    delivered = _send_agent_lifecycle(context, lifecycle, expected_boot_id=session.boot_id)
+    if delivered is _OPERATOR_SUPERSEDED_LIFECYCLE:
+        return False
     return True
 
 
@@ -2502,6 +2525,50 @@ def _catalog_request(
     return body
 
 
+def _validate_operator_process_fence_projection(
+    value: object, *, root_run_id: str, row: dict[str, object],
+) -> dict[str, object] | None:
+    if value is None:
+        return None
+    expected = {
+        "schema_version", "operation_id", "outcome", "ack_status", "slot_release_status",
+        "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
+        "operator_interruption_receipt_sha256", "proof_receipt_sha256", "ack_receipt_sha256",
+        "superseded_terminal",
+    }
+    if (not isinstance(value, dict) or set(value) != expected
+            or value.get("schema_version") != "byq-business-root-operator-process-fence.v1"
+            or not isinstance(value.get("operation_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", value["operation_id"]) is None
+            or value.get("outcome") != "interrupted"
+            or value.get("ack_status") != "confirmed"
+            or value.get("slot_release_status") != "released"
+            or row.get("status") != "interrupted" or row.get("authority_status") != "closed"
+            or row.get("terminal_sequence") is not None
+            or row.get("terminal_event_sha256") is not None):
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    for field in (
+        "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
+        "operator_interruption_receipt_sha256", "proof_receipt_sha256", "ack_receipt_sha256",
+    ):
+        digest = value.get(field)
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    superseded = value.get("superseded_terminal")
+    if superseded is not None:
+        if (not isinstance(superseded, dict)
+                or set(superseded) != {"schema_version", "root_run_id", "sequence",
+                                       "event_sha256", "receipt_sha256"}
+                or superseded.get("schema_version") != "byq-runtime-superseded-terminal.v1"
+                or superseded.get("root_run_id") != root_run_id
+                or type(superseded.get("sequence")) is not int or superseded["sequence"] < 1
+                or any(not isinstance(superseded.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", superseded[field]) is None
+                       for field in ("event_sha256", "receipt_sha256"))):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    return value
+
+
 def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
     """Read Backend's owner-scoped root ledger without inferring business outcomes."""
     try:
@@ -2522,6 +2589,7 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
                  "terminal_event_sha256"}
     acp_keys = {"terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
                 "terminal_unknown_claim_count", "terminal_unknown_claims_sha256"}
+    operator_key = "operator_process_fence"
     for row in roots:
         status = row.get("status") if isinstance(row, dict) else None
         authority_status = row.get("authority_status") if isinstance(row, dict) else None
@@ -2529,9 +2597,14 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
         terminal_digest = row.get("terminal_event_sha256") if isinstance(row, dict) else None
         root_id = row.get("root_run_id") if isinstance(row, dict) else None
         keys = set(row) if isinstance(row, dict) else set()
-        has_acp_snapshot = keys == base_keys | acp_keys
+        has_operator_projection = operator_key in keys
+        projection_keys = keys - {operator_key}
+        has_acp_snapshot = projection_keys == base_keys | acp_keys
+        allowed_key_sets = [base_keys, base_keys | acp_keys]
+        if has_operator_projection:
+            allowed_key_sets.extend(candidate | {operator_key} for candidate in (base_keys, base_keys | acp_keys))
         if (not isinstance(row, dict)
-                or keys not in (base_keys, base_keys | acp_keys)
+                or keys not in allowed_key_sets
                 or not isinstance(root_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_id) is None
                 or root_id in seen
                 or not isinstance(status, str)
@@ -2560,9 +2633,32 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
             # Historical SDK roots predate the ACP cursor and legitimately
             # carry four nulls. ACP recovery explicitly requires all four
             # non-null fields before accepting a settled binding.
+        if has_operator_projection:
+            operator_fence = _validate_operator_process_fence_projection(
+                row[operator_key], root_run_id=root_id, row=row)
+        else:
+            operator_fence = None
+        if (status == "interrupted" and authority_status == "closed"
+                and terminal_sequence is None and terminal_digest is None
+                and operator_fence is None):
+            # This closed-without-an-ordinary-terminal shape is reserved for
+            # operator interruption. A missing/null proof+ACK projection must
+            # not fall through to ordinary terminal handling.
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
         seen.add(root_id)
         validated.append(row)
     return validated
+
+
+def _operator_fence_for_root(session: ProductSession, root_run_id: str) -> dict[str, object] | None:
+    rows = _runtime_root_rows(session)
+    matches = [row for row in rows if row["root_run_id"] == root_run_id]
+    if len(matches) > 1:
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    if not matches:
+        return None
+    value = matches[0].get("operator_process_fence")
+    return value if isinstance(value, dict) else None
 
 
 def _validate_recovery_binding(body: object, session: ProductSession) -> dict[str, object]:
@@ -2573,8 +2669,10 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 "root_run_id", "previous_boot_id", "previous_authority_epoch", "sequence"}
     if state == "settled":
         expected = {*expected, "settlement_receipt"}
+    elif state == "operator_interrupted":
+        expected = {*expected, "operator_interruption", "superseded_terminal"}
     if (set(body) != expected or body.get("schema_version") != RUNTIME_RECOVERY_BINDING_SCHEMA
-            or state not in ("transfer_required", "settled")
+            or state not in ("transfer_required", "settled", "operator_interrupted")
             or body.get("session_id") != session.session_id or body.get("trace_id") != session.trace_id
             or body.get("owner_principal") != session.principal.subject
             or body.get("workspace_id") != session.workspace_id
@@ -2595,7 +2693,55 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 or not isinstance(receipt.get("event_sha256"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"]) is None):
             raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if state == "operator_interrupted":
+        operator_interruption = body.get("operator_interruption")
+        if (not isinstance(operator_interruption, dict)
+                or set(operator_interruption) != {"operation_id", "process_fence_receipt_sha256",
+                    "close_receipt_sha256", "runtime_ack_sha256"}
+                or not isinstance(operator_interruption.get("operation_id"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", operator_interruption["operation_id"]) is None
+                or any(not isinstance(operator_interruption.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", operator_interruption[field]) is None
+                       for field in ("process_fence_receipt_sha256", "close_receipt_sha256",
+                                     "runtime_ack_sha256"))):
+            raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+        superseded = body.get("superseded_terminal")
+        if superseded is not None and (
+                not isinstance(superseded, dict)
+                or set(superseded) != {"schema_version", "root_run_id", "sequence",
+                                       "event_sha256", "receipt_sha256"}
+                or superseded.get("schema_version") != "byq-runtime-superseded-terminal.v1"
+                or superseded.get("root_run_id") != body["root_run_id"]
+                or type(superseded.get("sequence")) is not int or superseded["sequence"] < 1
+                or any(not isinstance(superseded.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", superseded[field]) is None
+                       for field in ("event_sha256", "receipt_sha256"))):
+            raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
     return body
+
+
+def _verify_operator_interrupted_recovery_binding(
+    binding: dict[str, object], session: ProductSession,
+) -> dict[str, object]:
+    roots = _runtime_root_rows(session)
+    matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+    if len(matched) != 1:
+        _raise_agent_session_interrupted()
+    row = matched[0]
+    operator_fence = row.get("operator_process_fence")
+    recovery = binding["operator_interruption"]
+    if (not isinstance(operator_fence, dict)
+            or row.get("status") != "interrupted" or row.get("authority_status") != "closed"
+            or row.get("terminal_sequence") is not None
+            or row.get("terminal_event_sha256") is not None
+            or operator_fence.get("operation_id") != recovery.get("operation_id")
+            or operator_fence.get("process_fence_receipt_sha256")
+                != recovery.get("process_fence_receipt_sha256")
+            or operator_fence.get("close_receipt_sha256") != recovery.get("close_receipt_sha256")
+            or operator_fence.get("runtime_ack_sha256") != recovery.get("runtime_ack_sha256")
+            or operator_fence.get("superseded_terminal") != binding.get("superseded_terminal")):
+        _raise_agent_session_interrupted()
+    return binding
 
 
 def _verify_settled_recovery_binding(
@@ -2769,7 +2915,14 @@ def _restore_product_session(
             else:
                 binding = _validate_recovery_binding(binding_reply, session)
                 initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
-                if binding["state"] == "transfer_required":
+                if binding["state"] == "operator_interrupted":
+                    # This distinct receipt authorizes only a fresh idle Adapter
+                    # session after Backend confirms the exact protected proof/ACK
+                    # projection. It is never an ordinary terminal ACK or old-child
+                    # resume receipt.
+                    recovery_receipt = _verify_operator_interrupted_recovery_binding(
+                        binding, session)
+                elif binding["state"] == "transfer_required":
                     recovery_receipt = _closed_before_adapter_ack_receipt(binding, session)
                     if recovery_receipt is None:
                         try:
@@ -2889,6 +3042,21 @@ def _attested_runtime_events(events: list[dict[str, object]], session: ProductSe
                 continue
             receipt = lifecycle_receipt(lifecycle)
             row = indexed.get(lifecycle["root_run_id"])
+            operator_fence = row.get("operator_process_fence") if row is not None else None
+            if operator_fence is not None:
+                superseded = operator_fence["superseded_terminal"]
+                receipt_sha256 = hashlib.sha256(json.dumps(
+                    receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if (event.get("kind") == "session.failed"
+                        and isinstance(superseded, dict)
+                        and superseded.get("root_run_id") == lifecycle["root_run_id"]
+                        and superseded.get("sequence") == receipt["sequence"]
+                        and superseded.get("event_sha256") == receipt["event_sha256"]
+                        and superseded.get("receipt_sha256") == receipt_sha256):
+                    # The original failed event remains in TraceStore/public history.
+                    # It is omitted only from trusted completed-turn context.
+                    continue
+                raise ValueError("operator interruption does not supersede this terminal event")
             if (row is None or row["status"] != lifecycle["outcome"]
                     or row["authority_status"] != "closed"
                     or row["terminal_sequence"] != receipt["sequence"]

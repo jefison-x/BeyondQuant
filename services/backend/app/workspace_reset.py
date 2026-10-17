@@ -9,14 +9,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, execute
+from .db import PgStoreMixin, execute, transaction
 from .workspace_reset_scope import RESET_SCOPE, SCOPE_BY_TABLE, RETIRED_KEY_FIELDS
 
 
@@ -35,7 +36,7 @@ _REQUIRED_TABLES = (
     "data_demands", "factor_jobs", "signal_producer_jobs", "backtest_jobs",
     "optimization_jobs", "ml_training_runs", "ml_training_submission_keys",
     "ml_training_receipt_watches", "ml_prediction_runs",
-    "agent_runs", "agent_runtime_turns", "agent_domain_call_claims",
+    "agent_runs", "agent_runtime_turns", "agent_domain_call_claims", "operations_audit",
     "agent_domain_correction_buckets", "agent_approvals", "agent_audit",
     "learning_runs", "evaluation_signals", "lessons", "learning_history",
 )
@@ -83,6 +84,35 @@ class WorkspaceResetStore(PgStoreMixin):
     """Archive and delete one workspace's explicitly classified closed personal data."""
 
     SCHEMA_DDL: list[str] = []
+    _RUNTIME_WRITER_GATE = "runtime-authority:agent-writers"
+
+    def __init__(self, database_url: str | None = None) -> None:
+        super().__init__(database_url)
+        self.runtime_authority_guard_engine = create_engine(
+            self.database_url, pool_size=8, max_overflow=0, pool_timeout=0.25,
+            pool_pre_ping=True, future=True,
+        )
+
+    def close(self) -> None:
+        self.runtime_authority_guard_engine.dispose()
+        super().close()
+
+    @staticmethod
+    def _lifecycle_lock(connection, key: str) -> None:
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))", {"key": key})
+
+    @contextmanager
+    def _reset_transaction(self, workspace: str):
+        # Match Runtime reset and Agent lifecycle lock order so a proof cannot
+        # race a direct reset or be inserted after reset has begun.
+        with transaction(self.runtime_authority_guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, self._RUNTIME_WRITER_GATE)
+            with self._lock, self.engine.begin() as connection:
+                connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+                connection.execute(text("SET LOCAL statement_timeout = '120s'"))
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, f"workspace-reset|{workspace}")
+                yield connection
 
     @staticmethod
     def _identity(value: object, field: str) -> str:
@@ -310,6 +340,14 @@ class WorkspaceResetStore(PgStoreMixin):
     def _preflight(connection, *, owner: str, workspace: str,
                    allow_active_agent_roots: bool = False) -> None:
         params = {"owner": owner, "workspace": workspace}
+
+        from .operator_process_fence import OperatorProcessFenceHold, require_workspace_process_fence_ack
+        try:
+            require_workspace_process_fence_ack(connection, workspace)
+        except OperatorProcessFenceHold as error:
+            raise WorkspaceResetBlocked(
+                "operator process-fence proof has no exact durable ACK and slot release"
+            ) from error
 
         # ADR-0113's reserved proof is still needed for Backend/Adapter/Gateway
         # terminal acknowledgement and exact slot release. The current durable
@@ -626,6 +664,15 @@ class WorkspaceResetStore(PgStoreMixin):
         owner = WorkspaceResetStore._identity(owner_principal,'owner_principal')
         workspace = WorkspaceResetStore._identity(workspace_id,'workspace_id')
         reset_id = reset_id or uuid.uuid4().hex; now = now or datetime.now(timezone.utc)
+        WorkspaceResetStore._lifecycle_lock(connection, "runtime-authority:current")
+        WorkspaceResetStore._lifecycle_lock(connection, f"workspace-reset|{workspace}")
+        from .operator_process_fence import OperatorProcessFenceHold, require_workspace_process_fence_ack
+        try:
+            require_workspace_process_fence_ack(connection, workspace)
+        except OperatorProcessFenceHold as error:
+            raise WorkspaceResetBlocked(
+                "operator process-fence proof has no exact durable ACK and slot release"
+            ) from error
         params = {'owner':owner,'workspace':workspace,
                   'user_id':connection.execute(text('SELECT user_id FROM users WHERE username=:owner'),{'owner':owner}).scalar_one()}
         counts, archive = WorkspaceResetStore._archive_in_connection(
@@ -707,11 +754,7 @@ class WorkspaceResetStore(PgStoreMixin):
         candidate_refs: list[dict[str, object]] = []
 
         try:
-            with self._lock, self.engine.begin() as connection:
-                connection.execute(text("SET LOCAL lock_timeout = '5s'"))
-                connection.execute(text("SET LOCAL statement_timeout = '120s'"))
-                connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                                   {"scope": f"workspace-reset|{workspace}"})
+            with self._reset_transaction(workspace) as connection:
                 self.preflight_in_connection(
                     connection, owner_principal=owner, workspace_id=workspace,
                 )

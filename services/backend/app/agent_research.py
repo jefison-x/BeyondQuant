@@ -65,6 +65,27 @@ from packages.contracts.acp_product_prebind import (
     validate_prepared_receipt,
     validate_start_binding,
 )
+from packages.contracts.acp_operator_process_fence import (
+    ACK_ACTION as _R2_ACK_ACTION,
+    ACK_IDEMPOTENCY_PREFIX as _R2_ACK_PREFIX,
+    ACK_REQUEST_SCHEMA as _R2_ACK_REQUEST_SCHEMA,
+    ACK_SCHEMA as _R2_ACK_SCHEMA,
+    FENCE_CLOSE_RECEIPT_SCHEMA as _R2_CLOSE_RECEIPT_SCHEMA,
+    PROCESS_FENCE_ACTION as _R2_FENCE_ACTION,
+    PROCESS_FENCE_IDEMPOTENCY_PREFIX as _R2_FENCE_PREFIX,
+    PROCESS_FENCE_SCHEMA as _R2_FENCE_SCHEMA,
+    PREIMAGE_SCHEMA as _R2_PREIMAGE_SCHEMA,
+    OperatorProcessFenceContractError,
+    canonical_json as _r2_canonical_json,
+    digest as _r2_digest,
+    parsed_runtime_binding_observation as _r2_runtime_binding,
+    validate_ack_receipt as _r2_validate_ack_receipt,
+    validate_ack_request as _r2_validate_ack_request,
+    validate_fence_close_receipt as _r2_validate_close_receipt,
+    validate_operator_observation as _r2_validate_operator_observation,
+    validate_process_fence_proof as _r2_validate_proof,
+    validate_process_fence_request as _r2_validate_request,
+)
 from packages.contracts.research_plan_approval import (
     AGENT_APPROVAL_PLAN_ACTION,
     PLAN_APPROVAL_ACTION,
@@ -1852,16 +1873,91 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         workspace = _trace(workspace_id, field="workspace_id")
         session = _trace(session_id, field="session_id")
         trace = _trace(trace_id, field="trace_id")
-        rows = self._execute("""SELECT root_run_id, status, authority_status,
+        sql = """SELECT root_run_id, status, authority_status,
                 terminal_sequence, terminal_event_sha256,
                 terminal_acp_ingress_sequence, terminal_acp_ingress_sha256,
                 terminal_unknown_claim_count, terminal_unknown_claims_sha256
             FROM agent_runtime_turns
             WHERE owner_principal=:owner AND workspace_id=:workspace
               AND session_id=:session AND trace_id=:trace
-            ORDER BY created_at, root_run_id""",
-            {"owner": owner, "workspace": workspace, "session": session,
-             "trace": trace})
+            ORDER BY created_at, root_run_id"""
+        params = {"owner": owner, "workspace": workspace, "session": session, "trace": trace}
+        rows = self._execute(sql, params)
+        operator_rows: dict[str, dict[str, object]] = {}
+        if any(row.get("status") == "interrupted" and row.get("authority_status") == "closed"
+               and row.get("terminal_sequence") is None and row.get("terminal_event_sha256") is None
+               for row in rows):
+            from .operator_process_fence import (
+                ACK_ACTION, ACK_IDEMPOTENCY_PREFIX, PROCESS_FENCE_ACTION,
+                PROCESS_FENCE_IDEMPOTENCY_PREFIX, OperatorProcessFenceHold,
+                _validate_reserved_ack_row, _validate_reserved_proof_row,
+                require_workspace_process_fence_ack,
+            )
+
+            try:
+                with self._transaction() as connection:
+                    rows = execute(connection, sql, params)
+                    require_workspace_process_fence_ack(connection, workspace)
+                    audit_rows = execute(connection, """SELECT audit_id,actor_principal,action,
+                            resource_type,resource_id,outcome,idempotency_key,request_sha256,
+                            detail_json,response_json,created_at
+                        FROM operations_audit WHERE resource_id=:workspace
+                          AND (action IN (:proof_action,:ack_action)
+                               OR idempotency_key LIKE :proof_prefix
+                               OR idempotency_key LIKE :ack_prefix)
+                        ORDER BY created_at,audit_id""", {
+                            "workspace": workspace, "proof_action": PROCESS_FENCE_ACTION,
+                            "ack_action": ACK_ACTION,
+                            "proof_prefix": PROCESS_FENCE_IDEMPOTENCY_PREFIX + "%",
+                            "ack_prefix": ACK_IDEMPOTENCY_PREFIX + "%",
+                        })
+                    proofs: dict[str, dict[str, Any]] = {}
+                    acknowledgements: dict[str, dict[str, Any]] = {}
+                    for audit_row in audit_rows:
+                        action = audit_row.get("action")
+                        key = audit_row.get("idempotency_key")
+                        if (action == PROCESS_FENCE_ACTION or isinstance(key, str)
+                                and key.startswith(PROCESS_FENCE_IDEMPOTENCY_PREFIX)):
+                            proof = _validate_reserved_proof_row(audit_row)
+                            if proof["operation_id"] in proofs:
+                                raise OperatorProcessFenceHold("duplicate process-fence proof for Workspace")
+                            proofs[proof["operation_id"]] = proof
+                        elif (action == ACK_ACTION or isinstance(key, str)
+                              and key.startswith(ACK_IDEMPOTENCY_PREFIX)):
+                            ack = _validate_reserved_ack_row(audit_row)
+                            if ack["operation_id"] in acknowledgements:
+                                raise OperatorProcessFenceHold("duplicate process-fence ACK for Workspace")
+                            acknowledgements[ack["operation_id"]] = ack
+                    roots_by_id = {row["root_run_id"]: row for row in rows}
+                    for operation_id, proof in proofs.items():
+                        root_id = proof["scope"]["root_run_id"]
+                        root_row = roots_by_id.get(root_id)
+                        if root_row is None:
+                            continue
+                        ack = acknowledgements.get(operation_id)
+                        if (ack is None or root_row.get("status") != "interrupted"
+                                or root_row.get("authority_status") != "closed"
+                                or root_row.get("terminal_sequence") is not None
+                                or root_row.get("terminal_event_sha256") is not None):
+                            raise OperatorProcessFenceHold("operator fence proof does not match closed Root")
+                        if root_id in operator_rows:
+                            raise OperatorProcessFenceHold("multiple operator fence proofs target the same Root")
+                        operator_rows[root_id] = {
+                            "schema_version": "byq-business-root-operator-process-fence.v1",
+                            "operation_id": operation_id,
+                            "outcome": "interrupted",
+                            "ack_status": "confirmed",
+                            "slot_release_status": "released",
+                            "process_fence_receipt_sha256": proof["process_fence_receipt_sha256"],
+                            "operator_interruption_receipt_sha256": proof["operator_interruption"]["receipt_sha256"],
+                            "close_receipt_sha256": ack["terminal_ack_sha256"],
+                            "runtime_ack_sha256": ack["runtime_ack_sha256"],
+                            "proof_receipt_sha256": proof["receipt_sha256"],
+                            "ack_receipt_sha256": ack["receipt_sha256"],
+                            "superseded_terminal": ack["superseded_terminal"],
+                        }
+            except (OperatorProcessFenceHold, OperatorProcessFenceContractError) as exc:
+                raise AgentConflict("operator process-fence root projection is not fully confirmed") from exc
         return {
             "schema_version": "byq-business-root-status.v1",
             "roots": [{
@@ -1874,6 +1970,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 "terminal_acp_ingress_sha256": row["terminal_acp_ingress_sha256"],
                 "terminal_unknown_claim_count": row["terminal_unknown_claim_count"],
                 "terminal_unknown_claims_sha256": row["terminal_unknown_claims_sha256"],
+                "operator_process_fence": operator_rows.get(row["root_run_id"]),
             } for row in rows],
         }
 
@@ -2552,6 +2649,595 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                          "root": root_run_id, "native_agent": registration["native_agent_session_id"],
                          "previous_boot": previous_boot_id})
                 return receipt
+
+    @staticmethod
+    def _operator_process_fence_audit_id(prefix: str, idempotency_key: str) -> str:
+        return prefix + hashlib.sha256(idempotency_key.encode("ascii")).hexdigest()
+
+    def _operator_process_fence_snapshot(
+        self, connection: Any, request: dict[str, Any], *, lock_rows: bool,
+        allow_closed: bool = False,
+    ) -> dict[str, Any]:
+        """Lock and validate the complete business/native preimage for one Root."""
+        scope = request["scope"]
+        root_id = scope["root_run_id"]
+        workspace_id = scope["workspace_id"]
+        owner = scope["owner_principal"]
+        session_id = scope["session_id"]
+        trace_id = scope["trace_id"]
+        lock = " FOR UPDATE" if lock_rows else " FOR SHARE"
+        rows: list[dict[str, Any]] = []
+
+        def add(table: str, key: dict[str, Any], row: dict[str, Any]) -> None:
+            rows.append({"table": table, "key": key, "row": dict(row)})
+
+        def select(table: str, sql: str, params: dict[str, Any], key_fields: tuple[str, ...]):
+            selected = execute(connection, sql + lock, params)
+            for selected_row in selected:
+                add(table, {field: selected_row[field] for field in key_fields}, selected_row)
+            return selected
+
+        identity = fetch_one(connection, """SELECT w.workspace_id,w.kind,w.owner_user_id,w.status,w.reset_id,
+                u.user_id,u.username,u.status AS user_status,u.role,
+                m.membership_id,m.role AS membership_role,m.status AS membership_status
+            FROM workspaces w JOIN users u ON u.user_id=w.owner_user_id
+            JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
+            WHERE w.workspace_id=:workspace AND u.username=:owner
+            FOR UPDATE OF w,u,m""", {"workspace": workspace_id, "owner": owner})
+        if (identity is None or identity["kind"] != "personal" or identity["owner_user_id"] != identity["user_id"]
+                or identity["username"] != owner or identity["user_status"] != "active"
+                or identity["status"] != "active" or identity["membership_role"] != "owner"
+                or identity["membership_status"] != "active" or identity["reset_id"] is not None):
+            raise AgentConflict("active personal workspace identity is not exact")
+        add("workspaces", {"workspace_id": workspace_id}, {
+            "workspace_id": identity["workspace_id"], "kind": identity["kind"],
+            "owner_user_id": identity["owner_user_id"], "status": identity["status"],
+            "reset_id": identity["reset_id"],
+        })
+        add("users", {"user_id": identity["user_id"]}, {
+            "user_id": identity["user_id"], "username": identity["username"],
+            "status": identity["user_status"], "role": identity["role"],
+        })
+        add("workspace_memberships", {"membership_id": identity["membership_id"]}, {
+            "membership_id": identity["membership_id"], "workspace_id": workspace_id,
+            "user_id": identity["user_id"], "role": identity["membership_role"],
+            "status": identity["membership_status"],
+        })
+        conversation_rows = select("product_conversations", """SELECT conversation_id,owner_principal,
+                runtime_session_id,trace_id,status FROM product_conversations
+            WHERE runtime_session_id=:session AND owner_principal=:owner AND trace_id=:trace
+            ORDER BY conversation_id""", {"session": session_id, "owner": owner, "trace": trace_id},
+            ("conversation_id",))
+        if (len(conversation_rows) != 1 or conversation_rows[0]["status"] != "active"
+                or conversation_rows[0]["runtime_session_id"] != session_id):
+            raise AgentConflict("public conversation identity or status is not exact")
+
+        self._lifecycle_lock(connection, "root:" + root_id)
+        root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root" + lock,
+                         {"root": root_id})
+        if (root is None or root.get("root_run_id") != root_id
+                or root.get("owner_principal") != owner or root.get("workspace_id") != workspace_id
+                or root.get("session_id") != session_id or root.get("trace_id") != trace_id
+                or root.get("terminal_sequence") is not None or root.get("terminal_event_sha256") is not None):
+            raise AgentConflict("runtime Root identity or terminal state changed")
+        add("agent_runtime_turns", {"root_run_id": root_id}, root)
+        if not allow_closed and (root.get("status") != "active"
+                                 or root.get("authority_status") not in {"active", "authority_revoked_unconfirmed"}):
+            raise AgentConflict("runtime Root is not an unresolved active Root")
+        if allow_closed and (root.get("status") != "interrupted" or root.get("authority_status") != "closed"):
+            raise AgentConflict("runtime Root is not closed by the exact operator fence")
+
+        current = self._current_authority_row(connection, for_update=lock_rows)
+        if (current is None or current.get("boot_id") != request["authority"]["current_boot_id"]
+                or current.get("epoch") != request["authority"]["current_epoch"]
+                or not isinstance(current.get("receipt_json"), dict)
+                or current["receipt_json"].get("status") != "current"
+                or current["receipt_json"].get("boot_id") != current["boot_id"]
+                or current["receipt_json"].get("authority_epoch") != current["epoch"]):
+            raise AgentConflict("current runtime authority differs from the fence request")
+        prev = fetch_one(connection, """SELECT boot_id,epoch,receipt_json
+            FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot""" + lock,
+            {"boot": request["authority"]["previous_boot_id"]})
+        if (prev is None or prev.get("epoch") != request["authority"]["previous_epoch"]
+                or not isinstance(prev.get("receipt_json"), dict)
+                or prev["receipt_json"].get("boot_id") != prev["boot_id"]
+                or prev["receipt_json"].get("authority_epoch") != prev["epoch"]):
+            raise AgentConflict("historical runtime authority receipt differs from the fence request")
+        runtime_binding = _r2_runtime_binding(request["runtime_binding_observation"])
+        if (request["authority"]["previous_boot_id"] != scope["runtime_boot_id"]
+                or request["authority"]["previous_epoch"] != runtime_binding["previous_authority_epoch"]
+                or current["boot_id"] != runtime_binding["previous_boot_id"]
+                    and current["epoch"] <= request["authority"]["previous_epoch"]
+                or root.get("authority_boot_id") not in {
+                    request["authority"]["previous_boot_id"], request["authority"]["current_boot_id"]
+                }
+                or root.get("previous_authority_boot_id") not in {
+                    None, request["authority"]["previous_boot_id"]
+                }
+                or (root.get("previous_authority_boot_id") == request["authority"]["previous_boot_id"]
+                    and root.get("previous_authority_epoch") != request["authority"]["previous_epoch"])):
+            raise AgentConflict("Root authority chain differs from the frozen V2 binding")
+        add("agent_runtime_authority_current", {"authority_key": "current"}, current)
+        add("agent_runtime_authority_boot_receipts", {"boot_id": prev["boot_id"]}, prev)
+        if current["boot_id"] != prev["boot_id"]:
+            current_receipt = fetch_one(connection, """SELECT boot_id,epoch,receipt_json
+                FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot""" + lock,
+                {"boot": current["boot_id"]})
+            if (current_receipt is None or current_receipt.get("epoch") != current["epoch"]
+                    or current_receipt.get("receipt_json") != current["receipt_json"]):
+                raise AgentConflict("current authority boot receipt is missing or changed")
+            add("agent_runtime_authority_boot_receipts", {"boot_id": current_receipt["boot_id"]}, current_receipt)
+        others = execute(connection, """SELECT root_run_id,status,authority_status,authority_boot_id
+            FROM agent_runtime_turns WHERE workspace_id=:workspace AND root_run_id<>:root
+              AND (status='active' OR authority_status<>'closed') ORDER BY root_run_id""" + lock,
+            {"workspace": workspace_id, "root": root_id})
+        if others:
+            raise AgentConflict("another active Root occupies this Workspace")
+
+        agent_runs = select("agent_runs", """SELECT * FROM agent_runs WHERE root_run_id=:root
+            ORDER BY run_id""", {"root": root_id}, ("run_id",))
+        active_runs = [run for run in agent_runs if run.get("status") == "active"
+                       and run.get("authority_status") in {"active", "authority_revoked_unconfirmed"}]
+        terminal_runs = [run for run in agent_runs if run not in active_runs]
+        if (not agent_runs or (not allow_closed and not active_runs)
+                or (allow_closed and active_runs)
+                or any(run.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                       or run.get("authority_status") != "closed" for run in terminal_runs)):
+            raise AgentConflict("bound AgentRun set has no active root or contains an unresolved terminal child")
+        by_run = {run["run_id"]: run for run in agent_runs}
+        root_runs = [run for run in agent_runs if run.get("parent_run_id") is None]
+        if len(root_runs) != 1:
+            raise AgentConflict("bound AgentRun parentage is ambiguous")
+        parent = root_runs[0]
+        if (parent not in active_runs and not allow_closed
+                or allow_closed and (parent.get("status") != "interrupted"
+                                     or parent.get("authority_status") != "closed")):
+            raise AgentConflict("bound AgentRun Root parent is not the exact active Root")
+        generation = parent.get("dsh_run_id")
+        actor = parent.get("actor_principal")
+        if (not isinstance(generation, str) or not generation.startswith("generation-")
+                or generation != scope["generation_id"]
+                or any(run.get("owner_principal") != owner or run.get("workspace_id") != workspace_id
+                       or run.get("session_id") != session_id or run.get("trace_id") != trace_id
+                       or run.get("dsh_run_id") != generation or run.get("actor_principal") != actor
+                       or run.get("authority_boot_id") not in {
+                           request["authority"]["previous_boot_id"], request["authority"]["current_boot_id"]
+                       } for run in agent_runs)):
+            raise AgentConflict("AgentRun identity or generation changed")
+        registrations = select("agent_acp_native_agent_registrations", """SELECT *
+            FROM agent_acp_native_agent_registrations WHERE root_run_id=:root
+            ORDER BY origin,native_agent_session_id""", {"root": root_id},
+            ("root_run_id", "native_agent_session_id"))
+        if (not registrations or len(registrations) != len(agent_runs)
+                or {row.get("agent_run_id") for row in registrations} != set(by_run)):
+            raise AgentConflict("native registration set does not exactly bind all AgentRuns")
+        native_roots = [row for row in registrations if row.get("origin") == "root"]
+        if len(native_roots) != 1:
+            raise AgentConflict("native root registration is ambiguous")
+        native_root_id = native_roots[0].get("native_agent_session_id")
+        native_scope = {"owner": owner, "workspace": workspace_id, "actor": actor,
+                        "session": session_id, "trace": trace_id, "generation": generation}
+        for native in registrations:
+            run = by_run[native["agent_run_id"]]
+            identity_fields = {"root_run_id": root_id, "runtime_boot_id": scope["runtime_boot_id"],
+                "native_root_session_id": native_root_id,
+                "native_agent_session_id": native.get("native_agent_session_id"),
+                "native_parent_session_id": native.get("native_parent_session_id"),
+                "origin": native.get("origin"), "depth": native.get("depth")}
+            expected_receipt = {"schema_version": "byq-acp-agent-bind-receipt.v1",
+                "root_run_id": root_id, "runtime_boot_id": scope["runtime_boot_id"],
+                "native_agent_session_id": native.get("native_agent_session_id"),
+                "native_parent_session_id": native.get("native_parent_session_id"),
+                "agent_run_id": native.get("agent_run_id"), "parent_run_id": native.get("parent_run_id"),
+                "origin": native.get("origin"), "depth": native.get("depth"), "status": "bound",
+                "binding_sha256": acp_binding_sha256(_acp_binding_fields(
+                    identity_fields, native_scope, agent_run_id=native["agent_run_id"],
+                    parent_run_id=native.get("parent_run_id"))) }
+            if (native.get("status") != "bound" or native.get("runtime_boot_id") != scope["runtime_boot_id"]
+                    or native.get("owner_principal") != owner or native.get("workspace_id") != workspace_id
+                    or native.get("actor_principal") != actor or native.get("session_id") != session_id
+                    or native.get("trace_id") != trace_id or native.get("dsh_run_id") != generation
+                    or native.get("root_run_id") != root_id
+                    or native.get("native_root_session_id") != native_root_id
+                    or native.get("receipt_json") != expected_receipt
+                    or (native.get("origin") == "root" and (native.get("depth") != 0
+                        or native.get("native_parent_session_id") is not None
+                        or native.get("parent_run_id") is not None
+                        or run.get("parent_run_id") is not None))
+                    or (native.get("origin") == "subagent" and (native.get("depth") != 1
+                        or native.get("native_root_session_id") != native_root_id
+                        or native.get("native_parent_session_id") != native_root_id
+                        or native.get("parent_run_id") != parent["run_id"]
+                        or run.get("parent_run_id") != parent["run_id"]))):
+                raise AgentConflict("native registration identity or binding receipt changed")
+        runtime_registrations = select("agent_runtime_registrations", """SELECT *
+            FROM agent_runtime_registrations WHERE root_run_id=:root
+            ORDER BY registration_fingerprint""", {"root": root_id}, ("registration_fingerprint",))
+        if (len(runtime_registrations) != 1
+                or runtime_registrations[0].get("registration_fingerprint")
+                    != parent.get("runtime_registration_fingerprint")
+                or runtime_registrations[0].get("root_run_id") != root_id):
+            raise AgentConflict("runtime registration is not the exact parent Root registration")
+        for registration in runtime_registrations:
+            self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
+
+        ingress = select("agent_acp_tool_ingress_observations", """SELECT *
+            FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root ORDER BY sequence""",
+            {"root": root_id}, ("mcp_request_id",))
+        domain_observations = select("agent_acp_domain_call_observations", """SELECT *
+            FROM agent_acp_domain_call_observations WHERE root_run_id=:root ORDER BY sequence""",
+            {"root": root_id}, ("mcp_request_id",))
+        domain_evidence = select("agent_domain_call_evidence", """SELECT *
+            FROM agent_domain_call_evidence WHERE root_run_id=:root ORDER BY sequence""",
+            {"root": root_id}, ("owner_principal", "workspace_id", "session_id", "sequence"))
+        correction_buckets = select("agent_domain_correction_buckets", """SELECT *
+            FROM agent_domain_correction_buckets WHERE root_run_id=:root ORDER BY task_id,action""",
+            {"root": root_id}, ("root_run_id", "task_id", "action"))
+        claims = select("agent_domain_call_claims", """SELECT * FROM agent_domain_call_claims
+            WHERE root_run_id=:root ORDER BY claim_id""", {"root": root_id}, ("claim_id",))
+        self._require_acp_root_terminal_safe(connection, root_id)
+        terminal = self._acp_terminal_evidence_snapshot(connection, root_id)
+        if terminal["terminal_unknown_claim_count"] != 0:
+            raise AgentConflict("unresolved business domain claims prevent operator close")
+        self._require_judgment_root_result_before_close(connection, root_id, "interrupted")
+        judgment = fetch_one(connection, "SELECT root_run_id FROM research_judgment_acp_roots WHERE root_run_id=:root" + lock,
+                             {"root": root_id})
+        if judgment is not None:
+            raise AgentConflict("judgment Root is outside the ordinary Product process-fence scope")
+        approvals = select("agent_approvals", """SELECT * FROM agent_approvals
+            WHERE run_id IN (:parent,:root_agent) ORDER BY run_id,approval_id""",
+            {"parent": parent["run_id"], "root_agent": parent["run_id"]}, ("approval_id",))
+        # There may be child approvals; include them with an explicit bound query.
+        if len(agent_runs) > 1:
+            child_ids = sorted(set(by_run) - {parent["run_id"]})
+            for child_id in child_ids:
+                approvals.extend(select("agent_approvals", """SELECT * FROM agent_approvals
+                    WHERE run_id=:run ORDER BY approval_id""", {"run": child_id}, ("approval_id",)))
+        audit_rows = []
+        for run_id in sorted(by_run):
+            audit_rows.extend(select("agent_audit", """SELECT * FROM agent_audit
+                WHERE run_id=:run ORDER BY created_at,audit_id""", {"run": run_id}, ("audit_id",)))
+        runtime_receipts = select("agent_runtime_receipts", """SELECT * FROM agent_runtime_receipts
+            WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+            ORDER BY sequence""", {"owner": owner, "workspace": workspace_id, "session": session_id},
+            ("owner_principal", "workspace_id", "session_id", "sequence"))
+
+        old = request["old_runner"]
+        successor = request["successor"]
+        runner_bindings: dict[str, dict[str, Any]] = {}
+        prepared_receipts: dict[str, dict[str, Any]] = {}
+        for descriptor in (old, successor):
+            runner_id = descriptor["runner_instance_id"]
+            self._lifecycle_lock(connection, f"acp-prebind:v1:{workspace_id}:{runner_id}")
+            runner_identity = {field: descriptor[field] for field in (
+                "runner_instance_id", "runner_boot_id", "state_generation", "signed_instance_sha256")}
+            binding = self._qualified_admission_start_binding(
+                connection, workspace_id=workspace_id, runner_identity=runner_identity)
+            if (binding.get("runner_boot_id") != descriptor["runner_boot_id"]
+                    or binding.get("state_generation") != descriptor["state_generation"]
+                    or binding.get("signed_instance_sha256") != descriptor["signed_instance_sha256"]):
+                raise AgentConflict("runner START binding differs from the fence request")
+            prepare_rows = execute(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                    resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                FROM operations_audit WHERE action=:action AND resource_id=:runner
+                ORDER BY created_at,audit_id""" + lock,
+                {"action": PREPARE_ACTION, "runner": runner_id})
+            if len(prepare_rows) != 1 or not isinstance(prepare_rows[0].get("response_json"), dict):
+                raise AgentConflict("runner prepare anchor is not unique")
+            prepared = prepare_rows[0]["response_json"]
+            if prepared.get("workspace_id") != workspace_id:
+                raise AgentConflict("runner prepare anchor belongs to another Workspace")
+            runner_bindings[runner_id] = binding
+            prepared_receipts[runner_id] = prepared
+            for anchor in execute(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                    resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                FROM operations_audit WHERE action IN (:prepare,:activate) AND resource_id=:runner
+                ORDER BY action,audit_id""" + lock,
+                {"prepare": PREPARE_ACTION, "activate": ACTIVATE_ACTION, "runner": runner_id}):
+                add("operations_audit", {"audit_id": anchor["audit_id"]}, anchor)
+        old_binding = runner_bindings[old["runner_instance_id"]]
+        if (old_binding != request["prestart_binding"]
+                or _r2_digest(old_binding) != old["prestart_binding_sha256"]
+                or prepared_receipts[old["runner_instance_id"]].get("deployment") != old["deployment"]
+                or prepared_receipts[old["runner_instance_id"]].get("state_volume") != old["state_volume"]):
+            raise AgentConflict("old runner identity or deployment differs from its stored prebind")
+        successor_binding = runner_bindings[successor["runner_instance_id"]]
+        if (successor_binding.get("backend_activation_receipt_sha256")
+                != successor["active_binding_receipt_sha256"]
+                or successor.get("state_generation") != old.get("state_generation")
+                or prepared_receipts[successor["runner_instance_id"]].get("state_volume") != old["state_volume"]):
+            raise AgentConflict("successor does not hold the exact old authoritative volume")
+        if not allow_closed:
+            if root.get("authority_status") == "active" and root.get("authority_boot_id") != current["boot_id"]:
+                raise AgentConflict("active Root does not belong to current authority")
+            if root.get("authority_status") == "authority_revoked_unconfirmed" and root.get("authority_boot_id") != scope["runtime_boot_id"]:
+                raise AgentConflict("revoked Root is not bound to the recorded execution boot")
+
+        rows.sort(key=lambda row: (row["table"], _r2_canonical_json(row["key"])))
+        if len(rows) > 100_000:
+            raise AgentConflict("Backend process-fence preimage exceeds its row bound")
+        preimage = {"schema_version": _R2_PREIMAGE_SCHEMA, "rows": rows}
+        preimage["sha256"] = _r2_digest({"schema_version": _R2_PREIMAGE_SCHEMA, "rows": rows})
+        if len(_r2_canonical_json(preimage)) > 2 * 1024 * 1024:
+            raise AgentConflict("Backend process-fence preimage exceeds its byte bound")
+        return {"root": root, "agent_runs": agent_runs, "terminal": terminal,
+                "authority_current": current, "authority_previous": prev,
+                "preimage": preimage, "rows": rows}
+
+    def close_runtime_root_by_operator_process_fence(
+        self, *, request: object, operator_uid: int, operator_name: str,
+    ) -> dict[str, Any]:
+        """Atomically persist one trusted process-fence proof and close its Root."""
+        try:
+            validated = _r2_validate_request(request)
+        except OperatorProcessFenceContractError as exc:
+            raise AgentConflict("operator process-fence request is malformed") from exc
+        if type(operator_uid) is not int or not 0 <= operator_uid <= 2**32 - 1 or not _is_bounded_utf8_text(operator_name, 256):
+            raise AgentUnauthorized("Engineering operator identity is invalid")
+        request_sha = _r2_digest(validated)
+        operation_id = validated["operation_id"]
+        workspace_id = validated["scope"]["workspace_id"]
+        root_id = validated["scope"]["root_run_id"]
+        key = _R2_FENCE_PREFIX + operation_id
+        audit_id = self._operator_process_fence_audit_id("ops_acp_process_fence_", key)
+        guard_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if guard_engine is None:
+            raise AgentPersistenceError("runtime authority writer gate is unavailable")
+        with transaction(guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, "workspace-reset|" + workspace_id)
+                existing_rows = execute(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                    FROM operations_audit WHERE audit_id=:id OR idempotency_key=:key FOR UPDATE""",
+                    {"id": audit_id, "key": key})
+                if len(existing_rows) > 1:
+                    raise AgentConflict("process-fence operation identity is ambiguous")
+                existing = existing_rows[0] if existing_rows else None
+                if existing is not None:
+                    if (existing.get("audit_id") != audit_id or existing.get("request_sha256") != request_sha
+                            or existing.get("idempotency_key") != key):
+                        raise AgentConflict("process-fence operation ID was reused with changed content")
+                    from .operator_process_fence import _validate_reserved_proof_row
+                    proof = _validate_reserved_proof_row(existing)
+                    if proof["request_sha256"] != request_sha:
+                        raise AgentConflict("stored process-fence proof differs from the exact retry")
+                    current = self._operator_process_fence_snapshot(connection, validated, lock_rows=True, allow_closed=True)
+                    if current["preimage"]["sha256"] != proof["expected_poststate_sha256"]:
+                        raise AgentConflict("closed Backend snapshot changed after process-fence proof")
+                    return _r2_validate_close_receipt(existing["response_json"])
+
+                snapshot = self._operator_process_fence_snapshot(connection, validated, lock_rows=True)
+                now = _now()
+                delta = {
+                    "close_at": now,
+                    "root": {"id": root_id,
+                        "before": {field: snapshot["root"].get(field) for field in (
+                            "status", "authority_status", "updated_at", "terminal_acp_ingress_sequence",
+                            "terminal_acp_ingress_sha256", "terminal_unknown_claim_count",
+                            "terminal_unknown_claims_sha256")},
+                        "after": {"status": "interrupted", "authority_status": "closed", "updated_at": now,
+                            **snapshot["terminal"]}},
+                    "agent_runs": [{"id": run["run_id"],
+                        "before": {field: run.get(field) for field in ("status", "authority_status", "updated_at", "version")},
+                        "after": {"status": "interrupted", "authority_status": "closed",
+                                  "updated_at": now, "version": run["version"] + 1}}
+                        for run in snapshot["agent_runs"]
+                        if run.get("status") == "active" and run.get("authority_status") in {
+                            "active", "authority_revoked_unconfirmed"}],
+                    "inserted_proof_operations_audit_id": audit_id,
+                }
+                delta["sha256"] = _r2_digest(delta)
+                post_rows = []
+                root_mutable = delta["root"]["after"]
+                run_mutable = {item["id"]: item["after"] for item in delta["agent_runs"]}
+                for row in snapshot["rows"]:
+                    copied = {**row, "row": dict(row["row"])}
+                    if copied["table"] == "agent_runtime_turns" and copied["row"].get("root_run_id") == root_id:
+                        copied["row"].update(root_mutable)
+                    elif copied["table"] == "agent_runs" and copied["row"].get("run_id") in run_mutable:
+                        copied["row"].update(run_mutable[copied["row"]["run_id"]])
+                    post_rows.append(copied)
+                expected_poststate = _r2_digest({"schema_version": _R2_PREIMAGE_SCHEMA, "rows": post_rows})
+                runtime_observation = validated["runtime_binding_observation"]
+                runtime_binding_sha = runtime_observation["raw_sha256"]
+                evidence_sha = _r2_digest({
+                    "schema_version": "byq-acp-operator-engineering-evidence.v1",
+                    "native_fence": validated["native_fence"],
+                    "runtime_binding_sha256": runtime_binding_sha,
+                    "runtime_binding_evidence_sha256": runtime_observation["evidence_sha256"],
+                })
+                process = {
+                    "schema_version": _R2_FENCE_SCHEMA, "operation_id": operation_id,
+                    "request_sha256": request_sha, "scope": validated["scope"],
+                    "authority": validated["authority"], "old_runner": validated["old_runner"],
+                    "native_fence": validated["native_fence"], "successor": validated["successor"],
+                    "prestart_binding": validated["prestart_binding"],
+                    "runtime_binding_observation": validated["runtime_binding_observation"],
+                    "backend_preimage": snapshot["preimage"], "allowed_poststate_delta": delta,
+                    "expected_poststate_sha256": expected_poststate,
+                    "backend_snapshot_sha256": snapshot["preimage"]["sha256"],
+                    "runtime_binding_sha256": runtime_binding_sha,
+                    "engineering_evidence_sha256": evidence_sha,
+                    **snapshot["terminal"],
+                    "operator": {"uid": operator_uid, "name": operator_name},
+                    "disposition": "operator_process_fence_confirmed",
+                }
+                process_sha = _r2_digest(process)
+                interruption = {"schema_version": "byq-agent-root-operator-interruption.v1",
+                    "operation_id": operation_id, "root_run_id": root_id, "outcome": "interrupted",
+                    "process_fence_receipt_sha256": process_sha, **snapshot["terminal"]}
+                interruption["receipt_sha256"] = _r2_digest(interruption)
+                proof = {**process, "operator_interruption": interruption,
+                         "process_fence_receipt_sha256": process_sha}
+                proof["receipt_sha256"] = _r2_digest(proof)
+                try:
+                    proof = _r2_validate_proof(proof)
+                except OperatorProcessFenceContractError as exc:
+                    raise AgentConflict("constructed process-fence proof is invalid") from exc
+                close_receipt = {
+                    "schema_version": _R2_CLOSE_RECEIPT_SCHEMA, "operation_id": operation_id,
+                    "workspace_id": workspace_id, "root_run_id": root_id,
+                    "process_fence_receipt_sha256": proof["process_fence_receipt_sha256"],
+                    "operator_interruption": interruption, "scope": validated["scope"],
+                    "authority": validated["authority"],
+                    "runner": {"old_runner_instance_id": validated["old_runner"]["runner_instance_id"],
+                        "successor_runner_instance_id": validated["successor"]["runner_instance_id"],
+                        "tombstone_sha256": validated["successor"]["tombstone_sha256"]},
+                    "engineering_evidence_sha256": evidence_sha,
+                    "runtime_binding_sha256": runtime_binding_sha,
+                }
+                try:
+                    _r2_validate_close_receipt(close_receipt)
+                except OperatorProcessFenceContractError as exc:
+                    raise AgentConflict("constructed process-fence close receipt is invalid") from exc
+                # Terminal lifecycle sequence/hash stay NULL: this is a distinct
+                # operator interruption fact, not a fabricated Adapter event.
+                updated_roots = execute(connection, """UPDATE agent_runtime_turns SET status='interrupted',authority_status='closed',
+                    updated_at=:now,terminal_acp_ingress_sequence=:ingress_sequence,
+                    terminal_acp_ingress_sha256=:ingress_sha,terminal_unknown_claim_count=:unknown_count,
+                    terminal_unknown_claims_sha256=:unknown_sha WHERE root_run_id=:root
+                    AND status='active' AND authority_status IN ('active','authority_revoked_unconfirmed')
+                    RETURNING root_run_id""",
+                    {"now": now, "ingress_sequence": snapshot["terminal"]["terminal_acp_ingress_sequence"],
+                     "ingress_sha": snapshot["terminal"]["terminal_acp_ingress_sha256"],
+                     "unknown_count": snapshot["terminal"]["terminal_unknown_claim_count"],
+                     "unknown_sha": snapshot["terminal"]["terminal_unknown_claims_sha256"], "root": root_id})
+                if len(updated_roots) != 1:
+                    raise AgentConflict("Root changed before the atomic operator close")
+                for run_delta in delta["agent_runs"]:
+                    updated_runs = execute(connection, """UPDATE agent_runs SET status='interrupted',authority_status='closed',
+                        updated_at=:now,version=version+1 WHERE run_id=:run AND root_run_id=:root
+                        AND status='active' AND authority_status IN ('active','authority_revoked_unconfirmed')
+                        RETURNING run_id""",
+                        {"now": now, "run": run_delta["id"], "root": root_id})
+                    if len(updated_runs) != 1:
+                        raise AgentConflict("AgentRun changed before the atomic operator close")
+                execute(connection, """INSERT INTO operations_audit
+                    (audit_id,actor_principal,action,resource_type,resource_id,outcome,idempotency_key,
+                     request_sha256,detail_json,response_json,created_at)
+                    VALUES (:id,:actor,:action,'workspace',:workspace,'closed',:key,:request_sha,
+                        CAST(:detail AS jsonb),CAST(:response AS jsonb),:now)""",
+                    {"id": audit_id, "actor": f"engineering:{operator_name}:{operator_uid}",
+                     "action": _R2_FENCE_ACTION, "workspace": workspace_id, "key": key,
+                     "request_sha": request_sha, "detail": json.dumps({"proof": proof}, separators=(",", ":")),
+                     "response": json.dumps(close_receipt, separators=(",", ":")), "now": now})
+                return close_receipt
+
+    def confirm_operator_process_fence_ack(
+        self, *, close_receipt: object, runtime_observation: object,
+        operator_uid: int, operator_name: str,
+    ) -> dict[str, Any]:
+        """Persist confirmation of the exact Runtime-produced observation; never release a slot."""
+        try:
+            close = _r2_validate_close_receipt(close_receipt)
+            observation = _r2_validate_operator_observation(runtime_observation, close_receipt=close)
+        except OperatorProcessFenceContractError as exc:
+            raise AgentConflict("Runtime operator observation is malformed or mismatched") from exc
+        if type(operator_uid) is not int or not 0 <= operator_uid <= 2**32 - 1 or not _is_bounded_utf8_text(operator_name, 256):
+            raise AgentUnauthorized("Engineering operator identity is invalid")
+        operation_id = close["operation_id"]
+        workspace_id = close["workspace_id"]
+        root_id = close["root_run_id"]
+        proof_key = _R2_FENCE_PREFIX + operation_id
+        ack_key = _R2_ACK_PREFIX + operation_id
+        ack_id = self._operator_process_fence_audit_id("ops_acp_process_fence_ack_", ack_key)
+        guard_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if guard_engine is None:
+            raise AgentPersistenceError("runtime authority writer gate is unavailable")
+        with transaction(guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, "workspace-reset|" + workspace_id)
+                self._lifecycle_lock(connection, "root:" + root_id)
+                proof_row = fetch_one(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                    FROM operations_audit WHERE idempotency_key=:key FOR UPDATE""", {"key": proof_key})
+                if proof_row is None:
+                    raise AgentConflict("operator process-fence proof is missing")
+                from .operator_process_fence import _validate_reserved_proof_row
+                proof = _validate_reserved_proof_row(proof_row)
+                if proof_row.get("response_json") != close or proof["operation_id"] != operation_id:
+                    raise AgentConflict("Runtime observation references another process-fence proof")
+                if observation["close_receipt_sha256"] != _r2_digest(close):
+                    raise AgentConflict("Runtime observation close digest differs from the stored proof")
+                retry_rows = execute(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                    FROM operations_audit WHERE audit_id=:id OR idempotency_key=:key FOR UPDATE""",
+                    {"id": ack_id, "key": ack_key})
+                if len(retry_rows) > 1:
+                    raise AgentConflict("operator ACK identity is ambiguous")
+                retry = retry_rows[0] if retry_rows else None
+                ack_request = {
+                    "schema_version": _R2_ACK_REQUEST_SCHEMA, "operation_id": operation_id,
+                    "proof_receipt_sha256": proof["receipt_sha256"],
+                    "runtime_ack": observation["runtime_ack"],
+                    "domain_call_drain": observation["domain_call_drain"],
+                    "slot_release": observation["slot_release"],
+                    "engineering_evidence_sha256": proof["engineering_evidence_sha256"],
+                    "confirmed_at": observation["observed_at"], "scope": proof["scope"],
+                    "authority": proof["authority"], "runner": close["runner"],
+                    "superseded_terminal": observation["superseded_terminal"],
+                }
+                try:
+                    ack_request = _r2_validate_ack_request(ack_request)
+                except OperatorProcessFenceContractError as exc:
+                    raise AgentConflict("Runtime observation does not form the exact ACK request") from exc
+                snapshot = self._operator_process_fence_snapshot(connection, {
+                    "scope": proof["scope"], "authority": proof["authority"],
+                    "old_runner": proof["old_runner"], "successor": proof["successor"],
+                    "prestart_binding": proof["prestart_binding"],
+                    "runtime_binding_observation": proof["runtime_binding_observation"],
+                }, lock_rows=True, allow_closed=True)
+                if snapshot["preimage"]["sha256"] != proof["expected_poststate_sha256"]:
+                    raise AgentConflict("Backend snapshot changed before operator ACK confirmation")
+                if retry is not None:
+                    from .operator_process_fence import _validate_reserved_ack_row
+                    ack = _validate_reserved_ack_row(retry)
+                    if (retry.get("detail_json") != {"ack_request": ack_request}
+                            or ack.get("proof_audit_id") != proof_row.get("audit_id")
+                            or ack.get("proof_receipt_sha256") != proof.get("receipt_sha256")
+                            or ack.get("terminal_ack_sha256") != _r2_digest(close)):
+                        raise AgentConflict("Runtime ACK retry changed its exact observation")
+                    return ack
+                now = _now()
+                runner = close["runner"]
+                response = {
+                    "schema_version": _R2_ACK_SCHEMA, "operation_id": operation_id,
+                    "proof_audit_id": proof_row["audit_id"],
+                    "proof_receipt_sha256": proof["receipt_sha256"],
+                    "operator_interruption_receipt_sha256": proof["operator_interruption"]["receipt_sha256"],
+                    "scope": proof["scope"], "authority": proof["authority"], "runner": runner,
+                    "runtime_ack_sha256": _r2_digest(observation["runtime_ack"]),
+                    "root_binding_sha256": close["runtime_binding_sha256"],
+                    "terminal_ack_sha256": _r2_digest(close),
+                    "last_domain_sequence": observation["domain_call_drain"]["last_domain_sequence"],
+                    "drained_sequence": observation["domain_call_drain"]["drained_sequence"],
+                    "drain_receipt_sha256": observation["domain_call_drain"]["drain_receipt_sha256"],
+                    "slot_release_sha256": observation["slot_release"]["release_receipt_sha256"],
+                    "confirmed_at": observation["observed_at"],
+                    "operator": {"uid": operator_uid, "name": operator_name},
+                    "engineering_evidence_sha256": proof["engineering_evidence_sha256"],
+                    "superseded_terminal": observation["superseded_terminal"],
+                }
+                response["receipt_sha256"] = _r2_digest(response)
+                try:
+                    response = _r2_validate_ack_receipt(response)
+                except OperatorProcessFenceContractError as exc:
+                    raise AgentConflict("constructed operator ACK receipt is invalid") from exc
+                execute(connection, """INSERT INTO operations_audit
+                    (audit_id,actor_principal,action,resource_type,resource_id,outcome,idempotency_key,
+                     request_sha256,detail_json,response_json,created_at)
+                    VALUES (:id,:actor,:action,'workspace',:workspace,'confirmed',:key,:request_sha,
+                        CAST(:detail AS jsonb),CAST(:response AS jsonb),:now)""",
+                    {"id": ack_id, "actor": f"engineering:{operator_name}:{operator_uid}",
+                     "action": _R2_ACK_ACTION, "workspace": workspace_id, "key": ack_key,
+                     "request_sha": _r2_digest(ack_request),
+                     "detail": json.dumps({"ack_request": ack_request}, separators=(",", ":")),
+                     "response": json.dumps(response, separators=(",", ":")), "now": now})
+                return response
 
     def close_runtime_root(self, root_run_id: object, *, boot_id: object, sequence: object,
                            outcome: object, event_sha256: object) -> dict[str, object]:

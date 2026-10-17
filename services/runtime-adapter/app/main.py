@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
+import os
 import queue
 import threading
 from collections.abc import AsyncIterator
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from packages.contracts.conversation_rehydration import ConversationContextMessage
 from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import credential_rejection
+from packages.contracts.acp_operator_process_fence import FENCE_CLOSE_RECEIPT_SCHEMA
 
 from .runtime import (
     ModelCredentialUnavailable,
@@ -220,11 +223,29 @@ def recover_acp_session(session_id: str, request: RecoverAcpRequest) -> dict[str
 
 
 @app.post("/internal/runtime/sessions/{session_id}/terminal-receipt")
-def acknowledge_terminal(session_id: str, payload: dict) -> dict:
+def acknowledge_terminal(
+    session_id: str, payload: dict, authorization: str | None = Header(default=None),
+) -> dict:
     if set(payload) != {"receipt"}:
         raise HTTPException(status_code=422, detail="exact terminal receipt required")
+    receipt = payload["receipt"]
+    if (isinstance(receipt, dict)
+            and receipt.get("schema_version") == FENCE_CLOSE_RECEIPT_SCHEMA):
+        expected_token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not expected_token:
+            raise HTTPException(status_code=503, detail="Runtime operator authority is unavailable")
+        if not isinstance(authorization, str) or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="operator process-fence receipt is unauthorized")
+        supplied_token = authorization[len("Bearer "):]
+        try:
+            token_matches = hmac.compare_digest(
+                supplied_token.encode("utf-8"), expected_token.encode("utf-8"))
+        except UnicodeEncodeError:
+            token_matches = False
+        if not token_matches:
+            raise HTTPException(status_code=401, detail="operator process-fence receipt is unauthorized")
     try:
-        return adapter.acknowledge_terminal(session_id, payload["receipt"])
+        return adapter.acknowledge_terminal(session_id, receipt)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="runtime session not found") from exc
     except SessionConflict as exc:

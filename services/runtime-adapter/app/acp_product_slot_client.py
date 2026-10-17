@@ -403,6 +403,33 @@ class ProductSlotRegistry:
             lease.cleanup_proven = True
             self._release_if_complete(checked_scope["workspace_id"], lease)
 
+    def release_operator_fence(
+        self, scope: Mapping[str, object], *, persist_observation: Callable[[], None],
+    ) -> bool:
+        """Persist one operator-fence observation before releasing its exact lease.
+
+        The callback is deliberately scoped to this one operation: retaining the
+        registry lock across the durable Runtime binding write prevents another
+        cleanup or reservation from changing the workspace lease between the
+        exact-scope check and release. It is not a general lease transaction API.
+        """
+        checked_scope, digest = _checked_scope(scope)
+        if not callable(persist_observation):
+            raise ProductSlotLeaseMismatch("operator fence persistence is unavailable")
+        with self._lock:
+            lease = self._leases.get(checked_scope["workspace_id"])
+            if lease is None:
+                return False
+            if not hmac.compare_digest(lease.digest, digest):
+                raise ProductSlotLeaseMismatch(
+                    "operator fence does not match the active workspace lease")
+            persist_observation()
+            if self._leases.get(checked_scope["workspace_id"]) is not lease:
+                raise ProductSlotLeaseMismatch(
+                    "operator fence lease changed before release")
+            del self._leases[checked_scope["workspace_id"]]
+            return True
+
     def _resolved(self, workspace_id: str) -> _ResolvedBinding:
         with self._lock:
             binding = self._bindings.get(workspace_id)
