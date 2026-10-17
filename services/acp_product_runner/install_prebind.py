@@ -7,6 +7,7 @@ active receipt and does not by itself authorize START without server checks.
 from __future__ import annotations
 
 import base64
+import errno
 import fcntl
 import json
 import os
@@ -29,6 +30,17 @@ CONTROL = Path("/run/byq-acp-product-runner")
 WORKSPACE_ENV = "BYQ_ACP_PRODUCT_WORKSPACE_ID"
 SECRET_ENV = "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET"
 MODE_ENV = "BYQ_ACP_PRODUCT_REQUIRE_PREBIND"
+
+
+def _private_entry_exists(path: Path) -> bool:
+    """Treat only ENOENT as absence; uncertain private-state lookup fails closed."""
+    try:
+        os.lstat(path)
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            return False
+        raise
+    return True
 
 
 def _json(data: bytes):
@@ -220,7 +232,7 @@ def install(candidate_path: Path) -> None:
         instance_id = instance["runner_instance_id"]
         instances = STATE / "instances"
         marker = instances / f"{instance_id}.started.json"
-        if os.path.lexists(marker):
+        if _private_entry_exists(marker):
             raise ValueError("runner has already crossed START admission")
         birth_path = instances / f"{instance_id}.birth-mode.json"
         birth = _json(_read(birth_path, uid=0, gid=0, mode=0o600))
@@ -230,7 +242,7 @@ def install(candidate_path: Path) -> None:
         prepared = _json(_read(candidate_path, uid=0, gid=0, mode=0o600))
         receipt = validate_prepared_receipt(prepared, instance=instance)
         install_path = instances / f"{instance_id}.prebind-install.json"
-        if os.path.lexists(install_path):
+        if _private_entry_exists(install_path):
             existing_bytes = _read(install_path, uid=0, gid=0, mode=0o600)
             existing = _json(existing_bytes)
             validate_install_record(existing, key=key, instance=instance, birth_mode=birth)
@@ -299,7 +311,7 @@ def activate(receipt_path: Path) -> None:
         validate_instance(instance, key=key)
         if instance.get("workspace_id") != environ[WORKSPACE_ENV]:
             raise ValueError("current runner workspace differs from PID 1")
-        if os.path.lexists(instances / f"{instance_id}.started.json"):
+        if _private_entry_exists(instances / f"{instance_id}.started.json"):
             raise ValueError("runner has already crossed START admission")
         birth = _json(_read(instances / f"{instance_id}.birth-mode.json",
                             uid=0, gid=0, mode=0o600, limit=4096))
@@ -340,7 +352,7 @@ def activate(receipt_path: Path) -> None:
                                    birth_mode=birth, prepared_receipt=prepared,
                                    install_record=install_record)
         activation_path = instances / f"{instance_id}.activation.json"
-        if os.path.lexists(activation_path):
+        if _private_entry_exists(activation_path):
             existing_bytes = _read(activation_path, uid=0, gid=0, mode=0o600)
             existing = _json(existing_bytes)
             validate_activation_record(existing, key=key, instance=instance,

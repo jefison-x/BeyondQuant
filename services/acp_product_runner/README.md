@@ -71,6 +71,11 @@ marker, then installs an immutable Product-MACed activation record. Exact
 retries revalidate and fsync the same record; changed receipts or existing
 different activation records are refused.
 
+The private installer treats a path as absent only when `lstat` reports
+`ENOENT`. Permission, I/O, symlink-loop, and other lookup errors stop the
+operation; uncertainty about a started marker or immutable record never grants
+absence.
+
 An opted-in START is admitted only when its signed `operator_binding` matches
 the current local activation and Backend receipt while the admission lock is
 held. The runner rechecks the exact activation inode and fsyncs it and its
