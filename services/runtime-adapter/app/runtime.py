@@ -23,6 +23,17 @@ from typing import Any, ClassVar
 from urllib.parse import quote
 
 import httpx
+from packages.contracts.acp_product_prebind import (
+    START_BINDING_FIELDS,
+    START_BINDING_SCHEMA,
+    digest as prebind_digest,
+)
+from packages.contracts.acp_product_slot import (
+    PRODUCT_SCOPE_KEYS,
+    canonical_product_json,
+    product_scope_digest,
+    validate_product_scope,
+)
 from packages.contracts.conversation_rehydration import (
     ConversationContextMessage,
     normalize_conversation_context,
@@ -85,6 +96,9 @@ _PROCESS_BOOT_PID = os.getpid()
 _PROCESS_BOOT_ID = secrets.token_hex(16)
 _ACK_TOMBSTONE_LIMIT = 512
 _TASK_READY_IDEMPOTENCY_KEY_RE = re.compile(r'task-ready-event:([0-9a-f]{64})')
+_ACP_HEX32 = re.compile(r"[0-9a-f]{32}\Z")
+_ACP_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+_ACP_ROOT_BINDING_V2_SCHEMA = "byq-acp-root-binding.v2"
 
 
 def _process_boot_id() -> str:
@@ -96,6 +110,19 @@ def _process_boot_id() -> str:
         _PROCESS_BOOT_PID = pid
         _PROCESS_BOOT_ID = secrets.token_hex(16)
     return _PROCESS_BOOT_ID
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON field")
+        value[key] = item
+    return value
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise ValueError("non-finite JSON number")
 
 
 class SessionConflict(RuntimeError):
@@ -323,6 +350,11 @@ class RuntimeSession:
     reuse_native_session_ready: bool = False
     cleanup_unconfirmed: bool = False
     cleanup_harness: Any = field(default=None, repr=False)
+    qualified_operator_scope: dict[str, str] | None = field(default=None, repr=False)
+    qualified_operator_binding: dict[str, Any] | None = field(default=None, repr=False)
+    qualified_runtime_generation: str | None = field(default=None, repr=False)
+    qualified_cwd: str | None = field(default=None, repr=False)
+    qualified_authority_epoch: int | None = field(default=None, repr=False)
     current_generation: RuntimeGeneration | None = field(default=None, repr=False)
 
     def _generation(self) -> RuntimeGeneration:
@@ -649,25 +681,96 @@ class RuntimeAdapter:
             raise RuntimeAuthorityUnavailable("Backend runtime authority is not current")
         return current["authority_epoch"]
 
-    def _require_group_admission(self, record: RuntimeSession, root_run_id: str) -> None:
+    def _require_group_admission(
+        self, record: RuntimeSession, root_run_id: str, *,
+        runner_identity: dict[str, str] | None = None,
+        operator_scope: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
         """Keep unresolved Backend roots fenced after the slot client restarts."""
         if not self._acp_product_slots:
-            return
+            return None
+        qualified = runner_identity is not None or operator_scope is not None
+        if qualified and (runner_identity is None or operator_scope is None):
+            raise RuntimeAuthorityUnavailable("qualified workspace Agent admission is incomplete")
         token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
         if not token:
             raise RuntimeAuthorityUnavailable("workspace Agent authority is unavailable")
+        params: dict[str, str] = {
+            "root_run_id": root_run_id,
+            "session_id": record.session_id,
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-BYQ-Owner-Principal": record.owner_principal or "",
+            "X-BYQ-Runtime-Boot-ID": self.boot_id,
+        }
+        if qualified:
+            if (set(runner_identity or {}) != {
+                    "runner_instance_id", "runner_boot_id", "state_generation",
+                    "signed_instance_sha256"}
+                    or set(operator_scope or {}) != PRODUCT_SCOPE_KEYS):
+                raise RuntimeAuthorityUnavailable("qualified workspace Agent identity is invalid")
+            params["runner_identity"] = canonical_product_json(runner_identity).decode("ascii")
+            params["operator_scope"] = canonical_product_json(operator_scope).decode("ascii")
+            headers["X-BYQ-Trace-ID"] = record.trace_id
         try:
             response = httpx.get(
                 f"{self._backend_url.rstrip('/')}/internal/runtime-authority/workspaces/"
                 f"{record.workspace_id}/agent-admission",
-                params={"root_run_id": root_run_id, "session_id": record.session_id},
-                headers={"Authorization": f"Bearer {token}",
-                    "X-BYQ-Owner-Principal": record.owner_principal,
-                    "X-BYQ-Runtime-Boot-ID": self.boot_id}, timeout=2.0)
+                params=params, headers=headers, timeout=2.0)
             response.raise_for_status()
-            result = response.json()
+            if qualified:
+                if len(response.content) > 64 * 1024:
+                    raise ValueError("admission response is oversized")
+                result = json.loads(response.content.decode("utf-8"),
+                                    object_pairs_hook=_strict_json_object,
+                                    parse_constant=_reject_json_constant)
+            else:
+                result = response.json()
         except (httpx.HTTPError, ValueError, TypeError):
             raise RuntimeAuthorityUnavailable("workspace Agent admission is unavailable") from None
+        if qualified:
+            try:
+                checked_scope = validate_product_scope(operator_scope)
+            except (TypeError, ValueError):
+                raise RuntimeAuthorityUnavailable("qualified workspace Agent scope is invalid") from None
+            if (not isinstance(result, dict) or set(result) != {
+                    "schema_version", "workspace_id", "boot_id", "authority_epoch",
+                    "root_run_id", "can_start", "operator_scope", "operator_binding"}
+                    or result.get("schema_version") != "byq-workspace-agent-admission.v2"
+                    or result.get("workspace_id") != record.workspace_id
+                    or result.get("boot_id") != self.boot_id
+                    or result.get("root_run_id") != root_run_id
+                    or type(result.get("authority_epoch")) is not int
+                    or result.get("authority_epoch") != record.authority_epoch
+                    or type(result.get("can_start")) is not bool
+                    or result.get("operator_scope") != checked_scope):
+                raise RuntimeAuthorityUnavailable("qualified workspace Agent admission is unproven")
+            binding = result.get("operator_binding")
+            if (not isinstance(binding, dict) or set(binding) != START_BINDING_FIELDS
+                    or binding.get("schema_version") != START_BINDING_SCHEMA
+                    or any(binding.get(field) != runner_identity.get(field) for field in (
+                        "runner_instance_id", "runner_boot_id", "state_generation",
+                        "signed_instance_sha256"))
+                    or any(not isinstance(binding.get(field), str)
+                           or _ACP_HEX64.fullmatch(binding[field]) is None for field in (
+                               "signed_instance_sha256", "prepared_receipt_sha256",
+                               "backend_binding_nonce", "install_receipt_sha256",
+                               "backend_activation_receipt_sha256"))
+                    or not isinstance(binding.get("runner_instance_id"), str)
+                    or _ACP_HEX64.fullmatch(binding["runner_instance_id"]) is None
+                    or not isinstance(binding.get("runner_boot_id"), str)
+                    or _ACP_HEX32.fullmatch(binding["runner_boot_id"]) is None
+                    or not isinstance(binding.get("state_generation"), str)
+                    or _ACP_HEX64.fullmatch(binding["state_generation"]) is None
+                    or not isinstance(binding.get("backend_activation_id"), str)
+                    or _ACP_HEX32.fullmatch(binding["backend_activation_id"]) is None):
+                raise RuntimeAuthorityUnavailable("qualified workspace Agent binding is unproven")
+            if not result["can_start"]:
+                raise SessionConflict("workspace has an unsettled Agent turn")
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise RuntimeAuthorityUnavailable("workspace Agent authority changed during admission")
+            return dict(binding)
         if (not isinstance(result, dict) or set(result) != {
                 "schema_version", "workspace_id", "boot_id", "root_run_id", "can_start"}
                 or result["schema_version"] != "byq-workspace-agent-admission.v1"
@@ -678,6 +781,218 @@ class RuntimeAdapter:
             raise RuntimeAuthorityUnavailable("workspace Agent admission is unproven")
         if not result["can_start"]:
             raise SessionConflict("workspace has an unsettled Agent turn")
+        return None
+
+    def _configure_qualified_product_start(
+        self, record: RuntimeSession, harness: Any, *, root_run_id: str,
+        runtime_generation: str, cwd: str, base_binding_sha256: str | None,
+        predecessor_raw: bytes | None = None, predecessor_sha256: str | None = None,
+        allow_missing_predecessor: bool = True,
+        prestart_proxy: Any = None,
+        runtime_restore: dict[str, Any] | None = None,
+    ) -> None:
+        """Bind one fresh root harness to the configured qualified START seam."""
+        if (not self._acp_product_slots or not record.workspace_id
+                or not self._compatibility.product_slots.requires_prebind(record.workspace_id)):
+            return
+        from .acp_product_slot_client import (
+            ProductSlotPrebindNoStart,
+            ProductSlotPrebindRetirement,
+            ProductSlotPrebindUncertain,
+        )
+
+        if _ACP_HEX64.fullmatch(base_binding_sha256 or "") is None:
+            raise SessionConflict("ACP qualified start has no prepared root binding")
+        expected_cwd = str(Path(cwd).resolve())
+        expected_scope = {
+            "workspace_id": record.workspace_id,
+            "owner_principal": record.owner_principal,
+            "session_id": record.session_id,
+            "trace_id": record.trace_id,
+            "root_run_id": root_run_id,
+            "runtime_boot_id": self.boot_id,
+            "generation_id": runtime_generation,
+            "cwd_leaf": Path(expected_cwd).name,
+        }
+        expected_record_generation = record.runtime_generation
+        expected_native_session_id = record.runtime_session_id
+        harness.product_start_retirement_receipt = None
+        guard_sha256 = getattr(harness, "prepared_guard_sha256", None)
+        if _ACP_HEX64.fullmatch(guard_sha256 or "") is None:
+            raise SessionConflict("ACP prepared guard identity is unavailable")
+        prepared: dict[str, Any] = {}
+
+        def restore_runtime_snapshot() -> None:
+            if runtime_restore is not None:
+                for name, value in runtime_restore.items():
+                    setattr(record, name, value)
+
+        def retire_no_start(scope: dict[str, str]) -> ProductSlotPrebindRetirement:
+            if prestart_proxy is not None:
+                prestart_proxy.close()
+            from .compat.dsh_acp import retire_prepared_guard_patch
+            retire_prepared_guard_patch(
+                Path(harness.session_root), expected_root_id=root_run_id,
+                expected_sha256=guard_sha256,
+            )
+            if predecessor_raw is None:
+                retired_sha = None
+                if not allow_missing_predecessor:
+                    raise SessionConflict("ACP predecessor binding is unavailable")
+                self._restore_prestart_acp_binding(
+                    record, expected_sha256=str(base_binding_sha256),
+                    predecessor_raw=None,
+                    expected_root_id=root_run_id,
+                    expected_runtime_generation=runtime_generation,
+                    expected_cwd=expected_cwd,
+                    expected_native_session_id=expected_native_session_id,
+                )
+                disposition = "removed"
+            else:
+                if (not isinstance(predecessor_sha256, str)
+                        or not hmac.compare_digest(
+                            hashlib.sha256(predecessor_raw).hexdigest(), predecessor_sha256)):
+                    raise SessionConflict("ACP predecessor binding receipt is invalid")
+                self._restore_prestart_acp_binding(
+                    record, expected_sha256=str(base_binding_sha256),
+                    predecessor_raw=predecessor_raw,
+                    expected_root_id=root_run_id,
+                    expected_runtime_generation=runtime_generation,
+                    expected_cwd=expected_cwd,
+                    expected_native_session_id=expected_native_session_id,
+                )
+                retired_sha = predecessor_sha256
+                disposition = "restored"
+            restore_runtime_snapshot()
+            prepared.clear()
+            return ProductSlotPrebindRetirement(
+                scope_digest=product_scope_digest(scope), root_run_id=root_run_id,
+                base_binding_sha256=str(base_binding_sha256),
+                prepared_guard_sha256=guard_sha256,
+                retired_binding_sha256=retired_sha, disposition=disposition,
+            )
+
+        def prepare_start(scope, requested_cwd, read_instance):
+            safe_prestart_guard = False
+            write_attempted = False
+            try:
+                self._assert_qualified_prestart_binding(
+                    record, expected_sha256=base_binding_sha256,
+                    root_run_id=root_run_id,
+                    runtime_generation=runtime_generation,
+                    cwd=expected_cwd,
+                    native_session_id=expected_native_session_id,
+                )
+                safe_prestart_guard = True
+                if (record.process_root_id != root_run_id
+                        or record.runtime_generation != expected_record_generation
+                        or record.authority_epoch is None
+                        or not hmac.compare_digest(
+                            str(record.workspace_id), str(expected_scope["workspace_id"]))
+                        or record.session_id != expected_scope["session_id"]
+                        or record.trace_id != expected_scope["trace_id"]
+                        or record.owner_principal != expected_scope["owner_principal"]
+                        or Path(requested_cwd).resolve() != Path(expected_cwd)
+                        or Path(harness.session_root).resolve() != Path(expected_cwd)):
+                    raise SessionConflict("ACP qualified start closure is stale")
+                environment_scope = {
+                    "workspace_id": harness.environment.get("BYQ_WORKSPACE_ID"),
+                    "owner_principal": harness.environment.get("BYQ_OWNER_PRINCIPAL"),
+                    "session_id": harness.environment.get("BYQ_SESSION_ID"),
+                    "trace_id": harness.environment.get("BYQ_TRACE_ID"),
+                    "root_run_id": harness.environment.get("BYQ_ROOT_RUN_ID"),
+                    "runtime_boot_id": harness.environment.get("BYQ_RUNTIME_BOOT_ID"),
+                    "generation_id": harness.environment.get("BYQ_DSH_RUN_ID"),
+                    "cwd_leaf": Path(expected_cwd).name,
+                }
+                try:
+                    checked_scope = validate_product_scope(scope)
+                except (TypeError, ValueError):
+                    raise SessionConflict("ACP qualified start scope is invalid") from None
+                if (checked_scope != expected_scope or checked_scope != environment_scope
+                        or dict(scope) != checked_scope):
+                    raise SessionConflict("ACP qualified start scope is stale")
+                instance = read_instance()
+                if (not isinstance(instance, dict)
+                        or instance.get("workspace_id") != record.workspace_id
+                        or instance.get("operator_qualified") is not False
+                        or instance.get("deployment_binding_sha256") is not None
+                        or instance.get("backend_binding_nonce") is not None):
+                    raise SessionConflict("ACP qualified runner identity is invalid")
+                runner_identity = {
+                    "runner_instance_id": instance.get("runner_instance_id"),
+                    "runner_boot_id": instance.get("runner_boot_id"),
+                    "state_generation": instance.get("state_generation"),
+                    "signed_instance_sha256": prebind_digest(instance),
+                }
+                if (not isinstance(runner_identity["runner_instance_id"], str)
+                        or _ACP_HEX64.fullmatch(runner_identity["runner_instance_id"]) is None
+                        or not isinstance(runner_identity["runner_boot_id"], str)
+                        or _ACP_HEX32.fullmatch(runner_identity["runner_boot_id"]) is None
+                        or not isinstance(runner_identity["state_generation"], str)
+                        or _ACP_HEX64.fullmatch(runner_identity["state_generation"]) is None
+                        or not isinstance(runner_identity["signed_instance_sha256"], str)
+                        or _ACP_HEX64.fullmatch(runner_identity["signed_instance_sha256"]) is None):
+                    raise SessionConflict("ACP qualified runner identity is invalid")
+                binding = self._require_group_admission(
+                    record, root_run_id, runner_identity=runner_identity,
+                    operator_scope=checked_scope,
+                )
+                if binding is None:
+                    raise RuntimeAuthorityUnavailable("qualified workspace Agent binding is missing")
+                write_attempted = True
+                v2_sha256, previous_raw = self._persist_qualified_acp_binding(
+                    record, base_sha256=base_binding_sha256,
+                    root_run_id=root_run_id, runtime_generation=runtime_generation,
+                    cwd=expected_cwd, operator_scope=checked_scope,
+                    operator_binding=binding,
+                )
+                prepared.update({
+                    "scope": checked_scope,
+                    "binding": binding,
+                    "v2_sha256": v2_sha256,
+                    "previous_raw": previous_raw,
+                })
+                return binding
+            except (ProductSlotPrebindNoStart, ProductSlotPrebindUncertain):
+                raise
+            except BaseException as exc:
+                if not write_attempted and safe_prestart_guard:
+                    try:
+                        retirement = retire_no_start(expected_scope)
+                    except BaseException as retire_error:
+                        raise ProductSlotPrebindUncertain(
+                            "qualified Product ACP start requires reconciliation"
+                        ) from retire_error
+                    raise ProductSlotPrebindNoStart(
+                        "qualified Product ACP start was not admitted", retirement,
+                    ) from exc
+                raise ProductSlotPrebindUncertain(
+                    "qualified Product ACP start requires reconciliation"
+                ) from exc
+
+        def prelaunch_reject(scope, code, binding):
+            allowed = {
+                "workspace_mismatch", "environment_rejected", "deadline_expired",
+                "operator_binding_invalid", "prebind_activation_unavailable",
+                "prebind_not_enabled",
+            }
+            if (code not in allowed or not prepared
+                    or dict(scope) != prepared.get("scope")
+                    or dict(binding) != prepared.get("binding")):
+                raise SessionConflict("ACP qualified rejection does not match its prepared root")
+            self._retire_qualified_prestart_binding(
+                record, expected_sha256=prepared["v2_sha256"],
+                previous_sha256=base_binding_sha256,
+                previous_raw=prepared["previous_raw"],
+                operator_scope=prepared["scope"],
+                operator_binding=prepared["binding"],
+            )
+            retirement = retire_no_start(prepared["scope"])
+            return retirement
+
+        harness.product_start_prepare = prepare_start
+        harness.product_start_prelaunch_reject = prelaunch_reject
 
     def operations_snapshot(self) -> dict[str, Any]:
         """Return process-local, normalized runtime accounting only."""
@@ -1078,6 +1393,20 @@ class RuntimeAdapter:
                 start_invoked = False
                 prestart_binding_attempted = False
                 prestart_binding_sha256 = None
+                prestart_predecessor_raw = None
+                prestart_predecessor_sha256 = None
+                qualified_prebind = bool(
+                    self._acp_product_slots and record.workspace_id
+                    and self._compatibility.product_slots.requires_prebind(record.workspace_id))
+                prestart_runtime_restore = {
+                    name: getattr(record, name) for name in (
+                        "process_root_id", "authority_epoch", "cleanup_harness",
+                        "cleanup_unconfirmed", "settlement_receipt",
+                        "qualified_operator_scope", "qualified_operator_binding",
+                        "qualified_runtime_generation", "qualified_cwd",
+                        "qualified_authority_epoch",
+                    )
+                }
                 try:
                     if (first_provider != PRODUCT_TURN_PROVIDER
                             or first_model != PRODUCT_TURN_MODEL):
@@ -1124,13 +1453,38 @@ class RuntimeAdapter:
                     # Bind the first lazy Product root to the current Backend
                     # authority before START. Unknown start outcomes must be
                     # recoverable from this exact durable root binding.
+                    if qualified_prebind:
+                        prestart_predecessor_raw, prestart_predecessor_sha256 = (
+                            self._capture_prestart_predecessor(
+                                record, expected_root_id=record.process_root_id))
                     no_start_proven = True
                     record.authority_epoch = self.require_current_backend_authority()
                     record.cleanup_harness = record.harness
                     record.cleanup_unconfirmed = True
                     prestart_binding_attempted = True
                     first_lazy_prestart_binding = True
-                    prestart_binding_sha256 = self._persist_acp_binding(record)
+                    if qualified_prebind:
+                        prestart_binding_sha256 = self._persist_acp_binding(
+                            record, clear_qualified=True,
+                            root_run_id=record.process_root_id,
+                            runtime_generation=record.runtime_generation,
+                            cwd=record.recovery_cwd or "", starting_new_root=True,
+                            expected_previous=(prestart_predecessor_raw,
+                                               prestart_predecessor_sha256),
+                        )
+                    else:
+                        prestart_binding_sha256 = self._persist_acp_binding(record)
+                    self._configure_qualified_product_start(
+                        record, record.harness, root_run_id=record.process_root_id,
+                        runtime_generation=record.runtime_generation,
+                        cwd=record.recovery_cwd or "",
+                        base_binding_sha256=prestart_binding_sha256,
+                        predecessor_raw=prestart_predecessor_raw,
+                        predecessor_sha256=prestart_predecessor_sha256,
+                        allow_missing_predecessor=not record.process_used,
+                        prestart_proxy=first_proxy if qualified_prebind else None,
+                        runtime_restore=prestart_runtime_restore if qualified_prebind else None,
+                    )
                     # A continuation (budget is not None) starts its own ACP root
                     # below; starting the slot here would hold the workspace lease
                     # and make the continuation's availability check report busy.
@@ -1182,42 +1536,72 @@ class RuntimeAdapter:
                     if close_failed:
                         no_start_proven = False
                     if no_start_proven and not close_failed:
+                        receipt = getattr(
+                            record.harness, "product_start_retirement_receipt", None)
                         try:
-                            from .compat.dsh_acp import retire_prepared_guard_patch
-                            prepared_digest = getattr(
-                                record.harness, "prepared_guard_sha256", None)
-                            if not isinstance(prepared_digest, str):
-                                raise SessionConflict(
-                                    "ACP prepared guard identity is unavailable")
-                            retire_prepared_guard_patch(
-                                Path(record.harness.session_root),
-                                expected_root_id=record.process_root_id,
-                                expected_sha256=prepared_digest,
-                            )
+                            if qualified_prebind and receipt is not None:
+                                expected_scope = {
+                                    "workspace_id": record.harness.environment.get("BYQ_WORKSPACE_ID"),
+                                    "owner_principal": record.harness.environment.get("BYQ_OWNER_PRINCIPAL"),
+                                    "session_id": record.harness.environment.get("BYQ_SESSION_ID"),
+                                    "trace_id": record.harness.environment.get("BYQ_TRACE_ID"),
+                                    "root_run_id": record.harness.environment.get("BYQ_ROOT_RUN_ID"),
+                                    "runtime_boot_id": record.harness.environment.get("BYQ_RUNTIME_BOOT_ID"),
+                                    "generation_id": record.harness.environment.get("BYQ_DSH_RUN_ID"),
+                                    "cwd_leaf": Path(record.harness.session_root).name,
+                                }
+                                self._verify_prestart_retirement_receipt(
+                                    record, receipt, scope=expected_scope,
+                                    base_sha256=prestart_binding_sha256,
+                                    guard_sha256=getattr(
+                                        record.harness, "prepared_guard_sha256", None),
+                                    predecessor_raw=prestart_predecessor_raw,
+                                    predecessor_sha256=prestart_predecessor_sha256,
+                                )
+                                for name, value in prestart_runtime_restore.items():
+                                    setattr(record, name, value)
+                            else:
+                                from .compat.dsh_acp import retire_prepared_guard_patch
+                                prepared_digest = getattr(
+                                    record.harness, "prepared_guard_sha256", None)
+                                if not isinstance(prepared_digest, str):
+                                    raise SessionConflict(
+                                        "ACP prepared guard identity is unavailable")
+                                retire_prepared_guard_patch(
+                                    Path(record.harness.session_root),
+                                    expected_root_id=record.process_root_id,
+                                    expected_sha256=prepared_digest,
+                                )
+                                if prestart_binding_attempted:
+                                    if not isinstance(prestart_binding_sha256, str):
+                                        raise SessionConflict(
+                                            "ACP prepared root binding outcome is uncertain")
+                                    if qualified_prebind:
+                                        self._restore_prestart_acp_binding(
+                                            record,
+                                            expected_sha256=prestart_binding_sha256,
+                                            predecessor_raw=prestart_predecessor_raw,
+                                            expected_root_id=record.process_root_id,
+                                            expected_runtime_generation=record.runtime_generation,
+                                            expected_cwd=record.recovery_cwd or "",
+                                            expected_native_session_id=record.runtime_session_id,
+                                        )
+                                        for name, value in prestart_runtime_restore.items():
+                                            setattr(record, name, value)
+                                    else:
+                                        self._remove_prestart_acp_binding(
+                                            record, expected_sha256=prestart_binding_sha256)
+                                elif qualified_prebind:
+                                    for name, value in prestart_runtime_restore.items():
+                                        setattr(record, name, value)
+                                record.cleanup_harness = prestart_runtime_restore["cleanup_harness"]
+                                record.cleanup_unconfirmed = prestart_runtime_restore[
+                                    "cleanup_unconfirmed"]
                         except BaseException:
                             record.cleanup_harness = record.harness
                             record.cleanup_unconfirmed = True
                             raise SessionConflict(
                                 "workspace Agent execution requires reconciliation") from None
-                        if prestart_binding_attempted:
-                            # A failed write has an unknown durable outcome. Do
-                            # not infer safety from a missing file or replace a
-                            # possibly foreign marker; keep this record fenced.
-                            if not isinstance(prestart_binding_sha256, str):
-                                record.cleanup_harness = record.harness
-                                record.cleanup_unconfirmed = True
-                                raise SessionConflict(
-                                    "workspace Agent execution requires reconciliation") from None
-                            try:
-                                self._remove_prestart_acp_binding(
-                                    record, expected_sha256=prestart_binding_sha256)
-                            except BaseException:
-                                record.cleanup_harness = record.harness
-                                record.cleanup_unconfirmed = True
-                                raise SessionConflict(
-                                    "workspace Agent execution requires reconciliation") from None
-                            record.cleanup_harness = None
-                            record.cleanup_unconfirmed = False
                     elif start_invoked or close_failed:
                         # START, create_session, or proxy-close uncertainty may
                         # require reconciliation before another attempt.
@@ -1267,6 +1651,24 @@ class RuntimeAdapter:
                         del record.budget_receipts[next(iter(record.budget_receipts))]
                 previous_native_session = record.runtime_session_id
                 previous_process_root_id = record.process_root_id
+                qualified_prebind = bool(
+                    self._acp_product_slots and record.workspace_id
+                    and self._compatibility.product_slots.requires_prebind(record.workspace_id))
+                replacement_predecessor_raw = None
+                replacement_predecessor_sha256 = None
+                replacement_runtime_restore = {
+                    name: getattr(record, name) for name in (
+                        "process_root_id", "authority_epoch", "cleanup_harness",
+                        "cleanup_unconfirmed", "settlement_receipt",
+                        "qualified_operator_scope", "qualified_operator_binding",
+                        "qualified_runtime_generation", "qualified_cwd",
+                        "qualified_authority_epoch",
+                    )
+                }
+                if qualified_prebind:
+                    replacement_predecessor_raw, replacement_predecessor_sha256 = (
+                        self._capture_prestart_predecessor(
+                            record, expected_root_id=previous_process_root_id))
                 if self._acp_product_slots:
                     from .acp_product_slot_client import ProductSlotBusy
                     try:
@@ -1429,13 +1831,37 @@ class RuntimeAdapter:
                     record.cleanup_harness = harness
                     record.cleanup_unconfirmed = True
                     try:
-                        self._persist_acp_binding(record)
+                        if qualified_prebind:
+                            prestart_binding_sha256 = self._persist_acp_binding(
+                                record, clear_qualified=True,
+                                root_run_id=root_id, runtime_generation=generation,
+                                cwd=str(session_root), starting_new_root=True,
+                                expected_previous=(replacement_predecessor_raw,
+                                                   replacement_predecessor_sha256),
+                            )
+                        else:
+                            prestart_binding_sha256 = self._persist_acp_binding(
+                                record, clear_qualified=True)
                     except BaseException:
-                        record.cleanup_harness = None
-                        record.cleanup_unconfirmed = False
+                        if qualified_prebind:
+                            record.cleanup_harness = harness
+                            record.cleanup_unconfirmed = True
+                        else:
+                            record.cleanup_harness = None
+                            record.cleanup_unconfirmed = False
                         if request_proxy is not None:
                             request_proxy.close()
                         raise
+                    self._configure_qualified_product_start(
+                        record, harness, root_run_id=root_id,
+                        runtime_generation=generation, cwd=str(session_root),
+                        base_binding_sha256=prestart_binding_sha256,
+                        predecessor_raw=replacement_predecessor_raw,
+                        predecessor_sha256=replacement_predecessor_sha256,
+                        allow_missing_predecessor=not record.process_used,
+                        prestart_proxy=request_proxy if qualified_prebind else None,
+                        runtime_restore=replacement_runtime_restore if qualified_prebind else None,
+                    )
                     try:
                         self._compatibility.start(harness)
                         if reuse_native:
@@ -1450,10 +1876,68 @@ class RuntimeAdapter:
                         if self._acp_product_slots and (isinstance(exc, ProductSlotBusy)
                                 or (getattr(harness, "process", None) is None
                                     and getattr(harness, "slot_scope", None) is None)):
-                            # No START was dispatched; restore the settled binding.
-                            record.cleanup_harness = None
-                            record.cleanup_unconfirmed = False
-                            self._persist_acp_binding(record)
+                            if qualified_prebind:
+                                receipt = getattr(
+                                    harness, "product_start_retirement_receipt", None)
+                                try:
+                                    if receipt is not None:
+                                        expected_scope = {
+                                            "workspace_id": harness.environment.get("BYQ_WORKSPACE_ID"),
+                                            "owner_principal": harness.environment.get("BYQ_OWNER_PRINCIPAL"),
+                                            "session_id": harness.environment.get("BYQ_SESSION_ID"),
+                                            "trace_id": harness.environment.get("BYQ_TRACE_ID"),
+                                            "root_run_id": harness.environment.get("BYQ_ROOT_RUN_ID"),
+                                            "runtime_boot_id": harness.environment.get("BYQ_RUNTIME_BOOT_ID"),
+                                            "generation_id": harness.environment.get("BYQ_DSH_RUN_ID"),
+                                            "cwd_leaf": Path(harness.session_root).name,
+                                        }
+                                        self._verify_prestart_retirement_receipt(
+                                            record, receipt, scope=expected_scope,
+                                            base_sha256=prestart_binding_sha256,
+                                            guard_sha256=getattr(
+                                                harness, "prepared_guard_sha256", None),
+                                            predecessor_raw=replacement_predecessor_raw,
+                                            predecessor_sha256=replacement_predecessor_sha256,
+                                        )
+                                        for name, value in replacement_runtime_restore.items():
+                                            setattr(record, name, value)
+                                    else:
+                                        if request_proxy is not None:
+                                            request_proxy.close()
+                                        from .compat.dsh_acp import retire_prepared_guard_patch
+                                        prepared_digest = getattr(
+                                            harness, "prepared_guard_sha256", None)
+                                        if not isinstance(prepared_digest, str):
+                                            raise SessionConflict(
+                                                "ACP prepared guard identity is unavailable")
+                                        retire_prepared_guard_patch(
+                                            Path(harness.session_root), expected_root_id=root_id,
+                                            expected_sha256=prepared_digest,
+                                        )
+                                        if not isinstance(prestart_binding_sha256, str):
+                                            raise SessionConflict(
+                                                "ACP prepared root binding outcome is uncertain")
+                                        self._restore_prestart_acp_binding(
+                                            record, expected_sha256=prestart_binding_sha256,
+                                            predecessor_raw=replacement_predecessor_raw,
+                                            expected_root_id=root_id,
+                                            expected_runtime_generation=generation,
+                                            expected_cwd=str(session_root),
+                                            expected_native_session_id=previous_native_session,
+                                        )
+                                        for name, value in replacement_runtime_restore.items():
+                                            setattr(record, name, value)
+                                except BaseException:
+                                    record.cleanup_harness = harness
+                                    record.cleanup_unconfirmed = True
+                                    if request_proxy is not None:
+                                        request_proxy.close()
+                                    raise SessionConflict(
+                                        "workspace Agent execution requires reconciliation") from None
+                            else:
+                                record.cleanup_harness = None
+                                record.cleanup_unconfirmed = False
+                                self._persist_acp_binding(record, clear_qualified=True)
                             message = ("workspace Agent execution slot is busy"
                                 if isinstance(exc, ProductSlotBusy)
                                 else "workspace Agent execution is unavailable; retry later")
@@ -2398,7 +2882,197 @@ class RuntimeAdapter:
             raise SessionConflict("ACP recovery binding workspace is ambiguous")
         return found[0]
 
-    def _persist_acp_binding(self, record: RuntimeSession) -> str | None:
+    def _acp_binding_value(
+        self, record: RuntimeSession, *, root_run_id: str | None = None,
+        runtime_generation: str | None = None, cwd: str | None = None,
+        operator_scope: dict[str, str] | None = None,
+        operator_binding: dict[str, Any] | None = None,
+        include_qualified: bool = True,
+        starting_new_root: bool = False,
+    ) -> dict[str, Any]:
+        root = root_run_id or record.process_root_id
+        qualified_scope = (operator_scope if operator_scope is not None
+                           else record.qualified_operator_scope if include_qualified else None)
+        qualified_binding = (operator_binding if operator_binding is not None
+                             else record.qualified_operator_binding if include_qualified else None)
+        qualified_generation = (runtime_generation if runtime_generation is not None
+                               else record.qualified_runtime_generation if include_qualified else None)
+        actual_cwd = (cwd if cwd is not None else
+                      record.qualified_cwd if include_qualified and record.qualified_cwd is not None
+                      else record.recovery_cwd)
+        if (qualified_scope is None) != (qualified_binding is None):
+            raise SessionConflict("ACP qualified recovery binding is incomplete")
+        qualified = qualified_scope is not None
+        if qualified and (qualified_generation is None or actual_cwd is None):
+            raise SessionConflict("ACP qualified recovery binding is incomplete")
+        qualified_boot_id = (
+            qualified_scope["runtime_boot_id"] if qualified else record.boot_id)
+        qualified_authority_epoch = (
+            record.authority_epoch if operator_scope is not None or not qualified else
+            record.qualified_authority_epoch
+            if record.qualified_authority_epoch is not None else record.authority_epoch)
+        if not actual_cwd or not Path(actual_cwd).resolve().is_relative_to(self._session_root):
+            raise SessionConflict("ACP recovery working directory is not contained")
+        value: dict[str, Any] = {
+            "schema_version": (_ACP_ROOT_BINDING_V2_SCHEMA if qualified
+                               else "byq-acp-root-binding.v1"),
+            "session_id": record.session_id,
+            "trace_id": record.trace_id,
+            "owner_principal": record.owner_principal,
+            "workspace_id": record.workspace_id,
+            "root_run_id": root,
+            "native_session_id": record.runtime_session_id,
+            "runtime_generation": qualified_generation or record.runtime_generation,
+            "model_provider": str(record.model_resolution.get("provider") or self._provider),
+            "model_id": str(record.model_resolution.get("model") or self._model),
+            "cwd": str(Path(actual_cwd).resolve()),
+            "previous_boot_id": qualified_boot_id,
+            "previous_authority_epoch": qualified_authority_epoch,
+            "sequence": record.sequence,
+            "settlement_receipt": None if starting_new_root else record.settlement_receipt,
+            "domain_call_sequence": record.domain_call_sequence,
+            "domain_call_drained_sequence": record.domain_call_drained_sequence,
+            "native_session_close_confirmed": (False if starting_new_root else bool(
+                record.current_generation and record.current_generation.native_session_close_confirmed)),
+            "process_exit_confirmed": (False if starting_new_root else bool(
+                record.current_generation and record.current_generation.process_exit_confirmed)),
+            "cleanup_unconfirmed": True if starting_new_root else record.cleanup_unconfirmed,
+            "closed": False if starting_new_root else record.conversation_ended,
+        }
+        if qualified:
+            value["operator_scope"] = dict(qualified_scope)
+            value["operator_binding"] = dict(qualified_binding)
+        return value
+
+    @staticmethod
+    def _read_locked_acp_binding_payload(path: Path) -> bytes:
+        try:
+            before = os.lstat(path)
+        except OSError as exc:
+            raise SessionConflict("ACP recovery binding is unavailable") from exc
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                or before.st_gid != os.getgid() or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != 1 or before.st_size > 1024 * 1024):
+            raise SessionConflict("ACP recovery binding is unsafe")
+        try:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                opened = os.fstat(fd)
+                if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                        or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                        or opened.st_uid != os.getuid() or opened.st_gid != os.getgid()
+                        or stat.S_IMODE(opened.st_mode) != 0o600
+                        or opened.st_size != before.st_size or opened.st_size > 1024 * 1024):
+                    raise SessionConflict("ACP recovery binding changed")
+                chunks = bytearray()
+                while len(chunks) <= 1024 * 1024:
+                    chunk = os.read(fd, min(65536, 1024 * 1024 + 1 - len(chunks)))
+                    if not chunk:
+                        break
+                    chunks.extend(chunk)
+                after = os.lstat(path)
+                if (len(chunks) != opened.st_size
+                        or (after.st_dev, after.st_ino, after.st_size)
+                        != (before.st_dev, before.st_ino, before.st_size)):
+                    raise SessionConflict("ACP recovery binding changed")
+                return bytes(chunks)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            raise SessionConflict("ACP recovery binding is unavailable") from exc
+
+    @staticmethod
+    def _replace_acp_binding_payload(path: Path, payload: bytes) -> None:
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".binding-", delete=False) as stream:
+                temporary = Path(stream.name)
+                os.chmod(temporary, 0o600)
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def _capture_acp_binding_digest(self, session_id: str,
+                                    expected: dict[str, Any]) -> str:
+        path = self._acp_binding_path(session_id, expected.get("workspace_id"))
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            raw = self._read_locked_acp_binding_payload(path)
+            try:
+                value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                   parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP recovery binding changed") from exc
+            if value != expected:
+                raise SessionConflict("ACP recovery binding changed before settlement")
+            return hashlib.sha256(raw).hexdigest()
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _persist_qualified_settlement(
+        self, record: RuntimeSession, *, expected_sha256: str,
+        expected_binding: dict[str, Any], receipt: dict[str, Any],
+    ) -> str:
+        """CAS only the exact historical v2 settlement without rebinding its scope."""
+        if (record.authority_epoch is None
+                or expected_binding.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA
+                or expected_binding.get("settlement_receipt") is not None
+                or record.settlement_receipt != receipt
+                or not hmac.compare_digest(hashlib.sha256(
+                    canonical_product_json(expected_binding)).hexdigest(), expected_sha256)):
+            raise SessionConflict("ACP qualified settlement identity is invalid")
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP settlement writer lost current Backend authority")
+            raw = self._read_locked_acp_binding_payload(path)
+            if not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), expected_sha256):
+                raise SessionConflict("ACP qualified binding changed before settlement")
+            try:
+                current = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                     parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP qualified binding changed before settlement") from exc
+            if (current != expected_binding
+                    or current.get("session_id") != record.session_id
+                    or current.get("root_run_id") != record.process_root_id
+                    or current.get("operator_scope") != record.qualified_operator_scope
+                    or current.get("operator_binding") != record.qualified_operator_binding):
+                raise SessionConflict("ACP qualified binding changed before settlement")
+            updated = dict(current)
+            updated["settlement_receipt"] = dict(receipt)
+            payload = json.dumps(updated, sort_keys=True, separators=(",", ":")).encode()
+            self._replace_acp_binding_payload(path, payload)
+            persisted = self._read_locked_acp_binding_payload(path)
+            if (not hmac.compare_digest(persisted, payload)
+                    or self.require_current_backend_authority() != record.authority_epoch):
+                raise SessionConflict("ACP qualified settlement write is uncertain")
+            return hashlib.sha256(payload).hexdigest()
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _persist_acp_binding(
+        self, record: RuntimeSession, *, clear_qualified: bool = False,
+        expected_previous: tuple[bytes | None, str | None] | None = None,
+        root_run_id: str | None = None, runtime_generation: str | None = None,
+        cwd: str | None = None, starting_new_root: bool = False,
+    ) -> str | None:
         """Store the exact root/native binding; return its persisted payload digest."""
 
         if not self._acp:
@@ -2406,34 +3080,24 @@ class RuntimeAdapter:
         root = record.process_root_id
         if re.fullmatch(r"[0-9a-f]{32}", root) is None or record.authority_epoch is None:
             raise SessionConflict("ACP recovery binding has no exact root authority")
-        cwd = record.recovery_cwd
-        if not cwd or not Path(cwd).resolve().is_relative_to(self._session_root):
-            raise SessionConflict("ACP recovery working directory is not contained")
-        value = {
-            "schema_version": "byq-acp-root-binding.v1",
-            "session_id": record.session_id,
-            "trace_id": record.trace_id,
-            "owner_principal": record.owner_principal,
-            "workspace_id": record.workspace_id,
-            "root_run_id": root,
-            "native_session_id": record.runtime_session_id,
-            "runtime_generation": record.runtime_generation,
-            "model_provider": str(record.model_resolution.get("provider") or self._provider),
-            "model_id": str(record.model_resolution.get("model") or self._model),
-            "cwd": str(Path(cwd).resolve()),
-            "previous_boot_id": record.boot_id,
-            "previous_authority_epoch": record.authority_epoch,
-            "sequence": record.sequence,
-            "settlement_receipt": record.settlement_receipt,
-            "domain_call_sequence": record.domain_call_sequence,
-            "domain_call_drained_sequence": record.domain_call_drained_sequence,
-            "native_session_close_confirmed": bool(
-                record.current_generation and record.current_generation.native_session_close_confirmed),
-            "process_exit_confirmed": bool(
-                record.current_generation and record.current_generation.process_exit_confirmed),
-            "cleanup_unconfirmed": record.cleanup_unconfirmed,
-            "closed": record.conversation_ended,
-        }
+        if (type(starting_new_root) is not bool
+                or (starting_new_root and (
+                    not isinstance(root_run_id, str)
+                    or not isinstance(runtime_generation, str)
+                    or not isinstance(cwd, str)
+                    or root_run_id != root
+                    or not runtime_generation.startswith("generation-")
+                    or not cwd
+                    or not clear_qualified
+                    or expected_previous is None
+                    or root_run_id != record.process_root_id
+                ))):
+            raise SessionConflict("ACP prepared root binding identity is incomplete")
+        value = self._acp_binding_value(
+            record, root_run_id=root_run_id, runtime_generation=runtime_generation,
+            cwd=cwd, include_qualified=not clear_qualified,
+            starting_new_root=starting_new_root,
+        )
         path = self._acp_binding_path(record.session_id, record.workspace_id)
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -2445,27 +3109,211 @@ class RuntimeAdapter:
             # native/root binding after Backend authority rotation.
             if self.require_current_backend_authority() != record.authority_epoch:
                 raise SessionConflict("ACP binding writer lost Backend authority")
-            temporary = None
-            try:
-                with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".binding-", delete=False) as stream:
-                    temporary = Path(stream.name)
-                    os.chmod(temporary, 0o600)
-                    stream.write(payload)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary, path)
-                directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            if expected_previous is not None:
+                expected_raw, expected_digest = expected_previous
                 try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
-            finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
+                    previous_raw = self._read_locked_acp_binding_payload(path)
+                except SessionConflict as exc:
+                    if (expected_raw is not None or expected_digest is not None
+                            or not isinstance(exc.__cause__, FileNotFoundError)):
+                        raise SessionConflict(
+                            "ACP predecessor binding changed before prepared root write") from None
+                else:
+                    if (not isinstance(expected_raw, bytes)
+                            or not isinstance(expected_digest, str)
+                            or not hmac.compare_digest(
+                                hashlib.sha256(expected_raw).hexdigest(), expected_digest)
+                            or not hmac.compare_digest(previous_raw, expected_raw)):
+                        raise SessionConflict(
+                            "ACP predecessor binding changed before prepared root write")
+                if self.require_current_backend_authority() != record.authority_epoch:
+                    raise SessionConflict("ACP prepared root writer lost Backend authority")
+            self._replace_acp_binding_payload(path, payload)
+            if (expected_previous is not None
+                    and self.require_current_backend_authority() != record.authority_epoch):
+                raise SessionConflict("ACP prepared root write lost Backend authority")
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
+        if clear_qualified:
+            record.qualified_operator_scope = None
+            record.qualified_operator_binding = None
+            record.qualified_runtime_generation = None
+            record.qualified_cwd = None
+            record.qualified_authority_epoch = None
         return hashlib.sha256(payload).hexdigest()
+
+    def _assert_qualified_prestart_binding(
+        self, record: RuntimeSession, *, expected_sha256: str, root_run_id: str,
+        runtime_generation: str, cwd: str, native_session_id: str | None,
+    ) -> None:
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            raw = self._read_locked_acp_binding_payload(path)
+            if not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), expected_sha256):
+                raise SessionConflict("ACP prepared binding changed before qualified admission")
+            try:
+                value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                   parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP prepared binding is invalid") from exc
+            if (not isinstance(value, dict)
+                    or value.get("schema_version") != "byq-acp-root-binding.v1"
+                    or value.get("session_id") != record.session_id
+                    or value.get("trace_id") != record.trace_id
+                    or value.get("owner_principal") != record.owner_principal
+                    or value.get("workspace_id") != record.workspace_id
+                    or value.get("root_run_id") != root_run_id
+                    or value.get("native_session_id") != native_session_id
+                    or value.get("runtime_generation") != runtime_generation
+                    or value.get("cwd") != str(Path(cwd).resolve())
+                    or value.get("previous_boot_id") != record.boot_id
+                    or value.get("previous_authority_epoch") != record.authority_epoch
+                    or value.get("settlement_receipt") is not None
+                    or value.get("native_session_close_confirmed") is not False
+                    or value.get("process_exit_confirmed") is not False
+                    or value.get("cleanup_unconfirmed") is not True
+                    or value.get("closed") is not False):
+                raise SessionConflict("ACP prepared binding is not the exact open root fence")
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _persist_qualified_acp_binding(
+        self, record: RuntimeSession, *, base_sha256: str, root_run_id: str,
+        runtime_generation: str, cwd: str, operator_scope: dict[str, str],
+        operator_binding: dict[str, Any],
+    ) -> tuple[str, bytes]:
+        """CAS one exact pre-START v1 fence to a qualified v2 binding."""
+        if not self._acp_product_slots or record.authority_epoch is None:
+            raise SessionConflict("ACP qualified binding has no current authority")
+        if (_ACP_HEX64.fullmatch(base_sha256) is None
+                or _ACP_HEX32.fullmatch(root_run_id) is None
+                or not runtime_generation.startswith("generation-")
+                or set(operator_scope) != PRODUCT_SCOPE_KEYS
+                or set(operator_binding) != START_BINDING_FIELDS):
+            raise SessionConflict("ACP qualified binding identity is invalid")
+        checked_scope = validate_product_scope(operator_scope)
+        if (checked_scope["workspace_id"] != record.workspace_id
+                or checked_scope["owner_principal"] != record.owner_principal
+                or checked_scope["session_id"] != record.session_id
+                or checked_scope["trace_id"] != record.trace_id
+                or checked_scope["root_run_id"] != root_run_id
+                or checked_scope["runtime_boot_id"] != self.boot_id
+                or checked_scope["generation_id"] != runtime_generation
+                or checked_scope["cwd_leaf"] != Path(cwd).name):
+            raise SessionConflict("ACP qualified binding scope is stale")
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP qualified binding writer lost Backend authority")
+            previous_raw = self._read_locked_acp_binding_payload(path)
+            if not hmac.compare_digest(hashlib.sha256(previous_raw).hexdigest(), base_sha256):
+                raise SessionConflict("ACP prepared binding changed before v2 write")
+            try:
+                previous = json.loads(previous_raw.decode("utf-8"),
+                                      object_pairs_hook=_strict_json_object,
+                                      parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP prepared binding is invalid") from exc
+            if (not isinstance(previous, dict)
+                    or previous.get("schema_version") != "byq-acp-root-binding.v1"
+                    or previous.get("session_id") != record.session_id
+                    or previous.get("trace_id") != record.trace_id
+                    or previous.get("owner_principal") != record.owner_principal
+                    or previous.get("workspace_id") != record.workspace_id
+                    or previous.get("root_run_id") != root_run_id
+                    or previous.get("native_session_id") != record.runtime_session_id
+                    or previous.get("runtime_generation") != runtime_generation
+                    or previous.get("cwd") != str(Path(cwd).resolve())
+                    or previous.get("previous_boot_id") != record.boot_id
+                    or previous.get("previous_authority_epoch") != record.authority_epoch
+                    or previous.get("settlement_receipt") is not None
+                    or previous.get("native_session_close_confirmed") is not False
+                    or previous.get("process_exit_confirmed") is not False
+                    or previous.get("cleanup_unconfirmed") is not True
+                    or previous.get("closed") is not False):
+                raise SessionConflict("ACP prepared binding is not the exact open root fence")
+            value = self._acp_binding_value(
+                record, root_run_id=root_run_id, runtime_generation=runtime_generation,
+                cwd=cwd, operator_scope=checked_scope, operator_binding=operator_binding,
+                starting_new_root=True,
+            )
+            payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            self._replace_acp_binding_payload(path, payload)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP qualified binding writer lost Backend authority")
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+        record.qualified_operator_scope = checked_scope
+        record.qualified_operator_binding = dict(operator_binding)
+        record.qualified_runtime_generation = runtime_generation
+        record.qualified_cwd = str(Path(cwd).resolve())
+        record.qualified_authority_epoch = record.authority_epoch
+        return hashlib.sha256(payload).hexdigest(), previous_raw
+
+    def _retire_qualified_prestart_binding(
+        self, record: RuntimeSession, *, expected_sha256: str,
+        previous_sha256: str, previous_raw: bytes, operator_scope: dict[str, str],
+        operator_binding: dict[str, Any],
+    ) -> None:
+        """Restore the exact v1 fence only after an authenticated prelaunch REJECT."""
+        if (not hmac.compare_digest(hashlib.sha256(previous_raw).hexdigest(), previous_sha256)
+                or _ACP_HEX64.fullmatch(expected_sha256) is None):
+            raise SessionConflict("ACP qualified prestart receipt is invalid")
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP qualified retirement lost Backend authority")
+            current_raw = self._read_locked_acp_binding_payload(path)
+            if not hmac.compare_digest(hashlib.sha256(current_raw).hexdigest(), expected_sha256):
+                raise SessionConflict("ACP qualified binding changed before retirement")
+            try:
+                current = json.loads(current_raw.decode("utf-8"),
+                                     object_pairs_hook=_strict_json_object,
+                                     parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP qualified binding is invalid") from exc
+            if (not isinstance(current, dict)
+                    or current.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA
+                    or current.get("session_id") != record.session_id
+                    or current.get("trace_id") != record.trace_id
+                    or current.get("owner_principal") != record.owner_principal
+                    or current.get("workspace_id") != record.workspace_id
+                    or current.get("root_run_id") != operator_scope["root_run_id"]
+                    or current.get("runtime_generation") != operator_scope["generation_id"]
+                    or current.get("operator_scope") != operator_scope
+                    or current.get("operator_binding") != operator_binding
+                    or current.get("previous_boot_id") != self.boot_id
+                    or current.get("previous_authority_epoch") != record.authority_epoch
+                    or current.get("native_session_close_confirmed") is not False
+                    or current.get("process_exit_confirmed") is not False
+                    or current.get("cleanup_unconfirmed") is not True
+                    or current.get("settlement_receipt") is not None
+                    or current.get("closed") is not False):
+                raise SessionConflict("ACP qualified binding is not the exact prepared root")
+            self._replace_acp_binding_payload(path, previous_raw)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP qualified retirement lost Backend authority")
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+        record.qualified_operator_scope = None
+        record.qualified_operator_binding = None
+        record.qualified_runtime_generation = None
+        record.qualified_cwd = None
+        record.qualified_authority_epoch = None
 
     def _remove_prestart_acp_binding(
         self, record: RuntimeSession, *, expected_sha256: str,
@@ -2570,30 +3418,221 @@ class RuntimeAdapter:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
 
+    def _capture_prestart_predecessor(
+        self, record: RuntimeSession, *, expected_root_id: str,
+    ) -> tuple[bytes | None, str | None]:
+        """Freeze the exact safe predecessor before replacing a Runtime fence."""
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                raw = self._read_locked_acp_binding_payload(path)
+            except SessionConflict as exc:
+                if isinstance(exc.__cause__, FileNotFoundError):
+                    if record.process_used:
+                        raise SessionConflict("settled ACP predecessor is unavailable") from None
+                    return None, None
+                raise
+            try:
+                parsed = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                    parse_constant=_reject_json_constant)
+                checked = self._read_acp_binding(record.session_id)
+            except (UnicodeError, ValueError, TypeError, RecursionError, KeyError) as exc:
+                raise SessionConflict("ACP predecessor binding is invalid") from exc
+            if (not isinstance(parsed, dict)
+                    or parsed.get("session_id") != record.session_id
+                    or parsed.get("trace_id") != record.trace_id
+                    or parsed.get("owner_principal") != record.owner_principal
+                    or parsed.get("workspace_id") != record.workspace_id
+                    or parsed.get("root_run_id") != expected_root_id
+                    or parsed.get("closed") is not False
+                    or parsed.get("cleanup_unconfirmed") is not False
+                    or checked.get("root_run_id") != expected_root_id):
+                raise SessionConflict("ACP predecessor binding does not match this Runtime root")
+            normalized = dict(parsed)
+            if normalized.get("schema_version") == "byq-acp-root-binding.v1":
+                normalized.setdefault("native_session_close_confirmed", False)
+                normalized.setdefault("process_exit_confirmed", False)
+                normalized.setdefault("cleanup_unconfirmed", False)
+            if normalized != checked:
+                raise SessionConflict("ACP predecessor binding changed during capture")
+            if record.process_used:
+                if (parsed.get("settlement_receipt") != record.settlement_receipt
+                        or not parsed.get("settlement_receipt")
+                        or parsed.get("native_session_close_confirmed") is not True
+                        or parsed.get("process_exit_confirmed") is not True
+                        or parsed.get("domain_call_sequence")
+                        != parsed.get("domain_call_drained_sequence")):
+                    raise SessionConflict("ACP predecessor is not exactly settled and closed")
+            elif (parsed.get("settlement_receipt") is not None
+                    or parsed.get("native_session_close_confirmed") is not False
+                    or parsed.get("process_exit_confirmed") is not False):
+                raise SessionConflict("ACP unused predecessor has unexpected close facts")
+            return raw, hashlib.sha256(raw).hexdigest()
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _restore_prestart_acp_binding(
+        self, record: RuntimeSession, *, expected_sha256: str,
+        predecessor_raw: bytes | None, expected_root_id: str,
+        expected_runtime_generation: str, expected_cwd: str,
+        expected_native_session_id: str | None,
+    ) -> None:
+        """CAS only this exact unlaunched base fence back to its frozen predecessor."""
+        if _ACP_HEX64.fullmatch(expected_sha256) is None:
+            raise SessionConflict("ACP prepared binding digest is invalid")
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP prepared binding writer lost Backend authority")
+            current_raw = self._read_locked_acp_binding_payload(path)
+            if not hmac.compare_digest(hashlib.sha256(current_raw).hexdigest(), expected_sha256):
+                raise SessionConflict("ACP prepared binding changed before retirement")
+            try:
+                current = json.loads(current_raw.decode("utf-8"),
+                                     object_pairs_hook=_strict_json_object,
+                                     parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP prepared binding is invalid") from exc
+            if (not isinstance(current, dict)
+                    or current.get("schema_version") != "byq-acp-root-binding.v1"
+                    or current.get("session_id") != record.session_id
+                    or current.get("trace_id") != record.trace_id
+                    or current.get("owner_principal") != record.owner_principal
+                    or current.get("workspace_id") != record.workspace_id
+                    or current.get("root_run_id") != expected_root_id
+                    or current.get("native_session_id") != expected_native_session_id
+                    or current.get("runtime_generation") != expected_runtime_generation
+                    or current.get("model_provider") != str(
+                        record.model_resolution.get("provider") or self._provider)
+                    or current.get("model_id") != str(
+                        record.model_resolution.get("model") or self._model)
+                    or current.get("cwd") != str(Path(expected_cwd).resolve())
+                    or current.get("previous_boot_id") != record.boot_id
+                    or current.get("previous_authority_epoch") != record.authority_epoch
+                    or current.get("sequence") != record.sequence
+                    or current.get("domain_call_sequence") != record.domain_call_sequence
+                    or current.get("domain_call_drained_sequence")
+                    != record.domain_call_drained_sequence
+                    or current.get("native_session_close_confirmed") is not False
+                    or current.get("process_exit_confirmed") is not False
+                    or current.get("cleanup_unconfirmed") is not True
+                    or current.get("settlement_receipt") is not None
+                    or current.get("closed") is not False):
+                raise SessionConflict("ACP prepared binding is not the exact open root fence")
+            if predecessor_raw is None:
+                if record.process_used:
+                    raise SessionConflict("settled ACP predecessor cannot be removed")
+                os.unlink(path)
+                directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+                target_sha256 = None
+            else:
+                self._replace_acp_binding_payload(path, predecessor_raw)
+                target_sha256 = hashlib.sha256(predecessor_raw).hexdigest()
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP prepared binding writer lost Backend authority")
+            if target_sha256 is None:
+                try:
+                    os.lstat(path)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise SessionConflict("ACP prepared binding was not removed")
+            elif not hmac.compare_digest(
+                    hashlib.sha256(self._read_locked_acp_binding_payload(path)).hexdigest(),
+                    target_sha256):
+                raise SessionConflict("ACP predecessor binding was not restored")
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _verify_prestart_retirement_receipt(
+        self, record: RuntimeSession, receipt: object, *, scope: dict[str, str],
+        base_sha256: str | None, guard_sha256: str | None,
+        predecessor_raw: bytes | None, predecessor_sha256: str | None,
+    ) -> None:
+        from .acp_product_slot_client import ProductSlotPrebindRetirement
+        try:
+            checked_scope = validate_product_scope(scope)
+        except (TypeError, ValueError):
+            raise SessionConflict("ACP no-start retirement scope is invalid") from None
+        expected_target = predecessor_sha256
+        disposition = "restored" if predecessor_raw is not None else "removed"
+        if (not isinstance(receipt, ProductSlotPrebindRetirement)
+                or _ACP_HEX64.fullmatch(base_sha256 or "") is None
+                or _ACP_HEX64.fullmatch(guard_sha256 or "") is None
+                or receipt.scope_digest != product_scope_digest(checked_scope)
+                or receipt.root_run_id != checked_scope["root_run_id"]
+                or receipt.base_binding_sha256 != base_sha256
+                or receipt.prepared_guard_sha256 != guard_sha256
+                or receipt.disposition != disposition
+                or receipt.retired_binding_sha256 != expected_target
+                or (predecessor_raw is not None
+                    and (not isinstance(predecessor_sha256, str)
+                         or not hmac.compare_digest(
+                             hashlib.sha256(predecessor_raw).hexdigest(), predecessor_sha256)))):
+            raise SessionConflict("ACP no-start retirement receipt does not match this root")
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        if predecessor_raw is None:
+            try:
+                os.lstat(path)
+            except FileNotFoundError:
+                return
+            raise SessionConflict("ACP no-start binding retirement is incomplete")
+        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            current = self._read_locked_acp_binding_payload(path)
+            if (not hmac.compare_digest(current, predecessor_raw)
+                    or not hmac.compare_digest(
+                        hashlib.sha256(current).hexdigest(), predecessor_sha256 or "")):
+                raise SessionConflict("ACP no-start predecessor binding is not restored")
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
     def _read_acp_binding(self, session_id: str) -> dict[str, Any]:
         if not self._acp:
             raise KeyError(session_id)
         path = self._acp_binding_path(session_id)
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            value = json.loads(path.read_text(encoding="utf-8"),
+                               object_pairs_hook=_strict_json_object,
+                               parse_constant=_reject_json_constant)
         except FileNotFoundError as exc:
             raise KeyError(session_id) from exc
         # Additive v1 compatibility: older bindings omit close proofs and are
         # always treated as non-reusable. A process restart never transfers the
         # in-memory normal-completion reuse gate.
-        if isinstance(value, dict):
+        if (isinstance(value, dict)
+                and value.get("schema_version") == "byq-acp-root-binding.v1"):
             value.setdefault("native_session_close_confirmed", False)
             value.setdefault("process_exit_confirmed", False)
             value.setdefault("cleanup_unconfirmed", False)
+        base_fields = {"schema_version", "session_id", "trace_id", "owner_principal",
+                       "workspace_id", "root_run_id", "native_session_id",
+                       "runtime_generation", "model_provider", "model_id", "cwd",
+                       "previous_boot_id", "previous_authority_epoch", "sequence",
+                       "settlement_receipt", "domain_call_sequence",
+                       "domain_call_drained_sequence", "native_session_close_confirmed",
+                       "process_exit_confirmed", "cleanup_unconfirmed", "closed"}
+        schema_version = value.get("schema_version") if isinstance(value, dict) else None
+        expected_fields = (base_fields | {"operator_scope", "operator_binding"}
+                           if schema_version == _ACP_ROOT_BINDING_V2_SCHEMA else base_fields)
         if (not isinstance(value, dict)
-                or set(value) != {"schema_version", "session_id", "trace_id", "owner_principal",
-                                      "workspace_id", "root_run_id", "native_session_id",
-                                      "runtime_generation", "model_provider", "model_id", "cwd",
-                                      "previous_boot_id", "previous_authority_epoch", "sequence",
-                                      "settlement_receipt", "domain_call_sequence",
-                                      "domain_call_drained_sequence", "native_session_close_confirmed",
-                                      "process_exit_confirmed", "cleanup_unconfirmed", "closed"}
-                or value["schema_version"] != "byq-acp-root-binding.v1"
+                or set(value) != expected_fields
+                or schema_version not in {"byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA}
                 or value["session_id"] != session_id
                 or re.fullmatch(r"[0-9a-f]{32}", str(value["root_run_id"])) is None
                 or re.fullmatch(r"[0-9a-f]{32}", str(value["previous_boot_id"])) is None
@@ -2618,6 +3657,36 @@ class RuntimeAdapter:
             # found under a different group's volume is not proof of authority.
             if path != self._acp_binding_path(session_id, value["workspace_id"]):
                 raise SessionConflict("ACP recovery binding is not in its declared resource group")
+        if schema_version == _ACP_ROOT_BINDING_V2_SCHEMA:
+            try:
+                scope = validate_product_scope(value["operator_scope"])
+            except (TypeError, ValueError):
+                raise SessionConflict("ACP qualified recovery scope is invalid") from None
+            binding = value["operator_binding"]
+            if (not isinstance(binding, dict) or set(binding) != START_BINDING_FIELDS
+                    or binding.get("schema_version") != START_BINDING_SCHEMA):
+                # The exact signed instance is checked by Runner on START. Here
+                # validate the persisted closed shape and its root scope only.
+                raise SessionConflict("ACP qualified recovery binding is invalid")
+            if (scope["workspace_id"] != value["workspace_id"]
+                    or scope["owner_principal"] != value["owner_principal"]
+                    or scope["session_id"] != value["session_id"]
+                    or scope["trace_id"] != value["trace_id"]
+                    or scope["root_run_id"] != value["root_run_id"]
+                    or scope["runtime_boot_id"] != value["previous_boot_id"]
+                    or scope["generation_id"] != value["runtime_generation"]
+                    or scope["cwd_leaf"] != cwd.name
+                    or any(not isinstance(binding.get(field), str)
+                           or _ACP_HEX64.fullmatch(binding[field]) is None for field in (
+                               "runner_instance_id", "state_generation", "signed_instance_sha256",
+                               "prepared_receipt_sha256", "backend_binding_nonce",
+                               "install_receipt_sha256", "backend_activation_receipt_sha256"))
+                    or not isinstance(binding.get("runner_boot_id"), str)
+                    or _ACP_HEX32.fullmatch(binding["runner_boot_id"]) is None
+                    or not isinstance(binding.get("backend_activation_id"), str)
+                    or _ACP_HEX32.fullmatch(binding["backend_activation_id"]) is None):
+                raise SessionConflict("ACP qualified recovery binding scope is invalid")
+            value["operator_scope"] = scope
         return value
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:
@@ -2654,6 +3723,9 @@ class RuntimeAdapter:
                 return {**self.describe_session(existing),
                         "resumed_from_run_id": existing.interrupted_run_id}
         binding = self._read_acp_binding(session_id)
+        qualified_binding_sha256 = (
+            self._capture_acp_binding_digest(session_id, binding)
+            if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None)
         if binding["closed"]:
             raise SessionConflict("BYQ session was ended")
         if binding["cleanup_unconfirmed"]:
@@ -2702,6 +3774,11 @@ class RuntimeAdapter:
                 # requests; a repair process cannot provide this old-boot proof.
                 raise SessionConflict("transferred ACP binding has no confirmed prior process exit")
         settled = persisted_settled or receipt.get("schema_version") == "agent-run-lifecycle-receipt.v1"
+        if (not settled and binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA):
+            # This Adapter boot cannot reuse the prior root's scoped admission
+            # callback. Keep an unsettled qualified binding fenced until a
+            # recovery path can create a fresh scope-bound callback.
+            raise SessionConflict("qualified ACP recovery requires a fresh scoped admission")
         model_resolution = self._resolve_model(
             owner_principal=binding["owner_principal"],
             session_id=session_id, trace_id=binding["trace_id"],
@@ -2721,6 +3798,16 @@ class RuntimeAdapter:
             recovery_cwd=binding["cwd"], settlement_receipt=dict(receipt) if settled else None,
             domain_call_sequence=binding["domain_call_sequence"],
             domain_call_drained_sequence=binding["domain_call_drained_sequence"],
+            qualified_operator_scope=(dict(binding["operator_scope"])
+                if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None),
+            qualified_operator_binding=(dict(binding["operator_binding"])
+                if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None),
+            qualified_runtime_generation=(binding["runtime_generation"]
+                if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None),
+            qualified_cwd=(binding["cwd"]
+                if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None),
+            qualified_authority_epoch=(binding["previous_authority_epoch"]
+                if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None),
         )
         self._install_generation(
             record, native_session_id=binding["native_session_id"], executor_epoch=0,
@@ -2760,7 +3847,15 @@ class RuntimeAdapter:
                 record.current_generation.process_exit_confirmed = True
         if settled and not persisted_settled:
             with record.lock:
-                self._persist_acp_binding(record)
+                if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA:
+                    if not isinstance(qualified_binding_sha256, str):
+                        raise SessionConflict("qualified ACP settlement binding digest is unavailable")
+                    self._persist_qualified_settlement(
+                        record, expected_sha256=qualified_binding_sha256,
+                        expected_binding=binding, receipt=dict(receipt),
+                    )
+                else:
+                    self._persist_acp_binding(record)
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict("BYQ session already exists in this Adapter boot")

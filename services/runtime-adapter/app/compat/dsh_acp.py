@@ -21,7 +21,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlsplit
 
 from packages.contracts.domain_call_admission import ACTIONS, parse_observed_arguments
@@ -36,6 +36,9 @@ from packages.contracts.continuation_request import (
 from .types import RuntimeObservation, RuntimeToolResult
 from ..research_judgment_acp_provider_overlay import private_provider_overlay
 from ..research_judgment_acp_provider_routes import valid_local_provider_token
+
+if TYPE_CHECKING:
+    from ..acp_product_slot_client import ProductSlotPrebindRetirement
 
 
 _ACP_PROTOCOL_VERSION = 1
@@ -1131,6 +1134,15 @@ class AcpHarness:
     product_execution_profile: dict[str, object] | None = field(default=None, repr=False)
     task_ready_execution_profile: dict[str, object] | None = field(default=None, repr=False)
     prepared_guard_sha256: str | None = field(default=None, repr=False)
+    # Root-scoped callbacks used only by the qualified Product START path.
+    # They stay in the Runtime/transport boundary and are never serialized.
+    product_start_prepare: Callable[..., Any] | None = field(default=None, repr=False)
+    product_start_prelaunch_reject: (
+        Callable[..., "ProductSlotPrebindRetirement"] | None
+    ) = field(default=None, repr=False)
+    product_start_retirement_receipt: (
+        "ProductSlotPrebindRetirement | None"
+    ) = field(default=None, repr=False)
     process: _AcpProcess | None = field(default=None, repr=False)
     slot_scope: dict[str, str] | None = field(default=None, repr=False)
     native_session_ids: set[str] = field(default_factory=set, repr=False)
@@ -1395,7 +1407,9 @@ class DshAcpCompatibility:
                     guard_b64=harness.continuation_guard_b64,
                     deadline_at_ms=start_deadline_at_ms,
                     ordinary_execution=ordinary_execution,
-                    task_ready_execution=task_ready_execution)
+                    task_ready_execution=task_ready_execution,
+                    prepare_start=harness.product_start_prepare,
+                    prelaunch_reject=harness.product_start_prelaunch_reject)
                 # Keep the root identity available if START succeeds but ACP
                 # initialization later fails and requires cleanup/ACK recovery.
                 harness.slot_scope = dict(transport.scope)
@@ -1407,6 +1421,12 @@ class DshAcpCompatibility:
             try:
                 transport.start()
             except Exception as error:
+                from ..acp_product_slot_client import (
+                    ProductSlotPrebindNoStart,
+                    ProductSlotRejected,
+                )
+                if isinstance(error, (ProductSlotPrebindNoStart, ProductSlotRejected)):
+                    harness.product_start_retirement_receipt = error.retirement_receipt
                 # A known busy group did not acquire a remote process. Keep
                 # the untouched prepared session retryable without dispatch.
                 if self.product_slots is not None and transport.process is None:
