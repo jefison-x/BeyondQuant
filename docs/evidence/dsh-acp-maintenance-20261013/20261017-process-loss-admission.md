@@ -183,3 +183,17 @@ F6新CID `a6783f714f3a1df8b0db16a1349eb06d4fae245f1bbc1e9f149fe5a0b79b44e3`，ba
 证据 `runner-foundation-v1/BACKEND-UPDATE-BROWSER-v1/`：实际结果SHA256 `b8cd50b5c7e2eaa6b1bdb33fe97a4691127b0ced5d5baac8b7b9b8335932692b`，Sol独审 `684530c2765a0566a0df574df09342722b7745ce54f3d46c223b272d01a49e6b`，Root限定普通接续/持久性PASS `82ee8f760fa3b114d5331033fb9f7f43750b3f7746a0eacada5300685b75455f`。真实provider请求次数、原始HTTP状态未观察；未独立测量业务DB中Job实际零，不将“1次UI提交/无业务请求或界面步骤”冒充严格模型/DB计数。另保留页的当前输入为空，历史summary的123没有本轮before测量，故123保留NOT_PROVEN；未赋予清空原因或覆盖内容。
 
 本片未推进Product Phase，未push/merge/生产部署。双Backend reader及当前普通浏览器兼容通过，不等于私有prepare/install/activate、Runtime qualified START/ACK、R2或活动进程故障恢复。下一片仅准备最小fresh-fixture私有prebind资格，不重复已合格镜像/出生/普通对话，不重启旧探针，不声称恢复原子Agent。测试环境和三个页面保持打开。
+
+## 身份绑定准备入口连续失败，取消执行元清单生成器（2026-10-17）
+
+文档起点 `800e6718bf960876deb13e5abdd402ae60e2b76a`，功能源仍为 `8e80c0ceff799774da3923b74e298751e981ef33`。v4设计闭合了同一exec stdin→FD3、不在Backend落密钥文件及四条provenance独立原始流，独立设计审查通过；随后自加的 `FIXED-EXECUTION.json` 文档生成器连续报 `TypeError` 和 `StopIteration`，目标文件未生成。按维护者要求停止该入口及受影响验证，没有第三次生成。两份可见异常文本及输入重建保存在 `R1B-PREBIND-QUALIFICATION-v4/FAIL-DOC-GENERATION-v1/`；原生成器字节、独立raw、嵌套exit及UTC未保存或未观测，不补造。操作者记录为0 Docker/DB/绑定动作，不将宿主准备失败称为Product缺陷或原生验证失败。
+
+Root取消整套执行元JSON生成器、位置参数helper和短标签搜索，保留现有CLI必需的prepare/activate业务请求JSON。替代方案是23行现有原生命令短清单，准确新17基线及实跑fresh runner argv为权威，明确完整原生标签、daemon前置、PID1来源和三个readback阶段；同时修正只打印输出而丢失嵌套状态的做法，必须检查完整工具结果、真实exit/session完成及先保存分离原始流再解析。没有新增collector、dispatcher、harness或测试程序。最终短清单SHA256 `e1a7c25aaf2a6ce2b32613139110d952d0ca62313b4be700aa8d56dddbed83cb`；独立Sol原因及整改审查SHA256 `c3277f22e795af30e225925813482b4f432bedffddf4935c59505bc6080cb407`，仅源侧整改PASS，不授予操作GO。身份绑定、START/ACK、R2、活动故障及浏览器恢复仍NOT_RUN；既有Backend/普通浏览器限定PASS不变。后续只能另行准入同一绑定范围的直接原生批次，保留原FAIL及环境、三个页面，不扩大测试范围。
+
+## 直接原生批次在库存比较门失败并停止（2026-10-17）
+
+独立Sol附条件准入一个新的fresh-fixture绑定批次，收据SHA256 `f4d9afa75b79baf0e876ce411c040ff47a0e8737693cca355d3ca4ab21ca7ad1`；没有重试已取消的元JSON生成器。实际只派发5条相互独立的只读Docker命令：当前17行库存、容器/卷名称列表、准确ACP image IID及两Backend健康。每条独占保存NUL argv、分离raw、exit、开始/结束UTC，均exit0/stderr0；五个窗口部分重叠，不能称逐条串行验收。随后Root宿主临时 `assert actual==expected` 退出1，尚未进入密钥生成、探针/卷创建、prepare或activate。立即停止，不重跑，不进入恢复测试。
+
+独立Sol只读原件确认：17个准确CID相同，只有A/B runner的mounts数组排列不同，各自三个唯一Destination下的完整entry全部相同，另外15行九字段相同，无资源漂移证据。根因是Root用临时列表严格相等替代了之前已明确验收的无序Mounts合同；去掉文档生成器并没有保证实际比较复用原合同。宿主assert来自本会话实际工具请求，未独立捕获其stdin原字节或UTC，不虚构源码hash。实际失败原件与原批次FAIL保留，不能用保存数据的语义一致分析改写成资格PASS。
+
+最小整改是直接复用已有纯 `image-closeout-r1b-v1/classify.py` 的rows/inventory语义：按唯一完整CID及唯一Destination比较完整对象，严格保留所有九字段及JSON类型；config_files顺序和effective ports口径不变，重复/未知/缺失值仍HOLD。没有新建validator或框架，没有为修判据再采集。源侧补充另存 `DIRECT-NATIVE-PLAN-SEMANTIC-REUSE.md`，SHA256 `2f6c2b692abf8c96ec03d43e6d83a50c1d73f558293694ac57ab3caebf3f9cde`；原准入短清单恢复并校验原SHA不变。独立失败复核 `16ba6df308f68fe8b7b97f31ec34ad075d18ad452950e72cab972b921c2b4124`；Root STOP `d6f0499226b1856b58b8044dd4f9da13da310ceab6e082982f15075b802f250f`。本批5只读native，0探针/卷/密钥/审计写入/模型/Job/START；身份绑定与浏览器恢复仍NOT_RUN。环境、账号、数据库、卷、镜像和三个页面保留；当前只继续源侧整改，不准本批再次测试。
