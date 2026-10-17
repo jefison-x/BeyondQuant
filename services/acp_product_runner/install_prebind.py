@@ -1,7 +1,8 @@
-"""Private, root-only installer for a non-authorizing Product runner candidate.
+"""Private, root-only installer for Product runner prebind records.
 
 This is an Engineering container-exec entry point, never a Product API.
-Installation records prepared intent only; Backend activation is unavailable.
+Installation records prepared intent; activation requires a validated Backend
+active receipt and does not by itself authorize START without server checks.
 """
 from __future__ import annotations
 
@@ -17,8 +18,10 @@ from pathlib import Path
 
 from packages.contracts.acp_product_instance import validate_instance
 from packages.contracts.acp_product_prebind import (
-    PrebindContractError, canonical_json, digest, make_install_record,
-    validate_birth_mode, validate_install_record, validate_prepared_receipt,
+    ACTIVATION_SCHEMA, PrebindContractError, canonical_json, digest, make_install_record,
+    sign_activation_record, validate_activation_record,
+    validate_backend_active_receipt, validate_birth_mode,
+    validate_install_record, validate_prepared_receipt,
 )
 
 STATE = Path("/var/lib/byq/acp-product-runner-state")
@@ -254,11 +257,124 @@ def install(candidate_path: Path) -> None:
         os.close(admission)
 
 
+def activate(receipt_path: Path) -> None:
+    """Install a Product-MACed activation bound to a Backend active receipt."""
+    if os.geteuid() != 0 or os.getpid() == 1:
+        raise ValueError("private container-exec root context is required")
+    _verify_pid1_entrypoint()
+    environ = _pid1_environment()
+    if (environ.get(MODE_ENV) != "1" or not environ.get(WORKSPACE_ENV)
+            or not environ.get(SECRET_ENV)):
+        raise ValueError("PID 1 was not born with prebind qualification enabled")
+    key = base64.urlsafe_b64decode(environ[SECRET_ENV] + "=" * (-len(environ[SECRET_ENV]) % 4))
+    if len(key) < 32:
+        raise ValueError("Product runner signing key is invalid")
+    state_info = os.lstat(STATE)
+    if (not stat.S_ISDIR(state_info.st_mode) or state_info.st_uid != 0
+            or stat.S_IMODE(state_info.st_mode) != 0o700):
+        raise ValueError("private state volume is invalid")
+    lifetime = os.open(STATE / ".runner-lifetime.lock", os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        try:
+            fcntl.flock(lifetime, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(lifetime, fcntl.LOCK_UN)
+            raise ValueError("Product runner lifetime lock is not held")
+    finally:
+        os.close(lifetime)
+    admission = os.open(STATE / ".runner-admission.lock", os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        fcntl.flock(admission, fcntl.LOCK_EX)
+        descriptor_path = CONTROL / "instance.json"
+        descriptor = _json(_read(descriptor_path, uid=0, gid=10006, mode=0o640, limit=4096))
+        instance_id = descriptor.get("runner_instance_id")
+        instances = STATE / "instances"
+        instance_path = instances / f"{instance_id}.json"
+        instance_bytes = _read(instance_path, uid=0, gid=0, mode=0o600, limit=4096)
+        instance = _json(instance_bytes)
+        if canonical_json(descriptor) != canonical_json(instance):
+            raise ValueError("control descriptor differs from current state instance")
+        validate_instance(instance, key=key)
+        if instance.get("workspace_id") != environ[WORKSPACE_ENV]:
+            raise ValueError("current runner workspace differs from PID 1")
+        if os.path.lexists(instances / f"{instance_id}.started.json"):
+            raise ValueError("runner has already crossed START admission")
+        birth = _json(_read(instances / f"{instance_id}.birth-mode.json",
+                            uid=0, gid=0, mode=0o600, limit=4096))
+        validate_birth_mode(birth, key=key, instance=instance)
+        if birth["require_prebind"] is not True:
+            raise ValueError("runner birth mode is not qualified")
+        install_path = instances / f"{instance_id}.prebind-install.json"
+        install_bytes = _read(install_path, uid=0, gid=0, mode=0o600)
+        install_record = _json(install_bytes)
+        if canonical_json(install_record) != install_bytes:
+            raise ValueError("installed prebind encoding is not canonical")
+        validate_install_record(install_record, key=key, instance=instance,
+                                birth_mode=birth)
+        prepared = validate_prepared_receipt(install_record["prepared_receipt"],
+                                             instance=instance)
+        backend_receipt_bytes = _read(receipt_path, uid=0, gid=0, mode=0o600)
+        backend_receipt = _json(backend_receipt_bytes)
+        if canonical_json(backend_receipt) != backend_receipt_bytes:
+            raise ValueError("Backend activation receipt encoding is not canonical")
+        backend_receipt = validate_backend_active_receipt(
+            backend_receipt, prepared_receipt=prepared, install_record=install_record,
+        )
+        record = sign_activation_record({
+            "schema_version": ACTIVATION_SCHEMA,
+            "status": "active",
+            "authorizes_start": True,
+            "workspace_id": instance["workspace_id"],
+            "runner_instance_id": instance_id,
+            "runner_boot_id": instance["runner_boot_id"],
+            "state_generation": instance["state_generation"],
+            "signed_instance_sha256": digest(instance),
+            "prepared_receipt_sha256": prepared["receipt_sha256"],
+            "backend_binding_nonce": prepared["backend_binding_nonce"],
+            "install_receipt_sha256": digest(install_record),
+            "backend_receipt": backend_receipt,
+        }, key=key)
+        validate_activation_record(record, key=key, instance=instance,
+                                   birth_mode=birth, prepared_receipt=prepared,
+                                   install_record=install_record)
+        activation_path = instances / f"{instance_id}.activation.json"
+        if os.path.lexists(activation_path):
+            existing_bytes = _read(activation_path, uid=0, gid=0, mode=0o600)
+            existing = _json(existing_bytes)
+            validate_activation_record(existing, key=key, instance=instance,
+                                       birth_mode=birth, prepared_receipt=prepared,
+                                       install_record=install_record)
+            if (canonical_json(existing) != existing_bytes
+                    or canonical_json(existing) != canonical_json(record)):
+                raise ValueError("a different activation is already installed")
+            _sync_exact_record(activation_path, existing_bytes, uid=0, gid=0,
+                               mode=0o600)
+            return
+        expected_bytes, identity = _persist_immutable(activation_path, record, gid=0)
+        readback_bytes = _read(activation_path, uid=0, gid=0, mode=0o600)
+        readback = _json(readback_bytes)
+        validate_activation_record(readback, key=key, instance=instance,
+                                   birth_mode=birth, prepared_receipt=prepared,
+                                   install_record=install_record)
+        if canonical_json(readback) != canonical_json(record) or readback_bytes != expected_bytes:
+            raise ValueError("installed activation readback differs")
+        _sync_exact_record(activation_path, expected_bytes, uid=0, gid=0,
+                           mode=0o600, identity=identity)
+    finally:
+        fcntl.flock(admission, fcntl.LOCK_UN)
+        os.close(admission)
+
+
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) != 3 or argv[1] != "install":
-            raise ValueError("only private install <prepared-receipt-path> is available")
-        install(Path(argv[2]))
+        if len(argv) != 3 or argv[1] not in {"install", "activate"}:
+            raise ValueError("private install or activate command required")
+        if argv[1] == "install":
+            install(Path(argv[2]))
+        else:
+            activate(Path(argv[2]))
         return 0
     except (OSError, ValueError, KeyError, TypeError, PrebindContractError):
         print("Product runner prebind installation refused", file=sys.stderr)

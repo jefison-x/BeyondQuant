@@ -44,7 +44,9 @@ from packages.contracts.acp_product_prebind import (
     BIRTH_SCHEMA,
     digest as prebind_digest,
     sign_birth_mode,
-    validate_start_binding_shape,
+    validate_activation_record,
+    validate_birth_mode,
+    validate_start_binding,
     PrebindContractError,
 )
 from packages.contracts.product_turn_request import (
@@ -513,6 +515,56 @@ def _canonical_directory(path: Path) -> Path:
     return resolved
 
 
+def _fsync_exact_private_file(path: Path, expected: bytes, *, identity: tuple[int, int],
+                              uid: int, gid: int, mode: int,
+                              parent_mode: int = 0o700) -> None:
+    """Confirm one exact private inode and its containing directory are durable."""
+    before = os.lstat(path)
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or before.st_uid != uid or before.st_gid != gid
+            or stat.S_IMODE(before.st_mode) != mode or before.st_size != len(expected)
+            or (before.st_dev, before.st_ino) != identity):
+        raise OSError("Product runner private record identity is invalid")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        opened = os.fstat(fd)
+        if ((opened.st_dev, opened.st_ino) != identity or opened.st_nlink != 1
+                or opened.st_size != len(expected)):
+            raise OSError("Product runner private record changed while opening")
+        data = bytearray()
+        while len(data) <= len(expected):
+            chunk = os.read(fd, min(8192, len(expected) + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        if bytes(data) != expected:
+            raise OSError("Product runner private record exact readback differs")
+        os.fsync(fd)
+        after = os.fstat(fd)
+        if ((after.st_dev, after.st_ino, after.st_nlink, after.st_size)
+                != (identity[0], identity[1], 1, len(expected))):
+            raise OSError("Product runner private record changed during fsync")
+    finally:
+        os.close(fd)
+
+    parent = path.parent
+    _canonical_directory(parent)
+    parent_info = os.lstat(parent)
+    if (parent_info.st_uid != uid or parent_info.st_gid != gid
+            or stat.S_IMODE(parent_info.st_mode) != parent_mode):
+        raise OSError("Product runner private record parent is invalid")
+    parent_fd = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                        | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        opened_parent = os.fstat(parent_fd)
+        if ((opened_parent.st_dev, opened_parent.st_ino)
+                != (parent_info.st_dev, parent_info.st_ino)):
+            raise OSError("Product runner private record parent changed")
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+
+
 def _prepare_root_directory(path: Path, *, uid: int, gid: int, mode: int) -> None:
     path.mkdir(parents=True, exist_ok=True, mode=mode)
     _canonical_directory(path)
@@ -823,6 +875,82 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         return validate_install_record(value, key=self.secret,
                                        instance=self._instance_record or {}, birth_mode=birth)
 
+    def _read_local_activation_record(self, path: Path) -> dict[str, Any]:
+        """Read this instance's immutable, Product-MACed active receipt."""
+        if path != (self.state_dir / _INSTANCE_DIRECTORY
+                    / f"{self.instance_id}.activation.json"):
+            raise OSError("Product runner activation path is invalid")
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != self.runner_uid or before.st_gid != self.state_gid
+                or stat.S_IMODE(before.st_mode) != 0o600 or before.st_size > 65536):
+            raise OSError("Product runner activation permissions are invalid")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(fd)
+            if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+                    or opened.st_nlink != 1 or opened.st_size > 65536):
+                raise OSError("Product runner activation changed")
+            activation_identity = (opened.st_dev, opened.st_ino)
+            raw = bytearray()
+            while len(raw) <= 65536:
+                chunk = os.read(fd, min(8192, 65537 - len(raw)))
+                if not chunk:
+                    break
+                raw.extend(chunk)
+            after_read = os.fstat(fd)
+            if len(raw) > 65536 or len(raw) != after_read.st_size:
+                raise OSError("Product runner activation exceeds its bound")
+        finally:
+            os.close(fd)
+        activation = json.loads(bytes(raw).decode("utf-8"), object_pairs_hook=_strict_object,
+                                parse_constant=_reject_constant)
+        if canonical_instance_json(activation) != bytes(raw):
+            raise OSError("Product runner activation encoding is not canonical")
+        install_path = (self.state_dir / _INSTANCE_DIRECTORY
+                        / f"{self.instance_id}.prebind-install.json")
+        install = self._read_local_install_record(install_path)
+        birth_path = (self.state_dir / _INSTANCE_DIRECTORY
+                      / f"{self.instance_id}.birth-mode.json")
+        birth_info = os.lstat(birth_path)
+        if (not stat.S_ISREG(birth_info.st_mode) or birth_info.st_nlink != 1
+                or birth_info.st_uid != self.runner_uid or birth_info.st_gid != self.state_gid
+                or stat.S_IMODE(birth_info.st_mode) != 0o600 or birth_info.st_size > 4096):
+            raise OSError("Product runner birth mode permissions are invalid")
+        birth_fd = os.open(birth_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            birth_opened = os.fstat(birth_fd)
+            if ((birth_opened.st_dev, birth_opened.st_ino)
+                    != (birth_info.st_dev, birth_info.st_ino)):
+                raise OSError("Product runner birth mode changed")
+            birth_buffer = bytearray()
+            while len(birth_buffer) <= 4096:
+                chunk = os.read(birth_fd, min(8192, 4097 - len(birth_buffer)))
+                if not chunk:
+                    break
+                birth_buffer.extend(chunk)
+            if len(birth_buffer) > 4096:
+                raise OSError("Product runner birth mode exceeds its bound")
+            birth_raw = bytes(birth_buffer)
+        finally:
+            os.close(birth_fd)
+        birth = json.loads(birth_raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                           parse_constant=_reject_constant)
+        if canonical_instance_json(birth) != birth_raw:
+            raise OSError("Product runner birth mode encoding is not canonical")
+        validate_birth_mode(birth, key=self.secret,
+                            instance=self._instance_record or {})
+        if birth.get("require_prebind") is not True:
+            raise OSError("Product runner birth mode is not prebind-qualified")
+        checked = validate_activation_record(
+            activation, key=self.secret, instance=self._instance_record or {},
+            birth_mode=birth, prepared_receipt=install["prepared_receipt"],
+            install_record=install,
+        )
+        _fsync_exact_private_file(path, bytes(raw), identity=activation_identity,
+                                  uid=self.runner_uid, gid=self.state_gid, mode=0o600)
+        return checked
+
     def _publish_instance_descriptor(self) -> None:
         if self._instance_record is None:
             raise OSError("Product runner instance record is unavailable")
@@ -929,12 +1057,32 @@ class ProductSlotServer(socketserver.UnixStreamServer):
                 or info.st_uid != self.runner_uid or info.st_gid != self.state_gid
                 or stat.S_IMODE(info.st_mode) != 0o600):
             raise RuntimeError("Product runner state generation is invalid")
-        raw = path.read_bytes()
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(descriptor)
+            if ((opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino)
+                    or opened.st_nlink != 1 or opened.st_size > 65):
+                raise RuntimeError("Product runner state generation changed")
+            identity = (opened.st_dev, opened.st_ino)
+            data = bytearray()
+            while len(data) <= 65:
+                chunk = os.read(descriptor, min(66, 66 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
+            after_read = os.fstat(descriptor)
+            if len(data) != after_read.st_size:
+                raise RuntimeError("Product runner state generation changed while reading")
+            raw = bytes(data)
+        finally:
+            os.close(descriptor)
         if len(raw) != 65 or raw[-1:] != b"\n":
             raise RuntimeError("Product runner state generation is invalid")
         value = raw[:-1].decode("ascii", errors="strict")
         if _HEX64.fullmatch(value) is None:
             raise RuntimeError("Product runner state generation is invalid")
+        _fsync_exact_private_file(path, raw, identity=identity, uid=self.runner_uid,
+                                  gid=self.state_gid, mode=0o600)
         return value
 
     def _persist_immutable_record(self, path: Path, record: dict[str, object]) -> None:
@@ -1274,26 +1422,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             self._reject(connection, "workspace_mismatch", challenge, nonce,
                          product_scope_digest(scope))
             return
-        if self.server.require_prebind:
-            install_path = (self.server.state_dir / _INSTANCE_DIRECTORY
-                            / f"{self.server.instance_id}.prebind-install.json")
-            # This runner slice can install only a prepared, non-authorizing
-            # candidate. Backend has no active-receipt producer yet, so no
-            # local state can authorize a qualified START.
-            try:
-                validate_start_binding_shape(
-                    operator_binding,
-                    instance=self.server._instance_record or {},
-                    install_record=self.server._read_local_install_record(install_path),
-                )
-            except (OSError, PrebindContractError, TypeError, KeyError):
-                self._reject(connection, "operator_binding_invalid", challenge, nonce,
-                             product_scope_digest(scope))
-                return
-            self._reject(connection, "prebind_activation_unavailable", challenge, nonce,
-                         product_scope_digest(scope))
-            return
-        if operator_binding is not None:
+        if (not self.server.require_prebind) and operator_binding is not None:
             self._reject(connection, "prebind_not_enabled", challenge, nonce,
                          product_scope_digest(scope))
             return
@@ -1305,6 +1434,18 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             return
         try:
             with self.server._admission_guard():
+                if self.server.require_prebind:
+                    activation_path = (self.server.state_dir / _INSTANCE_DIRECTORY
+                                       / f"{self.server.instance_id}.activation.json")
+                    try:
+                        activation = self.server._read_local_activation_record(activation_path)
+                        validate_start_binding(operator_binding,
+                                                activation_record=activation)
+                    except (OSError, PrebindContractError, TypeError, KeyError,
+                            ValueError, ProductInstanceContractError):
+                        self._reject(connection, "operator_binding_invalid", challenge, nonce,
+                                     product_scope_digest(scope))
+                        return
                 # This durable per-instance fact precedes tombstone consumption,
                 # scope ownership, and any child dispatch. It only means this
                 # instance may have accepted START; it is not cleanup or proof

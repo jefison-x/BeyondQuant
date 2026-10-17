@@ -61,10 +61,33 @@ entry point `python3 /opt/byq/acp_product_runner/install_prebind.py install
 serializes with START admission, verifies the current signed instance and
 birth-mode records, refuses any instance with a started marker, then writes an
 immutable signed `installed_nonactive` readback. That record explicitly does
-not authorize START. The Backend active-receipt producer and activation
-delivery are not implemented in this slice; opted-in START therefore returns
-a signed prelaunch rejection even when a prepared candidate was installed.
-No Product API, MCP, or adapter operation can run the installer.
+not authorize START. After Backend has issued the exact active receipt,
+Engineering may invoke `python3
+/opt/byq/acp_product_runner/install_prebind.py activate
+<backend-active-receipt-path>` with that root-owned mode-0600 receipt. Under
+the same admission lock this verifies the current instance, birth-mode,
+nonactive install and Backend receipt, refuses any instance with a started
+marker, then installs an immutable Product-MACed activation record. Exact
+retries revalidate and fsync the same record; changed receipts or existing
+different activation records are refused.
+
+An opted-in START is admitted only when its signed `operator_binding` matches
+the current local activation and Backend receipt while the admission lock is
+held. The runner rechecks the exact activation inode and fsyncs it and its
+private parent before writing the durable started marker, legacy scope
+tombstone, scope ownership record, or dispatching a child. A missing or
+mismatched activation is a signed prelaunch rejection; the scope remains
+unconsumed. Reused state-generation identity is likewise re-read through a
+no-follow descriptor and fsynced with the private state directory before the
+runner publishes a new ready state.
+Legacy runners retain their existing path and reject an unexpected binding.
+The original signed scope ownership record continues to bind the full scope
+to this exact runner instance; its existing `operator_qualified: false` fields
+are not rewritten. The separate immutable instance activation and Backend
+active receipt provide the qualification references for later Runtime
+preSTART binding. Neither an active receipt nor local activation proves old
+process death, terminal cleanup, or absence of business effects. No Product
+API, MCP, or adapter operation can run either installer command.
 
 The daemon derives its session root as
 `/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/<workspace_id>`. The session
