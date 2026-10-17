@@ -4,6 +4,8 @@
 
 ## 最新进展（2026-10-17，北京时间）
 
+**镜像元数据与环境保留限定 PASS：** 没有重建镜像；修正可选字段及无换行 IID 文件边界后，固定两条只读收尾在23.298秒内完成，独立 Sol→Root 通过。ACP `5401edd1…` 增加114591字节、50→51层；Backend `ab83d14b…` 增加110380字节、42→43层，准确继承 base 层与启动配置，原17容器及完整挂载不变。两个原采集批 FAIL 保留；实际 image 文件/权限、prebind、START及活动故障/浏览器恢复仍 NOT_RUN，未更新环境。见[镜像检查与构建记录](20261017-process-loss-admission.md#r1b-候选镜像构建及观察入口2026-10-17)。
+
 **Runtime F 源码限定 PASS，live 尚未准入：** `8e80c0ce` 接通准确实例读取、Backend 资格核验及 START 前持久绑定，确认未启动时完成全部退休后才释放 lease，跨 boot 补结算保留旧 scope/身份。初审三项 P2 及复审发现的新 Root 携带旧终态问题均已修正，Sol V3→Root 仅源码通过；语法/diff 通过，原 FAIL 全部保留。原生资格、实际 START、活动故障和浏览器恢复均 NOT_RUN，环境和三页保留。见[Runtime 接入](20261017-process-loss-admission.md#r1b-f-runtime-事前绑定与准确退休源码2026-10-17)。
 
 **R1b-e Backend 只读 admission 源码限定 PASS：** `b00d8fc0` 在既有 authenticated 路由独立核验唯一 active 锚点及当前 authority/完整 scope；不带资格字段时保留 v1。Sol→Root 仅源码通过，Runtime 接入尚未完成，实际 DB/HTTP/START/故障浏览器仍 NOT_RUN。见[只读 admission](20261017-process-loss-admission.md#r1b-e现有-backend-admission-的只读资格分支2026-10-17)。

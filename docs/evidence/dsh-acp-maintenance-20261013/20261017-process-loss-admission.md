@@ -69,6 +69,18 @@ D 后续缺席判据补充：全链路核对发现 installer 的 `lexists` 会�
 
 私有原件：`R1B-F-RUNTIME-IMPLEMENTATION-v1/`、`-v2/`、`-v3/`、`SOL-R1B-F-SOURCE-REVIEW[-V2|-V3].json`、`R1B-F-ROOT-V3-SYNTAX-NATIVE.json`、`ROOT-R1B-F-SOURCE-PASS.json`，均在既有 runner-foundation-v1 目录。原失败原生批次仍停止；新的无模型原生命令/观察合同待准入。实际 DB/HTTP、qualified START、活动故障、浏览器恢复、生产及推送合并均 NOT_RUN。原17容器、三页和草稿未变。
 
+## R1b 候选镜像构建及观察入口（2026-10-17）
+
+源码审查完成后，仅准备两份 FROM 准确本地 image ID + 单 COPY 的上下文：ACP 10文件/612793字节，Backend 6文件/655149字节，无 RUN、依赖下载或递归 chown。首 build-only 预检实际 FAIL：Go 模板直接访问镜像可省略的 Cmd/Entrypoint，exit1、只有1字节换行而无完整 JSON 行，0构建。Root 与独立审查均误判该可选字段类别，原 GO 和 FAIL 保留。统一 Cmd/Entrypoint/User 为 index，明确缺省/null 规范化但保留空数组/空串；单独一条两 base 只读命令实际 exit0、7202字节、stderr0，经 Sol 限定 metadata PASS。Go 替身因本机无 Go 仍 NOT_RUN，没有安装新工具。
+
+随后独立新构建批次预检确认原17容器/完整挂载不变，两个实际 build 均 exit0；候选 ACP 为 `sha256:5401edd1c741aab92021c8cf12621fc8941dab29c3fc09ae091b8959de9df8bd`，Backend 为 `sha256:ab83d14bd78c14d2c64cea44048861ebb9207ea37faab86166503fe3c3030c30`。但 Root 将两个各71字节、无换行的合法 IID 文件用 cat 拼接，host 按空白拆分后误判一个值，整批立即 FAIL_STOP；未派发候选 metadata 或后清单命令，不能声称层数/体积/启动配置已验收。该故障属于工程观察入口，不是已证明的 Product 缺陷。
+
+两镜像和全部原件保留，不再构建；仅在现有原件上核对完整读取/判定链，将准确 IID 固定进后续只读命令，单独审查收尾。0容器、卷、DB、模型、Job、浏览器和环境更新。私有原件：`image-qualification-r1b-v1/`、`image-metadata-command-qualification-v1/`、`image-build-r1b-v2/`、`image-closeout-r1b-v1/` 及对应 Sol failure/metadata/admission 收据，均在 runner-foundation-v1；实际 image 文件字节/权限、prebind、START、活动故障和浏览器恢复仍 NOT_RUN。不能以原生构建退出0覆盖两个原批 FAIL。
+
+之后只在本地已保存原件上修正完整判定入口：具名严格 IID、闭合 JSON/字段/类型、base 层顺序及增量、启动缺省语义、完整挂载和源码/上下文均离线检查。独审准入固定两条只读命令，准确 IID 写入计划，不再临时拼接。实际2命令/2分类器均 exit0、stderr0，共23.298秒；独立 Sol→Root 限定 image metadata/host source/environment preservation PASS：ACP 807191646字节、比 base +114591、50→51层；Backend 90451023字节、+110380、42→43层，两者完整 base 前缀、启动配置一致，原17容器九字段及全部 unique-Destination 完整挂载一致。原两个 build-only FAIL 和原 GO 原件不改，未重建镜像。收据 `SOL-R1B-IMAGE-CLOSEOUT-ACTUAL-REVIEW.json` SHA256 `f4571806274a65171dceb7bd6c608befd5f78980f2351adc4ef62dd9d151572c`、`ROOT-R1B-IMAGE-CLOSEOUT-PASS.json`。
+
+这项 PASS 不证明 image 内文件的实际字节/权限、runner 出生/锁/私有 prebind、qualified START、活动故障或浏览器恢复；这些仍 NOT_RUN。没有更新原测试服务、页面、账号或数据库，Product Phase 未推进。
+
 以下保留接受之前的设计审计与当时状态，不覆盖本节接受记录。
 
 前一项双用户普通对话及持久请求区间已限定 PASS。此片只审计与修订 Proposed ADR，没有新增模型、Job、容器操作或故障注入，不推进 Product Phase。
