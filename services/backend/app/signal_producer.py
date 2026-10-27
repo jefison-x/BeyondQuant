@@ -590,6 +590,8 @@ class SignalJobStore(PgStoreMixin):
         value.pop("request_hash", None)
         value.pop("submission_hash", None)
         value.pop("preparation_json", None)
+        # A newer schema may retain this private provenance after rollback.
+        value.pop("submission_origin", None)
         value["requirement"] = value.pop("requirement_json", None)
         value["requirement_plan"] = value.pop("requirement_plan_json", None)
         value["readiness"] = value.pop("readiness_json", None)
