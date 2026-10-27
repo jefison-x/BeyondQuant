@@ -42,32 +42,6 @@ def _not_ready(stage: str, category: str) -> dict[str, str]:
             "status": "not_ready", "category": category}
 
 
-def _ready_signal_from_receipt(instruction: object, input_sha256: object, event_key: object) -> dict:
-    """Closed projection from authoritative internal input, never publish raw text."""
-    if (not isinstance(instruction, str) or len(instruction.encode()) > 262144
-            or not isinstance(input_sha256, str) or SHA256_PATTERN.fullmatch(input_sha256) is None
-            or hashlib.sha256(instruction.encode()).hexdigest() != input_sha256):
-        raise SystemExit("F6 ready event input binding is invalid")
-    signals = re.findall(r"Ready signal: (\{[^\n]+\})", instruction)
-    if len(signals) != 1:
-        raise SystemExit("F6 ready event input binding is invalid")
-    try:
-        signal = json.loads(signals[0])
-    except (ValueError, TypeError):
-        raise SystemExit("F6 ready event input binding is invalid") from None
-    if (not isinstance(signal, dict) or set(signal) != {
-            "kind", "data_ready", "identity", "status", "updated_at", "result_artifact_id"}
-            or signal.get("kind") != "signal_producer_jobs" or signal.get("data_ready") is not True
-            or signal.get("status") != "completed"
-            or not isinstance(signal.get("identity"), str) or not SIGNAL_JOB_PATTERN.fullmatch(signal["identity"])
-            or not isinstance(signal.get("result_artifact_id"), str)
-            or not ARTIFACT_PATTERN.fullmatch(signal["result_artifact_id"])
-            or not isinstance(signal.get("updated_at"), str) or len(signal["updated_at"]) > 64
-            or event_key != "ready-v1:" + hashlib.sha256(json.dumps(signal, sort_keys=True).encode()).hexdigest()):
-        raise SystemExit("F6 ready event input binding is invalid")
-    return signal
-
-
 def _check_environment() -> str:
     if os.environ.get("BYQ_F6_FIXTURE") != "1":
         raise SystemExit("explicit isolated fixture invocation required")
@@ -104,12 +78,10 @@ def _audit_readback(payload: object) -> dict[str, Any]:
     elif draft_id is not None or version_id is not None:
         raise SystemExit("unexpected F6 audit scope")
 
-    reservation_id = payload.get("reservation_id")
-    settlement_sha256 = payload.get("settlement_sha256")
+    signal_job_id = payload.get("signal_job_id")
     if stage == "background":
-        reservation_id = _required(payload, "reservation_id", RESERVATION_PATTERN)
-        settlement_sha256 = _required(payload, "settlement_sha256", SHA256_PATTERN)
-    elif reservation_id is not None or settlement_sha256 is not None:
+        signal_job_id = _required(payload, "signal_job_id", SIGNAL_JOB_PATTERN)
+    elif signal_job_id is not None:
         raise SystemExit("unexpected F6 audit scope")
 
     # app.db imports no store and creates no connection/schema. Construct a
@@ -224,38 +196,48 @@ def _audit_readback(payload: object) -> dict[str, Any]:
 
                 settlement = None
                 if stage == "background":
+                    from packages.contracts.continuation_request import (
+                        validate_reservation_v3, validate_request_usage_v2,
+                    )
                     receipt_rows = connection.execute(text("""
-                        SELECT budget.item->>'reservation_id' AS reservation_id,
-                               (budget.item->>'grant_version')::integer AS grant_version,
-                               budget.item->>'run_id' AS run_id,
-                               budget.item->>'status' AS status,
-                               budget.item->>'outcome' AS outcome,
-                               budget.item->>'event_key' AS event_key,
-                               budget.item->>'input_sha256' AS input_sha256,
-                               budget.item->>'instruction' AS instruction,
-                               budget.item->>'settlement_sha256' AS settlement_sha256,
-                               (budget.item->>'dispatch_attempts')::integer AS dispatch_attempts
+                        SELECT budget.item AS receipt
                         FROM research_tasks AS t
                         CROSS JOIN LATERAL jsonb_array_elements(
                             COALESCE(t.continuation_budget, '[]'::jsonb)
                         ) AS budget(item)
                         WHERE t.task_id = :task_id AND t.owner_principal = :owner
                           AND t.workspace_id = :workspace_id AND t.conversation_id = :conversation_id
-                          AND budget.item->>'reservation_id' = :reservation_id
+                          AND budget.item->>'signal_job_id' = :signal_job_id
                         LIMIT 2
-                    """), {**root_parameters, "reservation_id": reservation_id}).mappings().all()
+                    """), {**root_parameters, "signal_job_id": signal_job_id}).mappings().all()
+                    if not receipt_rows:
+                        transaction.rollback()
+                        return _not_ready(stage, "settlement_not_visible")
                     if len(receipt_rows) != 1:
-                        raise SystemExit("exact F6 settled request receipt not found")
-                    settlement = dict(receipt_rows[0])
-                    instruction = settlement.pop("instruction")
-                    settlement["ready_signal"] = _ready_signal_from_receipt(
-                        instruction, settlement["input_sha256"], settlement["event_key"])
+                        raise SystemExit("exact F6 settled request receipt is ambiguous")
+                    settlement = receipt_rows[0]["receipt"]
+                    if settlement.get("status") in {"reserved", "accepted", "outcome_unknown"}:
+                        transaction.rollback()
+                        return _not_ready(stage, "settlement_not_visible")
+                    carrier = validate_reservation_v3(settlement.get("reservation"))
+                    usage = validate_request_usage_v2(settlement.get("request_usage"))
+                    digest = carrier["idempotency_key"].removeprefix("task-ready-event:")
+                    runtime_receipt = {"reservation_id": settlement.get("reservation_id"),
+                                       "idempotency_key": carrier["idempotency_key"],
+                                       "status": "settled", "run_id": root_run_id,
+                                       "outcome": "completed", "request_usage": usage}
                     if (settlement.get("run_id") != root_run_id
-                            or settlement.get("grant_version") != 1
+                            or settlement.get("schema_version") != "task-continuation-ledger-entry.v1"
+                            or settlement.get("reservation_id") != "continuation_" + digest[:32]
+                            or settlement.get("event_key") != "ready-v1:" + digest
+                            or settlement.get("signal_job_id") != signal_job_id
                             or settlement.get("status") != "settled"
                             or settlement.get("outcome") != "completed"
                             or settlement.get("dispatch_attempts") != 1
-                            or settlement.get("settlement_sha256") != settlement_sha256):
+                            or usage["execution_profile"] != carrier["execution_profile"]
+                            or usage["request_limits"] != carrier["request_limits"]
+                            or settlement.get("settlement_sha256") != hashlib.sha256(json.dumps(
+                                runtime_receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()):
                         raise SystemExit("F6 settlement is not bound to the exact Runtime root")
 
                 transaction.rollback()

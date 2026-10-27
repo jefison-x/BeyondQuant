@@ -48,14 +48,14 @@ export async function readF6Snapshot(page: Page, currentIds: Record<string, stri
       return response.json();
     };
     try {
-      const [task, jobBody, artifact, permission, conversation] = await Promise.all([
+      const [task, jobBody, artifact, executionOptions, conversation] = await Promise.all([
         get(`/api/product/research/tasks/${encodeURIComponent(ids.task_id)}`),
         get(`/api/product/signal-producer/jobs/${encodeURIComponent(ids.signal_job_id)}`),
         get(`/api/product/research/artifacts/${encodeURIComponent(ids.signal_snapshot_artifact_id)}`),
-        get(`/api/product/research/tasks/${encodeURIComponent(ids.task_id)}/continuation-permission`),
+        get(`/api/product/agent/conversations/${encodeURIComponent(ids.conversation_id)}/execution-options`),
         get(`/v1/agent/sessions/${encodeURIComponent(ids.conversation_id)}`),
       ]);
-      return { task, job: jobBody.job, artifact, permission, conversation };
+      return { task, job: jobBody.job, artifact, executionOptions, conversation };
     } finally {
       clearTimeout(deadline);
       controller.abort();

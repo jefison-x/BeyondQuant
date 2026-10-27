@@ -292,7 +292,8 @@ def _validate_f6_evidence(primary_path: Path, closeout_path: Path) -> tuple[dict
         "background_structured_audit", "request_gate", "background_domain_scope",
     }
     _require(isinstance(checks, dict) and required.issubset(checks)
-             and checks.get("revoke") == "one_exact_post_and_get_confirmed_no_second_request",
+             and checks.get("execution_options_stop") == "one_exact_cas_and_get_confirmed"
+             and checks.get("request_state") == "one_exact_job_reservation_one_dispatch_exact_ready_event",
              "f6_release_checks_incomplete")
     _require(primary.get("uncertain_actions") == [] and closeout.get("uncertain_actions") == [],
              "f6_business_outcome_unknown")
