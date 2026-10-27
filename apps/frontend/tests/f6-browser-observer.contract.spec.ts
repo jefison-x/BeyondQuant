@@ -72,7 +72,7 @@ describe('current F6 bounded Product snapshot', () => {
     expect(fetch.mock.calls.map(([path]) => path)).toEqual([
       '/api/product/research/tasks/task_current', '/api/product/signal-producer/jobs/job_current',
       '/api/product/research/artifacts/artifact_current',
-      '/api/product/research/tasks/task_current/continuation-permission', '/v1/agent/sessions/conversation_current',
+      '/api/product/agent/conversations/conversation_current/execution-options', '/v1/agent/sessions/conversation_current',
     ]);
     const options = fetch.mock.calls.map(call => (call as unknown as [string, RequestInit])[1]);
     for (const value of options) expect(value).toMatchObject({ method: 'GET', credentials: 'include', redirect: 'error' });
