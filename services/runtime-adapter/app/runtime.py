@@ -1,4 +1,5 @@
 from __future__ import annotations
+from contextlib import nullcontext
 
 import base64
 import json
@@ -19,7 +20,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Mapping
 from urllib.parse import quote
 
 import httpx
@@ -35,13 +36,46 @@ from packages.contracts.acp_product_slot import (
     validate_product_scope,
 )
 from packages.contracts.acp_operator_process_fence import (
+    COMPLETED_CLEANUP_REQUEST_SCHEMA as _R2_COMPLETED_CLEANUP_REQUEST_SCHEMA,
+    PROCESS_FENCE_HANDOFF_SCHEMA as _R2_HANDOFF_SCHEMA,
+    PROCESS_FENCE_HANDOFF_REQUEST_SCHEMA as _R2_HANDOFF_REQUEST_SCHEMA,
+    PROCESS_FENCE_HANDOFF_OBSERVATION_SCHEMA as _R2_HANDOFF_OBSERVATION_SCHEMA,
+    COMPLETED_CLEANUP_DIGEST_FIELD as _R2_COMPLETED_CLEANUP_DIGEST_FIELD,
     FENCE_CLOSE_RECEIPT_SCHEMA as _R2_CLOSE_RECEIPT_SCHEMA,
+    LOCAL_VALIDATION_ACK_INTENT_SCHEMA as _LOCAL_VALIDATION_ACK_INTENT_SCHEMA,
+    LOCAL_VALIDATION_ACK_REQUEST_SCHEMA as _LOCAL_VALIDATION_ACK_REQUEST_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_REQUEST_SCHEMA as _LOCAL_VALIDATION_HANDOFF_REQUEST_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA as _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_INTENT_SCHEMA as _LOCAL_VALIDATION_HANDOFF_INTENT_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA as _LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA as _LOCAL_VALIDATION_HANDOFF_OBS_SCHEMA,
+    LOCAL_VALIDATION_PRE_ACK_SCHEMA as _LOCAL_VALIDATION_PRE_ACK_SCHEMA,
+    LOCAL_VALIDATION_PRE_ACK_STOP_SCHEMA as _LOCAL_VALIDATION_PRE_ACK_STOP_SCHEMA,
+    LOCAL_VALIDATION_RELEASE_OBSERVATION_SCHEMA as _LOCAL_VALIDATION_RELEASE_OBSERVATION_SCHEMA,
     OPERATOR_OBSERVATION_SCHEMA as _R2_OPERATOR_OBSERVATION_SCHEMA,
     OperatorProcessFenceContractError as _R2FenceContractError,
     digest as _r2_digest,
     validate_fence_close_receipt as _r2_validate_close_receipt,
+    validate_completed_cleanup_request as _r2_validate_completed_cleanup_request,
+    validate_local_validation_ack_intent as _local_validate_ack_intent,
+    validate_local_validation_final_receipt as _local_validate_final,
+    validate_local_validation_backend_confirmation as _local_validate_backend_confirmation,
+    validate_local_validation_ack_request as _local_validate_ack_request,
+    validate_local_validation_handoff_request as _local_validate_handoff_request,
+    validate_local_validation_handoff as _local_validate_handoff,
+    validate_local_validation_handoff_intent as _local_validate_handoff_intent,
+    validate_local_validation_handoff_observation as _local_validate_handoff_observation,
+    validate_local_validation_pre_ack_request as _local_validate_pre_ack_request,
+    validate_local_validation_pre_ack_evidence as _local_validate_pre_ack_evidence,
+    validate_local_validation_pre_ack_stop as _local_validate_pre_ack_stop,
+    validate_local_validation_release_observation as _local_validate_ack_observation,
     validate_operator_observation as _r2_validate_operator_observation,
     validate_operator_observation_record as _r2_validate_operator_observation_record,
+    validate_process_fence_request as _r2_validate_request,
+    validate_process_fence_handoff as _r2_validate_handoff,
+    validate_process_fence_handoff_request as _r2_validate_handoff_request,
+    validate_process_fence_handoff_observation as _r2_validate_handoff_observation,
+    validate_process_fence_handoff_confirmation as _r2_validate_handoff_confirmation,
 )
 from packages.contracts.conversation_rehydration import (
     ConversationContextMessage,
@@ -68,7 +102,7 @@ from packages.contracts.continuation_request import (
     validate_reservation_v3,
 )
 
-from .contracts import WorkflowTraceEvent, make_workflow_trace_event
+from .contracts import WorkflowTraceEvent, make_workflow_trace_event, validate_workflow_trace_event
 from .child_lease import ChildLease
 from .normalization import close_public_activities
 from .compat import (
@@ -88,9 +122,14 @@ from .continuation_budget import (
     read_task_ready_v2_guard,
 )
 from packages.contracts.product_turn_request import (
+    OFFICIAL_PRODUCT_TURN_PROVIDER,
+    OFFICIAL_PRODUCT_TURN_MODEL,
+    OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL,
+    PRODUCT_TURN_UPSTREAM_BASE_URL,
+    official_product_turn_execution_profile,
     product_turn_execution_output_cap,
     product_turn_execution_profile,
-    validate_product_turn_execution_profile,
+    validate_ordinary_product_execution_profile,
 )
 from .continuation_budget import PRODUCT_TURN_PROVIDER, PRODUCT_TURN_MODEL
 from .research_request_gate import (
@@ -109,6 +148,11 @@ _ACP_HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 _ACP_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _ACP_ROOT_BINDING_V2_SCHEMA = "byq-acp-root-binding.v2"
 _ACP_ROOT_BINDING_V3_SCHEMA = "byq-acp-root-binding.v3"
+_ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA = "byq-acp-root-binding.local-validation-ack.v1"
+_ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA = "byq-acp-root-binding.local-validation-pre-ack.v1"
+_ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA = "byq-acp-root-binding.local-validation-handoff.v1"
+_ACP_RECOVERY_BOUNDARY_SCHEMA = "byq-acp-recovery-boundary.v1"
+_ACP_RECOVERY_BOUNDARY_EVENT_SCHEMA = "runtime-recovery-boundary-event.v1"
 
 
 def _process_boot_id() -> str:
@@ -353,6 +397,7 @@ class RuntimeSession:
     authority_epoch: int | None = None
     recovery_cwd: str | None = None
     settlement_receipt: dict[str, Any] | None = None
+    recovery_boundary: dict[str, Any] | None = field(default=None, repr=False)
     # Set only for a normal completed root whose exact Backend receipt was
     # accepted and whose ACP session close and process exit were both proven.
     # It is deliberately in-memory only: Adapter restart falls back to a fresh
@@ -1254,6 +1299,8 @@ class RuntimeAdapter:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
         if self._acp and self._acp_binding_path(session_id, workspace_id).exists():
             raise SessionConflict("BYQ session has a persistent ACP recovery binding")
+        if self._acp_product_slots and workspace_id:
+            self._require_workspace_acp_cleanup_fence(workspace_id)
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         # DSH session files are private execution state. Give every fresh BYQ
         # session a new native identity; the Adapter never reopens old state.
@@ -1332,6 +1379,32 @@ class RuntimeAdapter:
     ) -> str:
         record = self._get(session_id)
         with record.lock:
+            if (record.recovery_boundary is not None
+                    and record.recovery_boundary.get("state") != "acknowledged"):
+                raise SessionConflict("recovery trace boundary is not acknowledged")
+            if self._acp and self._acp_binding_path(session_id, record.workspace_id).exists():
+                try:
+                    prior_binding = self._read_acp_binding(session_id)
+                except KeyError:
+                    prior_binding = None
+                if (prior_binding is not None and prior_binding.get("schema_version")
+                        == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA):
+                    observation = prior_binding.get("local_validation_release_observation")
+                    if observation is None:
+                        raise SessionConflict("local validation ACK release is not durable")
+                    row = self._read_backend_local_validation_final(
+                        record, observation["ack_intent"]["final_receipt"])
+                    if row["local_validation"].get("runtime_observation") != observation:
+                        raise SessionConflict("local validation Backend observation differs from Runtime readback")
+                    raw_confirmation = row["local_validation"].get("confirmation_receipt")
+                    if raw_confirmation is None:
+                        raise SessionConflict("local validation Backend confirmation is not complete")
+                    try:
+                        confirmation = _local_validate_backend_confirmation(raw_confirmation)
+                    except (TypeError, ValueError):
+                        raise SessionConflict("local validation Backend confirmation is invalid") from None
+                    if confirmation["runtime_observation"] != observation:
+                        raise SessionConflict("local validation Backend confirmation changed its Runtime proof")
             if (record.cleanup_unconfirmed
                     and not self._operator_fence_matches_current_root(record)):
                 raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
@@ -1391,6 +1464,10 @@ class RuntimeAdapter:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
+            if self._acp_product_slots and record.workspace_id:
+                # Reject before either lazy START or replacement prepares a
+                # new Root, proxy, durable binding, or Backend admission.
+                self._require_workspace_acp_cleanup_fence(record.workspace_id)
             if (self._acp_product_slots and not record.process_used
                     and budget is None and task_ready_budget is None):
                 # ADR-0111: the first ordinary submit starts the ACP product slot.
@@ -1418,14 +1495,15 @@ class RuntimeAdapter:
                         "qualified_operator_scope", "qualified_operator_binding",
                         "qualified_runtime_generation", "qualified_cwd",
                         "qualified_authority_epoch", "operator_observation",
+                        "recovery_boundary",
                     )
                 }
                 try:
-                    if (first_provider != PRODUCT_TURN_PROVIDER
-                            or first_model != PRODUCT_TURN_MODEL):
-                        raise ModelCredentialUnavailable(
-                            "ordinary ACP Product model is not qualified (NOT_QUALIFIED)")
-                    first_profile = self._load_product_execution_profile(record, record.process_root_id)
+                    first_upstream = self._ordinary_product_upstream(record.model_resolution)
+                    first_profile = self._load_product_execution_profile(
+                        record, record.process_root_id,
+                        runtime_generation=record.runtime_generation,
+                    )
                     first_gate = build_product_turn_request_gate(
                         request_id='product-turn-' + record.runtime_generation,
                         execution_profile=first_profile,
@@ -1434,7 +1512,7 @@ class RuntimeAdapter:
                             record.process_root_id),
                     )
                     first_proxy = RequestGateProxy(
-                        first_gate, CONTINUATION_UPSTREAM, bind_host="0.0.0.0",
+                        first_gate, first_upstream, bind_host="0.0.0.0",
                         advertise_host=_continuation_proxy_advertise_host())
                     first_proxy.__enter__()
                     first_overlay = base64.b64encode(create_acp_product_execution_overlay(
@@ -1443,10 +1521,12 @@ class RuntimeAdapter:
                             "beyondquant:provider-session:" + record.session_id)),
                         provider=first_provider, model=first_model,
                         execution_profile=first_profile)).decode('ascii')
-                    first_search_key = self._resolve_search_credential(
-                        owner_principal=record.owner_principal,
-                        session_id=record.session_id,
-                        trace_id=record.trace_id,
+                    first_search_key = (
+                        self._resolve_search_credential(
+                            owner_principal=record.owner_principal,
+                            session_id=record.session_id,
+                            trace_id=record.trace_id,
+                        ) if first_provider == PRODUCT_TURN_PROVIDER else None
                     )
                     record.harness = self._build_harness(
                         record.session_id, Path(record.recovery_cwd), trace_id=record.trace_id,
@@ -1503,6 +1583,7 @@ class RuntimeAdapter:
                     # and make the continuation's availability check report busy.
                     from .acp_product_slot_client import ProductSlotBusy
                     try:
+                        self._require_workspace_acp_cleanup_fence(record.workspace_id)
                         self._require_group_admission(record, record.process_root_id)
                     except BaseException:
                         # Admission rejection is a positive proof that start() was
@@ -1678,6 +1759,7 @@ class RuntimeAdapter:
                         "qualified_operator_scope", "qualified_operator_binding",
                         "qualified_runtime_generation", "qualified_cwd",
                         "qualified_authority_epoch", "operator_observation",
+                        "recovery_boundary",
                     )
                 }
                 if qualified_prebind:
@@ -1686,6 +1768,9 @@ class RuntimeAdapter:
                             record, expected_root_id=previous_process_root_id))
                 if self._acp_product_slots:
                     from .acp_product_slot_client import ProductSlotBusy
+                    # Recheck immediately before replacement START in case a
+                    # binding changed after the synchronous prompt admission.
+                    self._require_workspace_acp_cleanup_fence(record.workspace_id)
                     try:
                         self._compatibility.product_slots.get_available_binding(record.workspace_id)
                     except ProductSlotBusy:
@@ -1778,14 +1863,11 @@ class RuntimeAdapter:
                         # a failure closes an opened proxy.
                         runtime_provider = str(record.model_resolution.get('provider') or self._provider)
                         runtime_model = str(record.model_resolution.get('model') or self._model)
-                        if (runtime_provider != PRODUCT_TURN_PROVIDER
-                                or runtime_model != PRODUCT_TURN_MODEL):
-                            raise ModelCredentialUnavailable(
-                                "ordinary ACP Product model is not qualified (NOT_QUALIFIED)")
+                        ordinary_upstream = self._ordinary_product_upstream(record.model_resolution)
                         product_provider_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL,
                             "beyondquant:provider-session:" + record.session_id))
                         product_execution_profile = self._load_product_execution_profile(
-                            record, root_id)
+                            record, root_id, runtime_generation=generation)
                         request_gate = build_product_turn_request_gate(
                             request_id='product-turn-' + generation,
                             execution_profile=product_execution_profile,
@@ -1793,7 +1875,7 @@ class RuntimeAdapter:
                                 session_root, 'product-turn-provider-request', root_id),
                         )
                         request_proxy = RequestGateProxy(
-                            request_gate, CONTINUATION_UPSTREAM,
+                            request_gate, ordinary_upstream,
                             bind_host="0.0.0.0",
                             advertise_host=_continuation_proxy_advertise_host(),
                         )
@@ -1807,7 +1889,8 @@ class RuntimeAdapter:
                     search_api_key = None
                     if (self._acp_product_slots and budget is None
                             and task_ready_budget is None
-                            and product_turn_overlay_b64 is not None):
+                            and product_turn_overlay_b64 is not None
+                            and runtime_provider == PRODUCT_TURN_PROVIDER):
                         search_api_key = self._resolve_search_credential(
                             owner_principal=record.owner_principal,
                             session_id=record.session_id,
@@ -1996,7 +2079,7 @@ class RuntimeAdapter:
                             started_at=now, last_runtime_activity_at=now)
             if (record.current_generation is not None
                     and record.current_generation.ordinary_execution_profile is not None):
-                execution_profile = validate_product_turn_execution_profile(
+                execution_profile = validate_ordinary_product_execution_profile(
                     record.current_generation.ordinary_execution_profile)
                 run.ordinary_execution_options = dict(execution_profile['options'])
             if budget is not None:
@@ -2478,6 +2561,206 @@ class RuntimeAdapter:
         self._maybe_reap_released(record)
         return acknowledged
 
+    def reserve_operator_process_fence(
+        self, session_id: str, raw_request: object,
+    ) -> dict[str, str]:
+        """Fence the current slot before Backend validates the protected preimage."""
+        if (isinstance(raw_request, dict)
+                and raw_request.get("schema_version") == _LOCAL_VALIDATION_HANDOFF_REQUEST_SCHEMA):
+            try:
+                request = _local_validate_handoff_request(raw_request)
+            except (TypeError, ValueError) as exc:
+                raise SessionConflict("local validation handoff reservation is invalid") from exc
+            final, handoff = request["final_receipt"], request["handoff"]
+            scope = final["scope"]
+            epoch = self.require_current_backend_authority()
+            if not self._acp or not self._acp_product_slots or session_id != scope["session_id"]:
+                raise SessionConflict("local validation handoff does not name this Runtime session")
+            binding = self._read_acp_binding(session_id)
+            row = self._read_backend_local_validation_final({
+                key: scope[key] for key in ("session_id", "trace_id", "owner_principal", "workspace_id")
+            }, final)
+            local = row["local_validation"]
+            if local.get("handoff_receipt") != handoff:
+                raise SessionConflict("Backend has not protected this exact local handoff")
+            if (local.get("confirmation_receipt") is not None
+                    and local["confirmation_receipt"].get("handoff") != handoff):
+                raise SessionConflict("Backend already confirmed a different local handoff")
+            if binding.get("schema_version") == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA:
+                intent = binding.get("local_validation_handoff_intent")
+                observation = binding.get("local_validation_handoff_observation")
+                if (binding.get("local_validation_handoff") != handoff or intent is None
+                        or intent.get("final_receipt") != final):
+                    raise SessionConflict("Runtime local handoff binding changed")
+                if observation is not None:
+                    _local_validate_handoff_observation(observation)
+                    if (self.boot_id != handoff["new_authority"]["boot_id"]
+                            or epoch != handoff["new_authority"]["epoch"]):
+                        raise SessionConflict("Runtime handoff observation is outside the successor authority")
+                    return {"state": "observed", "operation_id": handoff["operation_id"]}
+            else:
+                raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+                raw_binding = self._read_locked_acp_binding_payload(raw_path)
+                binding_scope = binding.get("operator_scope") or {
+                    "workspace_id": binding["workspace_id"], "owner_principal": binding["owner_principal"],
+                    "session_id": binding["session_id"], "trace_id": binding["trace_id"],
+                    "root_run_id": binding["root_run_id"], "runtime_boot_id": binding["previous_boot_id"],
+                    "generation_id": binding["runtime_generation"], "cwd_leaf": Path(binding["cwd"]).name,
+                }
+                pre_ack = binding.get("local_validation_pre_ack")
+                if (binding.get("schema_version") != _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+                        or binding_scope != scope or binding.get("root_run_id") != handoff["root_run_id"]
+                        or binding.get("previous_boot_id") != handoff["old_authority"]["boot_id"]
+                        or binding.get("previous_authority_epoch") != handoff["old_authority"]["epoch"]
+                        or hashlib.sha256(raw_binding).hexdigest() != handoff["original_binding_sha256"]
+                        or binding.get("settlement_receipt") is not None
+                        or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")
+                        or not isinstance(pre_ack, dict)
+                        or pre_ack.get("terminal_event_receipt") != final["terminal_event_receipt"]
+                        or pre_ack.get("cleanup_receipt_sha256") != final["cleanup_receipt_sha256"]
+                        or row["local_validation"].get("runtime_observation") is not None):
+                    raise SessionConflict("original stopped Runtime binding differs from the exact handoff")
+            if (handoff["new_authority"]["boot_id"] != self.boot_id
+                    or handoff["new_authority"]["epoch"] != epoch):
+                raise SessionConflict("local validation handoff lease requires its exact successor authority")
+            try:
+                self._compatibility.product_slots.reserve_operator_fence(
+                    scope, operation_id=handoff["operation_id"],
+                    request_sha256=handoff["handoff_sha256"], allow_existing_live_lease=False)
+            except Exception as exc:
+                raise SessionConflict("current Runtime could not reserve the exact confirmation lease") from exc
+            return {"state": "reserved", "operation_id": handoff["operation_id"]}
+        if (isinstance(raw_request, dict)
+                and raw_request.get("schema_version") == _R2_HANDOFF_REQUEST_SCHEMA):
+            try:
+                handoff_request = _r2_validate_handoff_request(raw_request)
+                handoff, close = handoff_request["handoff"], handoff_request["close_receipt"]
+            except _R2FenceContractError as exc:
+                raise SessionConflict("operator cleanup handoff request is invalid") from exc
+            scope = handoff["scope"]
+            current_epoch = self.require_current_backend_authority()
+            if (not self._acp_product_slots or scope["session_id"] != session_id
+                    or handoff["new_authority"] != {"boot_id": self.boot_id, "epoch": current_epoch}):
+                raise SessionConflict("handoff does not name current Runtime authority")
+            binding = self._read_acp_binding(session_id)
+            if (binding.get("schema_version") == _ACP_ROOT_BINDING_V3_SCHEMA
+                    and isinstance(binding.get("operator_handoff_observation"), dict)):
+                observation = binding["operator_handoff_observation"]
+                if (observation.get("operation_id") == handoff["operation_id"]
+                        and observation.get("handoff_sha256") == handoff["handoff_sha256"]
+                        and observation.get("scope") == scope):
+                    return {"state": "observed", "operation_id": handoff["operation_id"]}
+                raise SessionConflict("Runtime already has another process-fence handoff observation")
+            completed = close.get("operator_completed_cleanup")
+            terminal = binding.get("settlement_receipt")
+            raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+            raw_binding = self._read_locked_acp_binding_payload(raw_path)
+            if (binding.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA
+                    or binding.get("operator_scope") != scope
+                    or binding.get("root_run_id") != scope["root_run_id"]
+                    or binding.get("previous_boot_id") != close["authority"]["previous_boot_id"]
+                    or binding.get("previous_authority_epoch") != close["authority"]["previous_epoch"]
+                    or handoff["old_authority"] != {"boot_id": close["authority"]["current_boot_id"],
+                                                     "epoch": close["authority"]["current_epoch"]}
+                    or not isinstance(terminal, dict)
+                    or _r2_digest(terminal) != completed.get("original_terminal_receipt_sha256")
+                    or terminal.get("sequence") != 344
+                    or terminal.get("event_sha256") != "0763e967f42dc958edbf3fb832b1dc5f84b4dfc2455cc4a774debc763fe45e1e"
+                    or hashlib.sha256(raw_binding).hexdigest() != handoff["runtime_binding_sha256"]
+                    or binding.get("closed") is not False or binding.get("native_session_close_confirmed") is not True
+                    or binding.get("process_exit_confirmed") is not False or binding.get("cleanup_unconfirmed") is not False
+                    or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")
+                    or handoff["preflight"]["binding_sha256"] != hashlib.sha256(raw_binding).hexdigest()
+                    or not self._compatibility.product_slots):
+                raise SessionConflict("original stopped Runtime binding differs from the exact handoff")
+            try:
+                self._compatibility.product_slots.reserve_operator_fence(
+                    scope, operation_id=handoff["operation_id"],
+                    request_sha256=handoff["handoff_sha256"], allow_existing_live_lease=False)
+            except Exception as exc:
+                raise SessionConflict("current Runtime could not reserve the exact handoff slot") from exc
+            return {"state": "reserved", "operation_id": handoff["operation_id"]}
+        cleanup_request = None
+        if isinstance(raw_request, dict) and raw_request.get("schema_version") == _R2_COMPLETED_CLEANUP_REQUEST_SCHEMA:
+            try:
+                cleanup_request = _r2_validate_completed_cleanup_request(raw_request)
+                if cleanup_request["process_fence_request"] != raw_request.get("process_fence_request"):
+                    raise _R2FenceContractError("completed cleanup request inner request changed")
+                request = cleanup_request["process_fence_request"]
+            except _R2FenceContractError as exc:
+                raise SessionConflict("completed cleanup reservation is invalid") from exc
+        else:
+            try:
+                request = _r2_validate_request(raw_request)
+            except _R2FenceContractError as exc:
+                raise SessionConflict("operator process-fence request is invalid") from exc
+        scope = request["scope"]
+        if (not self._acp_product_slots or scope["session_id"] != session_id
+                or request["authority"]["current_boot_id"] != self.boot_id
+                or request["authority"]["current_epoch"] != self.require_current_backend_authority()):
+            raise SessionConflict("operator process-fence reservation lacks current authority")
+        binding = self._read_acp_binding(session_id)
+        if binding.get("schema_version") == _ACP_ROOT_BINDING_V3_SCHEMA:
+            observation = binding["operator_observation"]
+            if (observation["operation_id"] != request["operation_id"]
+                    or observation["scope"] != scope
+                    or observation["runtime_binding_sha256"]
+                    != request["runtime_binding_observation"]["raw_sha256"]):
+                raise SessionConflict("operator process-fence retry targets another observation")
+            return {"state": "observed", "operation_id": request["operation_id"]}
+        if cleanup_request is not None:
+            original_terminal = cleanup_request["original_terminal_receipt"]
+            binding_valid = (
+                binding.get("schema_version") == _ACP_ROOT_BINDING_V2_SCHEMA
+                and binding.get("operator_scope") == scope
+                and binding.get("operator_binding") == request["prestart_binding"]
+                and binding.get("previous_authority_epoch") == request["authority"]["previous_epoch"]
+                and binding.get("closed") is False
+                and binding.get("native_session_close_confirmed") is True
+                and binding.get("process_exit_confirmed") is False
+                and binding.get("cleanup_unconfirmed") is False
+                and binding.get("settlement_receipt") == original_terminal
+                and binding.get("domain_call_sequence") == binding.get("domain_call_drained_sequence")
+            )
+        else:
+            binding_valid = (
+                binding.get("schema_version") == _ACP_ROOT_BINDING_V2_SCHEMA
+                and binding.get("operator_scope") == scope
+                and binding.get("operator_binding") == request["prestart_binding"]
+                and binding.get("previous_authority_epoch") == request["authority"]["previous_epoch"]
+                and binding.get("closed") is False
+                and binding.get("native_session_close_confirmed") is False
+                and binding.get("process_exit_confirmed") is False
+                and binding.get("cleanup_unconfirmed") is False
+            )
+        if (not binding_valid
+                ):
+            raise SessionConflict("operator process-fence reservation binding changed")
+        raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+        actual_raw = self._read_locked_acp_binding_payload(raw_path)
+        if (hashlib.sha256(actual_raw).hexdigest()
+                != request["runtime_binding_observation"]["raw_sha256"]):
+            raise SessionConflict("operator process-fence reservation binding bytes changed")
+        from .acp_product_slot_client import ProductSlotError
+        try:
+            try:
+                live = self._get(session_id)
+            except KeyError:
+                live = None
+            if cleanup_request is not None and live is not None:
+                raise SessionConflict("completed cleanup requires the exact cold Runtime binding")
+            with live.lock if live is not None else nullcontext():
+                if live is not None and not self._operator_live_scope_identity_exact(
+                        live, binding, scope):
+                    raise SessionConflict("operator process-fence existing lease changed")
+                self._compatibility.product_slots.reserve_operator_fence(
+                    scope, operation_id=request["operation_id"],
+                    request_sha256=_r2_digest(request),
+                    allow_existing_live_lease=live is not None)
+        except ProductSlotError as exc:
+            raise SessionConflict("operator process-fence Workspace slot is occupied") from exc
+        return {"state": "reserved", "operation_id": request["operation_id"]}
+
     def acknowledge_terminal(self, session_id: str, receipt: object) -> dict:
         """Private Gateway acknowledgement of an exact Backend terminal receipt.
 
@@ -2488,6 +2771,18 @@ class RuntimeAdapter:
         if (isinstance(receipt, dict)
                 and receipt.get("schema_version") == _R2_CLOSE_RECEIPT_SCHEMA):
             return self._acknowledge_operator_process_fence(session_id, receipt)
+        if (isinstance(receipt, dict)
+                and receipt.get("schema_version") == _R2_HANDOFF_REQUEST_SCHEMA):
+            return self._acknowledge_operator_process_fence_handoff(session_id, receipt)
+        if (isinstance(receipt, dict)
+                and receipt.get("schema_version") == _LOCAL_VALIDATION_HANDOFF_REQUEST_SCHEMA):
+            return self._acknowledge_local_validation_handoff(session_id, receipt)
+        if (isinstance(receipt, dict)
+                and receipt.get("schema_version") == _LOCAL_VALIDATION_ACK_REQUEST_SCHEMA):
+            return self._acknowledge_local_validation(session_id, receipt)
+        if (isinstance(receipt, dict)
+                and receipt.get("schema_version") == _LOCAL_VALIDATION_PRE_ACK_SCHEMA):
+            return self._stop_local_validation_pre_ack(session_id, receipt)
         try:
             record = self._get(session_id)
         except KeyError:
@@ -2503,6 +2798,15 @@ class RuntimeAdapter:
             evidence = self._terminal_evidence_for(record, root)
             current_root = record.process_root_id
             if self._acp and root == current_root:
+                binding = self._read_acp_binding(session_id)
+                request = {"schema_version": _LOCAL_VALIDATION_PRE_ACK_SCHEMA,
+                    "root_run_id": root, "session_id": session_id, "boot_id": self.boot_id}
+                if self._read_backend_local_validation_pre_ack(record, request) is not None:
+                    raise SessionConflict("local validation reservation requires its pre-ACK close branch")
+                if (binding.get("schema_version") == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA
+                        or binding.get("schema_version") == _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+                        or self._backend_has_local_validation_final(record, root)):
+                    raise SessionConflict("local validation Root requires its independent ACK branch")
                 record.settlement_receipt = dict(receipt)
                 # Persist the exact Backend result before ACP teardown. Keep
                 # the root admission fence asserted until process exit is
@@ -2531,6 +2835,992 @@ class RuntimeAdapter:
                     record.reuse_native_session_ready = False
         self._maybe_reap_released(record)
         return acknowledged
+
+    def _read_backend_local_validation_final(
+        self, record: RuntimeSession | Mapping[str, str], requested_final: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        identity = (record if isinstance(record, Mapping)
+                    else {key: getattr(record, key) for key in (
+                        "session_id", "workspace_id", "owner_principal", "trace_id")})
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token or not identity["workspace_id"] or not identity["owner_principal"]:
+            raise SessionConflict("local validation Backend authority is unavailable")
+        try:
+            response = httpx.get(
+                f"{self._backend_url.rstrip('/')}/internal/runtime-authority/sessions/"
+                f"{quote(identity['session_id'], safe='')}/roots",
+                headers={"Authorization": f"Bearer {token}",
+                    "X-BYQ-Owner-Principal": identity["owner_principal"],
+                    "X-BYQ-Workspace-ID": identity["workspace_id"],
+                    "X-BYQ-Trace-ID": identity["trace_id"]}, timeout=2.0)
+            response.raise_for_status()
+            if len(response.content) > 64 * 1024:
+                raise ValueError("Backend roots response is oversized")
+            body = json.loads(response.content.decode("utf-8"),
+                object_pairs_hook=_strict_json_object, parse_constant=_reject_json_constant)
+        except (httpx.HTTPError, UnicodeError, ValueError, TypeError, RecursionError):
+            raise SessionConflict("local validation Backend final is unavailable") from None
+        if (not isinstance(body, dict) or set(body) != {"schema_version", "roots"}
+                or body.get("schema_version") != "byq-business-root-status.v1"
+                or not isinstance(body.get("roots"), list)):
+            raise SessionConflict("local validation Backend roots projection is invalid")
+        matches = [row for row in body["roots"] if isinstance(row, dict)
+                   and row.get("root_run_id") == requested_final["root_run_id"]]
+        if len(matches) != 1:
+            raise SessionConflict("local validation Backend final Root is unavailable")
+        row = matches[0]
+        local = row.get("local_validation")
+        if (not isinstance(local, dict)
+                or set(local) != {"final_receipt", "runtime_observation", "confirmation_receipt", "handoff_receipt"}
+                or local.get("final_receipt") != requested_final
+                or row.get("authority_status") != "closed"
+                or row.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                or row.get("terminal_sequence") != requested_final["terminal_event_receipt"]["sequence"]
+                or row.get("terminal_event_sha256") != requested_final["terminal_event_receipt"]["event_sha256"]
+                or row.get("terminal_acp_ingress_sequence")
+                   != requested_final["terminal_acp_ingress_sequence"]
+                or row.get("terminal_acp_ingress_sha256")
+                   != requested_final["terminal_acp_ingress_sha256"]
+                or row.get("terminal_unknown_claim_count")
+                   != requested_final["terminal_unknown_claim_count"]
+                or row.get("terminal_unknown_claims_sha256")
+                   != requested_final["terminal_unknown_claims_sha256"]):
+            raise SessionConflict("local validation Backend final differs from the exact Root")
+        if local["handoff_receipt"] is not None:
+            try:
+                checked_handoff = _local_validate_handoff(local["handoff_receipt"], final_receipt=requested_final)
+            except (TypeError, ValueError) as exc:
+                raise SessionConflict("Backend local validation handoff projection is invalid") from exc
+            if checked_handoff != local["handoff_receipt"]:
+                raise SessionConflict("Backend local validation handoff projection changed")
+        scope = requested_final["scope"]
+        if (scope["session_id"] != identity["session_id"] or scope["trace_id"] != identity["trace_id"]
+                or scope["owner_principal"] != identity["owner_principal"]
+                or scope["workspace_id"] != identity["workspace_id"]):
+            raise SessionConflict("local validation final scope differs from the Runtime session")
+        return row
+
+    def _backend_has_local_validation_final(self, record: RuntimeSession, root_run_id: str) -> bool:
+        """Identify a reserved local final before an ordinary ACK can release its lease."""
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token or not record.workspace_id or not record.owner_principal:
+            raise SessionConflict("Backend authority is unavailable for terminal ACK classification")
+        try:
+            response = httpx.get(
+                f"{self._backend_url.rstrip('/')}/internal/runtime-authority/sessions/"
+                f"{quote(record.session_id, safe='')}/roots",
+                headers={"Authorization": f"Bearer {token}",
+                    "X-BYQ-Owner-Principal": record.owner_principal,
+                    "X-BYQ-Workspace-ID": record.workspace_id,
+                    "X-BYQ-Trace-ID": record.trace_id}, timeout=2.0)
+            response.raise_for_status()
+            if len(response.content) > 64 * 1024:
+                raise ValueError("Backend roots response is oversized")
+            body = json.loads(response.content.decode("utf-8"),
+                object_pairs_hook=_strict_json_object, parse_constant=_reject_json_constant)
+        except (httpx.HTTPError, UnicodeError, ValueError, TypeError, RecursionError):
+            raise SessionConflict("Backend terminal ACK classification is unavailable") from None
+        if (not isinstance(body, dict) or set(body) != {"schema_version", "roots"}
+                or body.get("schema_version") != "byq-business-root-status.v1"
+                or not isinstance(body.get("roots"), list)):
+            raise SessionConflict("Backend terminal ACK classification is invalid")
+        rows = [row for row in body["roots"] if isinstance(row, dict)
+                and row.get("root_run_id") == root_run_id]
+        if len(rows) != 1:
+            raise SessionConflict("Backend terminal Root is unavailable for ACK classification")
+        local = rows[0].get("local_validation")
+        if local is None:
+            return False
+        if (not isinstance(local, dict)
+                or set(local) not in ({"final_receipt", "runtime_observation", "confirmation_receipt"},
+                    {"final_receipt", "runtime_observation", "confirmation_receipt", "handoff_receipt"})):
+            raise SessionConflict("Backend local validation projection is malformed")
+        try:
+            final = _local_validate_final(local["final_receipt"])
+        except (TypeError, ValueError):
+            raise SessionConflict("Backend local validation final is malformed") from None
+        if (final["root_run_id"] != root_run_id
+                or final["scope"]["session_id"] != record.session_id
+                or final["scope"]["trace_id"] != record.trace_id
+                or final["scope"]["owner_principal"] != record.owner_principal
+                or final["scope"]["workspace_id"] != record.workspace_id):
+            raise SessionConflict("Backend local validation final scope changed")
+        if "handoff_receipt" in local and local["handoff_receipt"] is not None:
+            try:
+                handoff = _local_validate_handoff(local["handoff_receipt"], final_receipt=final)
+            except (TypeError, ValueError) as exc:
+                raise SessionConflict("Backend local validation handoff projection changed") from exc
+            if (handoff != local["handoff_receipt"]
+                    or (local.get("confirmation_receipt") is not None
+                        and local["confirmation_receipt"].get("handoff") != handoff)):
+                raise SessionConflict("Backend local validation handoff projection is inconsistent")
+        return True
+
+    def _read_backend_operator_handoff_confirmation(
+        self, binding: Mapping[str, Any], handoff_request: dict[str, Any],
+        observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Require Backend's durable handoff ACK before consuming an old V3 handoff."""
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token or not binding.get("workspace_id") or not binding.get("owner_principal"):
+            raise SessionConflict("Backend handoff confirmation is unavailable")
+        handoff, close = handoff_request["handoff"], handoff_request["close_receipt"]
+        completed = close["operator_completed_cleanup"]
+        try:
+            response = httpx.get(
+                f"{self._backend_url.rstrip('/')}/internal/runtime-authority/sessions/"
+                f"{quote(binding['session_id'], safe='')}/roots",
+                headers={"Authorization": f"Bearer {token}",
+                    "X-BYQ-Owner-Principal": binding["owner_principal"],
+                    "X-BYQ-Workspace-ID": binding["workspace_id"],
+                    "X-BYQ-Trace-ID": binding["trace_id"]}, timeout=2.0)
+            response.raise_for_status()
+            if len(response.content) > 64 * 1024:
+                raise ValueError("Backend roots response is oversized")
+            body = json.loads(response.content.decode("utf-8"),
+                object_pairs_hook=_strict_json_object, parse_constant=_reject_json_constant)
+        except (httpx.HTTPError, UnicodeError, ValueError, TypeError, RecursionError):
+            raise SessionConflict("Backend handoff confirmation is unavailable") from None
+        if (not isinstance(body, dict) or set(body) != {"schema_version", "roots"}
+                or body.get("schema_version") != "byq-business-root-status.v1"
+                or not isinstance(body.get("roots"), list)):
+            raise SessionConflict("Backend handoff projection is invalid")
+        roots = [row for row in body["roots"] if isinstance(row, dict)
+                 and row.get("root_run_id") == handoff["root_run_id"]]
+        if len(roots) != 1:
+            raise SessionConflict("Backend handoff Root is unavailable")
+        row = roots[0]
+        expected_row = {
+            "root_run_id": handoff["root_run_id"], "status": "completed", "authority_status": "closed",
+            "terminal_sequence": 344,
+            "terminal_event_sha256": "0763e967f42dc958edbf3fb832b1dc5f84b4dfc2455cc4a774debc763fe45e1e",
+            "terminal_acp_ingress_sequence": completed["terminal_acp_ingress_sequence"],
+            "terminal_acp_ingress_sha256": completed["terminal_acp_ingress_sha256"],
+            "terminal_unknown_claim_count": 0,
+            "terminal_unknown_claims_sha256": completed["terminal_unknown_claims_sha256"],
+        }
+        row_fields = set(expected_row) | {"operator_process_fence"}
+        if (set(row) != row_fields
+                or any(row.get(key) != value for key, value in expected_row.items())):
+            raise SessionConflict("Backend handoff Root differs from the completed terminal")
+        fence = row.get("operator_process_fence")
+        if not isinstance(fence, dict):
+            raise SessionConflict("Backend handoff ACK is still pending")
+        try:
+            confirmation = _r2_validate_handoff_confirmation(
+                fence.get("handoff_confirmation"), handoff=handoff)
+        except (_R2FenceContractError, TypeError, ValueError):
+            raise SessionConflict("Backend handoff confirmation is invalid") from None
+        expected_fence = {
+            "schema_version": "byq-business-root-operator-process-fence.v1",
+            "operation_id": handoff["operation_id"], "outcome": "completed",
+            "ack_status": "confirmed", "slot_release_status": "released",
+            "process_fence_receipt_sha256": handoff["process_fence_receipt_sha256"],
+            "operator_completed_cleanup_receipt_sha256": completed["receipt_sha256"],
+            "close_receipt_sha256": handoff["close_receipt_sha256"],
+            "runtime_ack_sha256": _r2_digest(observation),
+            "proof_receipt_sha256": handoff["proof_receipt_sha256"],
+            "ack_receipt_sha256": confirmation["receipt_sha256"], "superseded_terminal": None,
+            "original_terminal_receipt_sha256": handoff["terminal_receipt_sha256"],
+            "scope": handoff["scope"],
+            "terminal_acp_ingress_sequence": completed["terminal_acp_ingress_sequence"],
+            "terminal_acp_ingress_sha256": completed["terminal_acp_ingress_sha256"],
+            "terminal_unknown_claim_count": completed["terminal_unknown_claim_count"],
+            "terminal_unknown_claims_sha256": completed["terminal_unknown_claims_sha256"],
+            "handoff_receipt_sha256": handoff["handoff_sha256"], "handoff": handoff,
+            "close_receipt": close, "runtime_observation": observation,
+            "handoff_confirmation": confirmation,
+        }
+        if (not isinstance(fence, dict) or fence != expected_fence
+                or confirmation["runtime_observation"] != observation
+                or confirmation["proof_receipt_sha256"] != handoff["proof_receipt_sha256"]
+                or confirmation["close_receipt_sha256"] != handoff["close_receipt_sha256"]):
+            raise SessionConflict("Backend handoff confirmation differs from the exact handoff")
+        return confirmation
+
+    def _read_backend_local_validation_pre_ack(
+        self, record: RuntimeSession, request: dict[str, Any],
+    ) -> dict[str, Any]:
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token or not record.owner_principal or not record.workspace_id:
+            raise SessionConflict("local validation Backend reservation authority is unavailable")
+        try:
+            response = httpx.get(
+                f"{self._backend_url.rstrip('/')}/internal/runtime-authority/sessions/"
+                f"{quote(record.session_id, safe='')}/roots",
+                headers={"Authorization": f"Bearer {token}",
+                    "X-BYQ-Owner-Principal": record.owner_principal,
+                    "X-BYQ-Workspace-ID": record.workspace_id,
+                    "X-BYQ-Trace-ID": record.trace_id}, timeout=2.0)
+            response.raise_for_status()
+            if len(response.content) > 64 * 1024:
+                raise ValueError("Backend roots response is oversized")
+            body = json.loads(response.content.decode("utf-8"),
+                object_pairs_hook=_strict_json_object, parse_constant=_reject_json_constant)
+        except (httpx.HTTPError, UnicodeError, ValueError, TypeError, RecursionError):
+            raise SessionConflict("local validation Backend reservation is unavailable") from None
+        if (not isinstance(body, dict) or set(body) != {"schema_version", "roots"}
+                or body.get("schema_version") != "byq-business-root-status.v1"
+                or not isinstance(body.get("roots"), list)):
+            raise SessionConflict("local validation Backend reservation projection is invalid")
+        matches = [row for row in body["roots"] if isinstance(row, dict)
+                   and row.get("root_run_id") == request["root_run_id"]]
+        if len(matches) != 1:
+            raise SessionConflict("local validation Backend reservation Root is unavailable")
+        row = matches[0]
+        if row.get("local_validation") is not None:
+            return None
+        candidate = row.get("local_validation_pre_ack")
+        if candidate is None:
+            return None
+        if (row.get("status") != "active" or row.get("authority_status") != "active"
+                or row.get("terminal_sequence") is not None or row.get("terminal_event_sha256") is not None):
+            raise SessionConflict("local validation Root is not exactly pre-final")
+        try:
+            evidence = _local_validate_pre_ack_evidence(
+                candidate, request=request)
+        except (TypeError, ValueError):
+            raise SessionConflict("Backend local validation reservation or callback proof is malformed") from None
+        reservation = evidence["reservation"]
+        scope = reservation["scope"]
+        if (scope["owner_principal"] != record.owner_principal
+                or scope["workspace_id"] != record.workspace_id
+                or scope["session_id"] != record.session_id
+                or scope["trace_id"] != record.trace_id
+                or scope["generation"] != record.runtime_generation
+                or reservation["authority_boot_id"] != self.boot_id
+                or record.authority_epoch is None):
+            raise SessionConflict("Backend local validation reservation differs from live Runtime scope")
+        return evidence
+
+    def _stop_local_validation_pre_ack(self, session_id: str, raw_request: object) -> dict[str, Any]:
+        try:
+            request = _local_validate_pre_ack_request(raw_request)
+        except (TypeError, ValueError) as exc:
+            raise SessionConflict("local validation pre-ACK request is malformed") from exc
+        if (not self._acp or not self._acp_product_slots or request["session_id"] != session_id
+                or request["boot_id"] != self.boot_id):
+            raise SessionConflict("local validation pre-ACK request scope is unavailable")
+        try:
+            record = self._get(session_id)
+        except KeyError as exc:
+            raise SessionConflict("local validation pre-ACK requires the live Runtime record") from exc
+        with record.lock:
+            epoch = self.require_current_backend_authority()
+            if (record.boot_id != self.boot_id or record.authority_epoch != epoch
+                    or record.process_root_id != request["root_run_id"]
+                    or record.domain_call_sequence != record.domain_call_drained_sequence
+                    or record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT
+                    or record.owner_principal is None or record.workspace_id is None):
+                raise SessionConflict("local validation Runtime Root is not terminal and drained")
+            evidence = self._terminal_evidence_for(record, request["root_run_id"])
+            if evidence.get("boot_id") != self.boot_id:
+                raise SessionConflict("local validation Runtime terminal belongs to another boot")
+            projection = self._read_backend_local_validation_pre_ack(record, request)
+            reservation, callback = projection["reservation"], projection["callback_exit"]
+            binding = self._read_acp_binding(session_id)
+            scope = binding.get("operator_scope")
+            if scope is None:
+                scope = {"workspace_id": binding["workspace_id"],
+                    "owner_principal": binding["owner_principal"], "session_id": binding["session_id"],
+                    "trace_id": binding["trace_id"], "root_run_id": binding["root_run_id"],
+                    "runtime_boot_id": binding["previous_boot_id"],
+                    "generation_id": binding["runtime_generation"], "cwd_leaf": Path(binding["cwd"]).name}
+            if (binding.get("schema_version") not in {"byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA,
+                    _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}
+                    or binding.get("root_run_id") != request["root_run_id"]
+                    or binding.get("session_id") != session_id
+                    or binding.get("previous_boot_id") != self.boot_id
+                    or binding.get("previous_authority_epoch") != epoch
+                    or binding.get("runtime_generation") != record.runtime_generation
+                    or binding.get("closed") is not False or binding.get("settlement_receipt") is not None
+                    or binding.get("domain_call_sequence") != record.domain_call_sequence
+                    or binding.get("domain_call_drained_sequence") != record.domain_call_drained_sequence
+                    or scope.get("workspace_id") != record.workspace_id
+                    or scope.get("owner_principal") != record.owner_principal
+                    or scope.get("session_id") != session_id or scope.get("trace_id") != record.trace_id
+                    or scope.get("root_run_id") != request["root_run_id"]
+                    or scope.get("runtime_boot_id") != self.boot_id
+                    or scope.get("generation_id") != record.runtime_generation
+                    or callback["root_run_id"] != request["root_run_id"]
+                    or callback["scope"] != reservation["scope"]
+                    or reservation["scope"]["owner_principal"] != record.owner_principal
+                    or reservation["scope"]["workspace_id"] != record.workspace_id
+                    or reservation["scope"]["trace_id"] != record.trace_id
+                    or reservation["scope"]["generation"] != record.runtime_generation):
+                raise SessionConflict("local validation pre-ACK binding or reservation scope changed")
+            if not self._compatibility.product_slots.owns(scope):
+                raise SessionConflict("local validation pre-ACK Workspace slot lease is not exact and live")
+            existing_stop = binding.get("local_validation_pre_ack")
+            if existing_stop is not None:
+                try:
+                    existing_stop = _local_validate_pre_ack_stop(existing_stop, allow_stopping=True)
+                except (TypeError, ValueError) as exc:
+                    raise SessionConflict("local validation pre-ACK stop binding is malformed") from exc
+                if (existing_stop["root_run_id"] != request["root_run_id"]
+                        or existing_stop["reservation_sha256"] != reservation["reservation_sha256"]
+                        or existing_stop["callback_exit_sha256"] != callback["receipt_sha256"]
+                        or existing_stop["terminal_event_receipt"] != evidence["receipt"]):
+                    raise SessionConflict("local validation pre-ACK retry changed its exact proof")
+                stop = existing_stop
+            else:
+                if (binding.get("process_exit_confirmed") is not False
+                        or binding.get("native_session_close_confirmed") is not False):
+                    raise SessionConflict("pre-final process already stopped without its durable local proof")
+                base = {"schema_version": _LOCAL_VALIDATION_PRE_ACK_STOP_SCHEMA,
+                    "root_run_id": request["root_run_id"],
+                    "reservation_sha256": reservation["reservation_sha256"],
+                    "callback_exit_sha256": callback["receipt_sha256"],
+                    "terminal_event_receipt": evidence["receipt"],
+                    "state": "stopping", "cleanup_receipt_sha256": None}
+                stop = base | {"stop_sha256": _r2_digest(base)}
+                self._write_local_validation_pre_ack_binding(session_id, binding, stop)
+            terminal = {"schema_version": "byq-runtime-terminal-evidence.v1",
+                "session_id": session_id, "boot_id": self.boot_id,
+                "root_run_id": request["root_run_id"], "sequence": evidence["sequence"],
+                "outcome": evidence["outcome"], "receipt": evidence["receipt"]}
+
+        if stop["state"] != "stopped":
+            self._close_acp_after_terminal_ack(record, request["root_run_id"], evidence["receipt"],
+                                               local_validation_pre_ack=stop)
+        with record.lock:
+            if (record.current_generation is None or record.current_generation.process_root_id != request["root_run_id"]
+                    or not record.process_closed or not record.current_generation.process_exit_confirmed
+                    or record.current_generation.process_closing):
+                raise SessionConflict("local validation native process exit is unconfirmed")
+            try:
+                cleanup, cleanup_sha = self._compatibility.verify_local_validation_cleanup(scope)
+            except (OSError, ValueError, RuntimeError) as exc:
+                raise SessionConflict("local validation signed cleanup is unavailable after stop") from exc
+            if cleanup.get("cleanup") != "proven":
+                raise SessionConflict("local validation signed cleanup does not prove runner exit")
+            from packages.contracts.acp_product_slot import PRODUCT_CLEANUP_RECEIPT_DIRECTORY, PRODUCT_CLEANUP_RECEIPT_MAX_BYTES
+            raw_path = Path(self._compatibility.product_slots.assert_workspace(
+                scope["workspace_id"]).socket_path).parent / PRODUCT_CLEANUP_RECEIPT_DIRECTORY / (
+                product_scope_digest(scope) + ".json")
+            try:
+                fd = os.open(raw_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                try:
+                    info = os.fstat(fd)
+                    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > PRODUCT_CLEANUP_RECEIPT_MAX_BYTES:
+                        raise OSError("unsafe cleanup receipt")
+                    raw_cleanup = bytearray()
+                    while len(raw_cleanup) <= PRODUCT_CLEANUP_RECEIPT_MAX_BYTES:
+                        block = os.read(fd, min(4096, PRODUCT_CLEANUP_RECEIPT_MAX_BYTES + 1 - len(raw_cleanup)))
+                        if not block:
+                            break
+                        raw_cleanup.extend(block)
+                finally:
+                    os.close(fd)
+            except OSError as exc:
+                raise SessionConflict("local validation raw signed cleanup bytes are unavailable") from exc
+            if (len(raw_cleanup) > PRODUCT_CLEANUP_RECEIPT_MAX_BYTES
+                    or not hmac.compare_digest(hashlib.sha256(raw_cleanup).hexdigest(), cleanup_sha)):
+                raise SessionConflict("local validation raw cleanup bytes changed after verification")
+            record.cleanup_unconfirmed = False
+            stopped_base = dict(stop)
+            stopped_base.update(state="stopped", cleanup_receipt_sha256=cleanup_sha)
+            stopped_base.pop("stop_sha256")
+            stopped = stopped_base | {"stop_sha256": _r2_digest(stopped_base)}
+            self._write_local_validation_pre_ack_binding(session_id,
+                self._read_acp_binding(session_id), stopped, expected_previous=stop)
+            projection = self._local_validation_terminal_projection(record, terminal)
+            return {"schema_version": "byq-local-validation-pre-ack-stop-result.v1",
+                "root_run_id": request["root_run_id"],
+                "cleanup_receipt_raw_b64": base64.b64encode(raw_cleanup).decode("ascii"),
+                "cleanup_receipt_sha256": cleanup_sha,
+                "runtime_binding_sha256": projection["binding_sha256"]}
+
+    def _write_local_validation_pre_ack_binding(
+        self, session_id: str, previous: dict[str, Any], stop: dict[str, Any],
+        *, expected_previous: dict[str, Any] | None = None,
+    ) -> None:
+        checked = _local_validate_pre_ack_stop(stop, allow_stopping=True)
+        path = self._acp_binding_path(session_id, previous["workspace_id"])
+        fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != previous["previous_authority_epoch"]:
+                raise SessionConflict("local validation pre-ACK binding writer lost authority")
+            raw = self._read_locked_acp_binding_payload(path)
+            current = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                 parse_constant=_reject_json_constant)
+            if current.get("schema_version") == "byq-acp-root-binding.v1":
+                current.setdefault("native_session_close_confirmed", False)
+                current.setdefault("process_exit_confirmed", False)
+                current.setdefault("cleanup_unconfirmed", False)
+            if (current != previous or expected_previous is not None
+                    and current.get("local_validation_pre_ack") != expected_previous):
+                raise SessionConflict("local validation pre-ACK binding changed before write")
+            updated = dict(current)
+            updated["schema_version"] = _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+            updated["local_validation_pre_ack"] = checked
+            if checked["state"] == "stopped":
+                updated["cleanup_unconfirmed"] = False
+            payload = json.dumps(updated, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            self._replace_acp_binding_payload(path, payload)
+            if (not hmac.compare_digest(self._read_locked_acp_binding_payload(path), payload)
+                    or self.require_current_backend_authority() != previous["previous_authority_epoch"]):
+                raise SessionConflict("local validation pre-ACK binding write is uncertain")
+            self._read_acp_binding(session_id)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    def _acknowledge_local_validation_handoff(
+        self, session_id: str, raw_request: object,
+    ) -> dict[str, Any]:
+        try:
+            request = _local_validate_handoff_request(raw_request)
+        except (TypeError, ValueError) as exc:
+            raise SessionConflict("local validation handoff ACK is invalid") from exc
+        final, handoff = request["final_receipt"], request["handoff"]
+        scope = final["scope"]
+        epoch = self.require_current_backend_authority()
+        if (not self._acp or not self._acp_product_slots or session_id != scope["session_id"]
+                ):
+            raise SessionConflict("local validation handoff ACK is outside current Runtime authority")
+        identity = {key: scope[key] for key in ("session_id", "trace_id", "owner_principal", "workspace_id")}
+        row = self._read_backend_local_validation_final(identity, final)
+        local = row["local_validation"]
+        if local.get("handoff_receipt") != handoff:
+            raise SessionConflict("Backend has not protected this exact local handoff")
+        prior_confirmation = local.get("confirmation_receipt")
+        if prior_confirmation is not None and prior_confirmation.get("handoff") != handoff:
+            raise SessionConflict("Backend has a conflicting local validation handoff confirmation")
+        binding = self._read_acp_binding(session_id)
+        schema = binding.get("schema_version")
+        observation = None
+        if schema == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA:
+            if binding.get("local_validation_handoff") != handoff:
+                raise SessionConflict("durable Runtime handoff differs from request")
+            intent = _local_validate_handoff_intent(binding.get("local_validation_handoff_intent"))
+            if intent.get("final_receipt") != final:
+                raise SessionConflict("durable Runtime handoff intent differs from final")
+            observation = binding.get("local_validation_handoff_observation")
+            if observation is not None:
+                observation = _local_validate_handoff_observation(observation)
+                if (self.boot_id != handoff["new_authority"]["boot_id"]
+                        or epoch != handoff["new_authority"]["epoch"]):
+                    raise SessionConflict("Runtime handoff observation is outside the successor authority")
+        elif schema == _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA:
+            raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+            raw = self._read_locked_acp_binding_payload(raw_path)
+            if (hashlib.sha256(raw).hexdigest() != handoff["original_binding_sha256"]
+                    or binding.get("root_run_id") != handoff["root_run_id"]
+                    or binding.get("previous_boot_id") != handoff["old_authority"]["boot_id"]
+                    or binding.get("previous_authority_epoch") != handoff["old_authority"]["epoch"]
+                    or binding.get("settlement_receipt") is not None
+                    or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")
+                    or binding.get("local_validation_pre_ack", {}).get("terminal_event_receipt")
+                       != final["terminal_event_receipt"]
+                    or binding.get("local_validation_pre_ack", {}).get("cleanup_receipt_sha256")
+                       != final["cleanup_receipt_sha256"]):
+                raise SessionConflict("original Runtime binding changed before handoff intent")
+            base = {"schema_version": _LOCAL_VALIDATION_HANDOFF_INTENT_SCHEMA,
+                "handoff": handoff, "final_receipt": final, "runtime_boot_id": self.boot_id,
+                "runtime_authority_epoch": epoch,
+                "domain_call_sequence": binding["domain_call_sequence"],
+                "domain_call_drained_sequence": binding["domain_call_drained_sequence"]}
+            intent = _local_validate_handoff_intent(base | {"intent_sha256": _r2_digest(base)})
+            path = self._acp_binding_path(session_id, scope["workspace_id"])
+            lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                current_raw = self._read_locked_acp_binding_payload(path)
+                if (hashlib.sha256(current_raw).hexdigest() != handoff["original_binding_sha256"]
+                        or json.loads(current_raw.decode("utf-8"), object_pairs_hook=_strict_json_object) != binding
+                        or self.require_current_backend_authority() != epoch):
+                    raise SessionConflict("original binding changed before durable handoff intent")
+                updated = dict(binding)
+                updated["schema_version"] = _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA
+                updated["settlement_receipt"] = final["terminal_event_receipt"]
+                updated["local_validation_handoff"] = handoff
+                updated["local_validation_handoff_intent"] = intent
+                payload = json.dumps(updated, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                self._replace_acp_binding_payload(path, payload)
+                binding = self._read_acp_binding(session_id)
+                if (self._read_locked_acp_binding_payload(path) != payload
+                        or binding.get("local_validation_handoff_intent") != intent):
+                    raise SessionConflict("Runtime handoff intent persistence is uncertain")
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+        else:
+            raise SessionConflict("local validation handoff requires the exact pre-ACK binding")
+
+        if observation is not None:
+            if self._compatibility.product_slots.owns(scope):
+                try:
+                    cleanup, cleanup_sha = self._compatibility.verify_local_validation_cleanup(scope)
+                    if cleanup.get("cleanup") != "proven" or cleanup_sha != handoff["cleanup_receipt_sha256"]:
+                        raise SessionConflict("signed local cleanup changed before lease release")
+                    def verify_durable_observation() -> None:
+                        path = self._acp_binding_path(session_id, scope["workspace_id"])
+                        lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                        try:
+                            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                            current_raw = self._read_locked_acp_binding_payload(path)
+                            current = json.loads(current_raw.decode("utf-8"),
+                                object_pairs_hook=_strict_json_object, parse_constant=_reject_json_constant)
+                            if (current.get("schema_version") != _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA
+                                    or current.get("local_validation_handoff") != handoff
+                                    or current.get("local_validation_handoff_intent") != intent
+                                    or current.get("local_validation_handoff_observation") != observation
+                                    or self.require_current_backend_authority() != epoch):
+                                raise SessionConflict("durable handoff observation changed before lease retry")
+                        finally:
+                            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                            os.close(lock_fd)
+                    self._compatibility.product_slots.release_local_validation_ack(
+                        scope, cleanup_receipt_sha256=cleanup_sha,
+                        persist_observation=verify_durable_observation,
+                        operation_id=handoff["operation_id"], request_sha256=handoff["handoff_sha256"])
+                except (OSError, ValueError, RuntimeError) as exc:
+                    raise SessionConflict("exact local handoff lease release is unconfirmed") from exc
+            return {"runtime_handoff_observation": observation}
+
+        if (handoff["new_authority"]["boot_id"] != self.boot_id
+                or handoff["new_authority"]["epoch"] != epoch):
+            raise SessionConflict("handoff release requires the exact successor authority")
+
+        try:
+            cleanup, cleanup_sha = self._compatibility.verify_local_validation_cleanup(scope)
+            if cleanup.get("cleanup") != "proven" or cleanup_sha != handoff["cleanup_receipt_sha256"]:
+                raise SessionConflict("signed local cleanup differs from the protected final")
+            if not self._compatibility.product_slots.owns(scope):
+                raise SessionConflict("new exact confirmation lease or cleanup fields are unavailable")
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise SessionConflict("signed local cleanup or confirmation lease is unavailable") from exc
+        obs_base = {"schema_version": _LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA,
+            "ack_intent": intent, "slot_scope_sha256": product_scope_digest(scope),
+            "cleanup_receipt_sha256": cleanup_sha, "state": "released"}
+        observation = _local_validate_handoff_observation(
+            obs_base | {"observation_sha256": _r2_digest(obs_base)})
+
+        def persist_observation() -> None:
+            path = self._acp_binding_path(session_id, scope["workspace_id"])
+            lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                raw = self._read_locked_acp_binding_payload(path)
+                current = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                     parse_constant=_reject_json_constant)
+                if (current.get("schema_version") != _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA
+                        or current.get("local_validation_handoff") != handoff
+                        or current.get("local_validation_handoff_intent") != intent
+                        or current.get("local_validation_handoff_observation") not in (None, observation)
+                        or self.require_current_backend_authority() != epoch):
+                    raise SessionConflict("local handoff binding changed before release observation")
+                current["local_validation_handoff_observation"] = observation
+                payload = json.dumps(current, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                self._replace_acp_binding_payload(path, payload)
+                if self._read_locked_acp_binding_payload(path) != payload:
+                    raise SessionConflict("local handoff release observation persistence is uncertain")
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+        try:
+            released = self._compatibility.product_slots.release_local_validation_ack(
+                scope, cleanup_receipt_sha256=cleanup_sha, persist_observation=persist_observation,
+                operation_id=handoff["operation_id"], request_sha256=handoff["handoff_sha256"])
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise SessionConflict("local handoff slot release is unconfirmed") from exc
+        if not released:
+            raise SessionConflict("local handoff lease is absent without a durable observation")
+        readback = self._read_acp_binding(session_id)
+        if readback.get("local_validation_handoff_observation") != observation:
+            raise SessionConflict("local handoff release observation is not durable")
+        return {"runtime_handoff_observation": observation}
+
+    def _acknowledge_local_validation(self, session_id: str, raw_request: object) -> dict[str, Any]:
+        try:
+            request = _local_validate_ack_request(raw_request)
+        except (TypeError, ValueError) as exc:
+            raise SessionConflict("local validation ACK request is invalid") from exc
+        final = request["final_receipt"]
+        scope = final["scope"]
+        if (not self._acp or not self._acp_product_slots
+                or session_id != scope["session_id"]
+                or scope["runtime_boot_id"] != self.boot_id):
+            raise SessionConflict("local validation ACK scope is unavailable")
+        try:
+            record = self._get(session_id)
+        except KeyError as exc:
+            raise SessionConflict("local validation ACK requires the live Runtime record") from exc
+        with record.lock:
+            epoch = self.require_current_backend_authority()
+            row = self._read_backend_local_validation_final(record, final)
+            evidence = self._terminal_evidence_for(record, scope["root_run_id"])
+            if (record.boot_id != self.boot_id or record.authority_epoch != epoch
+                    or evidence.get("boot_id") != self.boot_id
+                    or evidence.get("receipt") != final["terminal_event_receipt"]
+                    or record.process_root_id != scope["root_run_id"]
+                    or record.trace_id != scope["trace_id"]
+                    or record.owner_principal != scope["owner_principal"]
+                    or record.workspace_id != scope["workspace_id"]
+                    or record.runtime_generation != scope["generation_id"]
+                    or record.domain_call_sequence != record.domain_call_drained_sequence
+                    or record.active_run is not None
+                    or record.status in SessionStatus.ACTIVE_PROMPT):
+                raise SessionConflict("local validation terminal or Runtime drain changed")
+            binding = self._read_acp_binding(session_id)
+            binding_scope = binding.get("operator_scope")
+            if (binding.get("schema_version") == "byq-acp-root-binding.v1"
+                    or binding.get("schema_version") in {_ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                                                            _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}
+                    and "operator_scope" not in binding):
+                binding_scope = {
+                    "workspace_id": binding["workspace_id"],
+                    "owner_principal": binding["owner_principal"],
+                    "session_id": binding["session_id"], "trace_id": binding["trace_id"],
+                    "root_run_id": binding["root_run_id"],
+                    "runtime_boot_id": binding["previous_boot_id"],
+                    "generation_id": binding["runtime_generation"],
+                    "cwd_leaf": Path(binding["cwd"]).name,
+                }
+            if (binding.get("root_run_id") != scope["root_run_id"]
+                    or binding_scope != scope
+                    or binding.get("runtime_generation") != scope["generation_id"]
+                    or binding.get("previous_boot_id") != self.boot_id
+                    or binding.get("previous_authority_epoch") != epoch
+                    or binding.get("closed") is not False
+                    or binding.get("domain_call_sequence") != record.domain_call_sequence
+                    or binding.get("domain_call_drained_sequence") != record.domain_call_drained_sequence):
+                raise SessionConflict("local validation binding does not match the exact Runtime Root")
+            projection = self._local_validation_terminal_projection(record, evidence)
+            if (projection["binding_sha256"] != final["runtime_binding_sha256"]
+                    or _r2_digest(projection) != final["runtime_projection_sha256"]):
+                raise SessionConflict("local validation terminal projection changed")
+            try:
+                cleanup, cleanup_sha = self._compatibility.verify_local_validation_cleanup(scope)
+            except (OSError, ValueError, RuntimeError) as exc:
+                raise SessionConflict("local validation signed cleanup is unavailable") from exc
+            if cleanup.get("cleanup") != "proven" or cleanup_sha != final["cleanup_receipt_sha256"]:
+                raise SessionConflict("local validation cleanup does not match the Backend final")
+
+            if binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA:
+                intent = binding["local_validation_ack_intent"]
+                if intent["final_receipt"] != final:
+                    raise SessionConflict("local validation ACK retry changed its final receipt")
+                observation = binding.get("local_validation_release_observation")
+                if (intent["runtime_authority_epoch"] != epoch
+                        or intent["runtime_boot_id"] != self.boot_id
+                        or intent["final_live_sequence"] != record.sequence
+                        or intent["domain_call_sequence"] != record.domain_call_sequence
+                        or intent["domain_call_drained_sequence"] != record.domain_call_drained_sequence):
+                    raise SessionConflict("local validation ACK retry changed Runtime facts")
+            else:
+                if (binding["schema_version"] not in {
+                        "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA,
+                        _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}
+                        or binding.get("settlement_receipt") not in (None, final["terminal_event_receipt"])):
+                    raise SessionConflict("local validation pre-ACK binding hash changed")
+                if binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA:
+                    stop = binding.get("local_validation_pre_ack")
+                    try:
+                        stop = _local_validate_pre_ack_stop(stop)
+                    except (TypeError, ValueError) as exc:
+                        raise SessionConflict("local validation stop proof is not durable") from exc
+                    if (stop["root_run_id"] != final["root_run_id"]
+                            or stop["reservation_sha256"] != final["reservation_sha256"]
+                            or stop["terminal_event_receipt"] != final["terminal_event_receipt"]
+                            or stop["cleanup_receipt_sha256"] != final["cleanup_receipt_sha256"]):
+                        raise SessionConflict("local validation stop proof differs from Backend final")
+                intent_base = {
+                    "schema_version": _LOCAL_VALIDATION_ACK_INTENT_SCHEMA,
+                    "final_receipt": final,
+                    "runtime_boot_id": self.boot_id,
+                    "runtime_authority_epoch": epoch,
+                    "final_live_sequence": record.sequence,
+                    "domain_call_sequence": record.domain_call_sequence,
+                    "domain_call_drained_sequence": record.domain_call_drained_sequence,
+                }
+                intent = intent_base | {"intent_sha256": _r2_digest(intent_base)}
+                try:
+                    intent = _local_validate_ack_intent(intent)
+                except (TypeError, ValueError) as exc:
+                    raise SessionConflict("local validation ACK intent is invalid") from exc
+                observation = None
+                self._persist_local_validation_ack_binding(
+                    session_id, scope, binding, intent, None,
+                    expected_raw_sha256=final["runtime_binding_sha256"],
+                )
+
+            obs_base = {
+                "schema_version": _LOCAL_VALIDATION_RELEASE_OBSERVATION_SCHEMA,
+                "ack_intent": intent,
+                "slot_scope_sha256": product_scope_digest(scope),
+                "cleanup_receipt_sha256": cleanup_sha,
+                "state": "released",
+            }
+            expected_observation = obs_base | {"observation_sha256": _r2_digest(obs_base)}
+            try:
+                expected_observation = _local_validate_ack_observation(expected_observation)
+            except (TypeError, ValueError) as exc:
+                raise SessionConflict("local validation release observation is invalid") from exc
+            backend_observation = row["local_validation"].get("runtime_observation")
+            if backend_observation not in (None, expected_observation):
+                raise SessionConflict("Backend local validation observation differs on retry")
+            if observation is not None and observation != expected_observation:
+                raise SessionConflict("local validation durable observation differs on retry")
+            if observation is None and not self._compatibility.product_slots.owns(scope):
+                raise SessionConflict("local validation lease is absent before durable observation")
+            try:
+                released = self._persist_local_validation_ack_binding(
+                    session_id, scope, binding, intent, expected_observation,
+                    release_slot=True, cleanup_receipt_sha256=cleanup_sha,
+                )
+            except (OSError, ValueError, RuntimeError) as exc:
+                raise SessionConflict("local validation slot release is unconfirmed") from exc
+            if not released and observation is None:
+                raise SessionConflict("local validation lease is absent without durable observation")
+            readback = self._read_acp_binding(session_id)
+            if readback.get("local_validation_release_observation") != expected_observation:
+                raise SessionConflict("local validation release observation is not durable")
+            return {"runtime_observation": expected_observation}
+
+    def _persist_local_validation_ack_binding(
+        self, session_id: str, scope: dict[str, str], binding: dict[str, Any],
+        intent: dict[str, Any], observation: dict[str, Any] | None,
+        *, expected_raw_sha256: str | None = None, release_slot: bool = False,
+        cleanup_receipt_sha256: str | None = None,
+    ) -> bool | None:
+        path = self._acp_binding_path(session_id, scope["workspace_id"])
+        lock_path = path.with_suffix(".lock")
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != intent["runtime_authority_epoch"]:
+                raise SessionConflict("local validation ACK writer lost Backend authority")
+            raw = self._read_locked_acp_binding_payload(path)
+            try:
+                current = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                     parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("local validation ACK binding is invalid") from exc
+            if expected_raw_sha256 is not None:
+                if (current != binding
+                        or not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), expected_raw_sha256)
+                        or current.get("schema_version") not in {
+                        "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA,
+                        _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}):
+                    raise SessionConflict("local validation pre-ACK binding changed before intent")
+                updated = dict(current)
+                updated.pop("local_validation_pre_ack", None)
+                updated["schema_version"] = _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA
+                updated["settlement_receipt"] = intent["final_receipt"]["terminal_event_receipt"]
+                updated["local_validation_ack_intent"] = intent
+            else:
+                if (not isinstance(current, dict)
+                        or current.get("schema_version") != _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA
+                        or current.get("local_validation_ack_intent") != intent
+                        or binding.get("local_validation_ack_intent") != intent):
+                    raise SessionConflict("local validation ACK intent changed before observation")
+                existing = current.get("local_validation_release_observation")
+                if existing not in (None, observation):
+                    raise SessionConflict("local validation release observation changed")
+                if existing == observation:
+                    file_fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                    try:
+                        os.fsync(file_fd)
+                    finally:
+                        os.close(file_fd)
+                        dir_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                        try:
+                            os.fsync(dir_fd)
+                        finally:
+                            os.close(dir_fd)
+                    if release_slot:
+                        return self._compatibility.release_local_validation_ack(
+                            scope, cleanup_receipt_sha256=cleanup_receipt_sha256 or "",
+                            persist_observation=lambda: None,
+                        )
+                    return
+                updated = dict(current)
+                updated["local_validation_release_observation"] = observation
+            payload = json.dumps(updated, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            self._replace_acp_binding_payload(path, payload)
+            persisted = self._read_locked_acp_binding_payload(path)
+            checked = self._read_acp_binding(session_id)
+            expected_observation = observation
+            if (not hmac.compare_digest(persisted, payload)
+                    or checked.get("local_validation_ack_intent") != intent
+                    or checked.get("local_validation_release_observation") != expected_observation
+                    or self.require_current_backend_authority() != intent["runtime_authority_epoch"]):
+                raise SessionConflict("local validation durable binding write is uncertain")
+            if release_slot:
+                return self._compatibility.release_local_validation_ack(
+                    scope, cleanup_receipt_sha256=cleanup_receipt_sha256 or "",
+                    persist_observation=lambda: None,
+                )
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _acknowledge_operator_process_fence_handoff(
+        self, session_id: str, raw_request: object,
+    ) -> dict[str, Any]:
+        """Persist a one-operation cleanup handoff observation before exact slot release."""
+        try:
+            request = _r2_validate_handoff_request(raw_request)
+            handoff, close = request["handoff"], request["close_receipt"]
+        except _R2FenceContractError as exc:
+            raise SessionConflict("operator cleanup handoff is invalid") from exc
+        scope = handoff["scope"]
+        epoch = self.require_current_backend_authority()
+        if (scope["session_id"] != session_id or not self._acp_product_slots
+                or handoff["new_authority"] != {"boot_id": self.boot_id, "epoch": epoch}):
+            raise SessionConflict("operator cleanup handoff is not current")
+        try:
+            live = self._get(session_id)
+        except KeyError:
+            live = None
+        if live is not None:
+            raise SessionConflict("cleanup handoff requires the stopped old Runtime process")
+        binding = self._read_acp_binding(session_id)
+        if binding.get("schema_version") == _ACP_ROOT_BINDING_V3_SCHEMA:
+            try:
+                saved_request = _r2_validate_handoff_request(binding.get("operator_handoff"))
+                saved_handoff = saved_request["handoff"]
+                observation = _r2_validate_handoff_observation(
+                    binding.get("operator_handoff_observation"), handoff=saved_handoff)
+            except (_R2FenceContractError, TypeError, ValueError):
+                raise SessionConflict("Runtime handoff retry binding is malformed") from None
+            if (saved_request != request or saved_handoff != handoff
+                    or observation.get("operation_id") != handoff["operation_id"]
+                    or observation.get("handoff_sha256") != handoff["handoff_sha256"]
+                    or observation.get("scope") != scope
+                    or handoff["new_authority"] != {"boot_id": self.boot_id, "epoch": epoch}
+                    or binding.get("final_live_sequence") != 344
+                    or not isinstance(binding.get("settlement_receipt"), dict)
+                    or _r2_digest(binding["settlement_receipt"])
+                       != close["operator_completed_cleanup"]["original_terminal_receipt_sha256"]):
+                raise SessionConflict("Runtime handoff retry differs from its exact durable observation")
+            raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+            lock_path = raw_path.with_suffix(".lock")
+
+            def verify_durable_handoff() -> None:
+                fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+                    if self.require_current_backend_authority() != epoch:
+                        raise SessionConflict("Runtime handoff retry lost current authority")
+                    raw = self._read_locked_acp_binding_payload(raw_path)
+                    current = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                         parse_constant=_reject_json_constant)
+                    checked_request = _r2_validate_handoff_request(current.get("operator_handoff"))
+                    checked_handoff = checked_request["handoff"]
+                    checked_observation = _r2_validate_handoff_observation(
+                        current.get("operator_handoff_observation"), handoff=checked_handoff)
+                    if (current.get("schema_version") != _ACP_ROOT_BINDING_V3_SCHEMA
+                            or checked_request != request or checked_handoff != handoff
+                            or checked_observation != observation
+                            or current.get("final_live_sequence") != 344
+                            or current.get("settlement_receipt") != binding.get("settlement_receipt")):
+                        raise SessionConflict("Runtime handoff durable observation changed")
+                    file_fd = os.open(raw_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                    try:
+                        os.fsync(file_fd)
+                    finally:
+                        os.close(file_fd)
+                    dir_fd = os.open(raw_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                finally:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    os.close(fd)
+
+            released = self._compatibility.product_slots.release_operator_fence(
+                scope, persist_observation=verify_durable_handoff,
+                operation_id=handoff["operation_id"])
+            if not released:
+                verify_durable_handoff()
+            return {"operator_handoff_observation": observation}
+
+        raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
+        lock_path = raw_path.with_suffix(".lock")
+        original_raw = self._read_locked_acp_binding_payload(raw_path)
+        original_sha = hashlib.sha256(original_raw).hexdigest()
+        if (binding.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA
+                or original_sha != handoff["runtime_binding_sha256"]
+                or binding.get("operator_scope") != scope
+                or binding.get("previous_boot_id") != close["authority"]["previous_boot_id"]
+                or binding.get("previous_authority_epoch") != close["authority"]["previous_epoch"]
+                or handoff["old_authority"] != {"boot_id": close["authority"]["current_boot_id"],
+                                                 "epoch": close["authority"]["current_epoch"]}
+                or binding.get("native_session_close_confirmed") is not True
+                or binding.get("process_exit_confirmed") is not False
+                or binding.get("cleanup_unconfirmed") is not False
+                or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")
+                or not isinstance(binding.get("settlement_receipt"), dict)
+                or _r2_digest(binding["settlement_receipt"])
+                    != close["operator_completed_cleanup"]["original_terminal_receipt_sha256"]
+                or not self._compatibility.product_slots):
+            raise SessionConflict("stopped V2 binding differs from the handoff preimage")
+        self._compatibility.product_slots.reserve_operator_fence(
+            scope, operation_id=handoff["operation_id"],
+            request_sha256=handoff["handoff_sha256"], allow_existing_live_lease=False)
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        last_sequence = binding["domain_call_sequence"]
+        drain = {"schema_version": "byq-runtime-domain-call-drain.v1",
+                 "root_run_id": handoff["root_run_id"], "last_domain_sequence": last_sequence,
+                 "drained_sequence": last_sequence}
+        drain["drain_receipt_sha256"] = _r2_digest(drain)
+        release = {"schema_version": "byq-acp-operator-process-fence-slot-release.v1",
+                   "workspace_id": scope["workspace_id"], "root_run_id": scope["root_run_id"],
+                   "scope_sha256": _r2_digest(scope),
+                   "process_fence_receipt_sha256": handoff["process_fence_receipt_sha256"],
+                   "tombstone_sha256": close["runner"]["tombstone_sha256"],
+                   "drained_sequence": last_sequence, "status": "released", "released_at": now}
+        release["release_receipt_sha256"] = _r2_digest(release)
+        observation = {"schema_version": _R2_HANDOFF_OBSERVATION_SCHEMA,
+            "operation_id": handoff["operation_id"], "handoff_sha256": handoff["handoff_sha256"],
+            "root_run_id": handoff["root_run_id"], "scope": scope,
+            "runtime_boot_id": self.boot_id, "runtime_authority_epoch": epoch,
+            "original_binding_sha256": original_sha, "domain_call_drain": drain,
+            "slot_release": release, "observed_at": now}
+        observation["receipt_sha256"] = _r2_digest(observation)
+        try:
+            observation = _r2_validate_handoff_observation(observation, handoff=handoff)
+        except _R2FenceContractError as exc:
+            raise SessionConflict("constructed handoff observation is invalid") from exc
+
+        def persist_observation() -> None:
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                if self.require_current_backend_authority() != epoch:
+                    raise SessionConflict("Runtime handoff lost current authority")
+                current_raw = self._read_locked_acp_binding_payload(raw_path)
+                if not hmac.compare_digest(current_raw, original_raw):
+                    raise SessionConflict("Runtime handoff binding changed before observation")
+                current = json.loads(current_raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                     parse_constant=_reject_json_constant)
+                if not isinstance(current, dict) or current.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA:
+                    raise SessionConflict("Runtime handoff predecessor binding changed")
+                current["schema_version"] = _ACP_ROOT_BINDING_V3_SCHEMA
+                current["final_live_sequence"] = max(current["sequence"], 344)
+                current["operator_handoff"] = request
+                current["operator_handoff_observation"] = observation
+                payload = json.dumps(current, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                self._replace_acp_binding_payload(raw_path, payload)
+                if (not hmac.compare_digest(self._read_locked_acp_binding_payload(raw_path), payload)
+                        or self.require_current_backend_authority() != epoch):
+                    raise SessionConflict("Runtime handoff observation durability is uncertain")
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+
+        released = self._compatibility.product_slots.release_operator_fence(
+            scope, persist_observation=persist_observation, operation_id=handoff["operation_id"])
+        if not released:
+            raise SessionConflict("exact cleanup handoff lease is unavailable")
+        return {"operator_handoff_observation": observation}
 
     def _acknowledge_operator_process_fence(
         self, session_id: str, raw_close_receipt: object,
@@ -2670,7 +3960,9 @@ class RuntimeAdapter:
             # The callback completes positive file and parent durability while
             # the registry lock still protects any exact lease deletion.
             released = self._compatibility.product_slots.release_operator_fence(
-                scope, persist_observation=confirm_existing_observation)
+                scope, persist_observation=confirm_existing_observation,
+                operation_id=(observation["operation_id"]
+                              if observation.get("operator_completed_cleanup") is not None else None))
             if not released:
                 # No lease remained to delete; still prove durability before
                 # confirming this idempotent retry.
@@ -2680,11 +3972,51 @@ class RuntimeAdapter:
                     self._adopt_operator_observation(record, binding, observation)
             return {"operator_observation": observation}
 
-        if binding["schema_version"] != _ACP_ROOT_BINDING_V2_SCHEMA or record is None:
+        failed_fact = close.get("operator_failed_terminal")
+        completed_fact = close.get("operator_completed_cleanup")
+        cleanup_only = completed_fact is not None
+        failed_live_record = record if failed_fact is not None else None
+        if cleanup_only and record is not None:
+            raise SessionConflict("completed cleanup cannot attach to a live Runtime record")
+        if binding["schema_version"] != _ACP_ROOT_BINDING_V2_SCHEMA:
+            raise SessionConflict("operator process-fence requires the qualified Runtime binding")
+        if failed_fact is not None or cleanup_only:
+            if (record is not None and (record.process_root_id != scope["root_run_id"]
+                    or record.active_run is not None)):
+                raise SessionConflict("failed-terminal Runtime record is not idle and exact")
+            record = None
+        elif record is None:
             raise SessionConflict("operator process-fence requires the live qualified Runtime root")
-        with record.lock:
+        with (record.lock if record is not None else nullcontext()):
             current_epoch = self.require_current_backend_authority()
-            self._validate_operator_close_record(record, binding, close, current_epoch)
+            expected_failed_receipt = ({
+                "schema_version": "agent-run-lifecycle-receipt.v1",
+                "root_run_id": scope["root_run_id"], "sequence": failed_fact["sequence"],
+                "event_sha256": failed_fact["event_sha256"],
+            } if failed_fact is not None else None)
+            expected_completed_receipt = binding.get("settlement_receipt") if cleanup_only else None
+            if record is not None:
+                self._validate_operator_close_record(record, binding, close, current_epoch)
+            elif (binding.get("operator_scope") != scope
+                    or (cleanup_only and (not isinstance(expected_completed_receipt, dict)
+                        or _r2_digest(expected_completed_receipt)
+                            != completed_fact.get("original_terminal_receipt_sha256")
+                        or expected_completed_receipt.get("root_run_id") != scope["root_run_id"]))
+                    or (not cleanup_only and binding.get("settlement_receipt") not in (None, expected_failed_receipt))
+                    or (failed_live_record is not None
+                        and failed_live_record.settlement_receipt
+                            != binding.get("settlement_receipt"))
+                    or binding.get("closed") is not False
+                    or binding.get("native_session_close_confirmed") is not cleanup_only
+                    or binding.get("process_exit_confirmed") is not False
+                    or binding.get("cleanup_unconfirmed") is not False
+                    or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")
+                    or binding.get("operator_binding", {}).get("runner_instance_id")
+                       != close["runner"]["old_runner_instance_id"]
+                    or close["authority"]["current_boot_id"] != self.boot_id
+                    or close["authority"]["current_epoch"] != current_epoch
+                    or not self._compatibility.product_slots.owns(scope)):
+                raise SessionConflict("failed-terminal cleanup fence is not exact")
             raw_path = self._acp_binding_path(session_id, scope["workspace_id"])
             lock_path = raw_path.with_suffix(".lock")
             lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
@@ -2701,7 +4033,10 @@ class RuntimeAdapter:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
                 os.close(lock_fd)
 
-            observation = self._build_operator_observation(record, close, original_sha256)
+            observation = (self._build_operator_observation(record, close, original_sha256)
+                if record is not None else
+                self._build_completed_cleanup_observation(binding, close, original_sha256)
+                if cleanup_only else self._build_failed_terminal_observation(binding, close, original_sha256))
 
             def persist_observation() -> None:
                 writer_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
@@ -2730,7 +4065,10 @@ class RuntimeAdapter:
                     # Preserve the original V2 anchor bytes; carry the later
                     # observed cursor separately in the Runtime-only V3 record.
                     current_value["schema_version"] = _ACP_ROOT_BINDING_V3_SCHEMA
-                    current_value["final_live_sequence"] = record.sequence
+                    current_value["final_live_sequence"] = (
+                        record.sequence if record is not None else
+                        max(binding["sequence"], failed_fact["sequence"]) if failed_fact is not None else
+                        max(binding["sequence"], expected_completed_receipt["sequence"]))
                     current_value["operator_observation"] = observation
                     payload = json.dumps(
                         current_value, sort_keys=True, separators=(",", ":"),
@@ -2740,16 +4078,51 @@ class RuntimeAdapter:
                     if (not hmac.compare_digest(persisted, payload)
                             or self.require_current_backend_authority() != current_epoch):
                         raise SessionConflict("operator process-fence durable write is uncertain")
-                    self._adopt_operator_observation(record, current_value, observation)
+                    if record is not None:
+                        self._adopt_operator_observation(record, current_value, observation)
+                    elif failed_live_record is not None:
+                        with failed_live_record.lock:
+                            self._adopt_operator_observation(
+                                failed_live_record, current_value, observation)
                 finally:
                     fcntl.flock(writer_fd, fcntl.LOCK_UN)
                     os.close(writer_fd)
 
             released = self._compatibility.product_slots.release_operator_fence(
-                scope, persist_observation=persist_observation)
+                scope, persist_observation=persist_observation,
+                operation_id=(observation["operation_id"]
+                              if observation.get("operator_completed_cleanup") is not None else None))
             if not released:
                 raise SessionConflict("operator process-fence slot lease is unavailable")
             return {"operator_observation": observation}
+
+    def _operator_live_scope_identity_exact(
+        self, record: RuntimeSession, binding: dict[str, Any], scope: dict[str, str],
+    ) -> bool:
+        """Match a current live record to its qualified V2 scope before lease use."""
+        generation = record.current_generation
+        return (binding.get("schema_version") == _ACP_ROOT_BINDING_V2_SCHEMA
+                and binding.get("operator_scope") == scope
+                and binding.get("operator_binding") == record.qualified_operator_binding
+                and binding.get("previous_boot_id") == scope["runtime_boot_id"]
+                and binding.get("previous_authority_epoch") == record.qualified_authority_epoch
+                and record.boot_id == self.boot_id
+                and record.session_id == scope["session_id"]
+                and record.trace_id == scope["trace_id"]
+                and record.owner_principal == scope["owner_principal"]
+                and record.workspace_id == scope["workspace_id"]
+                and record.process_root_id == scope["root_run_id"]
+                and record.runtime_generation == scope["generation_id"]
+                and record.qualified_runtime_generation == scope["generation_id"]
+                and record.qualified_operator_scope == scope
+                and record.settlement_receipt == binding.get("settlement_receipt")
+                and not record.conversation_ended
+                and not record.release_finalized
+                and generation is not None
+                and generation.process_root_id == scope["root_run_id"]
+                and generation.generation_id == scope["generation_id"]
+                and record.active_run is None
+                and record.status not in SessionStatus.ACTIVE_PROMPT)
 
     def _validate_operator_close_record(
         self, record: RuntimeSession, binding: dict[str, Any],
@@ -2762,19 +4135,8 @@ class RuntimeAdapter:
         # The V2 lifecycle cursor is a before-START anchor and may trail live
         # events. Domain cursors are checkpointed by each evidence ACK, so both
         # domain values must still match the live Runtime record exactly.
-        if (binding.get("schema_version") != _ACP_ROOT_BINDING_V2_SCHEMA
-                or binding.get("operator_scope") != scope
-                or record.qualified_operator_scope != scope
+        if (not self._operator_live_scope_identity_exact(record, binding, scope)
                 or not isinstance(start_binding, dict)
-                or start_binding != record.qualified_operator_binding
-                or record.session_id != scope["session_id"]
-                or record.trace_id != scope["trace_id"]
-                or record.owner_principal != scope["owner_principal"]
-                or record.workspace_id != scope["workspace_id"]
-                or record.process_root_id != scope["root_run_id"]
-                or record.runtime_generation != scope["generation_id"]
-                or record.qualified_runtime_generation != scope["generation_id"]
-                or generation is None
                 or not isinstance(record.recovery_cwd, str)
                 or Path(record.recovery_cwd).name != scope["cwd_leaf"]
                 or record.qualified_authority_epoch != authority["previous_epoch"]
@@ -2791,10 +4153,6 @@ class RuntimeAdapter:
                 or binding.get("settlement_receipt") is not None
                 or record.settlement_receipt is not None
                 or record.conversation_ended or record.release_finalized
-                or record.active_run is not None
-                or record.status in SessionStatus.ACTIVE_PROMPT
-                or generation.process_root_id != scope["root_run_id"]
-                or generation.generation_id != scope["generation_id"]
                 or generation.process_closing
                 or generation.continuation_proxy_closed is not True
                 or start_binding.get("runner_instance_id") != close["runner"]["old_runner_instance_id"]
@@ -2900,18 +4258,121 @@ class RuntimeAdapter:
         except _R2FenceContractError as exc:
             raise SessionConflict("operator process-fence observation is inconsistent") from exc
 
+    def _build_failed_terminal_observation(
+        self, binding: dict[str, Any], close: dict[str, Any], root_binding_sha256: str,
+    ) -> dict[str, Any]:
+        """Build a cleanup-only ACK from frozen V2 and the original Backend failed fact."""
+        scope = close["scope"]
+        fact = close["operator_failed_terminal"]
+        now = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        close_sha256 = _r2_digest(close)
+        drained = binding["domain_call_drained_sequence"]
+        drain = {"schema_version": "byq-runtime-domain-call-drain.v1",
+                 "root_run_id": scope["root_run_id"], "last_domain_sequence": drained,
+                 "drained_sequence": drained}
+        drain["drain_receipt_sha256"] = _r2_digest(drain)
+        runtime_ack = {
+            "schema_version": "byq-runtime-operator-terminal-ack.v1",
+            "root_run_id": scope["root_run_id"], "runtime_boot_id": scope["runtime_boot_id"],
+            "scope_sha256": _r2_digest(scope),
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "operator_failed_terminal_receipt_sha256": fact["receipt_sha256"],
+            "root_binding_sha256": root_binding_sha256,
+            "terminal_ack_sha256": close_sha256, "acknowledged_at": now,
+        }
+        slot_release = {
+            "schema_version": "byq-acp-operator-process-fence-slot-release.v1",
+            "workspace_id": scope["workspace_id"], "root_run_id": scope["root_run_id"],
+            "scope_sha256": _r2_digest(scope),
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "tombstone_sha256": close["runner"]["tombstone_sha256"],
+            "drained_sequence": drained, "status": "released", "released_at": now,
+        }
+        slot_release["release_receipt_sha256"] = _r2_digest(slot_release)
+        observation = {
+            "schema_version": _R2_OPERATOR_OBSERVATION_SCHEMA,
+            "operation_id": close["operation_id"], "close_receipt_sha256": close_sha256,
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "operator_failed_terminal_receipt_sha256": fact["receipt_sha256"],
+            "scope": scope, "authority": close["authority"], "runner": close["runner"],
+            "engineering_evidence_sha256": close["engineering_evidence_sha256"],
+            "runtime_binding_sha256": root_binding_sha256,
+            "runtime_ack": runtime_ack, "domain_call_drain": drain,
+            "slot_release": slot_release, "observed_at": now,
+            "superseded_terminal": None,
+            "operator_failed_terminal": fact,
+        }
+        try:
+            return _r2_validate_operator_observation(observation, close_receipt=close)
+        except _R2FenceContractError as exc:
+            raise SessionConflict("failed-terminal cleanup observation is inconsistent") from exc
+
+    def _build_completed_cleanup_observation(
+        self, binding: dict[str, Any], close: dict[str, Any], root_binding_sha256: str,
+    ) -> dict[str, Any]:
+        fact = close["operator_completed_cleanup"]
+        scope = close["scope"]
+        now = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        close_sha256 = _r2_digest(close)
+        drained = binding["domain_call_drained_sequence"]
+        drain = {"schema_version": "byq-runtime-domain-call-drain.v1",
+                 "root_run_id": scope["root_run_id"], "last_domain_sequence": drained,
+                 "drained_sequence": drained}
+        drain["drain_receipt_sha256"] = _r2_digest(drain)
+        runtime_ack = {
+            "schema_version": "byq-runtime-operator-completed-cleanup-ack.v1",
+            "root_run_id": scope["root_run_id"], "runtime_boot_id": self.boot_id,
+            "scope_sha256": _r2_digest(scope),
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            _R2_COMPLETED_CLEANUP_DIGEST_FIELD: fact["receipt_sha256"],
+            "root_binding_sha256": root_binding_sha256,
+            "terminal_ack_sha256": close_sha256, "acknowledged_at": now,
+        }
+        slot_release = {
+            "schema_version": "byq-acp-operator-process-fence-slot-release.v1",
+            "workspace_id": scope["workspace_id"], "root_run_id": scope["root_run_id"],
+            "scope_sha256": _r2_digest(scope),
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            "tombstone_sha256": close["runner"]["tombstone_sha256"],
+            "drained_sequence": drained, "status": "released", "released_at": now,
+        }
+        slot_release["release_receipt_sha256"] = _r2_digest(slot_release)
+        observation = {
+            "schema_version": _R2_OPERATOR_OBSERVATION_SCHEMA,
+            "operation_id": close["operation_id"], "close_receipt_sha256": close_sha256,
+            "process_fence_receipt_sha256": close["process_fence_receipt_sha256"],
+            _R2_COMPLETED_CLEANUP_DIGEST_FIELD: fact["receipt_sha256"],
+            "operator_completed_cleanup": fact,
+            "scope": scope, "authority": close["authority"], "runner": close["runner"],
+            "engineering_evidence_sha256": close["engineering_evidence_sha256"],
+            "runtime_binding_sha256": root_binding_sha256,
+            "runtime_ack": runtime_ack, "domain_call_drain": drain,
+            "slot_release": slot_release, "observed_at": now, "superseded_terminal": None,
+        }
+        try:
+            return _r2_validate_operator_observation(observation, close_receipt=close)
+        except _R2FenceContractError as exc:
+            raise SessionConflict("completed cleanup observation is inconsistent") from exc
+
     @staticmethod
     def _adopt_operator_observation(
         record: RuntimeSession, binding: dict[str, Any], observation: dict[str, Any],
     ) -> None:
         scope = observation["scope"]
+        failed_fact = observation.get("operator_failed_terminal")
+        expected_failed_receipt = ({
+            "schema_version": "agent-run-lifecycle-receipt.v1",
+            "root_run_id": scope["root_run_id"], "sequence": failed_fact["sequence"],
+            "event_sha256": failed_fact["event_sha256"],
+        } if failed_fact is not None else None)
         if (record.session_id != scope["session_id"]
                 or record.trace_id != scope["trace_id"]
                 or record.workspace_id != scope["workspace_id"]
                 or record.process_root_id != scope["root_run_id"]
                 or binding.get("root_run_id") != scope["root_run_id"]
                 or binding.get("operator_observation") != observation
-                or record.settlement_receipt is not None
+                or binding.get("settlement_receipt") not in (None, expected_failed_receipt)
+                or record.settlement_receipt != binding.get("settlement_receipt")
                 or (record.operator_observation is not None
                     and record.operator_observation != observation)):
             raise SessionConflict("operator process-fence observation belongs to another Runtime root")
@@ -2919,20 +4380,32 @@ class RuntimeAdapter:
         if pending not in (set(), {scope["root_run_id"]}):
             raise SessionConflict("operator process-fence observation has unrelated pending receipts")
         superseded = observation["superseded_terminal"]
+        if (failed_fact is not None and not pending
+                and scope["root_run_id"] in record.terminal_receipts
+                and record.operator_observation is None):
+            raise SessionConflict("failed-terminal receipt was already acknowledged")
         if pending:
             receipt = record.terminal_receipts.get(scope["root_run_id"])
-            if (superseded is None or not isinstance(receipt, dict)
-                    or receipt.get("sequence") != superseded["sequence"]
-                    or receipt.get("event_sha256") != superseded["event_sha256"]
-                    or _r2_digest(receipt) != superseded["receipt_sha256"]):
+            terminal = failed_fact if failed_fact is not None else superseded
+            if (terminal is None or not isinstance(receipt, dict)
+                    or receipt.get("sequence") != terminal["sequence"]
+                    or receipt.get("event_sha256") != terminal["event_sha256"]
+                    or (superseded is not None
+                        and _r2_digest(receipt) != superseded["receipt_sha256"])):
                 raise SessionConflict("operator process-fence receipt conflicts with Runtime pending state")
         record.operator_observation = dict(observation)
         if superseded is not None:
             record.operator_superseded_terminal_receipts[scope["root_run_id"]] = superseded["receipt_sha256"]
             record.pending_terminal_receipts.discard(scope["root_run_id"])
+        elif failed_fact is not None:
+            record.pending_terminal_receipts.discard(scope["root_run_id"])
         record.reuse_native_session_ready = False
         if record.current_generation is not None:
             record.current_generation.state = GenerationState.INTERRUPTED
+            if failed_fact is not None:
+                record.current_generation.harness = None
+                record.current_generation.process_closing = False
+                record.current_generation.continuation_proxy_closed = True
         record.status = SessionStatus.IDLE
 
     def _acp_native_reuse_is_proven(
@@ -2976,6 +4449,7 @@ class RuntimeAdapter:
 
     def _close_acp_after_terminal_ack(
         self, record: RuntimeSession, root_run_id: str, receipt: object,
+        *, local_validation_pre_ack: dict[str, Any] | None = None,
     ) -> None:
         """Close the exact ACP root only after its Backend terminal receipt.
 
@@ -2990,8 +4464,14 @@ class RuntimeAdapter:
                 generation = record.current_generation
                 if generation is None or generation.process_root_id != root_run_id:
                     raise SessionConflict("ACP root binding changed before terminal close")
-                if record.settlement_receipt != receipt:
+                if (local_validation_pre_ack is None and record.settlement_receipt != receipt):
                     raise SessionConflict("ACP terminal settlement receipt changed before close")
+                if local_validation_pre_ack is not None:
+                    binding = self._read_acp_binding(record.session_id)
+                    if (binding.get("schema_version") != _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+                            or binding.get("local_validation_pre_ack") != local_validation_pre_ack
+                            or binding.get("settlement_receipt") is not None):
+                        raise SessionConflict("local validation pre-ACK binding changed before close")
                 if generation.process_closed and not generation.process_closing:
                     if generation.process_exit_confirmed:
                         return
@@ -3061,7 +4541,8 @@ class RuntimeAdapter:
                     # cleared there. Reuse is decided only after that step.
                     record.reuse_native_session_ready = False
                 try:
-                    self._persist_acp_binding(record)
+                    self._persist_acp_binding(record,
+                        local_validation_pre_ack=local_validation_pre_ack)
                 except Exception:
                     # The pre-close exact ACK binding remains durable. Without
                     # durable close proof, keep this boot safe by disabling
@@ -3071,7 +4552,8 @@ class RuntimeAdapter:
                 raise SessionConflict("ACP root process exit could not be confirmed") from None
             return
 
-    def terminal_evidence(self, session_id: str, root_run_id: str, boot_id: str) -> dict:
+    def terminal_evidence(self, session_id: str, root_run_id: str, boot_id: str,
+                          *, local_validation: bool = False) -> dict:
         """Return the exact observed terminal and its stored receipt for Gateway."""
 
         if re.fullmatch(r"[0-9a-f]{32}", boot_id) is None:
@@ -3113,12 +4595,88 @@ class RuntimeAdapter:
                     raise SessionConflict("stored terminal evidence identity mismatch")
                 with self._lock:
                     self._ack_tombstones.move_to_end(matching_key)
-                return {**evidence, "receipt": dict(receipt)}
+                result = {**evidence, "receipt": dict(receipt)}
+                if local_validation:
+                    raise SessionConflict("local validation projection requires a live Runtime session")
+                return result
             raise KeyError(f"terminal evidence unavailable for {session_id}")
         with record.lock:
             if record.boot_id != boot_id:
                 raise SessionConflict("terminal evidence belongs to another Adapter boot")
-            return self._terminal_evidence_for(record, root_run_id)
+            result = self._terminal_evidence_for(record, root_run_id)
+            return self._local_validation_terminal_projection(record, result) if local_validation else result
+
+    def _local_validation_terminal_projection(
+        self, record: RuntimeSession, terminal: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Opt-in closed terminal summary bound to the validated persisted Product scope."""
+        binding = self._read_acp_binding(terminal["session_id"])
+        if (binding.get("schema_version") not in {"byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA,
+                                                     _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                                                     _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}
+                or binding.get("root_run_id") != terminal["root_run_id"]
+                or binding.get("session_id") != terminal["session_id"]
+                or binding.get("previous_boot_id") != terminal["boot_id"]
+                or binding.get("trace_id") != record.trace_id
+                or binding.get("workspace_id") != record.workspace_id
+                or binding.get("owner_principal") != record.owner_principal
+                or record.process_root_id != terminal["root_run_id"]
+                or binding.get("runtime_generation") != record.runtime_generation
+                or binding.get("cwd") != str(Path(record.qualified_cwd or record.recovery_cwd or "").resolve())
+                or binding.get("settlement_receipt") not in (None, terminal["receipt"])):
+            raise SessionConflict("local validation terminal binding differs from exact terminal")
+        path = self._acp_binding_path(terminal["session_id"], binding["workspace_id"])
+        lock_path = path.with_suffix(".lock")
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_SH)
+            raw = self._read_locked_acp_binding_payload(path)
+            try:
+                actual = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                    parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("local validation binding bytes are invalid") from exc
+            validated = self._read_acp_binding(terminal["session_id"])
+            if actual != binding or validated != binding:
+                raise SessionConflict("local validation binding changed during projection")
+            scope = binding.get("operator_scope")
+            if binding["schema_version"] == "byq-acp-root-binding.v1" or (
+                    binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+                    and "operator_scope" not in binding):
+                scope = {"workspace_id": binding["workspace_id"],
+                    "owner_principal": binding["owner_principal"], "session_id": binding["session_id"],
+                    "trace_id": binding["trace_id"], "root_run_id": binding["root_run_id"],
+                    "runtime_boot_id": binding["previous_boot_id"],
+                    "generation_id": binding["runtime_generation"], "cwd_leaf": Path(binding["cwd"]).name}
+            elif (binding["schema_version"] in {_ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                                                  _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}
+                    and "operator_scope" not in binding):
+                if binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA:
+                    scope = binding["local_validation_ack_intent"]["final_receipt"]["scope"]
+            if (not isinstance(scope, dict) or scope.get("root_run_id") != terminal["root_run_id"]
+                    or scope.get("session_id") != terminal["session_id"]
+                    or scope.get("runtime_boot_id") != terminal["boot_id"]
+                    or scope.get("generation_id") != binding.get("runtime_generation")):
+                raise SessionConflict("local validation Product scope is not exact")
+            if (binding["schema_version"] in {_ACP_ROOT_BINDING_V2_SCHEMA,
+                                                _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                                                _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA}
+                    and "operator_scope" in binding
+                    and scope != binding.get("operator_scope")):
+                raise SessionConflict("local validation operator scope differs from its Runtime binding")
+            binding_sha256 = hashlib.sha256(raw).hexdigest()
+            if binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA:
+                final = binding["local_validation_ack_intent"]["final_receipt"]
+                if (terminal["receipt"] != final["terminal_event_receipt"]
+                        or scope != final["scope"]):
+                    raise SessionConflict("local validation ACK final differs from terminal projection")
+                binding_sha256 = final["runtime_binding_sha256"]
+            return {"schema_version": "byq-runtime-local-validation-terminal-evidence.v1",
+                "terminal": dict(terminal), "scope": dict(scope),
+                "binding_sha256": binding_sha256}
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
 
     @staticmethod
     def _terminal_evidence_for(record: RuntimeSession, root_run_id: str) -> dict[str, Any]:
@@ -3260,12 +4818,13 @@ class RuntimeAdapter:
 
     def describe_session(self, record: RuntimeSession) -> dict[str, Any]:
         with record.lock:
-            return {
+            described = {
                 "session_id": record.session_id,
                 "trace_id": record.trace_id,
                 "boot_id": record.boot_id,
                 "status": record.status,
                 "active_prompt": record.active_run is not None,
+                "sequence": record.sequence,
                 "process_ownership": "dedicated",
                 "persistence": "dsh-owned",
                 "owner_context": "configured" if record.owner_principal else "missing",
@@ -3273,6 +4832,25 @@ class RuntimeAdapter:
                 # exposing the ephemeral generation/native process identity.
                 "continuity": record.continuity,
             }
+            if record.recovery_boundary is not None:
+                described["recovery_boundary"] = dict(record.recovery_boundary)
+            return described
+
+    def _require_workspace_acp_cleanup_fence(self, workspace_id: str) -> None:
+        """Read this Workspace's durable qualified bindings before ordinary START."""
+        binding_dir = contained_session_path(
+            self._compatibility.session_storage_root(self._session_root, workspace_id),
+            "byq-acp-bindings")
+        if not binding_dir.exists():
+            return
+        for binding_path in binding_dir.glob("*.json"):
+            previous = self._read_acp_binding(binding_path.stem)
+            if previous.get("workspace_id") != workspace_id:
+                raise SessionConflict("workspace ACP binding scope changed")
+            if (previous.get("schema_version") == _ACP_ROOT_BINDING_V2_SCHEMA
+                    and (previous.get("process_exit_confirmed") is not True
+                         or previous.get("cleanup_unconfirmed") is True)):
+                raise SessionConflict("workspace prior ACP cleanup is unconfirmed")
 
     def _acp_binding_path(self, session_id: str, workspace_id: str | None = None) -> Path:
         validate_identifier(session_id, field="session_id")
@@ -3363,6 +4941,12 @@ class RuntimeAdapter:
             "cleanup_unconfirmed": True if starting_new_root else record.cleanup_unconfirmed,
             "closed": False if starting_new_root else record.conversation_ended,
         }
+        if record.recovery_boundary is not None and not starting_new_root:
+            boundary = record.recovery_boundary
+            value["sequence"] = boundary["binding_sequence"]
+            value["previous_boot_id"] = boundary["previous_boot_id"]
+            value["previous_authority_epoch"] = boundary["previous_authority_epoch"]
+            value["recovery_boundary"] = dict(boundary)
         if qualified:
             value["operator_scope"] = dict(qualified_scope)
             value["operator_binding"] = dict(qualified_binding)
@@ -3373,7 +4957,14 @@ class RuntimeAdapter:
         observation = record.operator_observation
         if not isinstance(observation, dict):
             return False
-        scope = observation.get("scope")
+        if observation.get("schema_version") == _LOCAL_VALIDATION_HANDOFF_OBS_SCHEMA:
+            try:
+                checked = _local_validate_handoff_observation(observation)
+            except (TypeError, ValueError):
+                return False
+            scope = checked["ack_intent"]["handoff"]["scope"]
+        else:
+            scope = observation.get("scope")
         return (
             isinstance(scope, dict)
             and scope.get("session_id") == record.session_id
@@ -3511,6 +5102,7 @@ class RuntimeAdapter:
         expected_previous: tuple[bytes | None, str | None] | None = None,
         root_run_id: str | None = None, runtime_generation: str | None = None,
         cwd: str | None = None, starting_new_root: bool = False,
+        local_validation_pre_ack: dict[str, Any] | None = None,
     ) -> str | None:
         """Store the exact root/native binding; return its persisted payload digest."""
 
@@ -3539,6 +5131,10 @@ class RuntimeAdapter:
             cwd=cwd, include_qualified=not clear_qualified,
             starting_new_root=starting_new_root,
         )
+        if local_validation_pre_ack is not None:
+            value["schema_version"] = _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+            value["local_validation_pre_ack"] = _local_validate_pre_ack_stop(
+                local_validation_pre_ack, allow_stopping=True)
         path = self._acp_binding_path(record.session_id, record.workspace_id)
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -3582,6 +5178,8 @@ class RuntimeAdapter:
             record.qualified_runtime_generation = None
             record.qualified_cwd = None
             record.qualified_authority_epoch = None
+        if starting_new_root:
+            record.recovery_boundary = None
         return hashlib.sha256(payload).hexdigest()
 
     def _assert_qualified_prestart_binding(
@@ -3864,6 +5462,7 @@ class RuntimeAdapter:
     ) -> tuple[bytes | None, str | None]:
         """Freeze the exact safe predecessor before replacing a Runtime fence."""
         path = self._acp_binding_path(record.session_id, record.workspace_id)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
                           | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
@@ -3882,7 +5481,13 @@ class RuntimeAdapter:
                 checked = self._read_acp_binding(record.session_id)
             except (UnicodeError, ValueError, TypeError, RecursionError, KeyError) as exc:
                 raise SessionConflict("ACP predecessor binding is invalid") from exc
-            observation = parsed.get("operator_observation") if isinstance(parsed, dict) else None
+            handoff_v3 = (
+                isinstance(parsed, dict)
+                and parsed.get("schema_version") == _ACP_ROOT_BINDING_V3_SCHEMA
+                and "operator_handoff" in parsed
+            )
+            observation = (checked.get("operator_handoff_observation") if handoff_v3 else
+                           parsed.get("operator_observation") if isinstance(parsed, dict) else None)
             operator_candidate = (
                 isinstance(parsed, dict)
                 and parsed.get("schema_version") == _ACP_ROOT_BINDING_V3_SCHEMA
@@ -4089,15 +5694,39 @@ class RuntimeAdapter:
         schema_version = value.get("schema_version") if isinstance(value, dict) else None
         qualified_fields = base_fields | {"operator_scope", "operator_binding"}
         expected_fields = (
-            qualified_fields | {"operator_observation", "final_live_sequence"}
+            qualified_fields | ({"operator_handoff", "operator_handoff_observation", "final_live_sequence"}
+                if isinstance(value, dict) and "operator_handoff" in value
+                else {"operator_observation", "final_live_sequence"})
             if schema_version == _ACP_ROOT_BINDING_V3_SCHEMA else
+            ((qualified_fields if "operator_scope" in value else base_fields)
+             | {"local_validation_ack_intent", "local_validation_release_observation"})
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA
+            and isinstance(value, dict) and "local_validation_release_observation" in value else
+            ((qualified_fields if "operator_scope" in value else base_fields)
+             | {"local_validation_ack_intent"})
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA else
+            ((qualified_fields if "operator_scope" in value else base_fields)
+             | {"local_validation_pre_ack", "local_validation_handoff", "local_validation_handoff_intent"}
+             | ({"local_validation_handoff_observation"}
+                if isinstance(value, dict) and "local_validation_handoff_observation" in value else set()))
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA else
+            (qualified_fields if "operator_scope" in value else base_fields)
+                | {"local_validation_pre_ack"}
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA
+            and isinstance(value, dict) else
             qualified_fields if schema_version == _ACP_ROOT_BINDING_V2_SCHEMA else base_fields
         )
+        if isinstance(value, dict) and "recovery_boundary" in value:
+            if schema_version not in {"byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA}:
+                raise SessionConflict("ACP recovery boundary is not valid for this binding schema")
+            expected_fields = set(expected_fields) | {"recovery_boundary"}
         if (not isinstance(value, dict)
                 or set(value) != expected_fields
                 or schema_version not in {
                     "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA,
-                    _ACP_ROOT_BINDING_V3_SCHEMA,
+                    _ACP_ROOT_BINDING_V3_SCHEMA, _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                    _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA,
+                    _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA,
                 }
                 or value["session_id"] != session_id
                 or re.fullmatch(r"[0-9a-f]{32}", str(value["root_run_id"])) is None
@@ -4127,7 +5756,98 @@ class RuntimeAdapter:
             # found under a different group's volume is not proof of authority.
             if path != self._acp_binding_path(session_id, value["workspace_id"]):
                 raise SessionConflict("ACP recovery binding is not in its declared resource group")
-        if schema_version in {_ACP_ROOT_BINDING_V2_SCHEMA, _ACP_ROOT_BINDING_V3_SCHEMA}:
+        if schema_version in {_ACP_ROOT_BINDING_V2_SCHEMA, _ACP_ROOT_BINDING_V3_SCHEMA,
+                              _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                              _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA,
+                              _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA}:
+            local_intent = None
+            local_observation = None
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA:
+                try:
+                    local_intent = _local_validate_ack_intent(value["local_validation_ack_intent"])
+                    local_observation = (None if "local_validation_release_observation" not in value else
+                        _local_validate_ack_observation(value["local_validation_release_observation"]))
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise SessionConflict("ACP local validation ACK binding is invalid") from exc
+                local_final = local_intent["final_receipt"]
+                local_scope = value.get("operator_scope")
+                if local_scope is None:
+                    local_scope = {
+                        "workspace_id": value["workspace_id"],
+                        "owner_principal": value["owner_principal"],
+                        "session_id": value["session_id"], "trace_id": value["trace_id"],
+                        "root_run_id": value["root_run_id"],
+                        "runtime_boot_id": value["previous_boot_id"],
+                        "generation_id": value["runtime_generation"],
+                        "cwd_leaf": cwd.name,
+                    }
+                if (local_final["scope"] != local_scope
+                        or local_intent["runtime_boot_id"] != value.get("previous_boot_id")
+                        or local_intent["runtime_authority_epoch"] != value.get("previous_authority_epoch")
+                        or value.get("settlement_receipt") != local_final["terminal_event_receipt"]
+                        or (local_observation is not None
+                            and local_observation["ack_intent"] != local_intent)):
+                    raise SessionConflict("ACP local validation ACK binding identity changed")
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA:
+                try:
+                    pre_ack = _local_validate_pre_ack_stop(value["local_validation_pre_ack"], allow_stopping=True)
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise SessionConflict("ACP local validation pre-ACK binding is invalid") from exc
+                if (pre_ack["root_run_id"] != value["root_run_id"]
+                        or value.get("settlement_receipt") is not None
+                        or pre_ack["state"] == "stopped" and (
+                            value.get("process_exit_confirmed") is not True
+                            or value.get("cleanup_unconfirmed") is not False)):
+                    raise SessionConflict("ACP local validation pre-ACK binding facts changed")
+            if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA:
+                try:
+                    handoff = _local_validate_handoff(value["local_validation_handoff"])
+                    intent = _local_validate_handoff_intent(value["local_validation_handoff_intent"])
+                    observation = (None if "local_validation_handoff_observation" not in value else
+                        _local_validate_handoff_observation(value["local_validation_handoff_observation"]))
+                    pre_ack = _local_validate_pre_ack_stop(value["local_validation_pre_ack"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise SessionConflict("ACP local validation handoff binding is invalid") from exc
+                handoff_scope = handoff["scope"]
+                if (intent["handoff"] != handoff
+                        or intent["runtime_boot_id"] != handoff["new_authority"]["boot_id"]
+                        or intent["runtime_authority_epoch"] != handoff["new_authority"]["epoch"]
+                        or handoff_scope["session_id"] != session_id
+                        or handoff_scope["root_run_id"] != value["root_run_id"]
+                        or handoff_scope["owner_principal"] != value["owner_principal"]
+                        or handoff_scope["workspace_id"] != value["workspace_id"]
+                        or handoff_scope["trace_id"] != value["trace_id"]
+                        or handoff_scope["generation_id"] != value["runtime_generation"]
+                        or intent["final_receipt"]["terminal_event_receipt"] != value["settlement_receipt"]
+                        or pre_ack["root_run_id"] != value["root_run_id"]
+                        or pre_ack["reservation_sha256"] != handoff["reservation_sha256"]
+                        or pre_ack["cleanup_receipt_sha256"] != handoff["cleanup_receipt_sha256"]
+                        or value.get("native_session_close_confirmed") is not True
+                        or value.get("process_exit_confirmed") is not True
+                        or value.get("cleanup_unconfirmed") is not False
+                        or value.get("closed") is not False
+                        or (observation is not None and observation["ack_intent"] != intent)):
+                    raise SessionConflict("ACP local validation handoff identity changed")
+            settlement = value["settlement_receipt"]
+            settlement_limit = (intent["final_receipt"]["terminal_event_receipt"]["sequence"]
+                                if schema_version == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA
+                                else local_intent["final_live_sequence"] if local_intent is not None
+                                else value.get("final_live_sequence", value["sequence"]))
+            if settlement is not None and (
+                    not isinstance(settlement, dict)
+                    or set(settlement) != {"schema_version", "root_run_id", "sequence", "event_sha256"}
+                    or settlement.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                    or settlement.get("root_run_id") != value["root_run_id"]
+                    or type(settlement.get("sequence")) is not int
+                    or not 1 <= settlement["sequence"] <= settlement_limit
+                    or not isinstance(settlement.get("event_sha256"), str)
+                    or _ACP_HEX64.fullmatch(settlement["event_sha256"]) is None):
+                raise SessionConflict("ACP qualified settlement receipt is invalid")
+            if (schema_version in {_ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA,
+                                    _ACP_ROOT_BINDING_LOCAL_VALIDATION_PRE_ACK_SCHEMA,
+                                    _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA}
+                    and "operator_scope" not in value):
+                return value
             try:
                 scope = validate_product_scope(value["operator_scope"])
             except (TypeError, ValueError):
@@ -4158,6 +5878,51 @@ class RuntimeAdapter:
                 raise SessionConflict("ACP qualified recovery binding scope is invalid")
             value["operator_scope"] = scope
             if schema_version == _ACP_ROOT_BINDING_V3_SCHEMA:
+                if "operator_handoff" in value:
+                    try:
+                        handoff_request = _r2_validate_handoff_request(value["operator_handoff"])
+                        handoff = handoff_request["handoff"]
+                        handoff_observation = _r2_validate_handoff_observation(
+                            value["operator_handoff_observation"], handoff=handoff)
+                    except (_R2FenceContractError, KeyError, TypeError, ValueError) as exc:
+                        raise SessionConflict("ACP handoff recovery observation is invalid") from exc
+                    predecessor = dict(value)
+                    predecessor.pop("operator_handoff")
+                    predecessor.pop("operator_handoff_observation")
+                    predecessor.pop("final_live_sequence")
+                    predecessor["schema_version"] = _ACP_ROOT_BINDING_V2_SCHEMA
+                    predecessor_sha = hashlib.sha256(canonical_product_json(predecessor)).hexdigest()
+                    close = handoff_request["close_receipt"]
+                    completed = close.get("operator_completed_cleanup")
+                    if (handoff["scope"] != scope
+                            or handoff["runtime_binding_sha256"] != predecessor_sha
+                            or handoff_observation["original_binding_sha256"] != predecessor_sha
+                            or value["previous_boot_id"] != close["authority"]["previous_boot_id"]
+                            or value["previous_authority_epoch"] != close["authority"]["previous_epoch"]
+                            or handoff["old_authority"] != {
+                                "boot_id": close["authority"]["current_boot_id"],
+                                "epoch": close["authority"]["current_epoch"]}
+                            or handoff["new_authority"] != {
+                                "boot_id": handoff_observation["runtime_boot_id"],
+                                "epoch": handoff_observation["runtime_authority_epoch"]}
+                            or value["final_live_sequence"] != 344
+                            or value["native_session_close_confirmed"] is not True
+                            or value["process_exit_confirmed"] is not False
+                            or value["cleanup_unconfirmed"] is not False
+                            or value["domain_call_sequence"] != value["domain_call_drained_sequence"]
+                            or not isinstance(settlement, dict)
+                            or _r2_digest(settlement) != completed["original_terminal_receipt_sha256"]
+                            or settlement.get("sequence") != 344
+                            or settlement.get("event_sha256")
+                                != "0763e967f42dc958edbf3fb832b1dc5f84b4dfc2455cc4a774debc763fe45e1e"
+                            or handoff_observation["domain_call_drain"]["drained_sequence"]
+                                != value["domain_call_drained_sequence"]
+                            or handoff_observation["slot_release"]["tombstone_sha256"]
+                                != close["runner"]["tombstone_sha256"]):
+                        raise SessionConflict("ACP cleanup handoff no longer matches its exact V2 predecessor")
+                    value["operator_handoff"] = handoff_request
+                    value["operator_handoff_observation"] = handoff_observation
+                    return value
                 try:
                     observation = _r2_validate_operator_observation_record(
                         value["operator_observation"])
@@ -4171,11 +5936,29 @@ class RuntimeAdapter:
                     canonical_product_json(predecessor)).hexdigest()
                 drain = observation["domain_call_drain"]
                 release = observation["slot_release"]
+                failed_fact = observation.get("operator_failed_terminal")
+                completed_fact = observation.get("operator_completed_cleanup")
+                exact_failed_receipt = ({
+                    "schema_version": "agent-run-lifecycle-receipt.v1",
+                    "root_run_id": value["root_run_id"],
+                    "sequence": failed_fact["sequence"],
+                    "event_sha256": failed_fact["event_sha256"],
+                } if failed_fact is not None else None)
+                exact_completed_receipt = (settlement if completed_fact is not None
+                    and isinstance(settlement, dict)
+                    and settlement.get("root_run_id") == value["root_run_id"]
+                    and _r2_digest(settlement) == completed_fact["original_terminal_receipt_sha256"]
+                    else None)
                 if (observation["scope"] != scope
+                        or (settlement not in (None, exact_failed_receipt)
+                            and settlement != exact_completed_receipt)
+                        or (completed_fact is not None and exact_completed_receipt is None)
                         or observation["runtime_binding_sha256"] != predecessor_sha256
                         or observation["runtime_ack"]["root_binding_sha256"] != predecessor_sha256
                         or observation["runtime_ack"]["root_run_id"] != value["root_run_id"]
-                        or observation["runtime_ack"]["runtime_boot_id"] != value["previous_boot_id"]
+                        or observation["runtime_ack"]["runtime_boot_id"] != (
+                            observation["authority"]["current_boot_id"]
+                            if completed_fact is not None else value["previous_boot_id"])
                         or observation["authority"]["previous_boot_id"] != value["previous_boot_id"]
                         or observation["authority"]["previous_epoch"] != value["previous_authority_epoch"]
                         or drain["root_run_id"] != value["root_run_id"]
@@ -4186,22 +5969,190 @@ class RuntimeAdapter:
                         or release["scope_sha256"] != _r2_digest(scope)
                         or release["drained_sequence"] != value["domain_call_drained_sequence"]
                         or release["tombstone_sha256"] != observation["runner"]["tombstone_sha256"]
+                        or ("operator_failed_terminal" in observation
+                            and observation["operator_failed_terminal"]["sequence"]
+                                > value["final_live_sequence"])
                         or (observation["superseded_terminal"] is not None
                             and (observation["superseded_terminal"]["sequence"]
                                  > value["final_live_sequence"]))):
                     raise SessionConflict("ACP operator recovery observation binding changed")
                 value["operator_observation"] = observation
+        if "recovery_boundary" in value:
+            boundary = value["recovery_boundary"]
+            boundary_fields = {
+                "schema_version", "binding_sequence", "previous_boot_id",
+                "previous_authority_epoch", "runtime_boot_id", "runtime_authority_epoch",
+                "next_sequence", "event_json_b64", "event_sha256", "state",
+            }
+            try:
+                event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
+                event = json.loads(event_raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                                   parse_constant=_reject_json_constant)
+                event = validate_workflow_trace_event(event)
+            except (KeyError, TypeError, ValueError, UnicodeError, RecursionError) as exc:
+                raise SessionConflict("ACP recovery boundary event is invalid") from exc
+            receipt = value.get("settlement_receipt")
+            receipt_sha256 = (hashlib.sha256(json.dumps(
+                receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if isinstance(receipt, dict) else None)
+            if (not isinstance(boundary, dict) or set(boundary) != boundary_fields
+                    or boundary.get("schema_version") != _ACP_RECOVERY_BOUNDARY_SCHEMA
+                    or type(boundary.get("binding_sequence")) is not int
+                    or not 0 <= boundary["binding_sequence"] < 2**63 - 1
+                    or boundary["binding_sequence"] != value["sequence"]
+                    or boundary.get("previous_boot_id") != value["previous_boot_id"]
+                    or boundary.get("previous_authority_epoch") != value["previous_authority_epoch"]
+                    or type(boundary.get("previous_authority_epoch")) is not int
+                    or type(boundary.get("runtime_authority_epoch")) is not int
+                    or boundary["runtime_authority_epoch"] < 1
+                    or _ACP_HEX32.fullmatch(str(boundary.get("runtime_boot_id"))) is None
+                    or type(boundary.get("next_sequence")) is not int
+                    or boundary["next_sequence"] != boundary["binding_sequence"] + 1
+                    or boundary.get("state") not in {"pending", "acknowledged"}
+                    or not isinstance(boundary.get("event_json_b64"), str)
+                    or not isinstance(boundary.get("event_sha256"), str)
+                    or _ACP_HEX64.fullmatch(boundary["event_sha256"]) is None
+                    or not hmac.compare_digest(hashlib.sha256(event_raw).hexdigest(),
+                                               boundary["event_sha256"])
+                    or json.dumps(event, sort_keys=True, separators=(",", ":")).encode() != event_raw
+                    or value.get("settlement_receipt") is None
+                    or receipt_sha256 is None
+                    or event["trace_id"] != value["trace_id"]
+                    or event["session_id"] != value["session_id"]
+                    or event["sequence"] != boundary["next_sequence"]
+                    or event["kind"] != "session.reattached"
+                    or event["source"] != "runtime-adapter"
+                    or event["payload"] != {
+                        "schema_version": _ACP_RECOVERY_BOUNDARY_EVENT_SCHEMA,
+                        "root_run_id": value["root_run_id"],
+                        "settlement_receipt_sha256": receipt_sha256,
+                        "prior_sequence": boundary["binding_sequence"],
+                        "runtime_boot_id": boundary["runtime_boot_id"],
+                        "authority_epoch": boundary["runtime_authority_epoch"],
+                    }
+                    or value["native_session_close_confirmed"] is not True
+                    or value["process_exit_confirmed"] is not True
+                    or value["cleanup_unconfirmed"] is not False
+                    or value["closed"] is not False):
+                raise SessionConflict("ACP recovery boundary binding is invalid")
+            value["recovery_boundary"] = boundary
         return value
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:
         binding = self._read_acp_binding(session_id)
         if binding["closed"]:
             raise SessionConflict("BYQ session was ended")
+        if binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA:
+            try:
+                live = self._get(session_id)
+            except KeyError as exc:
+                raise SessionConflict("local validation ACK cannot recover without its live Runtime record") from exc
+            intent = binding["local_validation_ack_intent"]
+            if (binding["previous_boot_id"] != self.boot_id
+                    or live.boot_id != self.boot_id
+                    or live.authority_epoch != intent["runtime_authority_epoch"]
+                    or live.process_root_id != binding["root_run_id"]
+                    or live.sequence != intent["final_live_sequence"]
+                    or live.domain_call_sequence != intent["domain_call_sequence"]
+                    or live.domain_call_drained_sequence != intent["domain_call_drained_sequence"]):
+                raise SessionConflict("local validation ACK recovery facts changed")
+            observation = binding.get("local_validation_release_observation")
+            if observation is None:
+                raise SessionConflict("local validation ACK intent is not durably released")
+            row = self._read_backend_local_validation_final({
+                key: binding[key] for key in ("session_id", "trace_id", "owner_principal", "workspace_id")
+            }, observation["ack_intent"]["final_receipt"])
+            return {
+                "schema_version": "byq-runtime-local-validation-recovery-binding.v1",
+                "state": "local_validation_ack_released",
+                "session_id": binding["session_id"],
+                "trace_id": binding["trace_id"],
+                "owner_principal": binding["owner_principal"],
+                "workspace_id": binding["workspace_id"],
+                "root_run_id": binding["root_run_id"],
+                "previous_boot_id": binding["previous_boot_id"],
+                "previous_authority_epoch": binding["previous_authority_epoch"],
+                "final_receipt": observation["ack_intent"]["final_receipt"],
+                "runtime_observation": observation,
+                "confirmation_receipt": row["local_validation"].get("confirmation_receipt"),
+            }
+        if binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA:
+            observation = binding.get("local_validation_handoff_observation")
+            if observation is None:
+                raise SessionConflict("local validation handoff is not durably released")
+            intent = binding["local_validation_handoff_intent"]
+            handoff = binding["local_validation_handoff"]
+            current_epoch = self.require_current_backend_authority()
+            if ((self.boot_id == handoff["new_authority"]["boot_id"]
+                    and current_epoch != handoff["new_authority"]["epoch"])
+                    or (self.boot_id != handoff["new_authority"]["boot_id"]
+                        and current_epoch <= handoff["new_authority"]["epoch"])):
+                raise SessionConflict("local handoff confirmation does not cover current Runtime authority")
+            row = self._read_backend_local_validation_final({
+                key: binding[key] for key in ("session_id", "trace_id", "owner_principal", "workspace_id")
+            }, intent["final_receipt"])
+            confirmation = row["local_validation"].get("confirmation_receipt")
+            if confirmation is None:
+                raise SessionConflict("Backend has not confirmed the local handoff observation")
+            confirmation = _local_validate_backend_confirmation(confirmation)
+            if (confirmation["handoff"] != handoff
+                    or confirmation["runtime_observation"] != observation
+                    or confirmation["final_receipt_sha256"] != intent["final_receipt"]["receipt_sha256"]):
+                raise SessionConflict("Backend local handoff confirmation differs from Runtime observation")
+            return {
+                "schema_version": "byq-runtime-local-validation-recovery-binding.v1",
+                "state": "local_validation_handoff_confirmed",
+                "session_id": binding["session_id"], "trace_id": binding["trace_id"],
+                "owner_principal": binding["owner_principal"], "workspace_id": binding["workspace_id"],
+                "root_run_id": binding["root_run_id"],
+                "previous_boot_id": handoff["old_authority"]["boot_id"],
+                "previous_authority_epoch": handoff["old_authority"]["epoch"],
+                "sequence": intent["final_receipt"]["terminal_event_receipt"]["sequence"],
+                "final_receipt": intent["final_receipt"], "handoff": handoff,
+                "runtime_observation": observation, "confirmation_receipt": confirmation,
+            }
         if binding["schema_version"] == _ACP_ROOT_BINDING_V3_SCHEMA:
+            if "operator_handoff" in binding:
+                try:
+                    handoff_request = _r2_validate_handoff_request(binding["operator_handoff"])
+                    handoff = handoff_request["handoff"]
+                    observation = _r2_validate_handoff_observation(
+                        binding["operator_handoff_observation"], handoff=handoff)
+                except (_R2FenceContractError, KeyError, TypeError, ValueError) as exc:
+                    raise SessionConflict("ACP cleanup handoff recovery binding is invalid") from exc
+                completed = handoff_request["close_receipt"]["operator_completed_cleanup"]
+                return {
+                    "schema_version": "byq-runtime-recovery-binding.v1",
+                    "state": "operator_cleanup_handoff_confirmed",
+                    "session_id": binding["session_id"],
+                    "trace_id": binding["trace_id"],
+                    "owner_principal": binding["owner_principal"],
+                    "workspace_id": binding["workspace_id"],
+                    "root_run_id": binding["root_run_id"],
+                    "previous_boot_id": binding["previous_boot_id"],
+                    "previous_authority_epoch": binding["previous_authority_epoch"],
+                    "sequence": binding["final_live_sequence"],
+                    "operator_completed_cleanup": {
+                        "operation_id": handoff["operation_id"],
+                        "process_fence_receipt_sha256": handoff["process_fence_receipt_sha256"],
+                        "close_receipt_sha256": handoff["close_receipt_sha256"],
+                        "runtime_ack_sha256": _r2_digest(observation),
+                        "original_terminal_receipt_sha256": handoff["terminal_receipt_sha256"],
+                        "completed_cleanup_receipt_sha256": completed["receipt_sha256"],
+                    },
+                    "settlement_receipt": binding["settlement_receipt"],
+                    "superseded_terminal": None,
+                    "handoff_request": handoff_request,
+                    "runtime_observation": observation,
+                }
             observation = binding["operator_observation"]
+            failed_fact = observation.get("operator_failed_terminal")
+            completed_fact = observation.get("operator_completed_cleanup")
+            state = ("operator_completed_cleanup" if completed_fact is not None else
+                     "operator_failed_terminal" if failed_fact is not None else "operator_interrupted")
             return {
                 "schema_version": "byq-runtime-recovery-binding.v1",
-                "state": "operator_interrupted",
+                "state": state,
                 "session_id": binding["session_id"],
                 "trace_id": binding["trace_id"],
                 "owner_principal": binding["owner_principal"],
@@ -4210,11 +6161,22 @@ class RuntimeAdapter:
                 "previous_boot_id": binding["previous_boot_id"],
                 "previous_authority_epoch": binding["previous_authority_epoch"],
                 "sequence": binding["final_live_sequence"],
-                "operator_interruption": {
+                **({"settlement_receipt": binding["settlement_receipt"]}
+                   if completed_fact is not None else {}),
+                **({"runtime_observation": observation} if completed_fact is not None else {}),
+                ("operator_completed_cleanup" if completed_fact is not None else
+                 "operator_failed_terminal" if failed_fact is not None else "operator_interruption"): {
                     "operation_id": observation["operation_id"],
                     "process_fence_receipt_sha256": observation["process_fence_receipt_sha256"],
                     "close_receipt_sha256": observation["close_receipt_sha256"],
                     "runtime_ack_sha256": _r2_digest(observation["runtime_ack"]),
+                    **({"sequence": failed_fact["sequence"],
+                        "event_sha256": failed_fact["event_sha256"],
+                        "failed_terminal_receipt_sha256": failed_fact["receipt_sha256"]}
+                       if failed_fact is not None else {}),
+                    **({"original_terminal_receipt_sha256": completed_fact["original_terminal_receipt_sha256"],
+                        "completed_cleanup_receipt_sha256": completed_fact["receipt_sha256"]}
+                       if completed_fact is not None else {}),
                 },
                 "superseded_terminal": observation["superseded_terminal"],
             }
@@ -4226,38 +6188,136 @@ class RuntimeAdapter:
             "session_id", "trace_id", "owner_principal", "workspace_id", "root_run_id",
             "previous_boot_id", "previous_authority_epoch", "sequence")}
         settled = binding["settlement_receipt"] is not None
-        return {"schema_version": "byq-runtime-recovery-binding.v1",
-                "state": "settled" if settled else "transfer_required",
-                **public,
-                **({"settlement_receipt": binding["settlement_receipt"]} if settled else {})}
+        result = {"schema_version": "byq-runtime-recovery-binding.v1",
+                  "state": "settled" if settled else "transfer_required",
+                  **public,
+                  **({"settlement_receipt": binding["settlement_receipt"]} if settled else {})}
+        if binding.get("recovery_boundary") is not None:
+            result["recovery_boundary"] = dict(binding["recovery_boundary"])
+        return result
 
     def _recover_operator_interrupted_session(
         self, session_id: str, receipt: dict[str, Any], initial_sequence: int,
+        *, trace_tail: int,
     ) -> dict[str, Any]:
         """Attach the public session without restoring its interrupted ACP child."""
         binding = self._read_acp_binding(session_id)
+        if binding.get("schema_version") == _ACP_ROOT_BINDING_LOCAL_VALIDATION_HANDOFF_SCHEMA:
+            handoff = _local_validate_handoff(binding["local_validation_handoff"])
+            intent = _local_validate_handoff_intent(binding["local_validation_handoff_intent"])
+            observation = _local_validate_handoff_observation(binding["local_validation_handoff_observation"])
+            exact = self.recovery_binding(session_id)
+            epoch = self.require_current_backend_authority()
+            if (receipt != exact or receipt.get("state") != "local_validation_handoff_confirmed"
+                    or handoff["new_authority"]["boot_id"] == handoff["old_authority"]["boot_id"]
+                    or (self.boot_id == handoff["new_authority"]["boot_id"]
+                        and epoch != handoff["new_authority"]["epoch"])
+                    or (self.boot_id != handoff["new_authority"]["boot_id"]
+                        and epoch <= handoff["new_authority"]["epoch"])
+                    or initial_sequence != intent["final_receipt"]["terminal_event_receipt"]["sequence"]
+                    or trace_tail != intent["final_receipt"]["terminal_event_receipt"]["sequence"]):
+                raise SessionConflict("local validation handoff recovery differs from its confirmed terminal")
+            final = intent["final_receipt"]
+            row = self._read_backend_local_validation_final({
+                key: binding[key] for key in ("session_id", "trace_id", "owner_principal", "workspace_id")
+            }, final)
+            confirmation = _local_validate_backend_confirmation(row["local_validation"]["confirmation_receipt"])
+            if (confirmation["handoff"] != handoff or confirmation["runtime_observation"] != observation):
+                raise SessionConflict("local validation handoff is not confirmed by Backend")
+            if (not isinstance(binding.get("operator_binding"), dict)
+                    or binding.get("operator_scope") != handoff["scope"]
+                    or binding.get("runtime_generation") != handoff["scope"]["generation_id"]):
+                raise SessionConflict("local validation predecessor qualification is incomplete")
+            model_resolution = self._resolve_model(owner_principal=binding["owner_principal"],
+                session_id=session_id, trace_id=binding["trace_id"])
+            with self._lock:
+                existing = self._sessions.get(session_id)
+                if existing is not None:
+                    with existing.lock:
+                        if (existing.boot_id != self.boot_id or existing.active_run is not None
+                                or existing.process_root_id != binding["root_run_id"]):
+                            raise SessionConflict("local validation fresh Runtime identity changed")
+                        return {**self.describe_session(existing), "resumed_from_run_id": None}
+                record = RuntimeSession(session_id=session_id, trace_id=binding["trace_id"],
+                    boot_id=self.boot_id, owner_principal=binding["owner_principal"],
+                    workspace_id=binding["workspace_id"], model_resolution=model_resolution,
+                    status=SessionStatus.IDLE, sequence=initial_sequence,
+                    continuity=continuity.REATTACHED, authority_epoch=epoch,
+                    recovery_cwd=binding["cwd"], settlement_receipt=dict(final["terminal_event_receipt"]),
+                    domain_call_sequence=intent["domain_call_sequence"],
+                    domain_call_drained_sequence=intent["domain_call_drained_sequence"],
+                    cleanup_unconfirmed=False, qualified_operator_scope=dict(handoff["scope"]),
+                    qualified_operator_binding=dict(binding["operator_binding"]),
+                    qualified_runtime_generation=binding["runtime_generation"],
+                    qualified_cwd=binding["cwd"], qualified_authority_epoch=handoff["old_authority"]["epoch"],
+                    operator_observation=dict(observation))
+                self._install_generation(record, native_session_id=binding["native_session_id"],
+                    executor_epoch=0, process_root_id=binding["root_run_id"],
+                    generation_id=binding["runtime_generation"])
+                generation = record.current_generation
+                if generation is None:
+                    raise SessionConflict("local validation predecessor generation is unavailable")
+                generation.state = GenerationState.INTERRUPTED
+                generation.harness = None
+                generation.native_session_close_confirmed = True
+                generation.process_exit_confirmed = True
+                generation.process_closed = True
+                generation.process_closing = False
+                generation.continuation_proxy_closed = True
+                record.process_used = True
+                record.reuse_native_session_ready = False
+                self._sessions[session_id] = record
+            return {**self.describe_session(record), "resumed_from_run_id": None}
+        handoff_request = None
+        handoff = None
+        if "operator_handoff" in binding:
+            try:
+                handoff_request = _r2_validate_handoff_request(binding["operator_handoff"])
+                handoff = handoff_request["handoff"]
+                observation = _r2_validate_handoff_observation(
+                    binding["operator_handoff_observation"], handoff=handoff)
+            except (_R2FenceContractError, KeyError, TypeError, ValueError) as exc:
+                raise SessionConflict("operator cleanup handoff binding is malformed") from exc
+        else:
+            observation = binding.get("operator_observation", {})
+        failed_fact = observation.get("operator_failed_terminal")
+        completed_fact = (handoff_request["close_receipt"]["operator_completed_cleanup"]
+                          if handoff is not None else observation.get("operator_completed_cleanup"))
+        cleanup_only = completed_fact is not None or handoff is not None
         if (binding.get("schema_version") != _ACP_ROOT_BINDING_V3_SCHEMA
                 or binding.get("closed") is not False
-                or binding.get("settlement_receipt") is not None
+                or (failed_fact is None and not cleanup_only and binding.get("settlement_receipt") is not None)
+                or (cleanup_only and (not isinstance(binding.get("settlement_receipt"), dict)
+                    or _r2_digest(binding["settlement_receipt"])
+                       != completed_fact["original_terminal_receipt_sha256"]))
+                or (cleanup_only and (binding.get("native_session_close_confirmed") is not True
+                    or binding.get("process_exit_confirmed") is not False
+                    or binding.get("cleanup_unconfirmed") is not False))
                 or binding.get("domain_call_sequence") != binding.get("domain_call_drained_sequence")):
             raise SessionConflict("operator-interrupted ACP binding is not eligible for fresh execution")
         expected = self.recovery_binding(session_id)
         if receipt != expected:
             raise SessionConflict("operator-interrupted recovery receipt does not match the durable binding")
-        if (type(initial_sequence) is not int
-                or initial_sequence < binding["final_live_sequence"]
-                or initial_sequence >= 2**63):
+        if (type(initial_sequence) is not int or type(trace_tail) is not int
+                or initial_sequence != binding["final_live_sequence"]
+                or trace_tail != binding["final_live_sequence"]):
             raise SessionConflict("operator-interrupted recovery sequence is not proven")
         current_epoch = self.require_current_backend_authority()
+        if handoff is None and cleanup_only and (
+                observation.get("authority", {}).get("current_boot_id") != self.boot_id
+                or observation.get("authority", {}).get("current_epoch") != current_epoch):
+            raise SessionConflict("completed cleanup proof belongs to another Runtime authority")
         model_resolution = self._resolve_model(
             owner_principal=binding["owner_principal"],
             session_id=session_id,
             trace_id=binding["trace_id"],
         )
-        if (str(model_resolution.get("provider") or self._provider) != binding["model_provider"]
-                or str(model_resolution.get("model") or self._model) != binding["model_id"]):
+        if (handoff is None and (
+                str(model_resolution.get("provider") or self._provider) != binding["model_provider"]
+                or str(model_resolution.get("model") or self._model) != binding["model_id"])):
             raise SessionConflict("operator-interrupted session model route changed")
-        observation = binding["operator_observation"]
+        observation = (binding["operator_handoff_observation"] if handoff is not None
+                       else binding["operator_observation"])
         with self._lock:
             existing = self._sessions.get(session_id)
             if existing is not None:
@@ -4268,6 +6328,16 @@ class RuntimeAdapter:
                             or existing.active_run is not None):
                         raise SessionConflict("operator-interrupted Runtime session changed")
                     return {**self.describe_session(existing), "resumed_from_run_id": None}
+
+            if handoff is not None:
+                confirmation = self._read_backend_operator_handoff_confirmation(
+                    binding, handoff_request, observation)
+                confirmation_authority = handoff["new_authority"]
+                if (self.boot_id == confirmation_authority["boot_id"]
+                        and current_epoch != confirmation_authority["epoch"]
+                        or self.boot_id != confirmation_authority["boot_id"]
+                        and current_epoch <= confirmation_authority["epoch"]):
+                    raise SessionConflict("cleanup handoff confirmation is not valid for current Runtime authority")
 
             record = RuntimeSession(
                 session_id=session_id,
@@ -4281,7 +6351,8 @@ class RuntimeAdapter:
                 continuity=continuity.REATTACHED,
                 authority_epoch=current_epoch,
                 recovery_cwd=binding["cwd"],
-                settlement_receipt=None,
+                settlement_receipt=(dict(binding["settlement_receipt"])
+                                    if binding["settlement_receipt"] is not None else None),
                 domain_call_sequence=binding["domain_call_sequence"],
                 domain_call_drained_sequence=binding["domain_call_drained_sequence"],
                 cleanup_unconfirmed=binding["cleanup_unconfirmed"],
@@ -4313,7 +6384,7 @@ class RuntimeAdapter:
             generation.continuation_proxy_closed = True
             record.process_used = True
             record.reuse_native_session_ready = False
-            superseded = observation["superseded_terminal"]
+            superseded = observation.get("superseded_terminal")
             if superseded is not None:
                 record.operator_superseded_terminal_receipts[
                     binding["root_run_id"]] = superseded["receipt_sha256"]
@@ -4321,17 +6392,162 @@ class RuntimeAdapter:
         return {**self.describe_session(record), "resumed_from_run_id": None}
 
     def recover_acp_session(self, session_id: str, receipt: object,
-                            initial_sequence: int) -> dict[str, Any]:
+                            initial_sequence: int, *, trace_tail: int | None = None,
+                            boundary_ack_sha256: str | None = None) -> dict[str, Any]:
         """Reattach one exact root after Backend transfer, without prompt replay."""
 
-        if isinstance(receipt, dict) and receipt.get("state") == "operator_interrupted":
+        if trace_tail is None:
+            trace_tail = initial_sequence
+        if (type(trace_tail) is not int or not 0 <= trace_tail < 2**63
+                or type(initial_sequence) is not int or not 0 <= initial_sequence < 2**63
+                or (boundary_ack_sha256 is not None
+                    and (not isinstance(boundary_ack_sha256, str)
+                         or _ACP_HEX64.fullmatch(boundary_ack_sha256) is None))):
+            raise SessionConflict("recovery trace cursor is invalid")
+
+        if isinstance(receipt, dict) and receipt.get("state") in {
+                "operator_interrupted", "operator_failed_terminal", "operator_completed_cleanup",
+                "operator_cleanup_handoff_confirmed", "local_validation_handoff_confirmed"}:
             return self._recover_operator_interrupted_session(
-                session_id, receipt, initial_sequence)
+                session_id, receipt, initial_sequence, trace_tail=trace_tail)
+
+        existing_binding = None
+        if self._acp:
+            try:
+                existing_binding = self._read_acp_binding(session_id)
+            except KeyError:
+                existing_binding = None
+            if (existing_binding is not None
+                    and existing_binding["schema_version"] == _ACP_ROOT_BINDING_LOCAL_VALIDATION_ACK_SCHEMA):
+                raise SessionConflict("local validation ACK recovery requires completed Backend confirmation")
 
         with self._lock:
             existing = self._sessions.get(session_id)
         if existing is not None:
             with existing.lock:
+                if existing.recovery_boundary is not None:
+                    boundary = existing.recovery_boundary
+                    binding = self._read_acp_binding(session_id)
+                    if (receipt != existing.settlement_receipt
+                            or binding.get("recovery_boundary") != boundary
+                            or boundary.get("runtime_boot_id") != self.boot_id
+                            or boundary.get("runtime_authority_epoch") != self.require_current_backend_authority()
+                            or boundary.get("binding_sequence") != binding.get("sequence")
+                            or boundary.get("previous_boot_id") != binding.get("previous_boot_id")
+                            or boundary.get("previous_authority_epoch") != binding.get("previous_authority_epoch")
+                            or trace_tail not in {boundary.get("binding_sequence"), boundary.get("next_sequence")}
+                            or initial_sequence != max(trace_tail, boundary.get("binding_sequence", -1))):
+                        raise SessionConflict("recovery boundary retry does not match its durable binding")
+                    if boundary_ack_sha256 is not None:
+                        if (not hmac.compare_digest(boundary_ack_sha256, boundary["event_sha256"])
+                                or trace_tail != boundary["next_sequence"]):
+                            raise SessionConflict("recovery boundary ACK does not match the durable event")
+                        if boundary["state"] != "acknowledged":
+                            path = self._acp_binding_path(session_id, binding["workspace_id"])
+                            lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                                              | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                            try:
+                                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                                if self.require_current_backend_authority() != boundary["runtime_authority_epoch"]:
+                                    raise SessionConflict("recovery boundary ACK lost Backend authority")
+                                raw = self._read_locked_acp_binding_payload(path)
+                                try:
+                                    current = json.loads(raw.decode("utf-8"),
+                                        object_pairs_hook=_strict_json_object,
+                                        parse_constant=_reject_json_constant)
+                                except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                                    raise SessionConflict("recovery boundary binding changed") from exc
+                                if current != binding or current.get("recovery_boundary") != boundary:
+                                    raise SessionConflict("recovery boundary binding changed")
+                                acknowledged = dict(boundary)
+                                acknowledged["state"] = "acknowledged"
+                                current["recovery_boundary"] = acknowledged
+                                payload = json.dumps(current, sort_keys=True, separators=(",", ":")).encode()
+                                self._replace_acp_binding_payload(path, payload)
+                                persisted = self._read_locked_acp_binding_payload(path)
+                                if (persisted != payload
+                                        or self.require_current_backend_authority()
+                                           != boundary["runtime_authority_epoch"]):
+                                    raise SessionConflict("recovery boundary ACK persistence is uncertain")
+                                existing.recovery_boundary = acknowledged
+                            finally:
+                                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                                os.close(lock_fd)
+                    return {**self.describe_session(existing), "resumed_from_run_id": None}
+                recoverable_failed = (existing.status == SessionStatus.FAILED
+                                      and existing.interrupted_run_id is None)
+                generation = existing.current_generation
+                cold_recovered_record = (
+                    existing.status == SessionStatus.IDLE
+                    and existing.boot_id == self.boot_id
+                    and generation is not None
+                    and generation.state == GenerationState.STARTING
+                    and generation.harness is None
+                    and isinstance(existing_binding, dict)
+                    and existing_binding.get("schema_version") in {
+                        "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA}
+                    and existing_binding.get("previous_boot_id") != self.boot_id
+                )
+                settled_retry = (existing.status == SessionStatus.IDLE
+                                 and not cold_recovered_record
+                                 and isinstance(receipt, dict)
+                                 and receipt == existing.settlement_receipt)
+                if recoverable_failed or settled_retry:
+                    binding = self._read_acp_binding(session_id)
+                    generation = existing.current_generation
+                    current_authority = self.require_current_backend_authority()
+                    exact_root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
+                    settled = existing.settlement_receipt
+                    if (binding["schema_version"] not in {
+                            "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA}
+                            or binding["closed"] is not False
+                            or binding["cleanup_unconfirmed"] is not False
+                            or binding["native_session_close_confirmed"] is not True
+                            or binding["process_exit_confirmed"] is not True
+                            or binding["settlement_receipt"] is None
+                            or binding["settlement_receipt"] != receipt
+                            or settled != receipt
+                            or type(initial_sequence) is not int
+                            or not binding["sequence"] <= initial_sequence < 2**63
+                            or existing.boot_id != self.boot_id
+                            or binding["previous_boot_id"] != self.boot_id
+                            or existing.authority_epoch != current_authority
+                            or binding["previous_authority_epoch"] != current_authority
+                            or binding["session_id"] != existing.session_id
+                            or binding["trace_id"] != existing.trace_id
+                            or binding["owner_principal"] != existing.owner_principal
+                            or binding["workspace_id"] != existing.workspace_id
+                            or binding["root_run_id"] != existing.process_root_id
+                            or binding["root_run_id"] != exact_root
+                            or binding["runtime_generation"] != existing.runtime_generation
+                            or binding["native_session_id"] != existing.runtime_session_id
+                            or (not settled_retry
+                                and existing.sequence != binding["sequence"])
+                            or (settled_retry
+                                and existing.sequence < binding["sequence"])
+                            or settled.get("sequence") != binding["sequence"]
+                            or existing.terminal_receipts.get(binding["root_run_id"]) != receipt
+                            or existing.cleanup_unconfirmed
+                            or existing.active_run is not None
+                            or existing.process_closing
+                            or existing.pending_terminal_receipts
+                            or existing.domain_call_sequence != existing.domain_call_drained_sequence
+                            or binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]
+                            or generation is None
+                            or generation.process_root_id != binding["root_run_id"]
+                            or not generation.process_closed
+                            or generation.process_closing
+                            or not generation.native_session_close_confirmed
+                            or not generation.process_exit_confirmed):
+                        raise SessionConflict("failed ACP session lacks exact settled recovery proof")
+                    if (type(initial_sequence) is not int
+                            or initial_sequence < existing.sequence):
+                        raise SessionConflict("settled recovery sequence would move backwards")
+                    existing.sequence = initial_sequence
+                    existing.status = SessionStatus.IDLE
+                    existing.continuity = continuity.REATTACHED
+                    existing.reuse_native_session_ready = False
+                    return {**self.describe_session(existing), "resumed_from_run_id": None}
                 exact_root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
                 if (existing.boot_id != self.boot_id or exact_root != existing.process_root_id
                         or (receipt != existing.settlement_receipt
@@ -4341,6 +6557,7 @@ class RuntimeAdapter:
                 return {**self.describe_session(existing),
                         "resumed_from_run_id": existing.interrupted_run_id}
         binding = self._read_acp_binding(session_id)
+        boundary = binding.get("recovery_boundary")
         qualified_binding_sha256 = (
             self._capture_acp_binding_digest(session_id, binding)
             if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None)
@@ -4351,6 +6568,15 @@ class RuntimeAdapter:
         if (type(initial_sequence) is not int or initial_sequence < binding["sequence"]
                 or initial_sequence >= 2**63):
             raise SessionConflict("recovery event sequence is not proven")
+        if boundary is not None:
+            if (boundary["runtime_boot_id"] != self.boot_id
+                    or boundary["runtime_authority_epoch"] != self.require_current_backend_authority()
+                    or receipt != binding["settlement_receipt"]
+                    or trace_tail not in {boundary["binding_sequence"], boundary["next_sequence"]}
+                    or initial_sequence != max(trace_tail, boundary["binding_sequence"])):
+                raise SessionConflict("durable recovery boundary belongs to another trace or Runtime boot")
+        elif trace_tail != binding["sequence"] or initial_sequence != binding["sequence"]:
+            raise SessionConflict("recovery trace does not meet its durable binding")
         if binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]:
             raise SessionConflict("undrained domain-call evidence blocks recovery")
         persisted_settled = binding["settlement_receipt"] is not None
@@ -4411,7 +6637,8 @@ class RuntimeAdapter:
             session_id=session_id, trace_id=binding["trace_id"], boot_id=self.boot_id,
             owner_principal=binding["owner_principal"], workspace_id=binding["workspace_id"],
             model_resolution=model_resolution, status=SessionStatus.IDLE,
-            sequence=initial_sequence, continuity=continuity.REATTACHED,
+            sequence=(boundary["binding_sequence"] if boundary is not None else initial_sequence),
+            continuity=continuity.REATTACHED,
             authority_epoch=self.require_current_backend_authority(),
             recovery_cwd=binding["cwd"], settlement_receipt=dict(receipt) if settled else None,
             domain_call_sequence=binding["domain_call_sequence"],
@@ -4427,6 +6654,10 @@ class RuntimeAdapter:
             qualified_authority_epoch=(binding["previous_authority_epoch"]
                 if binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA else None),
         )
+        if settled:
+            record.terminal_receipts[binding["root_run_id"]] = dict(receipt)
+        if boundary is not None:
+            record.recovery_boundary = dict(boundary)
         self._install_generation(
             record, native_session_id=binding["native_session_id"], executor_epoch=0,
             process_root_id=binding["root_run_id"],
@@ -4474,6 +6705,76 @@ class RuntimeAdapter:
                     )
                 else:
                     self._persist_acp_binding(record)
+        if boundary is None and settled:
+            binding = self._read_acp_binding(session_id)
+            if binding["settlement_receipt"] != record.settlement_receipt:
+                raise SessionConflict("settled recovery receipt was not durably persisted")
+            if binding["sequence"] >= 2_147_483_647:
+                raise SessionConflict("settled recovery trace sequence is exhausted")
+            event = make_workflow_trace_event(
+                trace_id=record.trace_id, session_id=record.session_id,
+                sequence=binding["sequence"] + 1, kind="session.reattached",
+                source="runtime-adapter", payload={
+                    "schema_version": _ACP_RECOVERY_BOUNDARY_EVENT_SCHEMA,
+                    "root_run_id": binding["root_run_id"],
+                    "settlement_receipt_sha256": hashlib.sha256(json.dumps(
+                        record.settlement_receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                    "prior_sequence": binding["sequence"],
+                    "runtime_boot_id": self.boot_id,
+                    "authority_epoch": record.authority_epoch,
+                },
+            )
+            event_raw = json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+            boundary = {
+                "schema_version": _ACP_RECOVERY_BOUNDARY_SCHEMA,
+                "binding_sequence": binding["sequence"],
+                "previous_boot_id": binding["previous_boot_id"],
+                "previous_authority_epoch": binding["previous_authority_epoch"],
+                "runtime_boot_id": self.boot_id,
+                "runtime_authority_epoch": record.authority_epoch,
+                "next_sequence": binding["sequence"] + 1,
+                "event_json_b64": base64.b64encode(event_raw).decode("ascii"),
+                "event_sha256": hashlib.sha256(event_raw).hexdigest(),
+                "state": "pending",
+            }
+            path = self._acp_binding_path(session_id, binding["workspace_id"])
+            lock_fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT
+                              | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                binding_raw = self._read_locked_acp_binding_payload(path)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+            try:
+                disk_binding = json.loads(binding_raw.decode("utf-8"),
+                    object_pairs_hook=_strict_json_object, parse_constant=_reject_json_constant)
+            except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+                raise SessionConflict("ACP recovery binding changed before trace boundary") from exc
+            if (disk_binding != binding
+                    or (persisted_settled and binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA
+                        and hashlib.sha256(binding_raw).hexdigest() != qualified_binding_sha256)):
+                raise SessionConflict("ACP recovery binding changed before trace boundary")
+            record.recovery_boundary = boundary
+            candidate = self._acp_binding_value(record)
+            candidate_without_boundary = dict(candidate)
+            candidate_without_boundary.pop("recovery_boundary", None)
+            if candidate_without_boundary != disk_binding:
+                record.recovery_boundary = None
+                raise SessionConflict("recovery boundary would alter the original ACP binding")
+            self._persist_acp_binding(record, expected_previous=(
+                binding_raw, hashlib.sha256(binding_raw).hexdigest()))
+            persisted_boundary = self._read_acp_binding(session_id)
+            if ({key: value for key, value in persisted_boundary.items()
+                 if key != "recovery_boundary"} != disk_binding
+                    or persisted_boundary.get("recovery_boundary") != boundary):
+                raise SessionConflict("recovery boundary changed the original ACP binding")
+            self._publish(record, event)
+        elif boundary is not None:
+            event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
+            event = json.loads(event_raw.decode("utf-8"), object_pairs_hook=_strict_json_object,
+                               parse_constant=_reject_json_constant)
+            self._publish(record, event)
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict("BYQ session already exists in this Adapter boot")
@@ -4983,7 +7284,7 @@ class RuntimeAdapter:
             # by silently omitting this profile.
             if product_execution_profile is None:
                 raise ValueError('ordinary product execution profile is required')
-            profile = validate_product_turn_execution_profile(product_execution_profile)
+            profile = validate_ordinary_product_execution_profile(product_execution_profile)
             # The official web-search plugin has a separate credential
             # reference. Do not enable it from the model provider key, and do
             # not pass it to the distinct F6 continuation path above.
@@ -5010,8 +7311,30 @@ class RuntimeAdapter:
             product_execution_profile=product_execution_profile,
         )
 
+    def _ordinary_product_upstream(self, resolution: dict[str, object]) -> str:
+        provider = str(resolution.get('provider') or self._provider)
+        model = str(resolution.get('model') or self._model)
+        if provider == PRODUCT_TURN_PROVIDER and model == PRODUCT_TURN_MODEL:
+            return PRODUCT_TURN_UPSTREAM_BASE_URL
+        if provider == OFFICIAL_PRODUCT_TURN_PROVIDER and model == OFFICIAL_PRODUCT_TURN_MODEL:
+            if (resolution.get('source') != 'user_binding'
+                    or not isinstance(resolution.get('api_key'), str)
+                    or not resolution.get('api_key')
+                    or not isinstance(resolution.get('profile_id'), str)
+                    or not resolution.get('profile_id')
+                    or type(resolution.get('profile_version')) is not int
+                    or type(resolution.get('credential_version')) is not int
+                    or type(resolution.get('binding_version')) is not int
+                    or not isinstance(resolution.get('credential_id'), str)
+                    or not resolution.get('credential_id')):
+                raise ModelCredentialUnavailable(
+                    'official ordinary model requires a trusted user credential binding')
+            return OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL
+        raise ModelCredentialUnavailable(
+            'ordinary ACP Product model is not qualified (NOT_QUALIFIED)')
+
     def _load_product_execution_profile(
-        self, record: RuntimeSession, root_run_id: str,
+        self, record: RuntimeSession, root_run_id: str, *, runtime_generation: str,
     ) -> dict[str, object]:
         """Load the exact trusted conversation settings for one ordinary root.
 
@@ -5036,7 +7359,7 @@ class RuntimeAdapter:
             "X-BYQ-Actor-Principal": f"byq-product-agent-{record.session_id}",
             "X-BYQ-Trace-ID": record.trace_id,
             "X-BYQ-Session-ID": record.session_id,
-            "X-BYQ-DSH-Run-ID": record.runtime_generation,
+            "X-BYQ-DSH-Run-ID": runtime_generation,
             "X-BYQ-Runtime-Boot-ID": self.boot_id,
             "X-BYQ-Root-Run-ID": root_run_id,
         }
@@ -5082,6 +7405,15 @@ class RuntimeAdapter:
                         and not isinstance(projection.get("updated_at"), str))):
                 raise ValueError("execution options projection does not match")
             options = validate_agent_execution_options(projection.get("options"))
+            upstream = self._ordinary_product_upstream(record.model_resolution)
+            if upstream == OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL:
+                return official_product_turn_execution_profile(
+                    options, revision=projection['revision'],
+                    owner_principal=owner, session_id=record.session_id,
+                    trace_id=record.trace_id, root_run_id=root_run_id,
+                    runtime_boot_id=self.boot_id,
+                    runtime_generation=runtime_generation,
+                )
             return product_turn_execution_profile(options, revision=projection["revision"])
         except RuntimeAuthorityUnavailable:
             raise

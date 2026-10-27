@@ -67,3 +67,39 @@ gate/proxy. It changes only the ordinary Product provider egress; the ordinary t
 ## Gates
 No push/merge/deploy/tag, no default promotion, no Phase advance, no third context compression. Production
 default unchanged until this ADR's implementation and evidence pass the merge/deploy gates.
+
+
+## Accepted amendment — optional official DeepSeek ordinary Product qualification
+
+**Status: Accepted** (2026-10-25; maintainer requested official DeepSeek V4.1
+Flash after OpenCode Go quota exhaustion and confirmed “那继续” after the
+explicit notice that this narrow ADR-0106 amendment required confirmation).
+
+Add one independent, versioned ordinary Product text execution profile for
+DeepSeek official `deepseek-flash`, exactly `https://api.deepseek.com/anthropic`
+and `/v1/messages`, reusing native DSH's existing official Messages provider.
+Bind its distinct profile/composition hash to the exact route/model, trusted
+owner/session/Root and ADR-0111 execution-option revision and normalized options
+hash; the profile/composition hash does not replace the options hash. Absent/null optional
+limits remain unbounded. Preserve the original OpenCode profile and evidence.
+Do not turn this amendment into an arbitrary provider router or default promotion.
+
+Reuse the existing request gate/proxy, native provider overlay and trusted user
+credential resolver. Add only the required ordinary-profile admission and exact
+Messages streaming/usage accounting (`input_tokens`/`output_tokens`) support.
+Keys remain in the encrypted user credential store, never Product `.env`,
+source, traces, artifacts or model-visible context. Business MCP authority,
+identity, cancellation, unknown-result protection, terminal ACK and cleanup
+requirements remain unchanged. Do not change historical F6/Judgment profiles.
+
+Qualify this route separately through the existing offline/independent-review,
+image and isolated browser gates. Begin with one no-tool ordinary turn; then
+reuse the already-designed one local strategy-validation business case for
+response-loss and unknown-reconciliation acceptance. No Job, market download,
+trading, new fixture, collector, client or auxiliary program is required.
+
+Keep A's original OpenCode Root/binding/terminal immutable. Its cleanup evidence
+remains bound to its original route. Use a new public conversation and fresh
+Root for official-route qualification; this does not prove that the old native
+Agent or old model route was restored. Preserve the existing environment/pages.
+This amendment authorizes no production change, merge or default promotion.

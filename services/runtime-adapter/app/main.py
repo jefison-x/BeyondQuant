@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import os
 import queue
 import threading
+import traceback
 from collections.abc import AsyncIterator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -15,7 +17,12 @@ from pydantic import BaseModel, Field
 from packages.contracts.conversation_rehydration import ConversationContextMessage
 from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import credential_rejection
-from packages.contracts.acp_operator_process_fence import FENCE_CLOSE_RECEIPT_SCHEMA
+from packages.contracts.acp_operator_process_fence import PROCESS_FENCE_HANDOFF_REQUEST_SCHEMA
+from packages.contracts.acp_operator_process_fence import (
+    FENCE_CLOSE_RECEIPT_SCHEMA,
+    LOCAL_VALIDATION_ACK_REQUEST_SCHEMA, LOCAL_VALIDATION_HANDOFF_REQUEST_SCHEMA,
+    LOCAL_VALIDATION_PRE_ACK_SCHEMA,
+)
 
 from .runtime import (
     ModelCredentialUnavailable,
@@ -44,6 +51,8 @@ class ResumeSessionRequest(BaseModel):
 class RecoverAcpRequest(BaseModel):
     receipt: dict[str, object]
     initial_sequence: int = Field(ge=0)
+    trace_tail: int = Field(ge=0)
+    boundary_ack_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class PromptRequest(BaseModel):
@@ -166,6 +175,11 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
+        frames = [(os.path.basename(frame.filename), frame.name, frame.lineno)
+                  for frame in traceback.extract_tb(exc.__traceback__)]
+        logging.getLogger("uvicorn.error").warning(
+            "runtime prompt ValueError class=%s frames=%s", type(exc).__name__, frames
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ModelCredentialUnavailable as exc:
         if request.idempotency_key is not None:
@@ -213,7 +227,11 @@ def recovery_binding(session_id: str) -> dict[str, object]:
           dependencies=[Depends(require_chat_admission)])
 def recover_acp_session(session_id: str, request: RecoverAcpRequest) -> dict[str, object]:
     try:
-        return adapter.recover_acp_session(session_id, request.receipt, request.initial_sequence)
+        return adapter.recover_acp_session(
+            session_id, request.receipt, request.initial_sequence,
+            trace_tail=request.trace_tail,
+            boundary_ack_sha256=request.boundary_ack_sha256,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="ACP recovery binding unavailable") from exc
     except (ValueError, SessionConflict, OSError) as exc:
@@ -226,11 +244,16 @@ def recover_acp_session(session_id: str, request: RecoverAcpRequest) -> dict[str
 def acknowledge_terminal(
     session_id: str, payload: dict, authorization: str | None = Header(default=None),
 ) -> dict:
-    if set(payload) != {"receipt"}:
+    reservation = set(payload) == {"reserve_request"}
+    if not reservation and set(payload) != {"receipt"}:
         raise HTTPException(status_code=422, detail="exact terminal receipt required")
-    receipt = payload["receipt"]
-    if (isinstance(receipt, dict)
-            and receipt.get("schema_version") == FENCE_CLOSE_RECEIPT_SCHEMA):
+    receipt = payload.get("receipt")
+    if (reservation or isinstance(receipt, dict)
+            and receipt.get("schema_version") in {
+                FENCE_CLOSE_RECEIPT_SCHEMA, LOCAL_VALIDATION_ACK_REQUEST_SCHEMA,
+                LOCAL_VALIDATION_HANDOFF_REQUEST_SCHEMA,
+                LOCAL_VALIDATION_PRE_ACK_SCHEMA, PROCESS_FENCE_HANDOFF_REQUEST_SCHEMA,
+            }):
         expected_token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
         if not expected_token:
             raise HTTPException(status_code=503, detail="Runtime operator authority is unavailable")
@@ -245,6 +268,8 @@ def acknowledge_terminal(
         if not token_matches:
             raise HTTPException(status_code=401, detail="operator process-fence receipt is unauthorized")
     try:
+        if reservation:
+            return adapter.reserve_operator_process_fence(session_id, payload["reserve_request"])
         return adapter.acknowledge_terminal(session_id, receipt)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="runtime session not found") from exc
@@ -261,9 +286,13 @@ def terminal_evidence(
     session_id: str,
     root_run_id: str = Query(min_length=32, max_length=32),
     boot_id: str = Query(min_length=32, max_length=32),
+    projection: str | None = Query(default=None),
 ) -> dict:
     try:
-        return adapter.terminal_evidence(session_id, root_run_id, boot_id)
+        if projection not in (None, "local-validation-v1"):
+            raise HTTPException(status_code=422, detail="unsupported terminal evidence projection")
+        return adapter.terminal_evidence(session_id, root_run_id, boot_id,
+                                        local_validation=projection == "local-validation-v1")
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="terminal evidence unavailable") from exc
     except SessionConflict as exc:

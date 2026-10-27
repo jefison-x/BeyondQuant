@@ -1104,7 +1104,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     toolArgs, callContext, ...callArgs.slice(2));
                 } else if (auth.kind === "acp-agent" && ACP_DOMAIN_CALL_ACTIONS.has(name)) {
                   const receipt = await observeAcpDomainCall(BACKEND_URL, ingressProof,
-                    auth.claims, name, toolArgs as Record<string, unknown>);
+                    auth.claims, name, toolArgs as Record<string, unknown>, fetch, ingress.mcp_request_id);
                   if (!receipt) {
                     handlerResult = acpBridgeUnavailable("acp_observation_unavailable");
                   } else {
@@ -1389,7 +1389,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_agent_audit",
     {
-      description: "Append a bounded, owner-scoped audit outcome for a BYQ domain action.",
+      description: "Append a bounded, owner-scoped audit outcome for one BYQ domain action. Optional detail is a JSON object of at most 16 KiB; omit credential values and keys whose case/punctuation-normalized names contain token, password, secret, apikey, accesskey, privatekey, credential, or authorization at any depth. The reserved key acp_control and its case/punctuation variants are also forbidden. The sole authorization-key exception is top-level authorization_decision with value allowed, denied, or approval_required. Example detail: {\"summary\":\"ResearchTask read succeeded\"}.",
       inputSchema: {
         run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),

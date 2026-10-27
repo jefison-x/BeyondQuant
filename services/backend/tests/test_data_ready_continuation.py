@@ -1363,7 +1363,7 @@ def test_v3_existing_notification_for_same_job_is_not_upgraded(monkeypatch, tmp_
             reserve_v3(fixture)
         assert continuation_budget(store, task) == before
 
-        next_job, _ = add_ready_event(fixture, key='v3-notification-distinct-job',
+        next_job, _ = add_ready_event(fixture, key='v3-notification-distinct-job',  # gitleaks:allow -- synthetic fixture idempotency key
             content={'synthetic': 'v3-notification-distinct-job'})
         next_event_key = stable_v3_event_key(fixture, next_job)
         same_event_block = store._fetch_one(

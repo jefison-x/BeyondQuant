@@ -45,3 +45,21 @@ acbfa8994137b62bc4d72899fd974a56e42a57f4:services/runtime-adapter/tests/test_dsh
 8882e39cd2eea54f3c651bf2459a3d59d2b34008:services/mcp/tests/acp-auth-test.ts:generic-api-key:12
 53751276fd27d0efec62035273d33dd3c09ffcf4:services/mcp/tests/acp-judgment-subset-test.ts:generic-api-key:25
 8882e39cd2eea54f3c651bf2459a3d59d2b34008:services/mcp/tests/acp-ingress-test.ts:generic-api-key:8
+
+# Exact historical variable expression, not a literal credential. Current source
+# carries a line-local allowance; no other runner finding is suppressed.
+25229f9576950086b5c715d39346e34e39b21bcc:services/acp_product_runner/server.py:generic-api-key:946
+
+# Exact historical synthetic fixture idempotency keys, not authentication keys.
+# Current source carries line-local allowances.
+b02e580a009277b2e3da92f0f9b5628c0e8d2b49:services/backend/tests/test_data_ready_continuation.py:generic-api-key:1016
+0be2f56c68382562c64f8624c8327779dd081390:services/backend/tests/test_credentials.py:generic-api-key:160
+0be2f56c68382562c64f8624c8327779dd081390:services/backend/tests/test_credentials.py:generic-api-key:186
+0be2f56c68382562c64f8624c8327779dd081390:services/backend/tests/test_credentials.py:generic-api-key:197
+
+# Exact historical English scope description and digest readbacks. Current
+# JSON is covered only by exact path plus exact line in .gitleaks.toml.
+dfc41d093c7b5f74c89da75a51c5fb9eb17833ba:docs/evidence/dsh-acp-maintenance-20261013/ROOT-EXECUTION-OPTIONS-STORAGE-PASS.json:generic-api-key:7
+ee6bc94e29b67b44faeeb6e14827843d74e4213f:docs/evidence/dsh-acp-maintenance-20261013/ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP.json:generic-api-key:30
+ee6bc94e29b67b44faeeb6e14827843d74e4213f:docs/evidence/dsh-acp-maintenance-20261013/ROOT-MANUAL-BROWSER-ONE-TURN-PASS.json:generic-api-key:58
+ee6bc94e29b67b44faeeb6e14827843d74e4213f:docs/evidence/dsh-acp-maintenance-20261013/ROOT-MANUAL-BROWSER-ONE-TURN-PASS.json:generic-api-key:59

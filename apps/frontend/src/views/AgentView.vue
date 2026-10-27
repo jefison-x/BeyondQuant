@@ -49,6 +49,7 @@ const approvalContinuationChecks = new Map<string, number>();
 let viewDisposed = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
+let streamEvidenceUnavailableGeneration = -1;
 const terminalSessionId = ref("");
 const softCancelPending = ref(false);
 const softCancelRunId = ref("");
@@ -261,8 +262,10 @@ function reconnectDelay(milliseconds: number, signal: AbortSignal): Promise<void
 }
 
 async function replayMissedEvents(sessionId: string, generation: number): Promise<number> {
+  if (streamEvidenceUnavailableGeneration === generation) return 0;
   const replay = await getAgentSession(sessionId, auth.token);
-  if (generation !== conversationGeneration || sessionId !== agent.activeSessionId) return 0;
+  if (generation !== conversationGeneration || sessionId !== agent.activeSessionId
+      || streamEvidenceUnavailableGeneration === generation) return 0;
   let maximum = 0;
   for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
     maximum = Math.max(maximum, event.sequence);
@@ -289,6 +292,14 @@ async function maintainStream(
       }, String(cursor), controller.signal);
     } catch (exc) {
       if (controller.signal.aborted || generation !== conversationGeneration) return;
+      if (exc instanceof AgentRequestError && exc.status === 409
+          && exc.message === "runtime adapter evidence is unavailable") {
+        streamEvidenceUnavailableGeneration = generation;
+        stopStream();
+        stopReconciliation();
+        ElMessage.warning("当前运行记录尚未核清，历史已保留。");
+        return;
+      }
       if (exc instanceof AgentRequestError && [401, 403, 404, 410].includes(exc.status)) return;
       if (exc instanceof AgentRequestError && terminalSessionCodes.has(exc.code ?? "")) {
         terminalSessionId.value = sessionId;
@@ -316,15 +327,18 @@ function startStream(sessionId: string, afterSequence: number, generation: numbe
 
 function scheduleRunReconciliation(sessionId: string, generation: number) {
   stopReconciliation();
-  if (!localRunStartedAt.value) return;
+  if (!localRunStartedAt.value || streamEvidenceUnavailableGeneration === generation) return;
   reconciliationTimer = setTimeout(async () => {
     reconciliationTimer = null;
-    if (generation !== conversationGeneration || sessionId !== agent.activeSessionId || !localRunStartedAt.value) return;
+    if (generation !== conversationGeneration || sessionId !== agent.activeSessionId || !localRunStartedAt.value
+        || streamEvidenceUnavailableGeneration === generation) return;
     if (Date.now() - lastStreamEventAt >= 10_000) {
       try { await replayMissedEvents(sessionId, generation); }
       catch { /* the live stream remains primary; the next bounded poll retries */ }
     }
-    if (localRunStartedAt.value) scheduleRunReconciliation(sessionId, generation);
+    if (localRunStartedAt.value && streamEvidenceUnavailableGeneration !== generation) {
+      scheduleRunReconciliation(sessionId, generation);
+    }
   }, 5_000);
 }
 

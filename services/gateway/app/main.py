@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
+import hmac
 import logging
 import os
 import asyncio
@@ -51,6 +53,22 @@ from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import CancelModeConflict, TaskContinuationDelivery
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.domain_call_admission import call_evidence_receipt
+from packages.contracts.acp_operator_process_fence import (
+    OperatorProcessFenceContractError, digest as _operator_fence_digest,
+    validate_operator_observation_record,
+    validate_process_fence_handoff, validate_process_fence_handoff_observation,
+    validate_process_fence_handoff_confirmation, validate_process_fence_handoff_request,
+    validate_fence_close_receipt,
+)
+from packages.contracts.acp_operator_process_fence import (
+    OperatorProcessFenceContractError,
+    validate_local_validation_final_receipt,
+    validate_local_validation_handoff,
+    validate_local_validation_handoff_observation,
+    LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA,
+    validate_local_validation_release_observation,
+    validate_local_validation_backend_confirmation,
+)
 
 
 SERVICE = "byq-gateway"
@@ -1161,6 +1179,15 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
         if operator_fence is not None:
             superseded = operator_fence["superseded_terminal"]
             expected_receipt = lifecycle_receipt(event)
+            if operator_fence["outcome"] == "failed":
+                rows = [row for row in _runtime_root_rows(session)
+                        if row["root_run_id"] == event["root_run_id"]]
+                if (len(rows) != 1 or event["outcome"] != "failed"
+                        or rows[0]["status"] != "failed"
+                        or rows[0]["terminal_sequence"] != expected_receipt["sequence"]
+                        or rows[0]["terminal_event_sha256"] != expected_receipt["event_sha256"]):
+                    raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+                return _OPERATOR_SUPERSEDED_LIFECYCLE
             receipt_sha256 = hashlib.sha256(json.dumps(
                 expected_receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             if (event["outcome"] != "failed" or superseded is None
@@ -1227,6 +1254,32 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
                     f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
                     payload=closed, timeout=TRACE_TERMINAL_ACK_TIMEOUT_SECONDS)
             except HTTPException as exc:
+                if exc.status_code == 409:
+                    detail = getattr(exc, "adapter_conflict_detail", None)
+                    reason = ({
+                        "terminal receipt does not match this runtime turn": "receipt_mismatch",
+                        "terminal receipt was superseded by an operator process-fence ACK": "receipt_superseded",
+                        "ACP root binding changed before terminal close": "root_binding_changed",
+                        "ACP terminal settlement receipt changed before close": "settlement_receipt_changed",
+                        "prior ACP process exit is not confirmed": "prior_process_exit_unconfirmed",
+                        "ACP root close is still in progress": "root_close_in_progress",
+                        "ACP root process is unavailable for close": "root_process_unavailable",
+                        "ACP generation changed before prior process exit was confirmed": "generation_changed",
+                        "ACP root process exit could not be confirmed": "root_process_exit_unconfirmed",
+                    }.get(detail, "unknown") if isinstance(detail, str) else "unknown")
+                    try:
+                        logger.warning("terminal_ack_rejected %s", json.dumps({
+                            "schema_version": "byq-gateway-terminal-ack-rejected.v1",
+                            "event": "terminal_ack_rejected",
+                            "root_run_id": event["root_run_id"],
+                            "session_id": context["session_id"],
+                            "boot_id": boot_id,
+                            "status": exc.status_code,
+                            "reason": reason,
+                        }, sort_keys=True, separators=(",", ":")))
+                    except Exception:
+                        # Diagnostics must never alter terminal ACK retry/raise behavior.
+                        pass
                 retryable = exc.status_code in {408, 429} or exc.status_code >= 500
                 if not retryable or attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
                     raise
@@ -2219,6 +2272,35 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
                 error = HTTPException(status_code=status, detail=detail)
                 error.adapter_conflict_detail = rejected_conflict["detail"]
                 raise error from exc
+        elif (status == 422 and path.startswith("/internal/runtime/sessions/")
+              and path.endswith("/prompt")):
+            try:
+                rejected = exc.response.json()
+            except ValueError:
+                rejected = None
+            if isinstance(rejected, dict):
+                rejected_detail = rejected.get("detail")
+                if isinstance(rejected_detail, list):
+                    safe_errors = []
+                    allowed_fields = {
+                        "body", "content", "require_model_key", "idempotency_key",
+                        "conversation_context", "role", "continuation_budget",
+                    }
+                    for item in rejected_detail:
+                        if not isinstance(item, dict) or not isinstance(item.get("loc"), list):
+                            continue
+                        error_type = item.get("type")
+                        if not isinstance(error_type, str) or not re.fullmatch(r"[a-z0-9_]{1,64}", error_type):
+                            continue
+                        location = [
+                            part for part in item["loc"]
+                            if (isinstance(part, str) and part in allowed_fields)
+                            or (type(part) is int and part >= 0)
+                        ]
+                        safe_errors.append({"loc": location, "type": error_type})
+                    logger.warning("runtime prompt 422 validation errors=%s", safe_errors)
+                elif isinstance(rejected_detail, str):
+                    logger.warning("runtime prompt 422 reason=runtime-value-error")
         elif status == 503:
             detail = "product model is unavailable"
             prefix = "/internal/runtime/sessions/"
@@ -2533,27 +2615,112 @@ def _validate_operator_process_fence_projection(
     expected = {
         "schema_version", "operation_id", "outcome", "ack_status", "slot_release_status",
         "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
-        "operator_interruption_receipt_sha256", "proof_receipt_sha256", "ack_receipt_sha256",
+        ("operator_failed_terminal_receipt_sha256" if isinstance(value, dict)
+         and value.get("outcome") == "failed" else
+         "operator_completed_cleanup_receipt_sha256" if isinstance(value, dict)
+         and value.get("outcome") == "completed" else "operator_interruption_receipt_sha256"),
+        "proof_receipt_sha256", "ack_receipt_sha256",
         "superseded_terminal",
     }
+    if isinstance(value, dict) and value.get("outcome") == "completed":
+        expected |= {"original_terminal_receipt_sha256", "scope", "terminal_acp_ingress_sequence",
+                     "terminal_acp_ingress_sha256", "terminal_unknown_claim_count",
+                     "terminal_unknown_claims_sha256"}
+        if "handoff_receipt_sha256" in value:
+            expected |= {"handoff_receipt_sha256", "handoff", "close_receipt",
+                         "runtime_observation", "handoff_confirmation"}
     if (not isinstance(value, dict) or set(value) != expected
             or value.get("schema_version") != "byq-business-root-operator-process-fence.v1"
             or not isinstance(value.get("operation_id"), str)
             or re.fullmatch(r"[0-9a-f]{32}", value["operation_id"]) is None
-            or value.get("outcome") != "interrupted"
+            or value.get("outcome") not in {"interrupted", "failed", "completed"}
             or value.get("ack_status") != "confirmed"
             or value.get("slot_release_status") != "released"
-            or row.get("status") != "interrupted" or row.get("authority_status") != "closed"
-            or row.get("terminal_sequence") is not None
-            or row.get("terminal_event_sha256") is not None):
+            or row.get("status") != value.get("outcome") or row.get("authority_status") != "closed"
+            or (value.get("outcome") == "interrupted" and
+                (row.get("terminal_sequence") is not None or row.get("terminal_event_sha256") is not None))
+            or (value.get("outcome") == "failed" and
+                (type(row.get("terminal_sequence")) is not int
+                 or row["terminal_sequence"] < 1
+                 or not isinstance(row.get("terminal_event_sha256"), str)
+                 or re.fullmatch(r"[0-9a-f]{64}", row["terminal_event_sha256"]) is None))
+            or (value.get("outcome") == "completed" and (
+                type(row.get("terminal_sequence")) is not int or row["terminal_sequence"] < 1
+                or not isinstance(row.get("terminal_event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", row["terminal_event_sha256"]) is None
+                or row.get("terminal_unknown_claim_count") != 0
+                or type(row.get("terminal_acp_ingress_sequence")) is not int
+                or not isinstance(row.get("terminal_acp_ingress_sha256"), str)
+                or not isinstance(row.get("terminal_unknown_claims_sha256"), str)))):
         raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     for field in (
         "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
-        "operator_interruption_receipt_sha256", "proof_receipt_sha256", "ack_receipt_sha256",
+        ("operator_failed_terminal_receipt_sha256" if value.get("outcome") == "failed"
+         else "operator_completed_cleanup_receipt_sha256" if value.get("outcome") == "completed"
+         else "operator_interruption_receipt_sha256"), "proof_receipt_sha256", "ack_receipt_sha256",
     ):
         digest = value.get(field)
         if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
             raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    if value.get("outcome") == "completed":
+        scope = value.get("scope")
+        if (not isinstance(scope, dict)
+                or set(scope) != {"workspace_id", "owner_principal", "session_id", "trace_id",
+                                  "root_run_id", "runtime_boot_id", "generation_id", "cwd_leaf"}
+                or scope.get("root_run_id") != root_run_id
+                or not _valid_runtime_boot_id(scope.get("runtime_boot_id"))
+                or not isinstance(scope.get("generation_id"), str)
+                or not isinstance(scope.get("cwd_leaf"), str)
+                or value.get("terminal_acp_ingress_sequence") != row.get("terminal_acp_ingress_sequence")
+                or value.get("terminal_acp_ingress_sha256") != row.get("terminal_acp_ingress_sha256")
+                or value.get("terminal_unknown_claim_count") != 0
+                or value.get("terminal_unknown_claim_count") != row.get("terminal_unknown_claim_count")
+                or value.get("terminal_unknown_claims_sha256") != row.get("terminal_unknown_claims_sha256")):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        completed_expected = {
+                "schema_version", "operation_id", "outcome", "ack_status", "slot_release_status",
+                "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
+                "operator_completed_cleanup_receipt_sha256", "original_terminal_receipt_sha256", "scope",
+                "terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
+                "terminal_unknown_claim_count", "terminal_unknown_claims_sha256",
+                "proof_receipt_sha256", "ack_receipt_sha256", "superseded_terminal"}
+        if "handoff_receipt_sha256" in value:
+            completed_expected |= {"handoff_receipt_sha256", "handoff", "close_receipt",
+                                   "runtime_observation", "handoff_confirmation"}
+        if (set(value) != completed_expected
+                or not isinstance(value.get("original_terminal_receipt_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", value["original_terminal_receipt_sha256"]) is None
+                or value.get("superseded_terminal") is not None):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        if "handoff_receipt_sha256" in value:
+            try:
+                close = validate_fence_close_receipt(value["close_receipt"])
+                handoff = validate_process_fence_handoff(value["handoff"], close_receipt=close)
+                observation = validate_process_fence_handoff_observation(
+                    value["runtime_observation"], handoff=handoff)
+                confirmation = validate_process_fence_handoff_confirmation(
+                    value["handoff_confirmation"], handoff=handoff)
+            except (OperatorProcessFenceContractError, TypeError, ValueError) as exc:
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable") from exc
+            if (handoff["handoff_sha256"] != value["handoff_receipt_sha256"]
+                    or handoff["operation_id"] != value["operation_id"]
+                    or handoff["proof_receipt_sha256"] != value["proof_receipt_sha256"]
+                    or handoff["process_fence_receipt_sha256"] != value["process_fence_receipt_sha256"]
+                    or handoff["close_receipt_sha256"] != value["close_receipt_sha256"]
+                    or confirmation["runtime_observation"] != observation
+                    or confirmation["receipt_sha256"] != value["ack_receipt_sha256"]
+                    or _operator_fence_digest(observation) != value["runtime_ack_sha256"]
+                    or handoff["scope"] != value["scope"]
+                    or handoff["terminal_receipt_sha256"] != value["original_terminal_receipt_sha256"]
+                    or value["terminal_acp_ingress_sequence"]
+                       != close["operator_completed_cleanup"]["terminal_acp_ingress_sequence"]
+                    or value["terminal_acp_ingress_sha256"]
+                       != close["operator_completed_cleanup"]["terminal_acp_ingress_sha256"]
+                    or value["terminal_unknown_claim_count"]
+                       != close["operator_completed_cleanup"]["terminal_unknown_claim_count"]
+                    or value["terminal_unknown_claims_sha256"]
+                       != close["operator_completed_cleanup"]["terminal_unknown_claims_sha256"]):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     superseded = value.get("superseded_terminal")
     if superseded is not None:
         if (not isinstance(superseded, dict)
@@ -2590,6 +2757,7 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
     acp_keys = {"terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
                 "terminal_unknown_claim_count", "terminal_unknown_claims_sha256"}
     operator_key = "operator_process_fence"
+    local_key = "local_validation"
     for row in roots:
         status = row.get("status") if isinstance(row, dict) else None
         authority_status = row.get("authority_status") if isinstance(row, dict) else None
@@ -2598,11 +2766,17 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
         root_id = row.get("root_run_id") if isinstance(row, dict) else None
         keys = set(row) if isinstance(row, dict) else set()
         has_operator_projection = operator_key in keys
-        projection_keys = keys - {operator_key}
+        has_local_projection = local_key in keys
+        projection_keys = keys - {operator_key, local_key}
         has_acp_snapshot = projection_keys == base_keys | acp_keys
         allowed_key_sets = [base_keys, base_keys | acp_keys]
-        if has_operator_projection:
-            allowed_key_sets.extend(candidate | {operator_key} for candidate in (base_keys, base_keys | acp_keys))
+        for candidate in (base_keys, base_keys | acp_keys):
+            if has_operator_projection:
+                allowed_key_sets.append(candidate | {operator_key})
+            if has_local_projection:
+                allowed_key_sets.append(candidate | {local_key})
+            if has_operator_projection and has_local_projection:
+                allowed_key_sets.append(candidate | {operator_key, local_key})
         if (not isinstance(row, dict)
                 or keys not in allowed_key_sets
                 or not isinstance(root_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_id) is None
@@ -2638,6 +2812,60 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
                 row[operator_key], root_run_id=root_id, row=row)
         else:
             operator_fence = None
+        if has_local_projection:
+            local = row[local_key]
+            try:
+                if (not isinstance(local, dict)
+                        or set(local) != {"final_receipt", "runtime_observation", "confirmation_receipt", "handoff_receipt"}):
+                    raise ValueError("local validation projection shape is invalid")
+                final = validate_local_validation_final_receipt(local["final_receipt"])
+                if local["handoff_receipt"] is not None:
+                    handoff_receipt = validate_local_validation_handoff(
+                        local["handoff_receipt"], final_receipt=final)
+                    if handoff_receipt != local["handoff_receipt"]:
+                        raise ValueError("local validation handoff projection changed")
+                raw_observation = local["runtime_observation"]
+                if raw_observation is None:
+                    observation = None
+                elif (isinstance(raw_observation, dict)
+                        and raw_observation.get("schema_version") == LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA):
+                    observation = validate_local_validation_handoff_observation(raw_observation)
+                else:
+                    observation = validate_local_validation_release_observation(raw_observation)
+                confirmation = (None if local["confirmation_receipt"] is None else
+                    validate_local_validation_backend_confirmation(local["confirmation_receipt"]))
+            except (OperatorProcessFenceContractError, TypeError, ValueError):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable") from None
+            scope = final["scope"]
+            if (operator_fence is not None
+                    or final["root_run_id"] != root_id
+                    or scope["owner_principal"] != session.principal.subject
+                    or scope["workspace_id"] != session.workspace_id
+                    or scope["session_id"] != session.session_id
+                    or scope["trace_id"] != session.trace_id
+                    or row.get("authority_status") != "closed"
+                    or row.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                    or final["terminal_event_receipt"]["sequence"] != terminal_sequence
+                    or final["terminal_event_receipt"]["event_sha256"] != terminal_digest
+                    or (has_acp_snapshot and (
+                        row.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                        or row.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                        or row.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                        or row.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]))
+                    or (observation is None and confirmation is not None)
+                    or (observation is not None
+                        and observation.get("schema_version") == LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA
+                        and (local["handoff_receipt"] is None
+                             or observation["ack_intent"]["handoff"] != local["handoff_receipt"]))
+                    or (observation is not None
+                        and observation["ack_intent"]["final_receipt"] != final)
+                    or (confirmation is not None and (
+                        confirmation["root_run_id"] != root_id
+                        or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                        or (confirmation.get("handoff") is not None
+                            and confirmation.get("handoff") != local["handoff_receipt"])
+                        or confirmation["runtime_observation"] != observation))):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
         if (status == "interrupted" and authority_status == "closed"
                 and terminal_sequence is None and terminal_digest is None
                 and operator_fence is None):
@@ -2669,10 +2897,29 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 "root_run_id", "previous_boot_id", "previous_authority_epoch", "sequence"}
     if state == "settled":
         expected = {*expected, "settlement_receipt"}
-    elif state == "operator_interrupted":
-        expected = {*expected, "operator_interruption", "superseded_terminal"}
-    if (set(body) != expected or body.get("schema_version") != RUNTIME_RECOVERY_BINDING_SCHEMA
-            or state not in ("transfer_required", "settled", "operator_interrupted")
+    elif state == "local_validation_ack_released":
+        expected = (expected - {"sequence"}) | {
+            "final_receipt", "runtime_observation", "confirmation_receipt"}
+    elif state == "local_validation_handoff_confirmed":
+        expected = {*expected, "final_receipt", "handoff", "runtime_observation", "confirmation_receipt"}
+    elif state == "operator_completed_cleanup":
+        expected = {*expected, "operator_completed_cleanup", "settlement_receipt", "runtime_observation",
+                    "superseded_terminal"}
+    elif state == "operator_cleanup_handoff_confirmed":
+        expected = {*expected, "operator_completed_cleanup", "settlement_receipt", "superseded_terminal",
+                    "handoff_request", "runtime_observation"}
+    elif state in {"operator_interrupted", "operator_failed_terminal"}:
+        expected = {*expected, ("operator_failed_terminal" if state == "operator_failed_terminal"
+                                else "operator_interruption"), "superseded_terminal"}
+    if "recovery_boundary" in body:
+        expected.add("recovery_boundary")
+    expected_schema = ("byq-runtime-local-validation-recovery-binding.v1"
+                      if state in {"local_validation_ack_released", "local_validation_handoff_confirmed"}
+                      else RUNTIME_RECOVERY_BINDING_SCHEMA)
+    if (set(body) != expected or body.get("schema_version") != expected_schema
+            or state not in ("transfer_required", "settled", "local_validation_ack_released",
+                             "operator_interrupted", "operator_failed_terminal", "operator_completed_cleanup",
+                             "operator_cleanup_handoff_confirmed", "local_validation_handoff_confirmed")
             or body.get("session_id") != session.session_id or body.get("trace_id") != session.trace_id
             or body.get("owner_principal") != session.principal.subject
             or body.get("workspace_id") != session.workspace_id
@@ -2681,8 +2928,57 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
             or not _valid_runtime_boot_id(body.get("previous_boot_id"))
             or type(body.get("previous_authority_epoch")) is not int
             or body["previous_authority_epoch"] < 1
-            or type(body.get("sequence")) is not int or body["sequence"] < 0):
+            or (state != "local_validation_ack_released"
+                and (type(body.get("sequence")) is not int or body["sequence"] < 0))):
         raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if state == "local_validation_ack_released":
+        try:
+            final = validate_local_validation_final_receipt(body["final_receipt"])
+            observation = validate_local_validation_release_observation(body["runtime_observation"])
+            confirmation = (None if body["confirmation_receipt"] is None else
+                validate_local_validation_backend_confirmation(body["confirmation_receipt"]))
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime local validation recovery binding is invalid") from None
+        scope = final["scope"]
+        if (final["root_run_id"] != body["root_run_id"]
+                or scope["session_id"] != body["session_id"]
+                or scope["trace_id"] != body["trace_id"]
+                or scope["owner_principal"] != body["owner_principal"]
+                or scope["workspace_id"] != body["workspace_id"]
+                or scope["runtime_boot_id"] != body["previous_boot_id"]
+                or observation["ack_intent"]["final_receipt"] != final
+                or observation["ack_intent"]["runtime_boot_id"] != body["previous_boot_id"]
+                or observation["ack_intent"]["runtime_authority_epoch"]
+                   != body["previous_authority_epoch"]
+                or (confirmation is not None and (
+                    confirmation["root_run_id"] != body["root_run_id"]
+                    or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                    or confirmation["runtime_observation"] != observation))):
+            raise HTTPException(status_code=502, detail="runtime local validation recovery binding changed")
+    if state == "local_validation_handoff_confirmed":
+        try:
+            final = validate_local_validation_final_receipt(body["final_receipt"])
+            handoff = validate_local_validation_handoff(body["handoff"], final_receipt=final)
+            observation = validate_local_validation_handoff_observation(body["runtime_observation"])
+            confirmation = validate_local_validation_backend_confirmation(body["confirmation_receipt"])
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime local validation handoff binding is invalid") from None
+        scope = final["scope"]
+        if (final["root_run_id"] != body["root_run_id"]
+                or scope["session_id"] != body["session_id"]
+                or scope["trace_id"] != body["trace_id"]
+                or scope["owner_principal"] != body["owner_principal"]
+                or scope["workspace_id"] != body["workspace_id"]
+                or scope["runtime_boot_id"] != handoff["old_authority"]["boot_id"]
+                or body["previous_boot_id"] != handoff["old_authority"]["boot_id"]
+                or body["previous_authority_epoch"] != handoff["old_authority"]["epoch"]
+                or body["sequence"] != final["terminal_event_receipt"]["sequence"]
+                or observation["ack_intent"]["final_receipt"] != final
+                or observation["ack_intent"]["handoff"] != handoff
+                or confirmation["handoff"] != handoff
+                or confirmation["runtime_observation"] != observation
+                or confirmation["final_receipt_sha256"] != final["receipt_sha256"]):
+            raise HTTPException(status_code=502, detail="runtime local validation handoff binding changed")
     if state == "settled":
         receipt = body.get("settlement_receipt")
         if (not isinstance(receipt, dict)
@@ -2693,11 +2989,63 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 or not isinstance(receipt.get("event_sha256"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"]) is None):
             raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
-    if state == "operator_interrupted":
-        operator_interruption = body.get("operator_interruption")
+    if "recovery_boundary" in body:
+        boundary = body["recovery_boundary"]
+        fields = {"schema_version", "binding_sequence", "previous_boot_id",
+                  "previous_authority_epoch", "runtime_boot_id", "runtime_authority_epoch",
+                  "next_sequence", "event_json_b64", "event_sha256", "state"}
+        try:
+            event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
+            event = json.loads(event_raw.decode("utf-8"))
+        except (KeyError, TypeError, ValueError, UnicodeError):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid") from None
+        receipt = body.get("settlement_receipt")
+        receipt_hash = hashlib.sha256(json.dumps(
+            receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if (state != "settled" or not isinstance(boundary, dict) or set(boundary) != fields
+                or boundary.get("schema_version") != "byq-acp-recovery-boundary.v1"
+                or type(boundary.get("binding_sequence")) is not int
+                or boundary["binding_sequence"] != body.get("sequence")
+                or boundary.get("previous_boot_id") != body.get("previous_boot_id")
+                or boundary.get("previous_authority_epoch") != body.get("previous_authority_epoch")
+                or type(boundary.get("runtime_authority_epoch")) is not int
+                or boundary["runtime_authority_epoch"] < 1
+                or not _valid_runtime_boot_id(boundary.get("runtime_boot_id"))
+                or type(boundary.get("next_sequence")) is not int
+                or boundary["next_sequence"] != boundary["binding_sequence"] + 1
+                or boundary.get("state") not in {"pending", "acknowledged"}
+                or not isinstance(boundary.get("event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", boundary["event_sha256"]) is None
+                or not hmac.compare_digest(hashlib.sha256(event_raw).hexdigest(), boundary["event_sha256"])
+                or json.dumps(event, sort_keys=True, separators=(",", ":")).encode() != event_raw
+                or not isinstance(receipt, dict)
+                or event.get("trace_id") != body.get("trace_id")
+                or event.get("session_id") != body.get("session_id")
+                or event.get("sequence") != boundary["next_sequence"]
+                or event.get("kind") != "session.reattached"
+                or event.get("source") != "runtime-adapter"
+                or event.get("payload") != {
+                    "schema_version": "runtime-recovery-boundary-event.v1",
+                    "root_run_id": body.get("root_run_id"),
+                    "settlement_receipt_sha256": receipt_hash,
+                    "prior_sequence": boundary["binding_sequence"],
+                    "runtime_boot_id": boundary["runtime_boot_id"],
+                    "authority_epoch": boundary["runtime_authority_epoch"],
+                }):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
+    if state in {"operator_interrupted", "operator_failed_terminal", "operator_completed_cleanup",
+                 "operator_cleanup_handoff_confirmed"}:
+        operator_interruption = body.get(
+            "operator_completed_cleanup" if state in {"operator_completed_cleanup", "operator_cleanup_handoff_confirmed"} else
+            "operator_failed_terminal" if state == "operator_failed_terminal" else "operator_interruption")
+        expected_fact_fields = {"operation_id", "process_fence_receipt_sha256",
+                                "close_receipt_sha256", "runtime_ack_sha256"}
+        if state == "operator_failed_terminal":
+            expected_fact_fields |= {"sequence", "event_sha256", "failed_terminal_receipt_sha256"}
+        if state in {"operator_completed_cleanup", "operator_cleanup_handoff_confirmed"}:
+            expected_fact_fields |= {"original_terminal_receipt_sha256", "completed_cleanup_receipt_sha256"}
         if (not isinstance(operator_interruption, dict)
-                or set(operator_interruption) != {"operation_id", "process_fence_receipt_sha256",
-                    "close_receipt_sha256", "runtime_ack_sha256"}
+                or set(operator_interruption) != expected_fact_fields
                 or not isinstance(operator_interruption.get("operation_id"), str)
                 or re.fullmatch(r"[0-9a-f]{32}", operator_interruption["operation_id"]) is None
                 or any(not isinstance(operator_interruption.get(field), str)
@@ -2705,6 +3053,97 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                        for field in ("process_fence_receipt_sha256", "close_receipt_sha256",
                                      "runtime_ack_sha256"))):
             raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if state == "operator_completed_cleanup":
+        fact = body.get("operator_completed_cleanup")
+        receipt = body.get("settlement_receipt")
+        try:
+            observation = validate_operator_observation_record(body.get("runtime_observation"))
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime completed cleanup observation is invalid") from None
+        if (not isinstance(fact, dict)
+                or set(fact) != {"operation_id", "process_fence_receipt_sha256", "close_receipt_sha256",
+                                "runtime_ack_sha256", "original_terminal_receipt_sha256",
+                                "completed_cleanup_receipt_sha256"}
+                or not isinstance(receipt, dict)
+                or set(receipt) != {"schema_version", "root_run_id", "sequence", "event_sha256"}
+                or receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or receipt.get("root_run_id") != body.get("root_run_id")
+                or type(receipt.get("sequence")) is not int or receipt["sequence"] < 1
+                or type(body.get("sequence")) is not int
+                or body["sequence"] < receipt["sequence"]
+                or body["sequence"] >= 2**63
+                or not isinstance(receipt.get("event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"]) is None
+                or hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                   != fact.get("original_terminal_receipt_sha256")
+                or any(not isinstance(fact.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", fact[field]) is None
+                       for field in ("process_fence_receipt_sha256", "close_receipt_sha256",
+                                     "runtime_ack_sha256", "original_terminal_receipt_sha256",
+                                     "completed_cleanup_receipt_sha256"))
+                or not isinstance(fact.get("operation_id"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", fact["operation_id"]) is None
+                or observation.get("operation_id") != fact.get("operation_id")
+                or observation.get("scope", {}).get("session_id") != body["session_id"]
+                or observation.get("scope", {}).get("trace_id") != body["trace_id"]
+                or observation.get("scope", {}).get("owner_principal") != body["owner_principal"]
+                or observation.get("scope", {}).get("workspace_id") != body["workspace_id"]
+                or observation.get("scope", {}).get("root_run_id") != body["root_run_id"]
+                or observation.get("scope", {}).get("runtime_boot_id") != body["previous_boot_id"]
+                or observation.get("operator_completed_cleanup", {}).get("receipt_sha256")
+                    != fact.get("completed_cleanup_receipt_sha256")
+                or observation.get("operator_completed_cleanup", {}).get("original_terminal_receipt_sha256")
+                    != fact.get("original_terminal_receipt_sha256")
+                or observation.get("close_receipt_sha256") != fact.get("close_receipt_sha256")
+                or observation.get("process_fence_receipt_sha256")
+                    != fact.get("process_fence_receipt_sha256")
+                or _operator_fence_digest(observation.get("runtime_ack")) != fact.get("runtime_ack_sha256")
+                or body.get("superseded_terminal") is not None):
+            raise HTTPException(status_code=502, detail="runtime completed cleanup binding is invalid")
+    if state == "operator_cleanup_handoff_confirmed":
+        try:
+            request = validate_process_fence_handoff_request(body["handoff_request"])
+            handoff = request["handoff"]
+            observation = validate_process_fence_handoff_observation(
+                body["runtime_observation"], handoff=handoff)
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime cleanup handoff binding is invalid") from None
+        fact = body["operator_completed_cleanup"]
+        receipt = body["settlement_receipt"]
+        expected_scope = handoff["scope"]
+        if (handoff["operation_id"] != fact.get("operation_id")
+                or handoff["process_fence_receipt_sha256"] != fact.get("process_fence_receipt_sha256")
+                or handoff["close_receipt_sha256"] != fact.get("close_receipt_sha256")
+                or handoff["terminal_receipt_sha256"] != fact.get("original_terminal_receipt_sha256")
+                or request["close_receipt"]["operator_completed_cleanup"]["receipt_sha256"]
+                    != fact.get("completed_cleanup_receipt_sha256")
+                or _operator_fence_digest(observation) != fact.get("runtime_ack_sha256")
+                or (expected_scope.get("session_id"), expected_scope.get("trace_id"),
+                    expected_scope.get("owner_principal"), expected_scope.get("workspace_id"),
+                    expected_scope.get("root_run_id"), expected_scope.get("runtime_boot_id"))
+                   != (body["session_id"], body["trace_id"], body["owner_principal"],
+                       body["workspace_id"], body["root_run_id"], body["previous_boot_id"])
+                or body.get("previous_authority_epoch")
+                    != request["close_receipt"]["authority"]["previous_epoch"]
+                or body.get("sequence") != 344
+                or not isinstance(receipt, dict)
+                or receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or receipt.get("root_run_id") != body["root_run_id"]
+                or receipt.get("sequence") != 344
+                or receipt.get("event_sha256") != "0763e967f42dc958edbf3fb832b1dc5f84b4dfc2455cc4a774debc763fe45e1e"
+                or hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    != handoff["terminal_receipt_sha256"]
+                or body.get("superseded_terminal") is not None):
+            raise HTTPException(status_code=502, detail="runtime cleanup handoff facts changed")
+    if state == "operator_failed_terminal" and (
+            type(operator_interruption["sequence"]) is not int
+            or operator_interruption["sequence"] < 1
+            or any(not isinstance(operator_interruption[field], str)
+                   or re.fullmatch(r"[0-9a-f]{64}", operator_interruption[field]) is None
+                   for field in ("event_sha256", "failed_terminal_receipt_sha256"))
+            or body.get("superseded_terminal") is not None):
+        raise HTTPException(status_code=502, detail="runtime failed-terminal recovery is invalid")
+    if state in {"operator_interrupted", "operator_failed_terminal"}:
         superseded = body.get("superseded_terminal")
         if superseded is not None and (
                 not isinstance(superseded, dict)
@@ -2729,17 +3168,119 @@ def _verify_operator_interrupted_recovery_binding(
         _raise_agent_session_interrupted()
     row = matched[0]
     operator_fence = row.get("operator_process_fence")
-    recovery = binding["operator_interruption"]
+    completed_cleanup = binding["state"] == "operator_completed_cleanup"
+    failed_terminal = binding["state"] == "operator_failed_terminal"
+    recovery = binding["operator_completed_cleanup" if completed_cleanup else
+                       "operator_failed_terminal" if failed_terminal else "operator_interruption"]
+    expected_outcome = "completed" if completed_cleanup else "failed" if failed_terminal else "interrupted"
+    settlement = binding.get("settlement_receipt")
+    observation = binding.get("runtime_observation") if completed_cleanup else None
+    completed_fact = observation.get("operator_completed_cleanup") if isinstance(observation, dict) else None
     if (not isinstance(operator_fence, dict)
-            or row.get("status") != "interrupted" or row.get("authority_status") != "closed"
-            or row.get("terminal_sequence") is not None
-            or row.get("terminal_event_sha256") is not None
+            or row.get("status") != expected_outcome
+            or row.get("authority_status") != "closed"
+            or (completed_cleanup and (
+                not isinstance(settlement, dict)
+                or settlement.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or settlement.get("root_run_id") != binding["root_run_id"]
+                or settlement.get("sequence") != row.get("terminal_sequence")
+                or settlement.get("event_sha256") != row.get("terminal_event_sha256")
+                or row.get("terminal_unknown_claim_count") != 0
+                or hashlib.sha256(json.dumps(settlement, sort_keys=True,
+                    separators=(",", ":")).encode()).hexdigest()
+                    != recovery.get("original_terminal_receipt_sha256")
+                or operator_fence.get("original_terminal_receipt_sha256")
+                    != recovery.get("original_terminal_receipt_sha256")
+                or operator_fence.get("operator_completed_cleanup_receipt_sha256")
+                    != recovery.get("completed_cleanup_receipt_sha256")))
+            or (failed_terminal and (row.get("terminal_sequence") != recovery.get("sequence")
+                or row.get("terminal_event_sha256") != recovery.get("event_sha256")
+                or operator_fence.get("operator_failed_terminal_receipt_sha256")
+                   != recovery.get("failed_terminal_receipt_sha256")))
+            or (not failed_terminal and not completed_cleanup and (row.get("terminal_sequence") is not None
+                or row.get("terminal_event_sha256") is not None))
+            or operator_fence.get("outcome") != expected_outcome
             or operator_fence.get("operation_id") != recovery.get("operation_id")
             or operator_fence.get("process_fence_receipt_sha256")
                 != recovery.get("process_fence_receipt_sha256")
             or operator_fence.get("close_receipt_sha256") != recovery.get("close_receipt_sha256")
             or operator_fence.get("runtime_ack_sha256") != recovery.get("runtime_ack_sha256")
-            or operator_fence.get("superseded_terminal") != binding.get("superseded_terminal")):
+            or operator_fence.get("superseded_terminal") != binding.get("superseded_terminal")
+            or (completed_cleanup and (
+                operator_fence.get("runtime_ack_sha256") != recovery.get("runtime_ack_sha256")
+                or operator_fence.get("close_receipt_sha256") != recovery.get("close_receipt_sha256")
+                or operator_fence.get("process_fence_receipt_sha256")
+                    != recovery.get("process_fence_receipt_sha256")
+                or not isinstance(observation, dict)
+                or not isinstance(completed_fact, dict)
+                or operator_fence.get("scope") != observation.get("scope")
+                or observation.get("scope", {}).get("session_id") != session.session_id
+                or observation.get("scope", {}).get("trace_id") != session.trace_id
+                or observation.get("scope", {}).get("owner_principal") != session.principal.subject
+                or observation.get("scope", {}).get("workspace_id") != session.workspace_id
+                or observation.get("scope", {}).get("root_run_id") != binding.get("root_run_id")
+                or observation.get("scope", {}).get("runtime_boot_id") != binding.get("previous_boot_id")
+                or operator_fence.get("terminal_acp_ingress_sequence")
+                    != completed_fact.get("terminal_acp_ingress_sequence")
+                or operator_fence.get("terminal_acp_ingress_sha256")
+                    != completed_fact.get("terminal_acp_ingress_sha256")
+                or operator_fence.get("terminal_unknown_claim_count") != 0
+                or operator_fence.get("terminal_unknown_claims_sha256")
+                    != completed_fact.get("terminal_unknown_claims_sha256")
+                or completed_fact.get("terminal_unknown_claim_count") != 0
+                or _operator_fence_digest(observation.get("runtime_ack"))
+                    != operator_fence.get("runtime_ack_sha256")))):
+        _raise_agent_session_interrupted()
+    return binding
+
+
+def _verify_operator_handoff_recovery_binding(
+    binding: dict[str, object], session: ProductSession,
+) -> dict[str, object]:
+    roots = _runtime_root_rows(session)
+    matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+    if len(matched) != 1:
+        _raise_agent_session_interrupted()
+    row = matched[0]
+    fence = row.get("operator_process_fence")
+    try:
+        request = validate_process_fence_handoff_request(binding["handoff_request"])
+        handoff = request["handoff"]
+        completed = request["close_receipt"]["operator_completed_cleanup"]
+        observation = validate_process_fence_handoff_observation(binding["runtime_observation"], handoff=handoff)
+        confirmation = validate_process_fence_handoff_confirmation(
+            fence["handoff_confirmation"], handoff=handoff) if isinstance(fence, dict) else None
+    except (OperatorProcessFenceContractError, KeyError, TypeError, ValueError):
+        _raise_agent_session_interrupted()
+    receipt = binding["settlement_receipt"]
+    fact = binding["operator_completed_cleanup"]
+    if (row.get("status") != "completed" or row.get("authority_status") != "closed"
+            or row.get("terminal_unknown_claim_count") != 0
+            or row.get("terminal_sequence") != receipt.get("sequence")
+            or row.get("terminal_event_sha256") != receipt.get("event_sha256")
+            or row.get("terminal_acp_ingress_sequence") != completed["terminal_acp_ingress_sequence"]
+            or row.get("terminal_acp_ingress_sha256") != completed["terminal_acp_ingress_sha256"]
+            or row.get("terminal_unknown_claim_count") != completed["terminal_unknown_claim_count"]
+            or row.get("terminal_unknown_claims_sha256") != completed["terminal_unknown_claims_sha256"]
+            or not isinstance(fence, dict)
+            or not isinstance(confirmation, dict)
+            or fence.get("outcome") != "completed"
+            or fence.get("operation_id") != handoff["operation_id"]
+            or fence.get("scope") != handoff["scope"]
+            or fence.get("handoff") != handoff
+            or fence.get("close_receipt") != request["close_receipt"]
+            or fence.get("runtime_observation") != observation
+            or fence.get("handoff_receipt_sha256") != handoff["handoff_sha256"]
+            or fence.get("proof_receipt_sha256") != handoff["proof_receipt_sha256"]
+            or fence.get("process_fence_receipt_sha256") != handoff["process_fence_receipt_sha256"]
+            or fence.get("original_terminal_receipt_sha256") != handoff["terminal_receipt_sha256"]
+            or fence.get("operator_completed_cleanup_receipt_sha256") != completed["receipt_sha256"]
+            or fence.get("ack_receipt_sha256") != confirmation.get("receipt_sha256")
+            or confirmation.get("runtime_observation") != observation
+            or fact.get("operation_id") != handoff["operation_id"]
+            or fact.get("process_fence_receipt_sha256") != handoff["process_fence_receipt_sha256"]
+            or hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                != handoff["terminal_receipt_sha256"]):
         _raise_agent_session_interrupted()
     return binding
 
@@ -2747,6 +3288,69 @@ def _verify_operator_interrupted_recovery_binding(
 def _verify_settled_recovery_binding(
     binding: dict[str, object], session: ProductSession,
 ) -> dict[str, object]:
+    if binding.get("state") == "local_validation_handoff_confirmed":
+        roots = _runtime_root_rows(session)
+        matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+        local = matched[0].get("local_validation") if len(matched) == 1 else None
+        if (not isinstance(local, dict)
+                or local.get("final_receipt") != binding.get("final_receipt")
+                or local.get("runtime_observation") != binding.get("runtime_observation")
+                or local.get("confirmation_receipt") != binding.get("confirmation_receipt")
+                or local.get("handoff_receipt") != binding.get("handoff")):
+            _raise_agent_session_interrupted()
+        try:
+            final = validate_local_validation_final_receipt(local["final_receipt"])
+            handoff = validate_local_validation_handoff(binding["handoff"], final_receipt=final)
+            observation = validate_local_validation_handoff_observation(local["runtime_observation"])
+            confirmation = validate_local_validation_backend_confirmation(local["confirmation_receipt"])
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            _raise_agent_session_interrupted()
+        row = matched[0]
+        terminal = final["terminal_event_receipt"]
+        if (handoff != binding.get("handoff")
+                or observation["ack_intent"]["handoff"] != handoff
+                or confirmation["handoff"] != handoff
+                or confirmation["runtime_observation"] != observation
+                or row.get("authority_status") != "closed"
+                or row.get("status") != "completed"
+                or row.get("terminal_sequence") != terminal["sequence"]
+                or row.get("terminal_event_sha256") != terminal["event_sha256"]
+                or row.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                or row.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                or row.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                or row.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]):
+            _raise_agent_session_interrupted()
+        return terminal
+    if binding.get("state") == "local_validation_ack_released":
+        roots = _runtime_root_rows(session)
+        matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+        local = matched[0].get("local_validation") if len(matched) == 1 else None
+        if (not isinstance(local, dict)
+                or local.get("final_receipt") != binding.get("final_receipt")
+                or local.get("runtime_observation") != binding.get("runtime_observation")
+                or local.get("confirmation_receipt") != binding.get("confirmation_receipt")
+                or local.get("handoff_receipt") is not None
+                or local.get("runtime_observation") is None
+                or local.get("confirmation_receipt") is None):
+            _raise_agent_session_interrupted()
+        final = validate_local_validation_final_receipt(local["final_receipt"])
+        observation = validate_local_validation_release_observation(local["runtime_observation"])
+        confirmation = validate_local_validation_backend_confirmation(local["confirmation_receipt"])
+        receipt = final["terminal_event_receipt"]
+        row = matched[0]
+        if (observation["ack_intent"]["final_receipt"] != final
+                or confirmation["runtime_observation"] != observation
+                or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                or row.get("authority_status") != "closed"
+                or row.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                or row.get("terminal_sequence") != receipt["sequence"]
+                or row.get("terminal_event_sha256") != receipt["event_sha256"]
+                or row.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                or row.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                or row.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                or row.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]):
+            _raise_agent_session_interrupted()
+        return receipt
     receipt = binding["settlement_receipt"]
     roots = _runtime_root_rows(session)
     matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
@@ -2767,6 +3371,8 @@ def _closed_before_adapter_ack_receipt(
     binding: dict[str, object], session: ProductSession,
 ) -> dict[str, object] | None:
     """Recover a Backend-closed ACP root whose Adapter lost its terminal ACK."""
+    if binding.get("state") == "local_validation_ack_released":
+        return _verify_settled_recovery_binding(binding, session)
     roots = _runtime_root_rows(session)
     matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
     if len(matched) != 1:
@@ -2857,8 +3463,59 @@ def _initial_runtime_sequence(session_id: str, binding_sequence: int = 0) -> int
     return max(persisted, binding_sequence)
 
 
+def _append_and_ack_recovery_boundary(
+    session: ProductSession, runtime_reply: dict[str, object],
+    receipt: dict[str, object] | None, binding: dict[str, object] | None = None,
+) -> dict[str, object]:
+    boundary = runtime_reply.get("recovery_boundary")
+    if boundary is None:
+        return runtime_reply
+    if binding is None:
+        binding = _validate_recovery_binding(_adapter_get(
+            f"/internal/runtime/sessions/{session.session_id}/recovery-binding", timeout=5.0), session)
+    if (not isinstance(boundary, dict) or binding.get("state") != "settled"
+            or binding.get("recovery_boundary") not in (None, boundary)
+            or not isinstance(binding.get("settlement_receipt"), dict)
+            or (receipt is not None and receipt != binding.get("settlement_receipt"))
+            or boundary.get("runtime_boot_id") != runtime_reply.get("boot_id")):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid")
+    receipt = binding["settlement_receipt"]
+    if binding.get("recovery_boundary") is None:
+        _validate_recovery_binding({**binding, "recovery_boundary": boundary}, session)
+    try:
+        event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
+        event = json.loads(event_raw.decode("utf-8"))
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid") from None
+    if (hashlib.sha256(event_raw).hexdigest() != boundary.get("event_sha256")
+            or json.dumps(event, sort_keys=True, separators=(",", ":")).encode() != event_raw
+            or event.get("session_id") != session.session_id
+            or event.get("trace_id") != session.trace_id
+            or event.get("sequence") != boundary.get("next_sequence")
+            or event.get("kind") != "session.reattached"):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
+    try:
+        trace_store.append(event)
+    except (TraceConflict, ValueError):
+        raise HTTPException(status_code=503, detail="durable recovery trace boundary conflicts") from None
+    acknowledged = _adapter_post(
+        f"/internal/runtime/sessions/{session.session_id}/recover",
+        payload={"receipt": receipt, "initial_sequence": boundary["next_sequence"],
+                 "trace_tail": boundary["next_sequence"],
+                 "boundary_ack_sha256": boundary["event_sha256"]},
+        timeout=20.0,
+    )
+    if (acknowledged.get("session_id") != session.session_id
+            or acknowledged.get("trace_id") != session.trace_id
+            or acknowledged.get("boot_id") != runtime_reply.get("boot_id")
+            or acknowledged.get("recovery_boundary") != {**boundary, "state": "acknowledged"}):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary ACK is invalid")
+    return acknowledged
+
+
 def _restore_product_session(
     conversation_id: str, principal: Principal, workspace_id: str, *, force_recovery: bool = False,
+    required_recovery_state: str | tuple[str, ...] | None = None,
 ) -> ProductSession:
     body = _catalog_request("GET", f"/v1/product/conversations/{conversation_id}", principal, workspace_id)
     conversation = body.get("conversation")
@@ -2871,7 +3528,9 @@ def _restore_product_session(
         principal=principal,
         workspace_id=workspace_id,
     )
-    initial_sequence = _initial_runtime_sequence(session.session_id)
+    trace_events = trace_store.read(session.session_id)
+    trace_tail = max((event["sequence"] for event in trace_events), default=0)
+    initial_sequence = max(trace_tail, 0)
     try:
         if force_recovery:
             raise HTTPException(status_code=404, detail="cached runtime session belongs to an old Adapter boot")
@@ -2886,6 +3545,10 @@ def _restore_product_session(
                 "attach_live_only": True,
             },
         )
+        attached = _append_and_ack_recovery_boundary(session, attached, None)
+        live_tail = max((event["sequence"] for event in trace_store.read(session.session_id)), default=0)
+        if type(attached.get("sequence")) is not int or attached["sequence"] != live_tail:
+            raise HTTPException(status_code=503, detail="live Runtime sequence is not projected")
         session.boot_id = _adopt_runtime_session_boot(attached)
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
@@ -2896,6 +3559,8 @@ def _restore_product_session(
             except HTTPException as binding_error:
                 if binding_error.status_code != 404:
                     raise
+                if required_recovery_state is not None:
+                    raise HTTPException(status_code=503, detail="business root recovery is unavailable") from binding_error
                 # A missing Adapter record proves nothing by itself. A fresh
                 # shell is safe only when Backend confirms this session never
                 # had a business root bound to it.
@@ -2914,14 +3579,38 @@ def _restore_product_session(
                 session.boot_id = _adopt_runtime_session_boot(attached)
             else:
                 binding = _validate_recovery_binding(binding_reply, session)
-                initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
-                if binding["state"] == "operator_interrupted":
+                expected_recovery_states = (
+                    (required_recovery_state,) if isinstance(required_recovery_state, str)
+                    else required_recovery_state)
+                if (expected_recovery_states is not None
+                        and binding["state"] not in expected_recovery_states):
+                    raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+                if binding["state"] == "local_validation_ack_released":
+                    _verify_settled_recovery_binding(binding, session)
+                    # This local proof closes the old Root; it is never a
+                    # replay receipt for a child lost across Adapter boots.
+                    _raise_agent_session_interrupted()
+                if binding["state"] == "local_validation_handoff_confirmed":
+                    _verify_settled_recovery_binding(binding, session)
+                    # The immutable local confirmation authorizes only a fresh
+                    # idle Runtime record; it cannot replay the old native run.
+                    recovery_receipt = binding
+                    initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
+                    trace_tail = max((event["sequence"] for event in trace_store.read(session.session_id)), default=0)
+                else:
+                    initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
+                    trace_tail = max((event["sequence"] for event in trace_store.read(session.session_id)), default=0)
+                if binding["state"] == "local_validation_handoff_confirmed":
+                    pass
+                elif binding["state"] in {"operator_interrupted", "operator_failed_terminal",
+                                         "operator_completed_cleanup", "operator_cleanup_handoff_confirmed"}:
                     # This distinct receipt authorizes only a fresh idle Adapter
                     # session after Backend confirms the exact protected proof/ACK
                     # projection. It is never an ordinary terminal ACK or old-child
                     # resume receipt.
-                    recovery_receipt = _verify_operator_interrupted_recovery_binding(
-                        binding, session)
+                    recovery_receipt = (_verify_operator_handoff_recovery_binding(binding, session)
+                        if binding["state"] == "operator_cleanup_handoff_confirmed"
+                        else _verify_operator_interrupted_recovery_binding(binding, session))
                 elif binding["state"] == "transfer_required":
                     recovery_receipt = _closed_before_adapter_ack_receipt(binding, session)
                     if recovery_receipt is None:
@@ -2937,7 +3626,8 @@ def _restore_product_session(
                     recovery_receipt = _verify_settled_recovery_binding(binding, session)
                 recovered = _adapter_post(
                     f"/internal/runtime/sessions/{session.session_id}/recover",
-                    payload={"receipt": recovery_receipt, "initial_sequence": initial_sequence},
+                    payload={"receipt": recovery_receipt, "initial_sequence": initial_sequence,
+                             "trace_tail": trace_tail},
                     timeout=20.0,
                 )
                 if (recovered.get("session_id") != session.session_id
@@ -2948,6 +3638,8 @@ def _restore_product_session(
                         or recovered.get("resumed_from_run_id") != (
                             binding["root_run_id"] if recovery_receipt.get("status") == "transferred" else None)):
                     raise HTTPException(status_code=502, detail="runtime recovery receipt is invalid")
+                recovered = _append_and_ack_recovery_boundary(
+                    session, recovered, recovery_receipt, binding)
                 session.boot_id = _adopt_runtime_session_boot(recovered)
         else:
             raise
@@ -3045,6 +3737,13 @@ def _attested_runtime_events(events: list[dict[str, object]], session: ProductSe
             operator_fence = row.get("operator_process_fence") if row is not None else None
             if operator_fence is not None:
                 superseded = operator_fence["superseded_terminal"]
+                if (operator_fence["outcome"] == "failed"
+                        and event.get("kind") == "session.failed"
+                        and row["terminal_sequence"] == receipt["sequence"]
+                        and row["terminal_event_sha256"] == receipt["event_sha256"]):
+                    # Keep the genuine failed event in public history; exclude
+                    # the old failed prompt from fresh native model context.
+                    continue
                 receipt_sha256 = hashlib.sha256(json.dumps(
                     receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if (event.get("kind") == "session.failed"
@@ -3055,6 +3754,22 @@ def _attested_runtime_events(events: list[dict[str, object]], session: ProductSe
                         and superseded.get("receipt_sha256") == receipt_sha256):
                     # The original failed event remains in TraceStore/public history.
                     # It is omitted only from trusted completed-turn context.
+                    continue
+                if (event.get("kind") == "session.result"
+                        and lifecycle.get("outcome") == "completed"
+                        and row is not None
+                        and row.get("root_run_id") == lifecycle.get("root_run_id")
+                        and row.get("status") == "completed"
+                        and row.get("authority_status") == "closed"
+                        and row.get("terminal_unknown_claim_count") == 0
+                        and row.get("terminal_sequence") == receipt.get("sequence")
+                        and row.get("terminal_event_sha256") == receipt.get("event_sha256")
+                        and operator_fence.get("outcome") == "completed"
+                        and operator_fence.get("ack_status") == "confirmed"
+                        and operator_fence.get("slot_release_status") == "released"
+                        and operator_fence.get("superseded_terminal") is None
+                        and receipt_sha256 == operator_fence.get("original_terminal_receipt_sha256")):
+                    attested.append(event)
                     continue
                 raise ValueError("operator interruption does not supersede this terminal event")
             if (row is None or row["status"] != lifecycle["outcome"]
@@ -3795,10 +4510,42 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
             _raise_agent_session_interrupted()
-        if (exc.status_code == 409
-                and getattr(exc, "adapter_conflict_detail", None) == _FAILED_RUNTIME_SESSION_MARKER):
-            _raise_agent_session_failed()
-        raise
+        failed_terminal = (exc.status_code == 409
+                           and getattr(exc, "adapter_conflict_detail", None)
+                           == _FAILED_RUNTIME_SESSION_MARKER)
+        cannot_resume = (exc.status_code == 409
+                         and getattr(exc, "adapter_conflict_detail", None)
+                         == f"session {session.session_id} cannot be resumed")
+        if not failed_terminal and not cannot_resume:
+            raise
+        # A settled ordinary failure may continue only after the same-root
+        # Backend and durable Runtime proofs pass the normal recovery path.
+        # Protected operator failures retain their distinct V3 proof.
+        restored = _restore_product_session(
+            session.conversation_id, session.principal, session.workspace_id,
+            force_recovery=True,
+            required_recovery_state=("settled" if failed_terminal else
+                                     ("settled", "operator_failed_terminal")))
+        if (restored.session_id != session.session_id
+                or restored.trace_id != session.trace_id
+                or restored.principal.subject != session.principal.subject
+                or restored.workspace_id != session.workspace_id):
+            raise HTTPException(status_code=502, detail="runtime recovery identity is invalid")
+        body = _adapter_post(
+            "/internal/runtime/sessions",
+            payload={"session_id": session.session_id, "trace_id": session.trace_id,
+                     "owner_principal": session.principal.subject,
+                     "workspace_id": session.workspace_id, "attach_live_only": True},
+        )
+        if (body.get("session_id") != session.session_id
+                or body.get("trace_id") != session.trace_id
+                or body.get("status") != "idle"
+                or body.get("active_prompt") is not False
+                or body.get("continuity") != "reattached"):
+            raise HTTPException(status_code=502, detail="runtime recovery receipt is invalid")
+        attached_boot = _adopt_runtime_session_boot(body)
+        if attached_boot != session.boot_id or attached_boot != restored.boot_id:
+            raise HTTPException(status_code=502, detail="runtime recovery boot is invalid")
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,

@@ -83,6 +83,7 @@ def test_restore_transfers_exact_backend_proof_before_adapter_recovery(monkeypat
     monkeypatch.setattr(main, "trace_store", store)
     monkeypatch.setattr(main, "_catalog_request", _conversation_catalog)
     binding = _binding()
+    binding["sequence"] = 7
     order: list[str] = []
 
     def adapter_get(path, **_kwargs):
@@ -163,7 +164,7 @@ def test_restore_transfers_exact_backend_proof_before_adapter_recovery(monkeypat
     )]
     assert adapter_calls[-1] == (
         f"/internal/runtime/sessions/{SESSION_ID}/recover",
-        {"receipt": transfer_receipt, "initial_sequence": 7},
+        {"receipt": transfer_receipt, "initial_sequence": 7, "trace_tail": 7},
     )
     assert not any(path.endswith("/prompt") for path, _payload in adapter_calls)
 
@@ -171,10 +172,15 @@ def test_restore_transfers_exact_backend_proof_before_adapter_recovery(monkeypat
 def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     store = TraceStore(tmp_path)
-    store.append(_trace_event(5))
+    terminal = {**_trace_event(9), "kind": "session.failed",
+                "payload": {"run_id": ROOT_ID, "code": "runtime-interrupted"}}
+    store.append(terminal)
     monkeypatch.setattr(main, "trace_store", store)
     monkeypatch.setattr(main, "_catalog_request", _conversation_catalog)
     binding = _binding("settled")
+    binding["sequence"] = 9
+    receipt = main.lifecycle_receipt(main.project_lifecycle_event(terminal, SESSION_ID, TRACE_ID))
+    binding["settlement_receipt"] = receipt
     monkeypatch.setattr(main, "_adapter_get", lambda *_a, **_k: binding)
     roots_calls = []
     monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda method, path, **kwargs: (
@@ -185,7 +191,7 @@ def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_p
                 "status": "failed",
                 "authority_status": "closed",
                 "terminal_sequence": 9,
-                "terminal_event_sha256": "d" * 64,
+                "terminal_event_sha256": receipt["event_sha256"],
                 "terminal_acp_ingress_sequence": 0,
                 "terminal_acp_ingress_sha256": "a" * 64,
                 "terminal_unknown_claim_count": 0,
@@ -221,7 +227,7 @@ def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_p
     )
     assert calls[-1] == (
         f"/internal/runtime/sessions/{SESSION_ID}/recover",
-        {"receipt": binding["settlement_receipt"], "initial_sequence": 5},
+        {"receipt": binding["settlement_receipt"], "initial_sequence": 9, "trace_tail": 9},
     )
 
 
@@ -275,7 +281,7 @@ def test_backend_closed_before_adapter_ack_recovers_without_transfer_or_prompt(m
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
     assert main._restore_product_session(CONVERSATION_ID, PRINCIPAL, WORKSPACE_ID).boot_id == NEW_BOOT_ID
     assert calls[-1] == (f"/internal/runtime/sessions/{SESSION_ID}/recover",
-                          {"receipt": receipt, "initial_sequence": 9})
+                          {"receipt": receipt, "initial_sequence": 9, "trace_tail": 9})
     recovery_calls = list(calls)
     session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
     for unknown_count in (1, 4098):

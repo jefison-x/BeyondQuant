@@ -57,9 +57,12 @@ from packages.contracts.acp_product_prebind import (
     PrebindContractError,
 )
 from packages.contracts.product_turn_request import (
+    OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID,
+    OFFICIAL_PRODUCT_TURN_MODEL,
     PRODUCT_TURN_LIMITS,
     product_turn_execution_output_cap,
     product_turn_execution_limits,
+    validate_ordinary_product_execution_profile,
     validate_product_turn_execution_profile,
 )
 from packages.contracts.continuation_request import (
@@ -261,6 +264,59 @@ def _validate_guard(encoded: object) -> dict:
                            parse_constant=_reject_constant)
     except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
         raise ProductSlotError("continuation guard is invalid") from exc
+    if (isinstance(value, list) and len(value) == 3
+            and isinstance(value[0], dict) and value[0].get("id") == "llm-deepseek"):
+        route = value[0]
+        route_config = route.get("config") if set(route) == {"id", "config"} else None
+        models = route_config.get("models") if isinstance(route_config, dict) else None
+        expected_config_keys = {"apiKeyEnv", "baseURL", "retryPolicy", "models"}
+        if (not isinstance(route_config, dict) or set(route_config) != expected_config_keys
+                or route_config.get("apiKeyEnv") != "DEEPSEEK_API_KEY"
+                or not _valid_local_proxy_url(route_config.get("baseURL"))
+                or route_config.get("retryPolicy") != {"mode": "normal", "maxRetries": 0}
+                or type(route_config.get("retryPolicy", {}).get("maxRetries")) is not int
+                or not isinstance(models, list) or len(models) != 1
+                or not isinstance(models[0], dict)):
+            raise ProductSlotError("official product-turn route overlay is invalid")
+        disabled_default = value[1]
+        if (not isinstance(disabled_default, dict)
+                or set(disabled_default) != {"id", "disabled"}
+                or disabled_default.get("id") != "llm-pi-ai"
+                or disabled_default.get("disabled") is not True):
+            raise ProductSlotError("official product-turn default provider is not disabled")
+        insert = value[2]
+        entries = insert.get("insert") if isinstance(insert, dict) \
+            and set(insert) == {"insert"} else None
+        entry = entries[0] if isinstance(entries, list) and len(entries) == 1 else None
+        guard_config = (entry.get("config") if isinstance(entry, dict)
+                        and set(entry) == {"id", "name", "config"} else None)
+        if (not isinstance(entry, dict)
+                or entry.get("id") != "byq-continuation-budget"
+                or entry.get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
+                or not isinstance(guard_config, dict)
+                or set(guard_config) != {"guardMode", "executionProfile", "requestLimits"}
+                or guard_config.get("guardMode") != "ordinary-options"):
+            raise ProductSlotError("official product-turn guard is invalid")
+        try:
+            execution_profile = validate_ordinary_product_execution_profile(
+                guard_config.get("executionProfile"))
+            expected_limits = product_turn_execution_limits(execution_profile["options"])
+            output_limit = product_turn_execution_output_cap(execution_profile["options"])
+        except (TypeError, ValueError):
+            raise ProductSlotError("official ordinary execution profile is invalid") from None
+        expected_model = {"id": OFFICIAL_PRODUCT_TURN_MODEL}
+        if output_limit is not None:
+            expected_model["maxTokens"] = output_limit
+        if (execution_profile.get("profile_id") != OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID
+                or guard_config.get("requestLimits") != expected_limits
+                or not isinstance(guard_config.get("requestLimits"), dict)
+                or any(limit is not None and type(limit) is not int
+                       for limit in guard_config["requestLimits"].values())
+                or (output_limit is not None
+                    and type(models[0].get("maxTokens")) is not int)
+                or models != [expected_model]):
+            raise ProductSlotError("official product-turn route does not match its profile")
+        return value
     if isinstance(value, list) and len(value) == 2 and isinstance(value[0], dict) \
             and value[0].get("id") == "llm-pi-ai":
         # Ordinary Product overlays have an explicit mode. v1 is retained for
@@ -1260,7 +1316,7 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         if birth.get("require_prebind") is not True:
             raise OSError("Product runner birth mode is not prebind-qualified")
         checked = validate_activation_record(
-            activation, key=self.secret, instance=self._instance_record or {},
+            activation, key=self.secret, instance=self._instance_record or {},  # gitleaks:allow -- variable signing key, no literal
             birth_mode=birth, prepared_receipt=install["prepared_receipt"],
             install_record=install,
         )
@@ -1894,6 +1950,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             raise ProductSlotError("START authentication failed")
         guard = _validate_guard(value["guard_b64"]) if "guard_b64" in value else None
         ordinary_config = None
+        official_config = None
         task_ready_config = None
         if guard is not None:
             try:
@@ -1908,6 +1965,14 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
                     ordinary_config = candidate_config
             except (IndexError, KeyError, TypeError, AttributeError):
                 ordinary_config = None
+            try:
+                candidate_config = guard[2]["insert"][0]["config"]
+                if (candidate_config.get("guardMode") == "ordinary-options"
+                        and candidate_config.get("executionProfile", {}).get("profile_id")
+                        == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID):
+                    official_config = candidate_config
+            except (IndexError, KeyError, TypeError, AttributeError):
+                official_config = None
         if task_ready_config is not None:
             if task_ready_config["rootRunId"] != scope["root_run_id"]:
                 raise ProductSlotError("task-ready guard root differs from signed Product scope")
@@ -1948,6 +2013,31 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
                     raise ProductSlotError("ordinary START deadline expired")
                 # Never extend the trusted user setting, and do not impose the
                 # legacy one-hour process-runner cap on a v2 ordinary execution.
+                deadline = time.monotonic() + min(remaining_ms, max_runtime * 1000) / 1000.0
+        elif official_config is not None:
+            profile = official_config["executionProfile"]
+            if any(profile[field] != scope[scope_field] for field, scope_field in (
+                    ("owner_principal", "owner_principal"),
+                    ("session_id", "session_id"), ("trace_id", "trace_id"),
+                    ("root_run_id", "root_run_id"),
+                    ("runtime_boot_id", "runtime_boot_id"),
+                    ("runtime_generation", "generation_id"))):
+                raise ProductSlotError("official execution profile differs from signed Product scope")
+            raw_env = value.get("env")
+            if (not isinstance(raw_env, dict) or "DEEPSEEK_API_KEY" not in raw_env
+                    or "OPENCODE_API_KEY" in raw_env):
+                raise ProductSlotError("official START credential does not match selected provider")
+            max_runtime = profile["options"]["max_runtime_seconds"]
+            if max_runtime is None:
+                if deadline_at_ms is not None:
+                    raise ProductSlotError("official START deadline has no user limit")
+                deadline = None
+            else:
+                if type(deadline_at_ms) is not int or deadline_at_ms <= 0:
+                    raise ProductSlotError("official START deadline is missing")
+                remaining_ms = deadline_at_ms - int(time.time() * 1000)
+                if remaining_ms <= 0:
+                    raise ProductSlotError("official START deadline expired")
                 deadline = time.monotonic() + min(remaining_ms, max_runtime * 1000) / 1000.0
         else:
             if type(deadline_at_ms) is not int or deadline_at_ms <= 0:

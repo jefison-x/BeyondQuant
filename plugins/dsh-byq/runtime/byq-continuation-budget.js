@@ -203,24 +203,55 @@ function productOptionsLimits(options) {
 }
 
 function validProductExecutionProfile(profile) {
+  const official = isRecord(profile)
+    && profile.profile_id === 'product-turn.deepseek-official.v1';
+  const fields = [
+    'composition_source_sha256', 'model', 'options', 'options_revision',
+    'options_schema_version', 'profile_id', 'profile_sha256', 'profile_version',
+    'provider', 'upstream_base_url', 'upstream_request_target',
+    ...(official ? [
+      'options_sha256', 'owner_principal', 'session_id', 'trace_id',
+      'root_run_id', 'runtime_boot_id', 'runtime_generation',
+    ] : []),
+  ].sort().join(',');
   if (!isRecord(profile)
-      || Object.keys(profile).sort().join(',') !== [
-        'composition_source_sha256', 'model', 'options', 'options_revision',
-        'options_schema_version', 'profile_id',
-        'profile_sha256', 'profile_version', 'provider', 'upstream_base_url',
-        'upstream_request_target',
-      ].sort().join(',')
-      || profile.profile_id !== PRODUCT_EXECUTION_PROFILE_ID
-      || profile.profile_version !== PRODUCT_EXECUTION_PROFILE_VERSION
+      || Object.keys(profile).sort().join(',') !== fields
+      || (!official && profile.profile_id !== PRODUCT_EXECUTION_PROFILE_ID)
+      || profile.profile_version !== (official ? 1 : PRODUCT_EXECUTION_PROFILE_VERSION)
       || profile.composition_source_sha256 !== PRODUCT_EXECUTION_COMPOSITION_SHA256
       || profile.options_schema_version !== PRODUCT_OPTIONS_SCHEMA
+      || !isRecord(profile.options)
       || !Number.isSafeInteger(profile.options_revision) || profile.options_revision < 0
       || !/^[a-f0-9]{64}$/.test(profile.profile_sha256)
-      || profile.provider !== 'opencode-go-chat'
-      || profile.model !== 'deepseek-v4.1-flash'
-      || profile.upstream_base_url !== 'https://opencode.ai/zen/go/v1'
-      || profile.upstream_request_target !== '/chat/completions'
-      || !isRecord(profile.options)) return false;
+      || (official
+        ? (profile.provider !== 'deepseek-official'
+          || profile.model !== 'deepseek-flash'
+          || profile.upstream_base_url !== 'https://api.deepseek.com/anthropic'
+          || profile.upstream_request_target !== '/v1/messages'
+          || !/^[a-f0-9]{64}$/.test(profile.options_sha256)
+          || profile.options_sha256 !== canonicalSha256(profile.options)
+          || typeof profile.owner_principal !== 'string' || !profile.owner_principal.trim()
+          || Array.from(profile.owner_principal).length > 256
+          || /[\u0000-\u001f\u007f-\u009f]/u.test(profile.owner_principal)
+          || Array.from(profile.owner_principal).some(char => {
+            const point = char.codePointAt(0);
+            return point >= 0xd800 && point <= 0xdfff;
+          })
+          || typeof profile.session_id !== 'string'
+          || !/^[A-Za-z0-9_.:-]{1,128}$/.test(profile.session_id)
+          || typeof profile.trace_id !== 'string'
+          || !/^[A-Za-z0-9_.:-]{1,128}$/.test(profile.trace_id)
+          || typeof profile.root_run_id !== 'string'
+          || !/^[a-f0-9]{32}$/.test(profile.root_run_id)
+          || typeof profile.runtime_boot_id !== 'string'
+          || !/^[a-f0-9]{32}$/.test(profile.runtime_boot_id)
+          || typeof profile.runtime_generation !== 'string'
+          || !/^generation-[a-f0-9]{32}$/.test(profile.runtime_generation))
+        : (profile.provider !== 'opencode-go-chat'
+          || profile.model !== 'deepseek-v4.1-flash'
+          || profile.upstream_base_url !== 'https://opencode.ai/zen/go/v1'
+          || profile.upstream_request_target !== '/chat/completions'))
+      ) return false;
   const expectedFields = [...PRODUCT_OPTION_NUMERIC_FIELDS, 'auto_continue'].sort();
   if (Object.keys(profile.options).sort().join(',') !== expectedFields.join(',')
       || typeof profile.options.auto_continue !== 'boolean') return false;
@@ -228,6 +259,11 @@ function validProductExecutionProfile(profile) {
     const value = profile.options[name];
     return value !== null && (!Number.isSafeInteger(value) || value < 1);
   })) return false;
+  if (official) {
+    const binding = { ...profile };
+    delete binding.profile_sha256;
+    if (canonicalSha256(binding) !== profile.profile_sha256) return false;
+  }
   return true;
 }
 

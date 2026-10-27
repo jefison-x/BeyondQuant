@@ -36,3 +36,34 @@ paths = [
 ]
 regexTarget = "secret"
 regexes = ['''^[0-9a-f]{64}$''']
+# One exact historical evidence line; path and full line must both match.
+[[rules.allowlists]]
+description = "Exact execution options scope note"
+condition = "AND"
+paths = ['''^docs/evidence/dsh-acp-maintenance-20261013/ROOT-EXECUTION-OPTIONS-STORAGE-PASS\.json$''']
+regexTarget = "line"
+regexes = ['''^\n?  "scope": "Conversation-owned optional execution settings, persistence, CAS, Product API, disabled/foreign identity and workspace-reset archive behavior",$''']
+
+# One exact historical evidence line; path and full line must both match.
+[[rules.allowlists]]
+description = "Exact lease observer digest readback"
+condition = "AND"
+paths = ['''^docs/evidence/dsh-acp-maintenance-20261013/ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP\.json$''']
+regexTarget = "line"
+regexes = ['''^\n?    "services/gateway/tests/test_product_api\.py": "82b636da09e52ba72983bbdc44d937e3865044fc4dd04365df611c541ad00234"$''']
+
+# One exact historical evidence line; path and full line must both match.
+[[rules.allowlists]]
+description = "Exact manual browser digest readback one"
+condition = "AND"
+paths = ['''^docs/evidence/dsh-acp-maintenance-20261013/ROOT-MANUAL-BROWSER-ONE-TURN-PASS\.json$''']
+regexTarget = "line"
+regexes = ['''^\n?    "gateway-postcheck-old-auth-failure\.json": "2df07a4bdbfcbb04004d466c8af53778c9e5d647fd90a32ad4fec6ec8e696717",$''']
+
+# One exact historical evidence line; path and full line must both match.
+[[rules.allowlists]]
+description = "Exact manual browser digest readback two"
+condition = "AND"
+paths = ['''^docs/evidence/dsh-acp-maintenance-20261013/ROOT-MANUAL-BROWSER-ONE-TURN-PASS\.json$''']
+regexTarget = "line"
+regexes = ['''^\n?    "postcheck-auth-refresh\.json": "2a8e4d238b9f42c1fd6afcac840ccdb6cbb9837f94cf33eb4166ea98e4891ad9"$''']

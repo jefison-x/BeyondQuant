@@ -122,6 +122,31 @@ def test_exact_evidence_is_durable_idempotent_and_not_an_artifact(action_observe
         reopened.close()
 
 
+def test_non_acp_strategy_validation_keeps_legacy_callback_path_without_reserved_proof(observed):
+    store, evidence, scope, ctx = observed
+    store.consume_domain_call_evidence(evidence, **scope)
+    payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
+        "idempotency_key": "validate", "strategy": {"code": "synthetic invalid code"}}
+    claim = store.claim_domain_call("byq_strategy_validate", payload,
+        trusted_owner=scope["trusted_owner"], trusted_workspace=scope["trusted_workspace"],
+        trusted_session_id=scope["trusted_session_id"], trusted_trace_id=scope["trusted_trace_id"],
+        trusted_generation=ctx["x-byq-dsh-run-id"], trusted_root=evidence["root_run_id"],
+        trusted_boot_id=scope["trusted_boot_id"])
+    assert claim["state"] == "claimed"
+    result = store.execute_domain_call(claim, lambda _connection: {"legacy": "succeeded"})
+    assert result == {"state": "succeeded", "result": {"legacy": "succeeded"}}
+    replayed_result = store.claim_domain_call("byq_strategy_validate", payload,
+        trusted_owner=scope["trusted_owner"], trusted_workspace=scope["trusted_workspace"],
+        trusted_session_id=scope["trusted_session_id"], trusted_trace_id=scope["trusted_trace_id"],
+        trusted_generation=ctx["x-byq-dsh-run-id"], trusted_root=evidence["root_run_id"],
+        trusted_boot_id=scope["trusted_boot_id"])
+    assert replayed_result == result
+    assert store.execute_domain_call(replayed_result,
+        lambda _connection: pytest.fail("same-key result lookup executed again")) == result
+    assert store._fetch_one("""SELECT count(*) AS n FROM agent_audit
+        WHERE action='local_strategy_validation_callback_exit'""") == {"n": 0}
+
+
 @pytest.mark.parametrize("changed", [
     {"generation": "foreign"}, {"agent_run_id": "agentrun_missing"},
     {"task_id": "task_missing"}, {"root_run_id": "b" * 32},

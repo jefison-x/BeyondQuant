@@ -804,7 +804,7 @@ def test_acp_native_binding_requires_exact_observation_before_unknown_safe_claim
         research.close()
 
 
-def test_acp_domain_claims_allow_1025th_call_after_settled_root_history():
+def test_acp_domain_claims_allow_1025th_call_after_settled_root_history(caplog):
     ctx = _context("claim-history-1025")
     catalog, research, store = ConversationCatalogStore(), ResearchStore(), AgentResearchStore()
     try:
@@ -916,9 +916,88 @@ def test_acp_domain_claims_allow_1025th_call_after_settled_root_history():
         assert claim["state"] == "claimed"
         settled = store.execute_domain_call(claim, lambda _connection: {"fixture": "new-settlement"})
         assert settled == {"state": "succeeded", "result": {"fixture": "new-settlement"}}
+        from app.agent_research import local_validation_callback_exit_audit_id
+        callback_audit_id = local_validation_callback_exit_audit_id(claim["claim_id"])
+        callback_audit = store._fetch_one("SELECT * FROM agent_audit WHERE audit_id=:id",
+            {"id": callback_audit_id})
+        callback_receipt = callback_audit["detail_json"]["acp_control"]
+        evidence = store._fetch_one("""SELECT evidence_json FROM agent_domain_call_evidence
+            WHERE root_run_id=:root AND sequence=1025""", {"root": root})["evidence_json"]
+        assert callback_audit["action"] == "local_strategy_validation_callback_exit"
+        assert callback_receipt["callback_disposition"] == "callback_exited"
+        assert callback_receipt["claim_id"] == claim["claim_id"]
+        assert callback_receipt["mcp_request_id"] == receipt["mcp_request_id"]
+        assert callback_receipt["request_sha256"] == evidence["request_sha256"]
+        assert callback_receipt["input_sha256"] == evidence["input_sha256"]
+        from app.agent_research import _local_validation_callback_exit_from_audit_row
+        with pytest.raises(AgentConflict, match="digest or identity"):
+            _local_validation_callback_exit_from_audit_row({**callback_audit,
+                "detail_json": {"acp_control": {**callback_receipt, "receipt_sha256": "0" * 64}}},
+                claim["claim_id"])
+        with pytest.raises(AgentConflict, match="exact reserved audit"):
+            _local_validation_callback_exit_from_audit_row({**callback_audit,
+                "audit_id": "agent_audit_wrong"}, claim["claim_id"])
+        assert store.execute_domain_call(claim, lambda _connection: pytest.fail("retry executed callback")) == settled
+        assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
+            {"id": callback_audit_id})["count"] == 1
         assert store.claim_domain_call("byq_strategy_validate", arguments, **claim_kwargs) == settled
         assert store._fetch_one("SELECT count(*) AS count FROM agent_domain_call_claims WHERE root_run_id=:root",
             {"root": root})["count"] == 1025
+
+        rejected_arguments = {**arguments, "idempotency_key": f"rejected-{uuid4().hex}",
+            "strategy": {"code": "INVALID_REJECTED_SYNTHETIC"}}
+        rejected_observation = {**observation, "mcp_request_id": uuid4().hex,
+            "arguments": rejected_arguments}
+        rejected_receipt = store.observe_acp_domain_call(rejected_observation, trusted_scope=_scope(ctx, root))
+        rejected_claim = store.claim_domain_call("byq_strategy_validate", rejected_arguments, **{
+            **claim_kwargs, "trusted_acp_observation_id": rejected_receipt["mcp_request_id"]})
+        from app.domain_call_admission import DomainValidationRejected
+        def reject_validation(_connection):
+            raise DomainValidationRejected("synthetic validation rejection")
+        rejected_result = store.execute_domain_call(rejected_claim, reject_validation)
+        assert rejected_result["state"] == "correctable_failure"
+        rejected_audit_id = local_validation_callback_exit_audit_id(rejected_claim["claim_id"])
+        assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
+            {"id": rejected_audit_id})["count"] == 1
+
+        error_arguments = {**arguments, "idempotency_key": f"unexpected-{uuid4().hex}",
+            "strategy": {"code": "VALID_UNEXPECTED_SYNTHETIC"}}
+        error_observation = {**observation, "mcp_request_id": uuid4().hex,
+            "arguments": error_arguments}
+        error_receipt = store.observe_acp_domain_call(error_observation, trusted_scope=_scope(ctx, root))
+        error_claim = store.claim_domain_call("byq_strategy_validate", error_arguments, **{
+            **claim_kwargs, "trusted_acp_observation_id": error_receipt["mcp_request_id"]})
+        with pytest.raises(RuntimeError, match="synthetic callback error"):
+            store.execute_domain_call(error_claim,
+                lambda _connection: (_ for _ in ()).throw(RuntimeError("synthetic callback error")))
+        error_audit_id = local_validation_callback_exit_audit_id(error_claim["claim_id"])
+        assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
+            {"id": error_audit_id})["count"] == 1
+
+        hold_arguments = {**arguments, "idempotency_key": f"proof-hold-{uuid4().hex}",
+            "strategy": {"code": "VALID_PROOF_HOLD_SYNTHETIC"}}
+        hold_observation = {**observation, "mcp_request_id": uuid4().hex,
+            "arguments": hold_arguments}
+        hold_receipt = store.observe_acp_domain_call(hold_observation, trusted_scope=_scope(ctx, root))
+        hold_claim = store.claim_domain_call("byq_strategy_validate", hold_arguments, **{
+            **claim_kwargs, "trusted_acp_observation_id": hold_receipt["mcp_request_id"]})
+        def fail_proof(_claim_id, _observation_id):
+            raise AgentConflict("private proof persistence detail")
+        store._record_local_validation_callback_exit = fail_proof
+        held_result = store.execute_domain_call(hold_claim,
+            lambda _connection: {"persisted": "real-result"})
+        assert held_result == {"state": "succeeded", "result": {"persisted": "real-result"}}
+        diagnostic = next(record for record in caplog.records
+            if getattr(record, "claim_id", None) == hold_claim["claim_id"])
+        assert diagnostic.root_run_id == root
+        assert diagnostic.reason == "local_validation_callback_exit_proof_missing"
+        assert "private proof persistence detail" not in diagnostic.getMessage()
+        hold_audit_id = local_validation_callback_exit_audit_id(hold_claim["claim_id"])
+        assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
+            {"id": hold_audit_id})["count"] == 0
+        held_claim = store._fetch_one("SELECT status,result_json FROM agent_domain_call_claims WHERE claim_id=:id",
+            {"id": hold_claim["claim_id"]})
+        assert held_claim == {"status": "succeeded", "result_json": held_result}
 
         changed = {**arguments, "strategy": {"code": "CHANGED_1025TH_INPUT"}}
         with pytest.raises(AgentConflict):

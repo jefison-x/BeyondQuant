@@ -97,6 +97,13 @@ MODEL_CATALOG: tuple[dict[str, object], ...] = (
     {
         "provider": "deepseek",
         "runtime_provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "display_name": "DeepSeek V4.1 Flash (Official)",
+        "reasoning_supported": False,
+    },
+    {
+        "provider": "deepseek",
+        "runtime_provider": "deepseek-official",
         "model": "deepseek-v4-flash",
         "display_name": "DeepSeek V4 Flash",
         "reasoning_supported": False,

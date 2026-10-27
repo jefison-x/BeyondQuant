@@ -195,9 +195,10 @@ export async function streamWorkflowEvents(
     signal,
   });
   if (!response.ok || !response.body) {
-    const body = (await response.json().catch(() => ({}))) as { error?: { code?: unknown; message?: unknown } };
+    const body = (await response.json().catch(() => ({}))) as { detail?: unknown; error?: { code?: unknown; message?: unknown } };
     const code = typeof body.error?.code === "string" ? body.error.code : undefined;
-    const message = typeof body.error?.message === "string" ? body.error.message : "workflow stream failed";
+    const message = typeof body.error?.message === "string" ? body.error.message
+      : typeof body.detail === "string" ? body.detail : "workflow stream failed";
     throw new AgentRequestError(message.slice(0, 500), response.status, code);
   }
   const reader = response.body.getReader();

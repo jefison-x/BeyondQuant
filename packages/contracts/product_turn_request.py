@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 
 from packages.contracts.agent_execution_options import (
     SCHEMA_VERSION as EXECUTION_OPTIONS_SCHEMA_VERSION,
@@ -82,6 +84,12 @@ def validate_product_turn_limits(value: object) -> dict:
 # must use the v2 helpers below.
 PRODUCT_EXECUTION_PROFILE_ID = 'product-turn.v2'
 PRODUCT_EXECUTION_PROFILE_VERSION = 2
+OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID = 'product-turn.deepseek-official.v1'
+OFFICIAL_PRODUCT_EXECUTION_PROFILE_VERSION = 1
+OFFICIAL_PRODUCT_TURN_PROVIDER = 'deepseek-official'
+OFFICIAL_PRODUCT_TURN_MODEL = 'deepseek-flash'
+OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL = 'https://api.deepseek.com/anthropic'
+OFFICIAL_PRODUCT_TURN_UPSTREAM_REQUEST_TARGET = '/v1/messages'
 # The ordinary ACP profile is bound to this exact checked-in Product profile.
 # F6/Judgment keep their existing fixed profile. Pinned DSH web search applies
 # 4096 output tokens and five native-search uses per provider request; removing
@@ -165,6 +173,76 @@ def validate_product_turn_execution_profile(value: object) -> dict:
     if value != expected:
         raise ValueError('ordinary product execution profile is unqualified')
     return expected
+
+
+def official_product_turn_execution_profile(
+    options: object, *, revision: int, owner_principal: str, session_id: str,
+    trace_id: str, root_run_id: str, runtime_boot_id: str,
+    runtime_generation: str,
+) -> dict:
+    """Bind the optional official Messages route to one trusted Product root."""
+    normalized = validate_agent_execution_options(options)
+    if (type(revision) is not int or revision < 0 or revision >= 2**53
+            or not isinstance(owner_principal, str) or not owner_principal.strip()
+            or len(owner_principal) > 256
+            or any(unicodedata.category(char) == 'Cc'
+                   or 0xD800 <= ord(char) <= 0xDFFF for char in owner_principal)
+            or not isinstance(session_id, str)
+            or re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', session_id) is None
+            or not isinstance(trace_id, str)
+            or re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', trace_id) is None
+            or not isinstance(root_run_id, str)
+            or re.fullmatch(r'[0-9a-f]{32}', root_run_id) is None
+            or not isinstance(runtime_boot_id, str)
+            or re.fullmatch(r'[0-9a-f]{32}', runtime_boot_id) is None
+            or not isinstance(runtime_generation, str)
+            or re.fullmatch(r'generation-[0-9a-f]{32}', runtime_generation) is None):
+        raise ValueError('official ordinary execution scope is invalid')
+    options_sha256 = hashlib.sha256(json.dumps(
+        normalized, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+    binding = {
+        'profile_id': OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID,
+        'profile_version': OFFICIAL_PRODUCT_EXECUTION_PROFILE_VERSION,
+        'composition_source_sha256': PRODUCT_EXECUTION_COMPOSITION_SHA256,
+        'options_schema_version': EXECUTION_OPTIONS_SCHEMA_VERSION,
+        'options_revision': revision,
+        'options': normalized,
+        'options_sha256': options_sha256,
+        'owner_principal': owner_principal,
+        'session_id': session_id,
+        'trace_id': trace_id,
+        'root_run_id': root_run_id,
+        'runtime_boot_id': runtime_boot_id,
+        'runtime_generation': runtime_generation,
+        'provider': OFFICIAL_PRODUCT_TURN_PROVIDER,
+        'model': OFFICIAL_PRODUCT_TURN_MODEL,
+        'upstream_base_url': OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL,
+        'upstream_request_target': OFFICIAL_PRODUCT_TURN_UPSTREAM_REQUEST_TARGET,
+    }
+    profile_sha256 = hashlib.sha256(json.dumps(
+        binding, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+    return {**binding, 'profile_sha256': profile_sha256}
+
+
+def validate_official_product_turn_execution_profile(value: object) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError('official ordinary execution profile is invalid')
+    expected = official_product_turn_execution_profile(
+        value.get('options'), revision=value.get('options_revision'),
+        owner_principal=value.get('owner_principal'), session_id=value.get('session_id'),
+        trace_id=value.get('trace_id'), root_run_id=value.get('root_run_id'),
+        runtime_boot_id=value.get('runtime_boot_id'),
+        runtime_generation=value.get('runtime_generation'),
+    )
+    if value != expected:
+        raise ValueError('official ordinary execution profile is unqualified')
+    return expected
+
+
+def validate_ordinary_product_execution_profile(value: object) -> dict:
+    if isinstance(value, dict) and value.get('profile_id') == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID:
+        return validate_official_product_turn_execution_profile(value)
+    return validate_product_turn_execution_profile(value)
 
 
 def validate_product_turn_execution_limits(value: object, profile: dict) -> dict:

@@ -237,6 +237,10 @@ from packages.contracts.product_turn_request import (
     PRODUCT_TURN_PROFILE_VERSION,
     PRODUCT_TURN_PROVIDER,
     PRODUCT_TURN_UPSTREAM_BASE_URL,
+    OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID,
+    OFFICIAL_PRODUCT_TURN_PROVIDER,
+    OFFICIAL_PRODUCT_TURN_MODEL,
+    validate_official_product_turn_execution_profile,
     product_turn_execution_output_cap,
     product_turn_execution_limits,
     validate_product_turn_execution_profile,
@@ -302,31 +306,48 @@ def create_acp_product_execution_overlay(*, proxy_base_url: str, provider_sessio
     is also declared per call, and the provider gate sums those declarations.
     No deadline or request count is synthesized when the user left it unset.
     """
-    if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
-        raise ValueError('ordinary product execution provider/model is not qualified')
+    official = (isinstance(execution_profile, dict)
+                and execution_profile.get('profile_id') == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID)
+    if official:
+        if provider != OFFICIAL_PRODUCT_TURN_PROVIDER or model != OFFICIAL_PRODUCT_TURN_MODEL:
+            raise ValueError('official ordinary provider/model is not qualified')
+        profile = validate_official_product_turn_execution_profile(execution_profile)
+    else:
+        if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
+            raise ValueError('ordinary product execution provider/model is not qualified')
+        profile = validate_product_turn_execution_profile(execution_profile)
     matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
     if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
         raise ValueError('exact local product execution proxy address is required')
     if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
                     provider_session_id or "") is None:
         raise ValueError('exact provider session identity is required')
-    profile = validate_product_turn_execution_profile(execution_profile)
     options = profile['options']
     output_cap = product_turn_execution_output_cap(options)
-    model_config: dict[str, object] = {'id': PRODUCT_TURN_MODEL}
+    model_config: dict[str, object] = {'id': model}
     if output_cap is not None:
         model_config['maxTokens'] = output_cap
-    providers = {
-        PRODUCT_TURN_PROVIDER: {
-            'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
-            'baseURL': proxy_base_url,
-            'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
-            'headers': {'x-opencode-session': provider_session_id},
-            'models': [model_config],
-        },
-    }
-    overlay = [
-        {'id': 'llm-pi-ai', 'config': {'providers': providers}},
+    if official:
+        overlay = [
+            {'id': 'llm-deepseek', 'config': {
+                'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'models': [model_config],
+            }},
+            {'id': 'llm-pi-ai', 'disabled': True},
+        ]
+    else:
+        providers = {
+            PRODUCT_TURN_PROVIDER: {
+                'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+                'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'headers': {'x-opencode-session': provider_session_id},
+                'models': [model_config],
+            },
+        }
+        overlay = [{'id': 'llm-pi-ai', 'config': {'providers': providers}}]
+    overlay.extend([
         {'insert': [{
             'id': 'byq-continuation-budget',
             'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
@@ -336,7 +357,7 @@ def create_acp_product_execution_overlay(*, proxy_base_url: str, provider_sessio
                 'requestLimits': product_turn_execution_limits(options),
             },
         }]},
-    ]
+    ])
     return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
                       ensure_ascii=True).encode('utf-8')
 

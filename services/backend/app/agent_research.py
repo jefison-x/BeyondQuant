@@ -70,10 +70,27 @@ from packages.contracts.acp_operator_process_fence import (
     ACK_IDEMPOTENCY_PREFIX as _R2_ACK_PREFIX,
     ACK_REQUEST_SCHEMA as _R2_ACK_REQUEST_SCHEMA,
     ACK_SCHEMA as _R2_ACK_SCHEMA,
+    HANDOFF_ACTION as _R2_HANDOFF_ACTION,
+    HANDOFF_IDEMPOTENCY_PREFIX as _R2_HANDOFF_PREFIX,
+    HANDOFF_ACK_ACTION as _R2_HANDOFF_ACK_ACTION,
+    HANDOFF_ACK_IDEMPOTENCY_PREFIX as _R2_HANDOFF_ACK_PREFIX,
+    PROCESS_FENCE_HANDOFF_CONFIRMATION_SCHEMA as _R2_HANDOFF_CONFIRMATION_SCHEMA,
     FENCE_CLOSE_RECEIPT_SCHEMA as _R2_CLOSE_RECEIPT_SCHEMA,
     PROCESS_FENCE_ACTION as _R2_FENCE_ACTION,
     PROCESS_FENCE_IDEMPOTENCY_PREFIX as _R2_FENCE_PREFIX,
     PROCESS_FENCE_SCHEMA as _R2_FENCE_SCHEMA,
+    LOCAL_VALIDATION_FINAL_SCHEMA as _LOCAL_VALIDATION_FINAL_SCHEMA,
+    LOCAL_VALIDATION_BACKEND_CONFIRMATION_SCHEMA as _LOCAL_VALIDATION_CONFIRMATION_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_SCHEMA as _LOCAL_VALIDATION_HANDOFF_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_CONFIRMATION_SCHEMA as _LOCAL_VALIDATION_HANDOFF_CONFIRMATION_SCHEMA,
+    LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA as _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+    validate_local_validation_final_receipt,
+    validate_local_validation_release_observation,
+    validate_local_validation_handoff,
+    validate_local_validation_handoff_input,
+    validate_local_validation_stop_evidence,
+    validate_local_validation_handoff_observation,
+    validate_local_validation_backend_confirmation,
     PREIMAGE_SCHEMA as _R2_PREIMAGE_SCHEMA,
     OperatorProcessFenceContractError,
     canonical_json as _r2_canonical_json,
@@ -85,6 +102,12 @@ from packages.contracts.acp_operator_process_fence import (
     validate_operator_observation as _r2_validate_operator_observation,
     validate_process_fence_proof as _r2_validate_proof,
     validate_process_fence_request as _r2_validate_request,
+    validate_completed_cleanup_fact as _r2_validate_completed_cleanup_fact,
+    validate_process_fence_handoff as _r2_validate_handoff,
+    validate_process_fence_handoff_observation as _r2_validate_handoff_observation,
+    validate_process_fence_handoff_confirmation as _r2_validate_handoff_confirmation,
+    COMPLETED_CLEANUP_REQUEST_SCHEMA as _R2_COMPLETED_CLEANUP_REQUEST_SCHEMA,
+    validate_completed_cleanup_request as _r2_validate_completed_cleanup_request,
 )
 from packages.contracts.research_plan_approval import (
     AGENT_APPROVAL_PLAN_ACTION,
@@ -178,6 +201,18 @@ _HISTORICAL_AUDIT_INGRESS = (
 _HISTORICAL_RECONCILIATION_SCHEMA = "byq-acp-historical-audit-reconciliation.v1"
 _HISTORICAL_RECONCILIATION_ACTION = "historical_audit_unknown_reconciliation"
 _HISTORICAL_RECONCILIATION_OUTCOME = "audit_append_outcome_unknown_acknowledged"
+_LOCAL_VALIDATION_CALLBACK_EXIT_SCHEMA = "byq-local-strategy-validation-callback-exit.v1"
+_LOCAL_VALIDATION_CALLBACK_EXIT_ACTION = "local_strategy_validation_callback_exit"
+_LOCAL_VALIDATION_CALLBACK_EXIT_OUTCOME = "callback_exited"
+_LOCAL_VALIDATION_RECONCILIATION_SCHEMA = "byq-local-validation-reconciliation-reservation.v1"
+_LOCAL_VALIDATION_RECONCILIATION_ACTION = "local_validation_reconciliation_reservation"
+_LOCAL_VALIDATION_RECONCILIATION_OUTCOME = "reserved_fenced"
+_LOCAL_VALIDATION_DISPOSITION_SCHEMA = "byq-local-validation-disposition.v1"
+_LOCAL_VALIDATION_FINAL_ACTION = "local_validation_final_terminal"
+_LOCAL_VALIDATION_DISPOSITION_ACTION = "local_validation_disposition"
+_LOCAL_VALIDATION_CONFIRMATION_ACTION = "local_validation_backend_confirmation"
+_LOCAL_VALIDATION_HANDOFF_ACTION = "local_validation_confirmation_handoff"
+_LOCAL_VALIDATION_FINAL_OUTCOME = "unknown_covered_terminal"
 _HISTORICAL_BACKEND_SCOPE_SCHEMA = "byq-acp-product-cleanup-scope.v1"
 _HISTORICAL_BACKEND_SNAPSHOT_SCHEMA = "byq-acp-historical-audit-backend-snapshot.v1"
 _HISTORICAL_CONTROL_KEY_SHA_ENV = "BYQ_ACP_PRODUCT_CONTROL_KEY_SHA256"
@@ -413,6 +448,160 @@ def _historical_reconciliation_row(connection: Any, root_run_id: str) -> dict[st
             raise AgentConflict("historical reconciliation audit is attached to another AgentRun")
         _historical_receipt_from_audit_row(row, root_run_id)
     return row
+
+
+def local_validation_callback_exit_audit_id(claim_id: str) -> str:
+    if not isinstance(claim_id, str) or re.fullmatch(r"[0-9a-f]{32}", claim_id) is None:
+        raise ValueError("local validation claim id is invalid")
+    digest = hashlib.sha256(
+        b"byq-local-strategy-validation-callback-exit.v1\0" + claim_id.encode("ascii")
+    ).hexdigest()
+    return "agent_audit_" + digest[:32]
+
+
+def local_validation_reconciliation_audit_id(root_run_id: str) -> str:
+    if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+        raise ValueError("local validation Root id is invalid")
+    digest = hashlib.sha256(
+        b"byq-local-validation-reconciliation-reservation.v1\0" + root_run_id.encode("ascii")
+    ).hexdigest()
+    return "agent_audit_" + digest[:32]
+
+
+def _local_validation_final_audit_id(root_run_id: str, suffix: str) -> str:
+    digest = hashlib.sha256(("byq-local-validation-final." + suffix + ".v1\0" + root_run_id).encode()).hexdigest()
+    return "agent_audit_" + digest[:32]
+
+
+def _local_validation_final_from_audit_row(row: dict[str, Any] | None, root_run_id: str) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    receipt = row.get("detail_json", {}).get("acp_control") if isinstance(row.get("detail_json"), dict) else None
+    if (row.get("audit_id") != _local_validation_final_audit_id(root_run_id, "terminal")
+            or row.get("audit_root_run_id") != root_run_id
+            or row.get("action") != _LOCAL_VALIDATION_FINAL_ACTION
+            or row.get("outcome") != _LOCAL_VALIDATION_FINAL_OUTCOME
+            or row.get("resource_type") != "runtime_root" or row.get("resource_id") != root_run_id
+            or not isinstance(receipt, dict) or row.get("detail_json") != {"acp_control": receipt}):
+        raise AgentConflict("local validation terminal receipt row is malformed")
+    try:
+        checked = validate_local_validation_final_receipt(receipt)
+    except (TypeError, ValueError) as exc:
+        raise AgentConflict("local validation terminal receipt fields are invalid") from exc
+    if checked["root_run_id"] != root_run_id:
+        raise AgentConflict("local validation terminal receipt Root changed")
+    return checked
+
+
+def _local_validation_unknown_ingress_digest(rows: list[dict[str, Any]]) -> str:
+    covered = [{"mcp_request_id": row["mcp_request_id"], "sequence": row["sequence"],
+        "event_sha256": row["event_sha256"], "status": row["status"],
+        "settlement_json": row.get("settlement_json")} for row in rows]
+    return acp_binding_sha256(covered)
+
+
+def _local_validation_reservation_from_audit_row(row: dict[str, Any] | None,
+                                                  root_run_id: str) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    receipt = row.get("detail_json", {}).get("acp_control") if isinstance(row.get("detail_json"), dict) else None
+    if (row.get("audit_id") != local_validation_reconciliation_audit_id(root_run_id)
+            or row.get("audit_root_run_id") != root_run_id
+            or row.get("action") != _LOCAL_VALIDATION_RECONCILIATION_ACTION
+            or row.get("outcome") != _LOCAL_VALIDATION_RECONCILIATION_OUTCOME
+            or row.get("resource_type") != "runtime_root"
+            or row.get("resource_id") != root_run_id
+            or row.get("detail_json") != {"acp_control": receipt}
+            or not isinstance(receipt, dict)):
+        raise AgentConflict("local validation reservation is not the exact reserved audit row")
+    fields = {"schema_version", "root_run_id", "scope", "authority_boot_id", "claim_id", "task_id",
+              "idempotency_key", "original_key_submission_sha256",
+              "mcp_request_id", "request_sha256", "input_sha256", "event_sha256", "settlement_sha256",
+              "claim_sha256", "registration_sha256", "evidence_sha256",
+              "observation_sha256", "callback_exit_sha256", "snapshot_sha256", "reservation_sha256"}
+    if set(receipt) != fields or receipt.get("schema_version") != _LOCAL_VALIDATION_RECONCILIATION_SCHEMA:
+        raise AgentConflict("local validation reservation has an invalid schema")
+    base = {key: value for key, value in receipt.items() if key != "reservation_sha256"}
+    if (receipt.get("root_run_id") != root_run_id
+            or not isinstance(receipt.get("reservation_sha256"), str)
+            or not hmac.compare_digest(acp_binding_sha256(base), receipt["reservation_sha256"])):
+        raise AgentConflict("local validation reservation digest or Root identity is invalid")
+    if (not isinstance(receipt.get("scope"), dict)
+            or set(receipt["scope"]) != {"owner_principal", "workspace_id", "actor_principal",
+                                          "session_id", "trace_id", "generation"}
+            or any(not isinstance(value, str) or not value for value in receipt["scope"].values())
+            or receipt["scope"]["actor_principal"] != "byq-product-agent-" + receipt["scope"]["session_id"]
+            or not isinstance(receipt.get("claim_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", receipt["claim_id"]) is None
+            or not isinstance(receipt.get("mcp_request_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", receipt["mcp_request_id"]) is None
+            or not isinstance(receipt.get("task_id"), str) or not receipt["task_id"]
+            or not isinstance(receipt.get("idempotency_key"), str) or not receipt["idempotency_key"]
+            or any(not isinstance(receipt.get(key), str)
+                   or re.fullmatch(r"[0-9a-f]{64}", receipt[key]) is None
+                   for key in ("request_sha256", "input_sha256", "evidence_sha256",
+                               "event_sha256", "settlement_sha256", "claim_sha256", "registration_sha256",
+                               "observation_sha256", "callback_exit_sha256", "snapshot_sha256",
+                               "original_key_submission_sha256"))):
+        raise AgentConflict("local validation reservation scope or hashes are invalid")
+    return dict(receipt)
+
+
+def _require_local_validation_root_unfenced(connection: Any, root_run_id: str) -> None:
+    row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+        {"id": local_validation_reconciliation_audit_id(root_run_id)})
+    if row is not None:
+        _local_validation_reservation_from_audit_row(row, root_run_id)
+        raise AgentConflict("local validation Root is reserved and fenced")
+
+
+def _local_validation_callback_exit_from_audit_row(row: dict[str, Any] | None,
+                                                    claim_id: str) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    receipt = row.get("detail_json", {}).get("acp_control") if isinstance(row.get("detail_json"), dict) else None
+    if (row.get("audit_id") != local_validation_callback_exit_audit_id(claim_id)
+            or row.get("action") != _LOCAL_VALIDATION_CALLBACK_EXIT_ACTION
+            or row.get("outcome") != _LOCAL_VALIDATION_CALLBACK_EXIT_OUTCOME
+            or row.get("resource_type") != "domain_call_claim"
+            or row.get("resource_id") != claim_id
+            or row.get("detail_json") != {"acp_control": receipt}
+            or not isinstance(receipt, dict)):
+        raise AgentConflict("local validation callback-exit row is not the exact reserved audit")
+    fields = {"schema_version", "claim_id", "root_run_id", "mcp_request_id", "scope",
+              "authority_boot_id", "evidence_sequence", "agent_run_id", "task_id",
+              "action", "idempotency_key", "request_sha256", "input_sha256",
+              "evidence_sha256", "observation_sha256", "callback_disposition",
+              "receipt_sha256"}
+    if set(receipt) != fields or receipt.get("schema_version") != _LOCAL_VALIDATION_CALLBACK_EXIT_SCHEMA:
+        raise AgentConflict("local validation callback-exit receipt has an invalid schema")
+    base = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+    if (receipt.get("claim_id") != claim_id
+            or receipt.get("callback_disposition") != _LOCAL_VALIDATION_CALLBACK_EXIT_OUTCOME
+            or not isinstance(receipt.get("receipt_sha256"), str)
+            or not hmac.compare_digest(acp_binding_sha256(base), receipt["receipt_sha256"])):
+        raise AgentConflict("local validation callback-exit receipt digest or identity is invalid")
+    if (not isinstance(receipt.get("scope"), dict)
+            or set(receipt["scope"]) != {"owner_principal", "workspace_id", "actor_principal", "session_id", "trace_id", "generation"}
+            or any(not isinstance(value, str) or not value for value in receipt["scope"].values())
+            or receipt.get("action") != "byq_strategy_validate"
+            or receipt.get("root_run_id") is None
+            or receipt.get("mcp_request_id") is None
+            or any(not isinstance(receipt.get(field), str) or re.fullmatch(r"[0-9a-f]{64}", receipt[field]) is None
+                   for field in ("request_sha256", "input_sha256", "evidence_sha256", "observation_sha256"))):
+        raise AgentConflict("local validation callback-exit receipt scope or hashes are invalid")
+    scope = receipt["scope"]
+    if (row.get("audit_root_run_id") != receipt["root_run_id"]
+            or row.get("run_id") != receipt["agent_run_id"]
+            or row.get("owner_principal") != scope["owner_principal"]
+            or row.get("audit_owner_principal") != scope["owner_principal"]
+            or row.get("actor_principal") != scope["actor_principal"]
+            or row.get("audit_actor_principal") != scope["actor_principal"]
+            or scope["actor_principal"] != "byq-product-agent-" + scope["session_id"]
+            or row.get("audit_workspace_id") != scope["workspace_id"]):
+        raise AgentConflict("local validation callback-exit audit scope differs from its receipt")
+    return dict(receipt)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1422,6 +1611,1349 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         }
 
     @staticmethod
+    def _local_validation_frozen_snapshot(connection: Any, root_run_id: str,
+                                          task_id: str, idempotency_key: str) -> dict[str, Any]:
+        """Hash the complete Root-local admission and settlement preimage."""
+        tables = (
+            ("agent_runtime_turns", "root_run_id", "root_run_id"),
+            ("agent_runs", "root_run_id", "run_id"),
+            ("agent_runtime_registrations", "root_run_id", "registration_fingerprint"),
+            ("agent_acp_native_agent_registrations", "root_run_id", "native_agent_session_id"),
+            ("agent_acp_tool_ingress_observations", "root_run_id", "mcp_request_id"),
+            ("agent_acp_domain_call_observations", "root_run_id", "mcp_request_id"),
+            ("agent_domain_call_evidence", "root_run_id", "owner_principal,workspace_id,session_id,sequence"),
+            ("agent_domain_call_claims", "root_run_id", "claim_id"),
+        )
+        snapshot: dict[str, Any] = {"schema_version": "byq-local-validation-backend-snapshot.v1",
+                                    "root_run_id": root_run_id}
+        for table, column, order in tables:
+            rows = execute(connection, f"SELECT * FROM {table} WHERE {column}=:root ORDER BY {order}",
+                           {"root": root_run_id})
+            snapshot[table] = [{key: (value.isoformat() if isinstance(value, datetime) else value)
+                                for key, value in row.items()} for row in rows]
+        audit_rows = execute(connection, """SELECT a.* FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+            WHERE r.root_run_id=:root AND a.audit_id<>:reservation_id ORDER BY a.audit_id""",
+            {"root": root_run_id, "reservation_id": local_validation_reconciliation_audit_id(root_run_id)})
+        snapshot["agent_audit"] = [{key: (value.isoformat() if isinstance(value, datetime) else value)
+                                    for key, value in row.items()} for row in audit_rows]
+        task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:task",
+                         {"task": task_id})
+        artifact = fetch_one(connection, """SELECT * FROM artifacts
+            WHERE task_id=:task AND idempotency_key=:key""", {"task": task_id, "key": idempotency_key})
+        submission = fetch_one(connection, """SELECT * FROM artifact_submission_receipts
+            WHERE task_id=:task AND idempotency_key=:key""", {"task": task_id, "key": idempotency_key})
+        submitted_artifact = (fetch_one(connection, "SELECT * FROM artifacts WHERE artifact_id=:id",
+                                        {"id": submission["artifact_id"]}) if submission is not None else None)
+        snapshot["local_validation_business_facts"] = {
+            "task": task,
+            "artifact_by_key": artifact,
+            "submission_receipt_by_key": submission,
+            "receipt_artifact": submitted_artifact,
+        }
+        for key, value in snapshot["local_validation_business_facts"].items():
+            if isinstance(value, dict):
+                snapshot["local_validation_business_facts"][key] = {
+                    name: (item.isoformat() if isinstance(item, datetime) else item)
+                    for name, item in value.items()
+                }
+        return snapshot
+
+    def prepare_local_validation_reconciliation(self, root_run_id: object) -> dict[str, object]:
+        """Persist an immutable exact-Root fence for one fully proved validation unknown."""
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise AgentConflict("local validation Root id is invalid")
+        audit_id = local_validation_reconciliation_audit_id(root_run_id)
+        gate_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if gate_engine is None:
+            raise AgentPersistenceError("local validation writer gate is unavailable")
+        with transaction(gate_engine) as gate_connection:
+            gate_connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                 {"root": root_run_id})
+                if root is None:
+                    raise AgentNotFound("local validation Root is absent")
+                self._lifecycle_lock(connection, "workspace-reset|" + root["workspace_id"])
+                self._require_lifecycle_workspace(connection, root["owner_principal"], root["workspace_id"])
+                ingress = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                    WHERE root_run_id=:root ORDER BY mcp_request_id""", {"root": root_run_id})
+                requests = sorted(row["mcp_request_id"] for row in ingress)
+                for request_id in requests:
+                    self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
+                if requests:
+                    execute(connection, """SELECT mcp_request_id FROM agent_acp_tool_ingress_observations
+                        WHERE root_run_id=:root ORDER BY mcp_request_id FOR UPDATE""",
+                        {"root": root_run_id})
+                self._lifecycle_lock(connection, "root:" + root_run_id)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE",
+                                 {"root": root_run_id})
+                locked_ingress = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                    WHERE root_run_id=:root ORDER BY mcp_request_id FOR UPDATE""", {"root": root_run_id})
+                locked_requests = [row["mcp_request_id"] for row in locked_ingress]
+                if locked_requests != requests:
+                    raise AgentConflict("local validation ingress set changed while acquiring Root locks")
+                ingress = locked_ingress
+                runs = execute(connection, """SELECT run_id FROM agent_runs WHERE root_run_id=:root
+                    ORDER BY run_id FOR UPDATE""", {"root": root_run_id})
+                registrations = execute(connection, """SELECT registration_fingerprint
+                    FROM agent_runtime_registrations WHERE root_run_id=:root ORDER BY registration_fingerprint""",
+                    {"root": root_run_id})
+                for registration in registrations:
+                    self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
+                execute(connection, """SELECT native_agent_session_id FROM agent_acp_native_agent_registrations
+                    WHERE root_run_id=:root ORDER BY native_agent_session_id FOR UPDATE""",
+                    {"root": root_run_id})
+                existing = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                    {"id": audit_id})
+                if existing is not None:
+                    prior = _local_validation_reservation_from_audit_row(existing, root_run_id)
+                    if prior is None:
+                        raise AgentConflict("local validation reservation is malformed")
+                    final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                            r.owner_principal AS audit_owner_principal,r.session_id AS audit_session_id,
+                            r.trace_id AS audit_trace_id,t.workspace_id AS audit_workspace_id,
+                            t.session_id AS turn_session_id,t.trace_id AS turn_trace_id
+                        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                        JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                        WHERE a.audit_id=:id""", {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+                    if final_row is not None:
+                        final = _local_validation_final_from_audit_row(final_row, root_run_id)
+                        if (final is None or root.get("authority_status") != "closed"
+                                or root.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                                or final["reservation_sha256"] != prior["reservation_sha256"]
+                                or final["claim_id"] != prior["claim_id"]
+                                or final["task_id"] != prior["task_id"]
+                                or final["scope"]["runtime_boot_id"] != prior["authority_boot_id"]
+                                or final["scope"]["owner_principal"] != prior["scope"]["owner_principal"]
+                                or final["scope"]["workspace_id"] != prior["scope"]["workspace_id"]
+                                or final["scope"]["session_id"] != prior["scope"]["session_id"]
+                                or final["scope"]["trace_id"] != prior["scope"]["trace_id"]
+                                or final["scope"]["generation_id"] != prior["scope"]["generation"]
+                                or final_row.get("audit_root_run_id") != root_run_id
+                                or final_row.get("audit_owner_principal") != prior["scope"]["owner_principal"]
+                                or final_row.get("audit_session_id") != prior["scope"]["session_id"]
+                                or final_row.get("audit_trace_id") != prior["scope"]["trace_id"]
+                                or final_row.get("audit_workspace_id") != prior["scope"]["workspace_id"]
+                                or final_row.get("turn_session_id") != prior["scope"]["session_id"]
+                                or final_row.get("turn_trace_id") != prior["scope"]["trace_id"]):
+                            raise AgentConflict("local validation finalized retry differs from its reservation")
+                        return prior
+                    execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                        "scope": f"research-artifact|{prior['task_id']}|{prior['idempotency_key']}"})
+                    fetch_one(connection, "SELECT task_id FROM research_tasks WHERE task_id=:task FOR UPDATE",
+                              {"task": prior["task_id"]})
+                    fetch_one(connection, """SELECT artifact_id FROM artifacts
+                        WHERE task_id=:task AND idempotency_key=:key FOR UPDATE""", {
+                        "task": prior["task_id"], "key": prior["idempotency_key"]})
+                    submission = fetch_one(connection, """SELECT artifact_id FROM artifact_submission_receipts
+                        WHERE task_id=:task AND idempotency_key=:key FOR UPDATE""", {
+                        "task": prior["task_id"], "key": prior["idempotency_key"]})
+                    if submission is not None:
+                        fetch_one(connection, "SELECT artifact_id FROM artifacts WHERE artifact_id=:id FOR UPDATE",
+                                  {"id": submission["artifact_id"]})
+                    current_snapshot = self._local_validation_frozen_snapshot(
+                        connection, root_run_id, prior["task_id"], prior["idempotency_key"])
+                    if prior["snapshot_sha256"] != acp_binding_sha256(current_snapshot):
+                        raise AgentConflict("local validation reservation snapshot changed after fencing")
+                    return prior
+                authority = self._current_authority_row(connection)
+                if (root.get("status") != "active" or root.get("authority_status") != "active"
+                        or authority is None or root.get("authority_boot_id") != authority.get("boot_id")):
+                    raise AgentConflict("local validation Root is not active under current authority")
+                unknown_ingress = [row for row in ingress if row["status"] == "unknown"]
+                if len(unknown_ingress) != 1 or any(row["status"] not in {"settled", "unknown"}
+                                                    for row in ingress):
+                    raise AgentConflict("local validation reconciliation requires one unknown and no other pending ingress")
+                selected = unknown_ingress[0]
+                if selected["tool_name"] != "byq_strategy_validate" or not isinstance(selected.get("settlement_json"), dict):
+                    raise AgentConflict("unknown ingress is not the exact local strategy validation action")
+                obs = fetch_one(connection, """SELECT * FROM agent_acp_domain_call_observations
+                    WHERE mcp_request_id=:request AND root_run_id=:root FOR UPDATE""",
+                    {"request": selected["mcp_request_id"], "root": root_run_id})
+                if obs is None:
+                    raise AgentConflict("local validation unknown lacks one exact domain observation and claim")
+                claims = execute(connection, """SELECT * FROM agent_domain_call_claims
+                    WHERE root_run_id=:root AND task_id=:task AND action=:action
+                      AND idempotency_key=:key AND request_sha256=:request_sha
+                      AND input_sha256=:input_sha AND evidence_sequence=:sequence
+                      AND agent_run_id=:agent_run ORDER BY claim_id FOR UPDATE""", {
+                    "root": root_run_id, "task": obs["task_id"], "action": obs["action"],
+                    "key": obs["idempotency_key"], "request_sha": obs["request_sha256"],
+                    "input_sha": obs["input_sha256"], "sequence": obs["evidence_sequence"],
+                    "agent_run": obs["agent_run_id"]})
+                if len(claims) != 1 or claims[0]["status"] == "claimed":
+                    raise AgentConflict("local validation unknown lacks one callback-entered exact claim")
+                claim = claims[0]
+                unresolved_claims = execute(connection, """SELECT claim_id FROM agent_domain_call_claims
+                    WHERE root_run_id=:root AND status IN ('claimed','executing')
+                    ORDER BY claim_id FOR UPDATE""", {"root": root_run_id})
+                if any(row["claim_id"] != claim["claim_id"] for row in unresolved_claims):
+                    raise AgentConflict("another unknown domain claim prevents local validation reconciliation")
+                evidence_row = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
+                    WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+                      AND trace_id=:trace AND sequence=:sequence AND root_run_id=:root
+                      AND agent_run_id=:agent_run AND task_id=:task AND action=:action
+                      AND idempotency_key=:key AND request_sha256=:request_sha
+                      AND input_sha256=:input_sha AND generation=:generation FOR SHARE""", {
+                    "owner": obs["owner_principal"], "workspace": obs["workspace_id"],
+                    "session": obs["session_id"], "trace": obs["trace_id"],
+                    "sequence": obs["evidence_sequence"], "root": root_run_id,
+                    "agent_run": obs["agent_run_id"], "task": obs["task_id"],
+                    "action": obs["action"], "key": obs["idempotency_key"],
+                    "request_sha": obs["request_sha256"], "input_sha": obs["input_sha256"],
+                    "generation": obs["dsh_run_id"]})
+                if evidence_row is None:
+                    raise AgentConflict("local validation unknown lacks its exact evidence row")
+                callback_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id FROM agent_audit a
+                    JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": local_validation_callback_exit_audit_id(claim["claim_id"])})
+                callback = _local_validation_callback_exit_from_audit_row(callback_row, claim["claim_id"])
+                run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:id FOR SHARE",
+                                {"id": claim["agent_run_id"]})
+                registration = fetch_one(connection, """SELECT * FROM agent_acp_native_agent_registrations
+                    WHERE root_run_id=:root AND native_agent_session_id=:native_agent FOR UPDATE""",
+                    {"root": root_run_id, "native_agent": obs["native_agent_session_id"]})
+                observation_identity = ({key: obs[key] for key in (
+                    "mcp_request_id", "owner_principal", "workspace_id", "actor_principal", "session_id",
+                    "trace_id", "dsh_run_id", "runtime_boot_id", "root_run_id", "native_agent_session_id",
+                    "sequence", "evidence_sequence", "agent_run_id", "task_id", "action",
+                    "idempotency_key", "request_sha256", "input_sha256", "event_sha256", "receipt_json")}
+                    if obs is not None else {})
+                if (callback is None or claim["action"] != "byq_strategy_validate"
+                        or callback["root_run_id"] != root_run_id
+                        or callback["authority_boot_id"] != root.get("authority_boot_id")
+                        or callback["scope"].get("owner_principal") != root.get("owner_principal")
+                        or callback["scope"].get("workspace_id") != root.get("workspace_id")
+                        or callback["scope"].get("session_id") != root.get("session_id")
+                        or callback["scope"].get("trace_id") != root.get("trace_id")
+                        or callback["scope"].get("actor_principal") != "byq-product-agent-" + root.get("session_id", "")
+                        or callback["scope"].get("generation") != obs["dsh_run_id"]
+                        or callback["mcp_request_id"] != selected["mcp_request_id"]
+                        or callback["request_sha256"] != claim["request_sha256"]
+                        or callback["input_sha256"] != claim["input_sha256"]
+                        or evidence_row["sequence"] != claim["evidence_sequence"]
+                        or evidence_row["receipt_json"] is None
+                        or callback["evidence_sha256"] != acp_binding_sha256(evidence_row["evidence_json"])
+                        or callback["observation_sha256"] != acp_binding_sha256(observation_identity)
+                        or obs["agent_run_id"] != callback["agent_run_id"]
+                        or obs["task_id"] != callback["task_id"]
+                        or obs["action"] != callback["action"]
+                        or obs["idempotency_key"] != callback["idempotency_key"]
+                        or obs["request_sha256"] != callback["request_sha256"]
+                        or obs["input_sha256"] != callback["input_sha256"]
+                        or selected["runtime_boot_id"] != callback["authority_boot_id"]
+                        or selected["owner_principal"] != callback["scope"]["owner_principal"]
+                        or selected["workspace_id"] != callback["scope"]["workspace_id"]
+                        or selected["session_id"] != callback["scope"]["session_id"]
+                        or selected["trace_id"] != callback["scope"]["trace_id"]
+                        or selected["dsh_run_id"] != callback["scope"]["generation"]
+                        or selected["native_agent_session_id"] != obs["native_agent_session_id"]
+                        or run is None or any(run.get(key) != value for key, value in {
+                            "run_id": claim["agent_run_id"], "root_run_id": root_run_id,
+                            "owner_principal": callback["scope"]["owner_principal"],
+                            "workspace_id": callback["scope"]["workspace_id"],
+                            "actor_principal": callback["scope"]["actor_principal"],
+                            "session_id": callback["scope"]["session_id"],
+                            "trace_id": callback["scope"]["trace_id"],
+                            "dsh_run_id": callback["scope"]["generation"],
+                            "authority_boot_id": callback["authority_boot_id"],
+                        }.items())
+                        or registration is None or registration.get("status") != "bound"
+                        or any(registration.get(key) != value for key, value in {
+                            "root_run_id": root_run_id,
+                            "native_agent_session_id": obs["native_agent_session_id"],
+                            "owner_principal": callback["scope"]["owner_principal"],
+                            "workspace_id": callback["scope"]["workspace_id"],
+                            "actor_principal": callback["scope"]["actor_principal"],
+                            "session_id": callback["scope"]["session_id"],
+                            "trace_id": callback["scope"]["trace_id"],
+                            "dsh_run_id": callback["scope"]["generation"],
+                            "runtime_boot_id": callback["authority_boot_id"],
+                            "agent_run_id": claim["agent_run_id"],
+                            "origin": selected["origin"], "depth": selected["depth"],
+                            "native_root_session_id": selected["native_root_session_id"],
+                            "native_parent_session_id": selected["native_parent_session_id"],
+                        }.items())):
+                    raise AgentConflict("callback-exit proof does not cover this exact unknown claim")
+                if claim["status"] == "executing" and claim.get("result_json") is not None:
+                    raise AgentConflict("executing local validation claim unexpectedly has a result")
+                key_lock = f"research-artifact|{claim['task_id']}|{claim['idempotency_key']}"
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope": key_lock})
+                task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:task FOR UPDATE",
+                                 {"task": claim["task_id"]})
+                if (task is None or task.get("owner_principal") != callback["scope"]["owner_principal"]
+                        or task.get("workspace_id") != callback["scope"]["workspace_id"]
+                        or task.get("trace_id") != callback["scope"]["trace_id"]):
+                    raise AgentConflict("local validation ResearchTask differs from the exact claim scope")
+                artifact = fetch_one(connection, """SELECT * FROM artifacts
+                    WHERE task_id=:task AND idempotency_key=:key FOR UPDATE""",
+                    {"task": claim["task_id"], "key": claim["idempotency_key"]})
+                submission = fetch_one(connection, """SELECT * FROM artifact_submission_receipts
+                    WHERE task_id=:task AND idempotency_key=:key FOR UPDATE""",
+                    {"task": claim["task_id"], "key": claim["idempotency_key"]})
+                receipt_artifact = (fetch_one(connection, "SELECT * FROM artifacts WHERE artifact_id=:id FOR UPDATE",
+                    {"id": submission["artifact_id"]}) if submission is not None else None)
+                if claim["status"] == "succeeded":
+                    result = claim.get("result_json")
+                    result_artifact = result.get("result", {}).get("artifact") if isinstance(result, dict) else None
+                    if (artifact is None or submission is not None or not isinstance(result_artifact, dict)
+                            or result_artifact.get("artifact_id") != artifact.get("artifact_id")
+                            or artifact.get("status") != "validated"
+                            or artifact.get("owner_principal") != callback["scope"]["owner_principal"]
+                            or artifact.get("workspace_id") != callback["scope"]["workspace_id"]):
+                        raise AgentConflict("committed validation claim lacks its exact validated Artifact result")
+                elif claim["status"] == "correctable_failure":
+                    result = claim.get("result_json")
+                    if (artifact is not None or submission is not None or not isinstance(result, dict)
+                            or result.get("state") != "correctable_failure"
+                            or result.get("reason") != "domain_validation_failed"):
+                        raise AgentConflict("validation rejection does not prove an empty original-key submission")
+                elif claim["status"] == "executing":
+                    if artifact is not None or submission is not None:
+                        raise AgentConflict("uncommitted validation claim has an original-key Artifact side effect")
+                else:
+                    raise AgentConflict("local validation callback claim state is unsupported")
+                snapshot = self._local_validation_frozen_snapshot(
+                    connection, root_run_id, claim["task_id"], claim["idempotency_key"])
+                snapshot_sha = acp_binding_sha256(snapshot)
+                original_key_fact = {"task_id": claim["task_id"], "idempotency_key": claim["idempotency_key"],
+                    "claim_status": claim["status"], "claim_result": claim.get("result_json"),
+                    "business_facts": snapshot["local_validation_business_facts"]}
+                original_key_sha = acp_binding_sha256(original_key_fact)
+                claim_snapshot = next(row for row in snapshot["agent_domain_call_claims"]
+                                      if row["claim_id"] == claim["claim_id"])
+                registration_snapshot = next(row for row in snapshot["agent_acp_native_agent_registrations"]
+                    if row["native_agent_session_id"] == obs["native_agent_session_id"])
+                scope = callback["scope"]
+                base = {"schema_version": _LOCAL_VALIDATION_RECONCILIATION_SCHEMA,
+                    "root_run_id": root_run_id, "scope": scope,
+                    "authority_boot_id": callback["authority_boot_id"], "claim_id": claim["claim_id"],
+                    "task_id": claim["task_id"], "idempotency_key": claim["idempotency_key"],
+                    "original_key_submission_sha256": original_key_sha,
+                    "mcp_request_id": selected["mcp_request_id"],
+                    "request_sha256": callback["request_sha256"], "input_sha256": callback["input_sha256"],
+                    "event_sha256": selected["event_sha256"],
+                    "settlement_sha256": acp_binding_sha256(selected["settlement_json"]),
+                    "claim_sha256": acp_binding_sha256(claim_snapshot),
+                    "registration_sha256": acp_binding_sha256(registration_snapshot),
+                    "evidence_sha256": callback["evidence_sha256"],
+                    "observation_sha256": callback["observation_sha256"],
+                    "callback_exit_sha256": callback["receipt_sha256"], "snapshot_sha256": snapshot_sha}
+                receipt = {**base, "reservation_sha256": acp_binding_sha256(base)}
+                self._record_audit_row(run, action=_LOCAL_VALIDATION_RECONCILIATION_ACTION,
+                    outcome=_LOCAL_VALIDATION_RECONCILIATION_OUTCOME, resource_type="runtime_root",
+                    resource_id=root_run_id, detail={"acp_control": receipt}, connection=connection,
+                    audit_id=audit_id)
+                return receipt
+
+    def finalize_local_validation_reconciliation(self, *, request: object, runtime_projection: object,
+            product_control_key: bytes, operator_uid: int, operator_name: str) -> dict[str, Any]:
+        """Atomically bind exact Runtime terminal evidence and signed cleanup to the fenced Root."""
+        from packages.contracts.acp_operator_process_fence import validate_local_validation_projection
+        if not isinstance(request, dict):
+            raise AgentConflict("local validation close request is invalid")
+        try:
+            projection = validate_local_validation_projection(runtime_projection, request=request)
+            operator_name = _principal(operator_name, field="operator_name")
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("local validation close evidence is malformed") from exc
+        if type(operator_uid) is not int or not 0 <= operator_uid <= 2**31 - 1:
+            raise AgentConflict("Engineering operator uid is invalid")
+        raw_b64 = request["cleanup_receipt_raw_b64"]
+        try:
+            cleanup_raw = base64.b64decode(raw_b64.encode("ascii"), validate=True)
+        except (UnicodeError, ValueError, binascii.Error) as exc:
+            raise AgentConflict("signed Product cleanup receipt is invalid") from exc
+        if not cleanup_raw or base64.b64encode(cleanup_raw).decode("ascii") != raw_b64:
+            raise AgentConflict("signed Product cleanup receipt is not canonical base64")
+        cleanup_sha = hashlib.sha256(cleanup_raw).hexdigest()
+        configured_hash = os.environ.get(_HISTORICAL_CONTROL_KEY_SHA_ENV)
+        if (not isinstance(product_control_key, bytes) or not 32 <= len(product_control_key) <= 512
+                or not isinstance(configured_hash, str) or _SHA256_PATTERN.fullmatch(configured_hash) is None
+                or not hmac.compare_digest(hashlib.sha256(product_control_key).hexdigest(), configured_hash)):
+            raise AgentConflict("Product control key does not match the Backend trust anchor")
+        try:
+            product_receipt = verify_product_cleanup_receipt(
+                cleanup_raw, control_key=product_control_key, expected_scope=projection["scope"])
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("signed Product cleanup receipt failed exact-scope verification") from exc
+        if product_receipt.get("cleanup") != "proven":
+            raise AgentConflict("signed Product cleanup does not prove runner cleanup")
+        root_id = request["root_run_id"]
+        terminal = projection["terminal"]
+        terminal_receipt = terminal["receipt"]
+        gate_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if gate_engine is None:
+            raise AgentPersistenceError("local validation writer gate is unavailable")
+        with transaction(gate_engine) as gate_connection:
+            gate_connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                root_ref = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                     {"root": root_id})
+                if root_ref is None:
+                    raise AgentNotFound("local validation Root is absent")
+                self._require_lifecycle_workspace(connection, root_ref["owner_principal"], root_ref["workspace_id"])
+                ingress = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                    WHERE root_run_id=:root ORDER BY mcp_request_id""", {"root": root_id})
+                request_ids = sorted(row["mcp_request_id"] for row in ingress)
+                for request_id in request_ids:
+                    self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
+                if request_ids:
+                    execute(connection, """SELECT mcp_request_id FROM agent_acp_tool_ingress_observations
+                        WHERE root_run_id=:root ORDER BY mcp_request_id FOR UPDATE""", {"root": root_id})
+                self._lifecycle_lock(connection, "root:" + root_id)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE",
+                                 {"root": root_id})
+                final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                    {"id": _local_validation_final_audit_id(root_id, "terminal")})
+                if final_row is not None:
+                    prior = _local_validation_final_from_audit_row(final_row, root_id)
+                    if (prior["terminal_event_receipt"] != terminal_receipt
+                            or prior["runtime_projection_sha256"] != acp_binding_sha256(projection)
+                            or prior["cleanup_receipt_sha256"] != cleanup_sha
+                            or prior["operator_uid"] != operator_uid or prior["operator_name"] != operator_name):
+                        raise AgentConflict("local validation terminal retry changed its exact proof")
+                    retry_reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                        {"id": local_validation_reconciliation_audit_id(root_id)})
+                    retry_reservation = _local_validation_reservation_from_audit_row(
+                        retry_reservation_row, root_id)
+                    disposition_row = fetch_one(connection, """SELECT action,outcome,resource_type,resource_id,detail_json
+                        FROM agent_audit WHERE audit_id=:id FOR SHARE""",
+                        {"id": _local_validation_final_audit_id(root_id, "disposition")})
+                    disposition_receipt = (disposition_row.get("detail_json", {}).get("acp_control")
+                        if disposition_row and isinstance(disposition_row.get("detail_json"), dict) else None)
+                    disposition_fields = {"schema_version", "root_run_id", "reservation_sha256", "claim_id",
+                        "task_id", "idempotency_key_sha256", "disposition", "source_rows_sha256", "receipt_sha256"}
+                    disposition_base = ({key: value for key, value in disposition_receipt.items()
+                        if key != "receipt_sha256"} if isinstance(disposition_receipt, dict) else {})
+                    if (retry_reservation is None
+                            or retry_reservation["reservation_sha256"] != prior["reservation_sha256"]
+                            or disposition_row is None or disposition_row["action"] != _LOCAL_VALIDATION_DISPOSITION_ACTION
+                            or disposition_row["resource_type"] != "runtime_root"
+                            or disposition_row["resource_id"] != root_id
+                            or not isinstance(disposition_receipt, dict)
+                            or set(disposition_receipt) != disposition_fields
+                            or disposition_receipt.get("schema_version") != _LOCAL_VALIDATION_DISPOSITION_SCHEMA
+                            or not hmac.compare_digest(acp_binding_sha256(disposition_base),
+                                                       str(disposition_receipt.get("receipt_sha256")))
+                            or disposition_receipt.get("receipt_sha256") != prior["disposition_sha256"]
+                            or disposition_receipt.get("root_run_id") != root_id
+                            or disposition_receipt.get("claim_id") != prior["claim_id"]
+                            or disposition_receipt.get("task_id") != prior["task_id"]
+                            or disposition_receipt.get("reservation_sha256") != prior["reservation_sha256"]
+                            or disposition_receipt.get("source_rows_sha256") != prior["source_rows_sha256"]
+                            or disposition_receipt.get("disposition") != prior["disposition"]
+                            or disposition_row["outcome"] != prior["disposition"]):
+                        raise AgentConflict("local validation terminal retry lost its reservation or disposition")
+                    retry_claim = fetch_one(connection, "SELECT * FROM agent_domain_call_claims WHERE claim_id=:id FOR UPDATE",
+                                            {"id": prior["claim_id"]})
+                    if retry_claim is None:
+                        raise AgentConflict("local validation terminal retry lost its claim")
+                    execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
+                        "scope": f"research-artifact|{prior['task_id']}|{retry_claim['idempotency_key']}"})
+                    fetch_one(connection, "SELECT task_id FROM research_tasks WHERE task_id=:id FOR UPDATE",
+                              {"id": prior["task_id"]})
+                    fetch_one(connection, """SELECT artifact_id FROM artifacts WHERE task_id=:task
+                        AND idempotency_key=:key FOR UPDATE""", {
+                        "task": prior["task_id"], "key": retry_claim["idempotency_key"]})
+                    fetch_one(connection, """SELECT artifact_id FROM artifact_submission_receipts
+                        WHERE task_id=:task AND idempotency_key=:key FOR UPDATE""", {
+                        "task": prior["task_id"], "key": retry_claim["idempotency_key"]})
+                    retry_snapshot = self._local_validation_frozen_snapshot(
+                        connection, root_id, prior["task_id"], retry_claim["idempotency_key"])
+                    retry_claim_fact = next(row for row in retry_snapshot["agent_domain_call_claims"]
+                                             if row["claim_id"] == retry_claim["claim_id"])
+                    retry_callback = next(row for row in retry_snapshot["agent_audit"]
+                        if row["audit_id"] == local_validation_callback_exit_audit_id(retry_claim["claim_id"]))
+                    retry_source_sha = acp_binding_sha256({"claim": retry_claim_fact,
+                        "business_facts": retry_snapshot["local_validation_business_facts"],
+                        "callback_exit": retry_callback})
+                    if retry_source_sha != prior["source_rows_sha256"]:
+                        raise AgentConflict("local validation terminal retry business facts changed")
+                    return prior
+                if root is None or root.get("status") != "active" or root.get("authority_status") != "active":
+                    raise AgentConflict("local validation Root is not active")
+                authority = self._require_current_runtime_boot(connection, terminal["boot_id"], required=True)
+                reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": local_validation_reconciliation_audit_id(root_id)})
+                reservation = _local_validation_reservation_from_audit_row(reservation_row, root_id)
+                full_scope = projection["scope"]
+                known = reservation["scope"]
+                if (any(full_scope[k] != known[v] for k, v in {
+                        "owner_principal":"owner_principal", "workspace_id":"workspace_id",
+                        "session_id":"session_id", "trace_id":"trace_id", "generation_id":"generation"}.items())
+                        or full_scope["runtime_boot_id"] != reservation["authority_boot_id"]
+                        or root.get("authority_boot_id") != authority.get("boot_id")
+                        or terminal["outcome"] not in {"completed", "failed", "cancelled", "interrupted"}):
+                    raise AgentConflict("Runtime Product scope or terminal differs from the frozen Root")
+                locked_ingress = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                    WHERE root_run_id=:root ORDER BY mcp_request_id FOR UPDATE""", {"root": root_id})
+                if [row["mcp_request_id"] for row in locked_ingress] != request_ids:
+                    raise AgentConflict("local validation ingress set changed during close")
+                unknown = [row for row in locked_ingress if row["status"] == "unknown"]
+                if (len(unknown) != 1 or unknown[0]["mcp_request_id"] != reservation["mcp_request_id"]
+                        or any(row["status"] not in {"settled", "unknown"} for row in locked_ingress)):
+                    raise AgentConflict("local validation close requires exactly its one unknown ingress")
+                claim = fetch_one(connection, "SELECT * FROM agent_domain_call_claims WHERE claim_id=:id FOR UPDATE",
+                                  {"id": reservation["claim_id"]})
+                if (claim is None or claim["root_run_id"] != root_id or claim["task_id"] != reservation["task_id"]
+                        or claim["action"] != "byq_strategy_validate"
+                        or claim["idempotency_key"] != reservation["idempotency_key"]
+                        or claim["request_sha256"] != reservation["request_sha256"]
+                        or claim["input_sha256"] != reservation["input_sha256"]):
+                    raise AgentConflict("local validation claim differs from its reservation")
+                others = execute(connection, """SELECT claim_id FROM agent_domain_call_claims
+                    WHERE root_run_id=:root AND status IN ('claimed','executing') AND claim_id<>:claim
+                    ORDER BY claim_id FOR UPDATE""", {"root": root_id, "claim": claim["claim_id"]})
+                if others:
+                    raise AgentConflict("another unresolved claim prevents local validation close")
+                key_lock = f"research-artifact|{claim['task_id']}|{claim['idempotency_key']}"
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope": key_lock})
+                task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:id FOR UPDATE",
+                                 {"id": claim["task_id"]})
+                if (task is None or task.get("owner_principal") != known["owner_principal"]
+                        or task.get("workspace_id") != known["workspace_id"] or task.get("trace_id") != known["trace_id"]):
+                    raise AgentConflict("ResearchTask differs from the exact frozen scope")
+                artifact = fetch_one(connection, """SELECT * FROM artifacts WHERE task_id=:task
+                    AND idempotency_key=:key FOR UPDATE""", {"task": claim["task_id"], "key": claim["idempotency_key"]})
+                submission = fetch_one(connection, """SELECT * FROM artifact_submission_receipts WHERE task_id=:task
+                    AND idempotency_key=:key FOR UPDATE""", {"task": claim["task_id"], "key": claim["idempotency_key"]})
+                if submission is not None:
+                    fetch_one(connection, "SELECT artifact_id FROM artifacts WHERE artifact_id=:id FOR UPDATE",
+                              {"id": submission["artifact_id"]})
+                if claim["status"] == "executing":
+                    disposition = "uncommitted"
+                    if claim.get("result_json") is not None or artifact is not None or submission is not None:
+                        raise AgentConflict("uncommitted claim has a committed original-key business effect")
+                elif claim["status"] == "succeeded":
+                    disposition = "committed"
+                    result_artifact = (claim.get("result_json", {}).get("result", {}).get("artifact")
+                                       if isinstance(claim.get("result_json"), dict) else None)
+                    if (artifact is None or artifact.get("status") != "validated" or submission is not None
+                            or not isinstance(result_artifact, dict)
+                            or result_artifact.get("artifact_id") != artifact.get("artifact_id")
+                            or artifact.get("owner_principal") != known["owner_principal"]
+                            or artifact.get("workspace_id") != known["workspace_id"]):
+                        raise AgentConflict("committed claim lacks its exact original-key validated Artifact result")
+                elif claim["status"] == "correctable_failure":
+                    disposition = "uncommitted"
+                    result = claim.get("result_json")
+                    if (artifact is not None or submission is not None or not isinstance(result, dict)
+                            or result.get("state") != "correctable_failure"
+                            or result.get("reason") != "domain_validation_failed"):
+                        raise AgentConflict("validation failure lacks an exact empty original-key result")
+                else:
+                    raise AgentConflict("local validation claim is not terminally decidable")
+                callback_row = fetch_one(connection, """SELECT a.*,
+                        r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,
+                        r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": local_validation_callback_exit_audit_id(claim["claim_id"])})
+                callback = _local_validation_callback_exit_from_audit_row(callback_row, claim["claim_id"])
+                if callback is None or callback["mcp_request_id"] != reservation["mcp_request_id"]:
+                    raise AgentConflict("local validation callback-exit proof is missing")
+                snapshot = self._local_validation_frozen_snapshot(connection, root_id,
+                    claim["task_id"], claim["idempotency_key"])
+                if acp_binding_sha256(snapshot) != reservation["snapshot_sha256"]:
+                    raise AgentConflict("local validation business snapshot changed after reservation")
+                unknown_sha = _local_validation_unknown_ingress_digest(unknown)
+                claim_fact = next(row for row in snapshot["agent_domain_call_claims"]
+                                  if row["claim_id"] == claim["claim_id"])
+                callback_fact = next(row for row in snapshot["agent_audit"]
+                    if row["audit_id"] == local_validation_callback_exit_audit_id(claim["claim_id"]))
+                source_sha = acp_binding_sha256({"claim": claim_fact,
+                    "business_facts": snapshot["local_validation_business_facts"],
+                    "callback_exit": callback_fact})
+                disposition_base = {"schema_version": _LOCAL_VALIDATION_DISPOSITION_SCHEMA,
+                    "root_run_id": root_id, "reservation_sha256": reservation["reservation_sha256"],
+                    "claim_id": claim["claim_id"], "task_id": claim["task_id"],
+                    "idempotency_key_sha256": hashlib.sha256(claim["idempotency_key"].encode()).hexdigest(),
+                    "disposition": disposition, "source_rows_sha256": source_sha}
+                disposition_receipt = disposition_base | {"receipt_sha256": acp_binding_sha256(disposition_base)}
+                current_terminal = self._acp_terminal_evidence_snapshot(connection, root_id)
+                base = {"schema_version": _LOCAL_VALIDATION_FINAL_SCHEMA, "root_run_id": root_id,
+                    "scope": full_scope, "claim_id": claim["claim_id"], "task_id": claim["task_id"],
+                    "claim_status": claim["status"],
+                    "idempotency_key_sha256": disposition_base["idempotency_key_sha256"],
+                    "reservation_sha256": reservation["reservation_sha256"], "disposition": disposition,
+                    "disposition_sha256": disposition_receipt["receipt_sha256"], "source_rows_sha256": source_sha,
+                    "terminal_event_receipt": terminal_receipt,
+                    "runtime_binding_sha256": projection["binding_sha256"],
+                    "runtime_projection_sha256": acp_binding_sha256(projection),
+                    "cleanup_receipt_sha256": cleanup_sha, "unknown_ingress_count": 1,
+                    "unknown_ingress_sha256": unknown_sha,
+                    "terminal_acp_ingress_sequence": current_terminal["terminal_acp_ingress_sequence"],
+                    "terminal_acp_ingress_sha256": current_terminal["terminal_acp_ingress_sha256"],
+                    "terminal_unknown_claim_count": current_terminal["terminal_unknown_claim_count"],
+                    "terminal_unknown_claims_sha256": current_terminal["terminal_unknown_claims_sha256"],
+                    "operator_uid": operator_uid, "operator_name": operator_name}
+                final_receipt = base | {"receipt_sha256": acp_binding_sha256(base)}
+                run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:id FOR UPDATE",
+                                {"id": claim["agent_run_id"]})
+                if run is None or run["root_run_id"] != root_id:
+                    raise AgentConflict("local validation AgentRun is not exact")
+                self._record_audit_row(run, action=_LOCAL_VALIDATION_DISPOSITION_ACTION,
+                    outcome=disposition, resource_type="runtime_root", resource_id=root_id,
+                    detail={"acp_control": disposition_receipt}, connection=connection,
+                    audit_id=_local_validation_final_audit_id(root_id, "disposition"))
+                self._record_audit_row(run, action=_LOCAL_VALIDATION_FINAL_ACTION,
+                    outcome=_LOCAL_VALIDATION_FINAL_OUTCOME, resource_type="runtime_root", resource_id=root_id,
+                    detail={"acp_control": final_receipt}, connection=connection,
+                    audit_id=_local_validation_final_audit_id(root_id, "terminal"))
+                now = _now()
+                execute(connection, """UPDATE agent_runtime_turns SET status=:outcome,authority_status='closed',
+                    terminal_sequence=:sequence,terminal_event_sha256=:event_sha,
+                    terminal_acp_ingress_sequence=:ingress_sequence,terminal_acp_ingress_sha256=:ingress_sha,
+                    terminal_unknown_claim_count=:unknown_count,terminal_unknown_claims_sha256=:unknown_sha,
+                    updated_at=:now WHERE root_run_id=:root AND status='active'""", {
+                    "outcome": terminal["outcome"], "sequence": terminal["sequence"],
+                    "event_sha": terminal_receipt["event_sha256"],
+                    "ingress_sequence": current_terminal["terminal_acp_ingress_sequence"],
+                    "ingress_sha": current_terminal["terminal_acp_ingress_sha256"],
+                    "unknown_count": current_terminal["terminal_unknown_claim_count"],
+                    "unknown_sha": current_terminal["terminal_unknown_claims_sha256"],
+                    "now": now, "root": root_id})
+                execute(connection, """UPDATE agent_runs SET status=:outcome,authority_status='closed',
+                    updated_at=:now,version=version+1 WHERE root_run_id=:root
+                    AND status IN ('active','pending_binding')""", {
+                    "outcome": terminal["outcome"], "now": now, "root": root_id})
+                return final_receipt
+
+    def prepare_local_validation_confirmation_handoff(self, *, final_receipt: object,
+            stopped_runtime_evidence: object, confirmation_baseline: object,
+            predecessor_runtime_stopped_evidence: object | None = None,
+            operator_uid: int, operator_name: str) -> dict[str, Any]:
+        """Persist a closed c530-only handoff after the original Runtime has stopped."""
+        try:
+            handoff_input = validate_local_validation_handoff_input({
+                "schema_version": _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+                "final_receipt": final_receipt, "stopped_runtime_evidence": stopped_runtime_evidence,
+                "confirmation_baseline": confirmation_baseline,
+                **({"predecessor_runtime_stopped_evidence": predecessor_runtime_stopped_evidence}
+                   if predecessor_runtime_stopped_evidence is not None else {})})
+            final = handoff_input["final_receipt"]
+            stop = handoff_input["stopped_runtime_evidence"]
+            baseline = handoff_input["confirmation_baseline"]
+            successor = "predecessor_runtime_stopped_evidence" in handoff_input
+            operator_name = _principal(operator_name, field="operator_name")
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("local validation stopped-runtime evidence is malformed") from exc
+        if (type(operator_uid) is not int or not 0 <= operator_uid <= 2**31 - 1
+                or final["root_run_id"] != "c530d89d59d84c91906954dfe994b540"
+                or final["scope"]["runtime_boot_id"] != "a0942b63e3a4c3f7fa260ce58a1d93b1"):
+            raise AgentConflict("confirmation handoff is outside the exact stopped Root")
+        root_id, scope = final["root_run_id"], final["scope"]
+        gate_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if gate_engine is None:
+            raise AgentPersistenceError("local validation handoff writer gate is unavailable")
+        with transaction(gate_engine) as gate_connection:
+            gate_connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                authority = self._current_authority_row(connection, for_update=True)
+                if authority is None or authority["boot_id"] == scope["runtime_boot_id"]:
+                    raise AgentConflict("confirmation handoff requires the exact successor Runtime authority")
+                old = fetch_one(connection, "SELECT epoch,receipt_json FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot FOR SHARE",
+                                {"boot": scope["runtime_boot_id"]})
+                new_receipt = authority.get("receipt_json")
+                if (old is None or type(old.get("epoch")) is not int
+                        or not isinstance(old.get("receipt_json"), dict)
+                        or not isinstance(new_receipt, dict)
+                        or new_receipt.get("boot_id") != authority["boot_id"]
+                        or new_receipt.get("authority_epoch") != authority["epoch"]
+                        or type(authority.get("epoch")) is not int
+                        or authority["epoch"] <= old["epoch"]):
+                    raise AgentConflict("Runtime authority receipt chain does not prove the successor")
+                self._lifecycle_lock(connection, "workspace-reset|" + scope["workspace_id"])
+                self._require_lifecycle_workspace(connection, scope["owner_principal"],
+                                                  scope["workspace_id"], terminal_cleanup=True)
+                self._lifecycle_lock(connection, "root:" + root_id)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE",
+                                 {"root": root_id})
+                final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": _local_validation_final_audit_id(root_id, "terminal")})
+                stored_final = _local_validation_final_from_audit_row(final_row, root_id)
+                if (root is None or root.get("status") != "completed" or root.get("authority_status") != "closed"
+                        or stored_final != final or root.get("owner_principal") != scope["owner_principal"]
+                        or root.get("workspace_id") != scope["workspace_id"]
+                        or root.get("session_id") != scope["session_id"] or root.get("trace_id") != scope["trace_id"]
+                        or root.get("terminal_sequence") != final["terminal_event_receipt"]["sequence"]
+                        or root.get("terminal_event_sha256") != final["terminal_event_receipt"]["event_sha256"]
+                        or root.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                        or root.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]):
+                    raise AgentConflict("closed local validation Root changed before confirmation handoff")
+                reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": local_validation_reconciliation_audit_id(root_id)})
+                reservation = _local_validation_reservation_from_audit_row(reservation_row, root_id)
+                expected_reservation_scope = {
+                    "owner_principal": scope["owner_principal"],
+                    "actor_principal": "byq-product-agent-" + scope["session_id"],
+                    "workspace_id": scope["workspace_id"],
+                    "session_id": scope["session_id"],
+                    "trace_id": scope["trace_id"],
+                    "generation": scope["generation_id"],
+                }
+                if (reservation is None or reservation["reservation_sha256"] != final["reservation_sha256"]
+                        or reservation["scope"] != expected_reservation_scope
+                        or reservation["authority_boot_id"] != scope["runtime_boot_id"]):
+                    raise AgentConflict("local validation reservation differs from the final")
+                confirm_id = _local_validation_final_audit_id(root_id, "confirmation")
+                confirm_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    WHERE a.audit_id=:id AND r.root_run_id=:root FOR SHARE""",
+                    {"id": confirm_id, "root": root_id})
+                prior_confirmation = None
+                if confirm_row is not None:
+                    stored = (confirm_row.get("detail_json", {}).get("acp_control")
+                              if isinstance(confirm_row.get("detail_json"), dict) else None)
+                    try:
+                        prior_confirmation = validate_local_validation_backend_confirmation(stored)
+                    except (TypeError, ValueError) as exc:
+                        raise AgentConflict("local validation confirmation audit is malformed") from exc
+                    prior_handoff = prior_confirmation.get("handoff")
+                    if (confirm_row.get("action") != _LOCAL_VALIDATION_CONFIRMATION_ACTION
+                            or confirm_row.get("outcome") != "confirmed"
+                            or prior_confirmation.get("final_receipt_sha256") != final["receipt_sha256"]
+                            or prior_confirmation.get("operator_uid") != operator_uid
+                            or prior_confirmation.get("operator_name") != operator_name
+                            or not isinstance(prior_handoff, dict)
+                            or prior_handoff.get("stopped_runtime_evidence") != stop):
+                        raise AgentConflict("local validation handoff retry changed after confirmation")
+                key_lock = f"research-artifact|{reservation['task_id']}|{reservation['idempotency_key']}"
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope": key_lock})
+                fetch_one(connection, "SELECT task_id FROM research_tasks WHERE task_id=:id FOR UPDATE",
+                          {"id": reservation["task_id"]})
+                fetch_one(connection, "SELECT artifact_id FROM artifacts WHERE task_id=:task AND idempotency_key=:key FOR UPDATE",
+                          {"task": reservation["task_id"], "key": reservation["idempotency_key"]})
+                fetch_one(connection, "SELECT artifact_id FROM artifact_submission_receipts WHERE task_id=:task AND idempotency_key=:key FOR UPDATE",
+                          {"task": reservation["task_id"], "key": reservation["idempotency_key"]})
+                snapshot = self._local_validation_frozen_snapshot(
+                    connection, root_id, reservation["task_id"], reservation["idempotency_key"])
+                claim = next(row for row in snapshot["agent_domain_call_claims"]
+                             if row["claim_id"] == reservation["claim_id"])
+                callback = next(row for row in snapshot["agent_audit"]
+                                if row["audit_id"] == local_validation_callback_exit_audit_id(reservation["claim_id"]))
+                callback_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,
+                        r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id AND r.root_run_id=:root FOR SHARE""",
+                    {"id": local_validation_callback_exit_audit_id(reservation["claim_id"]), "root": root_id})
+                callback_receipt = _local_validation_callback_exit_from_audit_row(
+                    callback_row, reservation["claim_id"])
+                domain_observation = next((row for row in snapshot["agent_acp_domain_call_observations"]
+                    if row["mcp_request_id"] == reservation["mcp_request_id"]), None)
+                ingress_row = next((row for row in snapshot["agent_acp_tool_ingress_observations"]
+                    if row["mcp_request_id"] == reservation["mcp_request_id"]), None)
+                registration = (next((row for row in snapshot["agent_acp_native_agent_registrations"]
+                    if row["native_agent_session_id"] == domain_observation["native_agent_session_id"]), None)
+                    if domain_observation is not None else None)
+                observation_identity = ({key: domain_observation[key] for key in (
+                    "mcp_request_id", "owner_principal", "workspace_id", "actor_principal", "session_id",
+                    "trace_id", "dsh_run_id", "runtime_boot_id", "root_run_id", "native_agent_session_id",
+                    "sequence", "evidence_sequence", "agent_run_id", "task_id", "action",
+                    "idempotency_key", "request_sha256", "input_sha256", "event_sha256", "receipt_json")}
+                    if domain_observation is not None else {})
+                source_sha = acp_binding_sha256({"claim": claim,
+                    "business_facts": snapshot["local_validation_business_facts"], "callback_exit": callback})
+                if (source_sha != final["source_rows_sha256"]
+                        or acp_binding_sha256(claim) != reservation["claim_sha256"]
+                        or acp_binding_sha256(registration) != reservation["registration_sha256"]
+                        or domain_observation is None
+                        or acp_binding_sha256(observation_identity) != reservation["observation_sha256"]
+                        or ingress_row is None or ingress_row["status"] != "unknown"
+                        or ingress_row["tool_name"] != "byq_strategy_validate"
+                        or ingress_row["event_sha256"] != reservation["event_sha256"]
+                        or acp_binding_sha256(ingress_row["settlement_json"]) != reservation["settlement_sha256"]
+                        or callback_receipt is None
+                        or callback_receipt["receipt_sha256"] != reservation["callback_exit_sha256"]
+                        or callback_receipt["request_sha256"] != reservation["request_sha256"]
+                        or callback_receipt["input_sha256"] != reservation["input_sha256"]
+                        or callback_receipt["evidence_sha256"] != reservation["evidence_sha256"]
+                        or callback_receipt["observation_sha256"] != reservation["observation_sha256"]):
+                    raise AgentConflict("local validation original business facts changed before handoff")
+                predecessor_id = _local_validation_final_audit_id(root_id, "confirmation_handoff")
+                predecessor_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                    WHERE a.audit_id=:id FOR UPDATE OF a""", {"id": predecessor_id}) if successor else None
+                predecessor_detail = (predecessor_row.get("detail_json")
+                    if predecessor_row is not None else None)
+                predecessor_handoff = (predecessor_detail.get("acp_control")
+                    if isinstance(predecessor_detail, dict) else None)
+                if successor:
+                    try:
+                        checked_predecessor = validate_local_validation_handoff(
+                            predecessor_handoff, final_receipt=final)
+                    except (TypeError, ValueError) as exc:
+                        raise AgentConflict("protected predecessor handoff is malformed") from exc
+                    if (predecessor_row.get("audit_root_run_id") != root_id
+                            or predecessor_row.get("run_id") != final_row["run_id"]
+                            or predecessor_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                            or predecessor_row.get("outcome") != "confirmation_handoff_prepared"
+                            or predecessor_row.get("resource_type") != "runtime_root"
+                            or predecessor_row.get("resource_id") != root_id
+                            or predecessor_detail != {"acp_control": checked_predecessor,
+                                "confirmation_baseline": baseline}
+                            or checked_predecessor["handoff_sha256"] != "ff4b4c2b703fc96ea1aa0b07b1f9e7dfb2c3a815eb7b96688e08f0ff406f788a"
+                            or checked_predecessor["new_authority"]["boot_id"]
+                               != "a06bfa20edec5f49110a39705bd629b7"
+                            or checked_predecessor["new_authority"]["epoch"] != 33
+                            or checked_predecessor["stopped_runtime_evidence"] != stop):
+                        raise AgentConflict("predecessor handoff identity or baseline changed")
+                operation_id = hashlib.sha256(("byq-local-validation-confirmation-handoff:" + root_id
+                    + ":" + final["receipt_sha256"]
+                    + (":" + authority["boot_id"] if successor else "")).encode("ascii")).hexdigest()[:32]
+                base = {"schema_version": _LOCAL_VALIDATION_HANDOFF_SCHEMA,
+                    "operation_id": operation_id, "root_run_id": root_id,
+                    "final_receipt_sha256": final["receipt_sha256"],
+                    "reservation_sha256": reservation["reservation_sha256"], "scope": scope,
+                    "original_binding_sha256": final["runtime_binding_sha256"],
+                    "cleanup_receipt_sha256": final["cleanup_receipt_sha256"],
+                    "old_authority": {"boot_id": scope["runtime_boot_id"], "epoch": old["epoch"]},
+                    "new_authority": {"boot_id": authority["boot_id"], "epoch": authority["epoch"],
+                        "boot_receipt_sha256": acp_binding_sha256(new_receipt)},
+                    "stopped_runtime_evidence": stop, "operator_uid": operator_uid,
+                    "operator_name": operator_name,
+                    "confirmation_baseline_basis": "accepted-independent-postfinal-2026-10-27",
+                    "confirmation_baseline_sha256": acp_binding_sha256(baseline),
+                    **({"predecessor_handoff_sha256": checked_predecessor["handoff_sha256"],
+                        "predecessor_runtime_stopped_evidence":
+                            handoff_input["predecessor_runtime_stopped_evidence"]} if successor else {})}
+                handoff = validate_local_validation_handoff(
+                    base | {"handoff_sha256": acp_binding_sha256(base)}, final_receipt=final)
+                if prior_confirmation is not None and prior_confirmation["handoff"] != handoff:
+                    raise AgentConflict("local validation confirmed handoff differs from accepted baseline")
+                handoff_id = _local_validation_final_audit_id(root_id,
+                    "confirmation_handoff_successor" if successor else "confirmation_handoff")
+                prior_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR UPDATE OF a""",
+                    {"id": handoff_id})
+                excluded_audit_ids: set[str] = set()
+                expected_audits = [
+                        (handoff_id, prior_row, _LOCAL_VALIDATION_HANDOFF_ACTION,
+                         "confirmation_handoff_prepared",
+                         {"acp_control": handoff, "confirmation_baseline": baseline}),
+                        (confirm_id, confirm_row, _LOCAL_VALIDATION_CONFIRMATION_ACTION,
+                         "confirmed", {"acp_control": prior_confirmation})]
+                if successor:
+                    expected_audits.append((predecessor_id, predecessor_row,
+                        _LOCAL_VALIDATION_HANDOFF_ACTION, "confirmation_handoff_prepared",
+                        {"acp_control": checked_predecessor, "confirmation_baseline": baseline}))
+                for audit_id, audit_row, expected_action, expected_outcome, expected_detail in expected_audits:
+                    if audit_row is None:
+                        continue
+                    matching = [row for row in snapshot["agent_audit"] if row["audit_id"] == audit_id]
+                    if (len(matching) != 1 or audit_row.get("audit_id") != audit_id
+                            or audit_row.get("run_id") != final_row["run_id"]
+                            or audit_row.get("action") != expected_action
+                            or audit_row.get("outcome") != expected_outcome
+                            or audit_row.get("resource_type") != "runtime_root"
+                            or audit_row.get("resource_id") != root_id
+                            or audit_row.get("detail_json") != expected_detail
+                            or audit_row.get("audit_root_run_id") != root_id
+                            or set(matching[0]) != set(baseline["agent_audit"][0])
+                            or matching[0].get("run_id") != final_row["run_id"]
+                            or matching[0].get("owner_principal") != scope["owner_principal"]
+                            or matching[0].get("actor_principal") != "byq-product-agent-" + scope["session_id"]
+                            or matching[0].get("workspace_id") != scope["workspace_id"]
+                            or matching[0].get("detail_json") != expected_detail):
+                        raise AgentConflict("local validation new audit delta is not exact")
+                    excluded_audit_ids.add(audit_id)
+                stable_snapshot = dict(snapshot)
+                stable_snapshot["agent_audit"] = [row for row in snapshot["agent_audit"]
+                    if row["audit_id"] not in excluded_audit_ids]
+                if stable_snapshot != baseline:
+                    raise AgentConflict("local validation complete post-finalization baseline changed")
+                if prior_confirmation is not None and prior_row is None:
+                    raise AgentConflict("confirmed local validation handoff audit is missing")
+                if prior_row is not None:
+                    if (prior_row.get("audit_root_run_id") != root_id or prior_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                            or prior_row.get("detail_json") != {"acp_control": handoff,
+                                "confirmation_baseline": baseline}):
+                        raise AgentConflict("local validation handoff retry changed")
+                    return handoff
+                run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:id FOR UPDATE",
+                                {"id": final_row["run_id"]})
+                if run is None or run.get("root_run_id") != root_id:
+                    raise AgentConflict("local validation handoff AgentRun is missing")
+                self._record_audit_row(run, action=_LOCAL_VALIDATION_HANDOFF_ACTION,
+                    outcome="confirmation_handoff_prepared", resource_type="runtime_root", resource_id=root_id,
+                    detail={"acp_control": handoff, "confirmation_baseline": baseline},
+                    connection=connection, audit_id=handoff_id)
+                return handoff
+
+    def confirm_local_validation_handoff(self, *, final_receipt: object, handoff: object,
+            runtime_observation: object, operator_uid: int, operator_name: str) -> dict[str, Any]:
+        """Append one immutable confirmation for a new current-process lease."""
+        try:
+            final = validate_local_validation_final_receipt(final_receipt)
+            checked_handoff = validate_local_validation_handoff(handoff, final_receipt=final)
+            observation = validate_local_validation_handoff_observation(runtime_observation)
+            operator_name = _principal(operator_name, field="operator_name")
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("local validation handoff confirmation evidence is malformed") from exc
+        if (observation["ack_intent"]["final_receipt"] != final
+                or observation["ack_intent"]["handoff"] != checked_handoff
+                or type(operator_uid) is not int or not 0 <= operator_uid <= 2**31 - 1
+                or checked_handoff["operator_uid"] != operator_uid or checked_handoff["operator_name"] != operator_name):
+            raise AgentConflict("local validation handoff confirmation differs from its protected intent")
+        root_id, scope = final["root_run_id"], final["scope"]
+        successor = "predecessor_handoff_sha256" in checked_handoff
+        base = {"schema_version": _LOCAL_VALIDATION_HANDOFF_CONFIRMATION_SCHEMA,
+            "root_run_id": root_id, "final_receipt_sha256": final["receipt_sha256"],
+            "handoff": checked_handoff, "runtime_observation": observation,
+            "operator_uid": operator_uid, "operator_name": operator_name}
+        confirmation = base | {"receipt_sha256": acp_binding_sha256(base)}
+        confirmation = validate_local_validation_backend_confirmation(confirmation)
+        gate_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if gate_engine is None:
+            raise AgentPersistenceError("local validation confirmation writer gate is unavailable")
+        with transaction(gate_engine) as gate_connection:
+            gate_connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, "workspace-reset|" + scope["workspace_id"])
+                self._lifecycle_lock(connection, "root:" + root_id)
+                authority = self._require_current_runtime_boot(
+                    connection, checked_handoff["new_authority"]["boot_id"], required=True)
+                if (authority.get("epoch") != checked_handoff["new_authority"]["epoch"]
+                        or acp_binding_sha256(authority.get("receipt_json"))
+                           != checked_handoff["new_authority"]["boot_receipt_sha256"]):
+                    raise AgentConflict("handoff successor authority changed before confirmation")
+                self._require_lifecycle_workspace(connection, scope["owner_principal"],
+                                                  scope["workspace_id"], terminal_cleanup=True)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE",
+                                 {"root": root_id})
+                final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": _local_validation_final_audit_id(root_id, "terminal")})
+                stored_final = _local_validation_final_from_audit_row(final_row, root_id)
+                reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": local_validation_reconciliation_audit_id(root_id)})
+                reservation = _local_validation_reservation_from_audit_row(reservation_row, root_id)
+                handoff_id = _local_validation_final_audit_id(root_id,
+                    "confirmation_handoff_successor" if successor else "confirmation_handoff")
+                handoff_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": handoff_id})
+                predecessor_id = _local_validation_final_audit_id(root_id, "confirmation_handoff")
+                predecessor_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                    WHERE a.audit_id=:id FOR SHARE OF a""", {"id": predecessor_id}) if successor else None
+                successor_row = fetch_one(connection, """SELECT a.audit_id FROM agent_audit a
+                    WHERE a.audit_id=:id FOR SHARE OF a""", {"id": _local_validation_final_audit_id(
+                        root_id, "confirmation_handoff_successor")}) if not successor else None
+                if successor_row is not None:
+                    raise AgentConflict("superseded local validation handoff is stale")
+                predecessor_detail = (predecessor_row.get("detail_json")
+                    if predecessor_row is not None else None)
+                predecessor_handoff = (predecessor_detail.get("acp_control")
+                    if isinstance(predecessor_detail, dict) else None)
+                if successor:
+                    try:
+                        checked_predecessor = validate_local_validation_handoff(
+                            predecessor_handoff, final_receipt=final)
+                    except (TypeError, ValueError) as exc:
+                        raise AgentConflict("protected predecessor handoff is malformed") from exc
+                    if (predecessor_row.get("audit_root_run_id") != root_id
+                            or predecessor_row.get("run_id") != final_row["run_id"]
+                            or predecessor_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                            or predecessor_row.get("outcome") != "confirmation_handoff_prepared"
+                            or predecessor_row.get("resource_type") != "runtime_root"
+                            or predecessor_row.get("resource_id") != root_id
+                            or predecessor_detail != {"acp_control": checked_predecessor,
+                                "confirmation_baseline": predecessor_detail.get("confirmation_baseline")}
+                            or checked_predecessor["handoff_sha256"] != checked_handoff["predecessor_handoff_sha256"]
+                            or checked_predecessor["new_authority"]["boot_id"]
+                               != "a06bfa20edec5f49110a39705bd629b7"
+                            or checked_predecessor["new_authority"]["epoch"] != 33
+                            or predecessor_detail["confirmation_baseline"]
+                               != handoff_row.get("detail_json", {}).get("confirmation_baseline")):
+                        raise AgentConflict("protected predecessor handoff differs from successor")
+                stored_handoff = (handoff_row.get("detail_json", {}).get("acp_control")
+                    if handoff_row and isinstance(handoff_row.get("detail_json"), dict) else None)
+                baseline = (handoff_row.get("detail_json", {}).get("confirmation_baseline")
+                    if handoff_row and isinstance(handoff_row.get("detail_json"), dict) else None)
+                try:
+                    checked_baseline = validate_local_validation_handoff_input({
+                        "schema_version": _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+                        "final_receipt": final,
+                        "stopped_runtime_evidence": checked_handoff["stopped_runtime_evidence"],
+                        "confirmation_baseline": baseline,
+                        **({"predecessor_runtime_stopped_evidence":
+                            checked_handoff["predecessor_runtime_stopped_evidence"]} if successor else {})
+                        })["confirmation_baseline"]
+                except (TypeError, ValueError) as exc:
+                    raise AgentConflict("protected confirmation baseline is malformed") from exc
+                if (root is None or stored_final != final or stored_handoff != checked_handoff
+                        or handoff_row.get("detail_json") != {"acp_control": checked_handoff,
+                            "confirmation_baseline": checked_baseline}
+                        or acp_binding_sha256(checked_baseline) != checked_handoff["confirmation_baseline_sha256"]
+                        or reservation is None
+                        or reservation["reservation_sha256"] != checked_handoff["reservation_sha256"]
+                        or handoff_row is None or handoff_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                        or handoff_row.get("outcome") != "confirmation_handoff_prepared"
+                        or handoff_row.get("resource_id") != root_id
+                        or root.get("authority_status") != "closed" or root.get("status") != "completed"
+                        or root.get("terminal_sequence") != final["terminal_event_receipt"]["sequence"]
+                        or root.get("terminal_event_sha256") != final["terminal_event_receipt"]["event_sha256"]
+                        or root.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                        or root.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]):
+                    raise AgentConflict("protected local validation handoff differs from the closed Root")
+                key_lock = f"research-artifact|{reservation['task_id']}|{reservation['idempotency_key']}"
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope": key_lock})
+                fetch_one(connection, "SELECT task_id FROM research_tasks WHERE task_id=:id FOR UPDATE",
+                          {"id": reservation["task_id"]})
+                fetch_one(connection, "SELECT artifact_id FROM artifacts WHERE task_id=:task AND idempotency_key=:key FOR UPDATE",
+                          {"task": reservation["task_id"], "key": reservation["idempotency_key"]})
+                fetch_one(connection, "SELECT artifact_id FROM artifact_submission_receipts WHERE task_id=:task AND idempotency_key=:key FOR UPDATE",
+                          {"task": reservation["task_id"], "key": reservation["idempotency_key"]})
+                snapshot = self._local_validation_frozen_snapshot(
+                    connection, root_id, reservation["task_id"], reservation["idempotency_key"])
+                claim = next((row for row in snapshot["agent_domain_call_claims"]
+                              if row["claim_id"] == reservation["claim_id"]), None)
+                callback = next((row for row in snapshot["agent_audit"]
+                                 if row["audit_id"] == local_validation_callback_exit_audit_id(
+                                     reservation["claim_id"])), None)
+                callback_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,
+                        r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id AND r.root_run_id=:root FOR SHARE""",
+                    {"id": local_validation_callback_exit_audit_id(reservation["claim_id"]), "root": root_id})
+                callback_receipt = _local_validation_callback_exit_from_audit_row(
+                    callback_row, reservation["claim_id"])
+                domain_observation = next((row for row in snapshot["agent_acp_domain_call_observations"]
+                    if row["mcp_request_id"] == reservation["mcp_request_id"]), None)
+                ingress_row = next((row for row in snapshot["agent_acp_tool_ingress_observations"]
+                    if row["mcp_request_id"] == reservation["mcp_request_id"]), None)
+                registration = (next((row for row in snapshot["agent_acp_native_agent_registrations"]
+                    if row["native_agent_session_id"] == domain_observation["native_agent_session_id"]), None)
+                    if domain_observation is not None else None)
+                observation_identity = ({key: domain_observation[key] for key in (
+                    "mcp_request_id", "owner_principal", "workspace_id", "actor_principal", "session_id",
+                    "trace_id", "dsh_run_id", "runtime_boot_id", "root_run_id", "native_agent_session_id",
+                    "sequence", "evidence_sequence", "agent_run_id", "task_id", "action",
+                    "idempotency_key", "request_sha256", "input_sha256", "event_sha256", "receipt_json")}
+                    if domain_observation is not None else {})
+                if (claim is None or callback is None
+                        or domain_observation is None or ingress_row is None or registration is None
+                        or acp_binding_sha256({"claim": claim,
+                            "business_facts": snapshot["local_validation_business_facts"],
+                            "callback_exit": callback}) != final["source_rows_sha256"]
+                        or acp_binding_sha256(claim) != reservation["claim_sha256"]
+                        or acp_binding_sha256(registration) != reservation["registration_sha256"]
+                        or acp_binding_sha256(observation_identity) != reservation["observation_sha256"]
+                        or ingress_row["status"] != "unknown"
+                        or ingress_row["tool_name"] != "byq_strategy_validate"
+                        or ingress_row["event_sha256"] != reservation["event_sha256"]
+                        or acp_binding_sha256(ingress_row["settlement_json"]) != reservation["settlement_sha256"]
+                        or callback_receipt is None
+                        or callback_receipt["receipt_sha256"] != reservation["callback_exit_sha256"]
+                        or callback_receipt["request_sha256"] != reservation["request_sha256"]
+                        or callback_receipt["input_sha256"] != reservation["input_sha256"]
+                        or callback_receipt["evidence_sha256"] != reservation["evidence_sha256"]
+                        or callback_receipt["observation_sha256"] != reservation["observation_sha256"]):
+                    raise AgentConflict("local validation original key result changed before handoff ACK")
+                confirm_id = _local_validation_final_audit_id(root_id, "confirmation")
+                prior_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id FOR UPDATE OF a""",
+                    {"id": confirm_id})
+                excluded_audit_ids: set[str] = set()
+                expected_audits = [
+                        (handoff_id,
+                         handoff_row, _LOCAL_VALIDATION_HANDOFF_ACTION,
+                         "confirmation_handoff_prepared",
+                         {"acp_control": checked_handoff, "confirmation_baseline": checked_baseline}),
+                        (confirm_id, prior_row, _LOCAL_VALIDATION_CONFIRMATION_ACTION,
+                         "confirmed", {"acp_control": confirmation})]
+                if successor:
+                    expected_audits.append((predecessor_id, predecessor_row,
+                        _LOCAL_VALIDATION_HANDOFF_ACTION, "confirmation_handoff_prepared",
+                        {"acp_control": checked_predecessor, "confirmation_baseline": checked_baseline}))
+                for audit_id, audit_row, expected_action, expected_outcome, expected_detail in expected_audits:
+                    if audit_row is None:
+                        continue
+                    matching = [row for row in snapshot["agent_audit"] if row["audit_id"] == audit_id]
+                    if (len(matching) != 1 or audit_row.get("audit_id") != audit_id
+                            or audit_row.get("run_id") != final_row["run_id"]
+                            or audit_row.get("action") != expected_action
+                            or audit_row.get("outcome") != expected_outcome
+                            or audit_row.get("resource_type") != "runtime_root"
+                            or audit_row.get("resource_id") != root_id
+                            or audit_row.get("detail_json") != expected_detail
+                            or audit_row.get("audit_root_run_id") != root_id
+                            or set(matching[0]) != set(checked_baseline["agent_audit"][0])
+                            or matching[0].get("run_id") != final_row["run_id"]
+                            or matching[0].get("owner_principal") != scope["owner_principal"]
+                            or matching[0].get("actor_principal") != "byq-product-agent-" + scope["session_id"]
+                            or matching[0].get("workspace_id") != scope["workspace_id"]
+                            or matching[0].get("detail_json") != expected_detail):
+                        raise AgentConflict("local validation confirmation audit delta is not exact")
+                    excluded_audit_ids.add(audit_id)
+                stable_snapshot = dict(snapshot)
+                stable_snapshot["agent_audit"] = [row for row in snapshot["agent_audit"]
+                    if row["audit_id"] not in excluded_audit_ids]
+                if stable_snapshot != checked_baseline:
+                    raise AgentConflict("local validation complete post-finalization baseline changed before ACK")
+                if prior_row is not None:
+                    prior = prior_row.get("detail_json", {}).get("acp_control") if isinstance(prior_row.get("detail_json"), dict) else None
+                    if prior != confirmation or prior_row.get("audit_root_run_id") != root_id:
+                        raise AgentConflict("local validation handoff confirmation retry changed")
+                    return validate_local_validation_backend_confirmation(prior)
+                run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:id FOR UPDATE",
+                                {"id": final_row["run_id"]})
+                if run is None or run.get("root_run_id") != root_id:
+                    raise AgentConflict("local validation handoff AgentRun is missing")
+                self._record_audit_row(run, action=_LOCAL_VALIDATION_CONFIRMATION_ACTION,
+                    outcome="confirmed", resource_type="runtime_root", resource_id=root_id,
+                    detail={"acp_control": confirmation}, connection=connection, audit_id=confirm_id)
+                return confirmation
+
+    def confirm_local_validation_ack(self, *, final_receipt: object, runtime_observation: object,
+                                     operator_uid: int, operator_name: str) -> dict[str, Any]:
+        """Append one immutable Backend confirmation for the exact Runtime release proof."""
+        try:
+            final = validate_local_validation_final_receipt(final_receipt)
+            observation = validate_local_validation_release_observation(runtime_observation)
+            operator_name = _principal(operator_name, field="operator_name")
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("local validation confirmation evidence is malformed") from exc
+        if (type(operator_uid) is not int or not 0 <= operator_uid <= 2**31 - 1
+                or observation["ack_intent"]["final_receipt"] != final):
+            raise AgentConflict("local validation Runtime observation differs from its final receipt")
+        root_id = final["root_run_id"]
+        scope = final["scope"]
+        intent = observation["ack_intent"]
+        confirmation_base = {
+            "schema_version": _LOCAL_VALIDATION_CONFIRMATION_SCHEMA,
+            "root_run_id": root_id,
+            "final_receipt_sha256": final["receipt_sha256"],
+            "runtime_observation": observation,
+            "operator_uid": operator_uid,
+            "operator_name": operator_name,
+        }
+        confirmation = confirmation_base | {"receipt_sha256": acp_binding_sha256(confirmation_base)}
+        try:
+            confirmation = validate_local_validation_backend_confirmation(confirmation)
+        except (TypeError, ValueError) as exc:
+            raise AgentConflict("constructed local validation confirmation is invalid") from exc
+        confirm_audit_id = _local_validation_final_audit_id(root_id, "confirmation")
+        gate_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if gate_engine is None:
+            raise AgentPersistenceError("local validation confirmation writer gate is unavailable")
+        with transaction(gate_engine) as gate_connection:
+            gate_connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                connection.exec_driver_sql("SET LOCAL lock_timeout = '5s'")
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, "workspace-reset|" + scope["workspace_id"])
+                self._lifecycle_lock(connection, "root:" + root_id)
+                authority = self._require_current_runtime_boot(
+                    connection, scope["runtime_boot_id"], required=True)
+                if authority.get("epoch") != intent["runtime_authority_epoch"]:
+                    raise AgentConflict("local validation Runtime authority epoch changed")
+                self._require_lifecycle_workspace(
+                    connection, scope["owner_principal"], scope["workspace_id"], terminal_cleanup=True)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE",
+                                 {"root": root_id})
+                final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                        r.session_id AS audit_session_id,r.trace_id AS audit_trace_id,
+                        r.dsh_run_id AS audit_generation_id,t.workspace_id AS audit_workspace_id,
+                        t.session_id AS turn_session_id,t.trace_id AS turn_trace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": _local_validation_final_audit_id(root_id, "terminal")})
+                stored_final = _local_validation_final_from_audit_row(final_row, root_id)
+                if (root is None or stored_final != final
+                        or root.get("owner_principal") != scope["owner_principal"]
+                        or root.get("workspace_id") != scope["workspace_id"]
+                        or root.get("session_id") != scope["session_id"]
+                        or root.get("trace_id") != scope["trace_id"]
+                        or root.get("authority_status") != "closed"
+                        or root.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                        or root.get("terminal_sequence") != final["terminal_event_receipt"]["sequence"]
+                        or root.get("terminal_event_sha256") != final["terminal_event_receipt"]["event_sha256"]
+                        or root.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                        or root.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                        or root.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                        or root.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]
+                        or final_row.get("audit_owner_principal") != scope["owner_principal"]
+                        or final_row.get("audit_actor_principal") != f"byq-product-agent-{scope['session_id']}"
+                        or final_row.get("audit_generation_id") != scope["generation_id"]
+                        or final_row.get("audit_workspace_id") != scope["workspace_id"]
+                        or final_row.get("audit_session_id") != scope["session_id"]
+                        or final_row.get("audit_trace_id") != scope["trace_id"]
+                        or final_row.get("turn_session_id") != scope["session_id"]
+                        or final_row.get("turn_trace_id") != scope["trace_id"]):
+                    raise AgentConflict("local validation final no longer matches its closed Root")
+                reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": local_validation_reconciliation_audit_id(root_id)})
+                reservation = _local_validation_reservation_from_audit_row(reservation_row, root_id)
+                if reservation is None:
+                    raise AgentConflict("local validation confirmation has no exact reservation")
+                known_scope = reservation["scope"]
+                if (reservation["claim_id"] != final["claim_id"]
+                        or reservation["task_id"] != final["task_id"]
+                        or final["reservation_sha256"] != reservation["reservation_sha256"]
+                        or reservation["authority_boot_id"] != scope["runtime_boot_id"]
+                        or any(scope[key] != known_scope[field] for key, field in {
+                            "owner_principal": "owner_principal", "workspace_id": "workspace_id",
+                            "session_id": "session_id", "trace_id": "trace_id",
+                            "generation_id": "generation"}.items())):
+                    raise AgentConflict("local validation reservation differs from its final scope")
+                disposition_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    WHERE a.audit_id=:id FOR SHARE""",
+                    {"id": _local_validation_final_audit_id(root_id, "disposition")})
+                disposition = (disposition_row.get("detail_json", {}).get("acp_control")
+                    if disposition_row and isinstance(disposition_row.get("detail_json"), dict) else None)
+                disposition_base = ({key: value for key, value in disposition.items()
+                                    if key != "receipt_sha256"} if isinstance(disposition, dict) else {})
+                if (not isinstance(disposition, dict)
+                        or set(disposition) != {"schema_version", "root_run_id", "reservation_sha256",
+                            "claim_id", "task_id", "idempotency_key_sha256", "disposition",
+                            "source_rows_sha256", "receipt_sha256"}
+                        or disposition_row.get("audit_root_run_id") != root_id
+                        or disposition_row.get("action") != _LOCAL_VALIDATION_DISPOSITION_ACTION
+                        or disposition_row.get("outcome") != final["disposition"]
+                        or disposition_row.get("resource_type") != "runtime_root"
+                        or disposition_row.get("resource_id") != root_id
+                        or disposition_row.get("detail_json") != {"acp_control": disposition}
+                        or disposition.get("schema_version") != _LOCAL_VALIDATION_DISPOSITION_SCHEMA
+                        or disposition.get("root_run_id") != root_id
+                        or disposition.get("reservation_sha256") != reservation["reservation_sha256"]
+                        or disposition.get("claim_id") != final["claim_id"]
+                        or disposition.get("task_id") != final["task_id"]
+                        or disposition.get("disposition") != final["disposition"]
+                        or disposition.get("source_rows_sha256") != final["source_rows_sha256"]
+                        or not hmac.compare_digest(acp_binding_sha256(disposition_base),
+                                                   disposition.get("receipt_sha256", ""))
+                        or disposition.get("receipt_sha256") != final["disposition_sha256"]):
+                    raise AgentConflict("local validation disposition audit is inconsistent")
+                locked_ingress = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                    WHERE root_run_id=:root ORDER BY mcp_request_id FOR UPDATE""", {"root": root_id})
+                unknown = [item for item in locked_ingress if item.get("status") == "unknown"]
+                if (len(unknown) != 1 or len(unknown) != final["unknown_ingress_count"]
+                        or unknown[0].get("mcp_request_id") != reservation["mcp_request_id"]
+                        or _local_validation_unknown_ingress_digest(unknown)
+                           != final["unknown_ingress_sha256"]):
+                    raise AgentConflict("local validation raw unknown ingress facts changed")
+                terminal_snapshot = self._acp_terminal_evidence_snapshot(connection, root_id)
+                if any(terminal_snapshot[field] != final[field] for field in (
+                        "terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
+                        "terminal_unknown_claim_count", "terminal_unknown_claims_sha256")):
+                    raise AgentConflict("local validation terminal raw facts changed")
+                claim = fetch_one(connection, "SELECT * FROM agent_domain_call_claims WHERE claim_id=:id FOR UPDATE",
+                                  {"id": final["claim_id"]})
+                if (claim is None or claim.get("root_run_id") != root_id
+                        or claim.get("task_id") != final["task_id"]
+                        or claim.get("status") != final["claim_status"]
+                        or claim.get("action") != "byq_strategy_validate"
+                        or claim.get("idempotency_key") != reservation["idempotency_key"]
+                        or claim.get("request_sha256") != reservation["request_sha256"]
+                        or claim.get("input_sha256") != reservation["input_sha256"]
+                        or hashlib.sha256(claim.get("idempotency_key", "").encode("utf-8")).hexdigest()
+                           != final["idempotency_key_sha256"]):
+                    raise AgentConflict("local validation original claim changed")
+                # Serialize the original-key business preimage through confirmation,
+                # using the same lock order as local validation prepare/close.
+                key_lock = f"research-artifact|{claim['task_id']}|{claim['idempotency_key']}"
+                execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {"scope": key_lock})
+                fetch_one(connection, "SELECT task_id FROM research_tasks WHERE task_id=:id FOR UPDATE",
+                          {"id": claim["task_id"]})
+                fetch_one(connection, """SELECT artifact_id FROM artifacts WHERE task_id=:task
+                    AND idempotency_key=:key FOR UPDATE""", {
+                    "task": claim["task_id"], "key": claim["idempotency_key"]})
+                fetch_one(connection, """SELECT artifact_id FROM artifact_submission_receipts
+                    WHERE task_id=:task AND idempotency_key=:key FOR UPDATE""", {
+                    "task": claim["task_id"], "key": claim["idempotency_key"]})
+                snapshot = self._local_validation_frozen_snapshot(
+                    connection, root_id, final["task_id"], claim["idempotency_key"])
+                claim_fact = next(item for item in snapshot["agent_domain_call_claims"]
+                                  if item["claim_id"] == final["claim_id"])
+                callback_fact = next((item for item in snapshot["agent_audit"]
+                    if item["audit_id"] == local_validation_callback_exit_audit_id(final["claim_id"])), None)
+                if callback_fact is None:
+                    raise AgentConflict("local validation callback exit audit is unavailable")
+                callback_row = fetch_one(connection, """SELECT a.*,
+                        r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,
+                        r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id AND r.root_run_id=:root FOR SHARE""",
+                    {"id": local_validation_callback_exit_audit_id(final["claim_id"]), "root": root_id})
+                callback = _local_validation_callback_exit_from_audit_row(callback_row, final["claim_id"])
+                if callback is None or callback["mcp_request_id"] != reservation["mcp_request_id"]:
+                    raise AgentConflict("local validation callback exit differs from its reserved ingress")
+                source_sha = acp_binding_sha256({"claim": claim_fact,
+                    "business_facts": snapshot["local_validation_business_facts"],
+                    "callback_exit": callback_fact})
+                if source_sha != final["source_rows_sha256"]:
+                    raise AgentConflict("local validation source rows changed after close")
+                prior = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    WHERE a.audit_id=:id FOR UPDATE""", {"id": confirm_audit_id})
+                if prior is not None:
+                    stored = prior.get("detail_json", {}).get("acp_control") \
+                        if isinstance(prior.get("detail_json"), dict) else None
+                    if (prior.get("audit_root_run_id") != root_id
+                            or prior.get("run_id") != final_row.get("run_id")
+                            or prior.get("owner_principal") != final_row.get("owner_principal")
+                            or prior.get("actor_principal") != final_row.get("actor_principal")
+                            or prior.get("action") != _LOCAL_VALIDATION_CONFIRMATION_ACTION
+                            or prior.get("outcome") != "confirmed"
+                            or prior.get("resource_type") != "runtime_root"
+                            or prior.get("resource_id") != root_id
+                            or prior.get("detail_json") != {"acp_control": stored}
+                            or stored != confirmation):
+                        raise AgentConflict("local validation confirmation retry changed")
+                    return stored
+                run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:id FOR UPDATE",
+                                {"id": final_row["run_id"]})
+                if run is None or run.get("root_run_id") != root_id:
+                    raise AgentConflict("local validation AgentRun is unavailable for confirmation")
+                self._record_audit_row(run, action=_LOCAL_VALIDATION_CONFIRMATION_ACTION,
+                    outcome="confirmed", resource_type="runtime_root", resource_id=root_id,
+                    detail={"acp_control": confirmation}, connection=connection, audit_id=confirm_audit_id)
+                return confirmation
+
+    @staticmethod
     def _historical_validate_runtime_result(
         runtime_result: object,
         *,
@@ -1754,6 +3286,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             binding = None
             if acp_identity is not None:
                 self._lifecycle_lock(connection, "root:" + acp_identity["root_run_id"])
+                _require_local_validation_root_unfenced(connection, acp_identity["root_run_id"])
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                                  {"root": acp_identity["root_run_id"]})
                 if root is None:
@@ -1884,13 +3417,294 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         params = {"owner": owner, "workspace": workspace, "session": session, "trace": trace}
         rows = self._execute(sql, params)
         operator_rows: dict[str, dict[str, object]] = {}
-        if any(row.get("status") == "interrupted" and row.get("authority_status") == "closed"
-               and row.get("terminal_sequence") is None and row.get("terminal_event_sha256") is None
-               for row in rows):
+        local_rows: dict[str, dict[str, object]] = {}
+        local_pre_ack_rows: dict[str, dict[str, object]] = {}
+        for root in rows:
+            root_id = root["root_run_id"]
+            final_row = self._fetch_one("""SELECT a.*, r.root_run_id AS audit_root_run_id,
+                    r.owner_principal AS audit_owner_principal,
+                    r.actor_principal AS audit_actor_principal,
+                    r.session_id AS audit_session_id, r.trace_id AS audit_trace_id,
+                    r.dsh_run_id AS audit_generation_id,
+                    t.workspace_id AS audit_workspace_id, t.session_id AS turn_session_id,
+                    t.trace_id AS turn_trace_id
+                FROM agent_audit a
+                LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                WHERE a.audit_id=:audit_id""",
+                {"audit_id": _local_validation_final_audit_id(root_id, "terminal")})
+            final = _local_validation_final_from_audit_row(final_row, root_id)
+            if final is None:
+                reservation_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id,t.session_id AS turn_session_id,
+                        t.trace_id AS turn_trace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id""", {"id": local_validation_reconciliation_audit_id(root_id)})
+                if reservation_row is not None:
+                    reservation = _local_validation_reservation_from_audit_row(reservation_row, root_id)
+                    scope = reservation["scope"]
+                    if (reservation_row.get("action") != _LOCAL_VALIDATION_RECONCILIATION_ACTION
+                            or reservation_row.get("outcome") != _LOCAL_VALIDATION_RECONCILIATION_OUTCOME
+                            or reservation_row.get("resource_type") != "runtime_root"
+                            or reservation_row.get("resource_id") != root_id
+                            or reservation_row.get("audit_owner_principal") != owner
+                            or reservation_row.get("audit_workspace_id") != workspace
+                            or reservation_row.get("turn_session_id") != session
+                            or reservation_row.get("turn_trace_id") != trace
+                            or scope["owner_principal"] != owner or scope["workspace_id"] != workspace
+                            or scope["session_id"] != session or scope["trace_id"] != trace
+                            or root.get("status") != "active" or root.get("authority_status") != "active"):
+                        raise AgentConflict("local validation reservation projection differs from active Root")
+                    callback_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                            r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                            t.workspace_id AS audit_workspace_id
+                        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                        JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                        WHERE a.audit_id=:id AND r.root_run_id=:root""", {
+                        "id": local_validation_callback_exit_audit_id(reservation["claim_id"]),
+                        "root": root_id})
+                    callback = _local_validation_callback_exit_from_audit_row(callback_row, reservation["claim_id"])
+                    if (callback is None or callback["root_run_id"] != root_id
+                            or callback["receipt_sha256"] != reservation["callback_exit_sha256"]
+                            or callback["mcp_request_id"] != reservation["mcp_request_id"]
+                            or callback["scope"] != scope):
+                        raise AgentConflict("local validation callback-exit projection differs from reservation")
+                    local_pre_ack_rows[root_id] = {
+                        "schema_version": "byq-local-validation-pre-ack-evidence.v1",
+                        "reservation": reservation, "callback_exit": callback,
+                    }
+                continue
+            scope = final["scope"]
+            terminal = final["terminal_event_receipt"]
+            if (root.get("authority_status") != "closed"
+                    or root.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                    or terminal != lifecycle_receipt({"schema_version": "agent-run-lifecycle.v1",
+                        "root_run_id": root_id, "sequence": terminal["sequence"],
+                        "outcome": root.get("status")})
+                    or terminal["sequence"] != root.get("terminal_sequence")
+                    or terminal["event_sha256"] != root.get("terminal_event_sha256")
+                    or final["terminal_acp_ingress_sequence"] != root.get("terminal_acp_ingress_sequence")
+                    or final["terminal_acp_ingress_sha256"] != root.get("terminal_acp_ingress_sha256")
+                    or final["terminal_unknown_claim_count"] != root.get("terminal_unknown_claim_count")
+                    or final["terminal_unknown_claims_sha256"] != root.get("terminal_unknown_claims_sha256")
+                    or scope["owner_principal"] != owner or scope["workspace_id"] != workspace
+                    or scope["session_id"] != session or scope["trace_id"] != trace
+                    or scope["root_run_id"] != root_id
+                    or final_row.get("audit_root_run_id") != root_id
+                    or final_row.get("audit_owner_principal") != owner
+                    or final_row.get("audit_actor_principal") != f"byq-product-agent-{session}"
+                    or final_row.get("audit_generation_id") != scope["generation_id"]
+                    or final_row.get("audit_workspace_id") != workspace
+                    or final_row.get("audit_session_id") != session
+                    or final_row.get("audit_trace_id") != trace
+                    or final_row.get("turn_session_id") != session
+                    or final_row.get("turn_trace_id") != trace):
+                raise AgentConflict("local validation terminal projection differs from its closed Root")
+            confirmation_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                    r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                    t.workspace_id AS audit_workspace_id,t.session_id AS turn_session_id,
+                    t.trace_id AS turn_trace_id
+                FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                WHERE a.audit_id=:id""", {"id": _local_validation_final_audit_id(root_id, "confirmation")})
+            successor_handoff_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                    r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                    t.workspace_id AS audit_workspace_id,t.session_id AS turn_session_id,
+                    t.trace_id AS turn_trace_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                WHERE a.audit_id=:id""", {
+                "id": _local_validation_final_audit_id(root_id, "confirmation_handoff_successor")})
+            if successor_handoff_row is not None:
+                predecessor_handoff_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id,t.session_id AS turn_session_id,
+                        t.trace_id AS turn_trace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id""", {
+                    "id": _local_validation_final_audit_id(root_id, "confirmation_handoff")})
+                prior_detail = (predecessor_handoff_row.get("detail_json")
+                    if predecessor_handoff_row is not None else None)
+                successor_detail = successor_handoff_row.get("detail_json")
+                try:
+                    prior_handoff = validate_local_validation_handoff(
+                        prior_detail["acp_control"], final_receipt=final)
+                    successor_handoff = validate_local_validation_handoff(
+                        successor_detail["acp_control"], final_receipt=final)
+                    prior_baseline = validate_local_validation_handoff_input({
+                        "schema_version": _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+                        "final_receipt": final,
+                        "stopped_runtime_evidence": prior_handoff["stopped_runtime_evidence"],
+                        "confirmation_baseline": prior_detail["confirmation_baseline"]})["confirmation_baseline"]
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise AgentConflict("protected predecessor handoff projection is malformed") from exc
+                if (predecessor_handoff_row.get("audit_root_run_id") != root_id
+                        or predecessor_handoff_row.get("run_id") != final_row.get("run_id")
+                        or predecessor_handoff_row.get("owner_principal") != owner
+                        or predecessor_handoff_row.get("audit_owner_principal") != owner
+                        or predecessor_handoff_row.get("actor_principal") != final_row.get("actor_principal")
+                        or predecessor_handoff_row.get("audit_actor_principal") != final_row.get("actor_principal")
+                        or predecessor_handoff_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                        or predecessor_handoff_row.get("outcome") != "confirmation_handoff_prepared"
+                        or predecessor_handoff_row.get("resource_type") != "runtime_root"
+                        or predecessor_handoff_row.get("resource_id") != root_id
+                        or predecessor_handoff_row.get("audit_workspace_id") != workspace
+                        or predecessor_handoff_row.get("turn_session_id") != session
+                        or predecessor_handoff_row.get("turn_trace_id") != trace
+                        or prior_detail != {"acp_control": prior_handoff,
+                            "confirmation_baseline": prior_baseline}
+                        or successor_detail.get("confirmation_baseline") != prior_baseline
+                        or successor_handoff.get("predecessor_handoff_sha256") != prior_handoff["handoff_sha256"]
+                        or prior_handoff["new_authority"]["boot_id"]
+                           != "a06bfa20edec5f49110a39705bd629b7"
+                        or prior_handoff["new_authority"]["epoch"] != 33):
+                    raise AgentConflict("protected predecessor handoff projection changed")
+            active_handoff_suffix = ("confirmation_handoff_successor" if successor_handoff_row is not None
+                else "confirmation_handoff")
+            observation = None
+            confirmation = None
+            if confirmation_row is not None:
+                raw_confirmation = (confirmation_row.get("detail_json", {}).get("acp_control")
+                    if isinstance(confirmation_row.get("detail_json"), dict) else None)
+                try:
+                    confirmation = validate_local_validation_backend_confirmation(raw_confirmation)
+                except (TypeError, ValueError) as exc:
+                    raise AgentConflict("local validation confirmation audit is malformed") from exc
+                if (confirmation_row.get("audit_root_run_id") != root_id
+                        or confirmation_row.get("run_id") != final_row.get("run_id")
+                        or confirmation_row.get("owner_principal") != owner
+                        or confirmation_row.get("audit_owner_principal") != owner
+                        or confirmation_row.get("actor_principal") != final_row.get("actor_principal")
+                        or confirmation_row.get("audit_actor_principal") != final_row.get("actor_principal")
+                        or confirmation_row.get("action") != _LOCAL_VALIDATION_CONFIRMATION_ACTION
+                        or confirmation_row.get("outcome") != "confirmed"
+                        or confirmation_row.get("resource_type") != "runtime_root"
+                        or confirmation_row.get("resource_id") != root_id
+                        or confirmation_row.get("detail_json") != {"acp_control": raw_confirmation}
+                        or confirmation["root_run_id"] != root_id
+                        or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                        or confirmation_row.get("audit_workspace_id") != workspace
+                        or confirmation_row.get("turn_session_id") != session
+                        or confirmation_row.get("turn_trace_id") != trace):
+                    raise AgentConflict("local validation confirmation audit differs from its exact Root")
+                if confirmation.get("handoff") is not None:
+                    handoff_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                            r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                            t.workspace_id AS audit_workspace_id,t.session_id AS turn_session_id,
+                            t.trace_id AS turn_trace_id
+                        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                        JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                        WHERE a.audit_id=:id""", {
+                        "id": _local_validation_final_audit_id(root_id, active_handoff_suffix)})
+                    raw_handoff = (handoff_row.get("detail_json", {}).get("acp_control")
+                        if handoff_row and isinstance(handoff_row.get("detail_json"), dict) else None)
+                    raw_baseline = (handoff_row.get("detail_json", {}).get("confirmation_baseline")
+                        if handoff_row and isinstance(handoff_row.get("detail_json"), dict) else None)
+                    try:
+                        checked_baseline = validate_local_validation_handoff_input({
+                            "schema_version": _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+                            "final_receipt": final,
+                            "stopped_runtime_evidence": confirmation["handoff"]["stopped_runtime_evidence"],
+                            "confirmation_baseline": raw_baseline,
+                            **({"predecessor_runtime_stopped_evidence":
+                                confirmation["handoff"]["predecessor_runtime_stopped_evidence"]}
+                                if successor_handoff_row is not None else {})})["confirmation_baseline"]
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise AgentConflict("protected local handoff baseline is malformed") from exc
+                    if (handoff_row is None or raw_handoff != confirmation["handoff"]
+                            or handoff_row.get("detail_json") != {"acp_control": raw_handoff,
+                                "confirmation_baseline": checked_baseline}
+                            or acp_binding_sha256(checked_baseline)
+                               != confirmation["handoff"]["confirmation_baseline_sha256"]
+                            or handoff_row.get("audit_root_run_id") != root_id
+                            or handoff_row.get("run_id") != final_row.get("run_id")
+                            or handoff_row.get("owner_principal") != owner
+                            or handoff_row.get("audit_owner_principal") != owner
+                            or handoff_row.get("actor_principal") != final_row.get("actor_principal")
+                            or handoff_row.get("audit_actor_principal") != final_row.get("actor_principal")
+                            or handoff_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                            or handoff_row.get("outcome") != "confirmation_handoff_prepared"
+                            or handoff_row.get("resource_type") != "runtime_root"
+                            or handoff_row.get("resource_id") != root_id
+                            or handoff_row.get("audit_workspace_id") != workspace
+                            or handoff_row.get("turn_session_id") != session
+                            or handoff_row.get("turn_trace_id") != trace):
+                        raise AgentConflict("protected local handoff audit differs from its confirmation")
+                observation = confirmation["runtime_observation"]
+            handoff_receipt = confirmation.get("handoff") if confirmation is not None else None
+            if handoff_receipt is None:
+                handoff_row = self._fetch_one("""SELECT a.*,r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                        t.workspace_id AS audit_workspace_id,t.session_id AS turn_session_id,
+                        t.trace_id AS turn_trace_id
+                    FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                    JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id""", {
+                    "id": _local_validation_final_audit_id(root_id, active_handoff_suffix)})
+                if handoff_row is not None:
+                    raw_handoff = (handoff_row.get("detail_json", {}).get("acp_control")
+                        if isinstance(handoff_row.get("detail_json"), dict) else None)
+                    try:
+                        handoff_receipt = validate_local_validation_handoff(raw_handoff, final_receipt=final)
+                        raw_baseline = handoff_row["detail_json"]["confirmation_baseline"]
+                        checked_baseline = validate_local_validation_handoff_input({
+                            "schema_version": _LOCAL_VALIDATION_HANDOFF_INPUT_SCHEMA,
+                            "final_receipt": final,
+                            "stopped_runtime_evidence": handoff_receipt["stopped_runtime_evidence"],
+                            "confirmation_baseline": raw_baseline,
+                            **({"predecessor_runtime_stopped_evidence":
+                                handoff_receipt["predecessor_runtime_stopped_evidence"]}
+                                if successor_handoff_row is not None else {})})["confirmation_baseline"]
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise AgentConflict("local validation handoff audit is malformed") from exc
+                    if (handoff_row.get("audit_root_run_id") != root_id
+                            or handoff_row.get("run_id") != final_row.get("run_id")
+                            or handoff_row.get("owner_principal") != owner
+                            or handoff_row.get("audit_owner_principal") != owner
+                            or handoff_row.get("actor_principal") != final_row.get("actor_principal")
+                            or handoff_row.get("audit_actor_principal") != final_row.get("actor_principal")
+                            or handoff_row.get("action") != _LOCAL_VALIDATION_HANDOFF_ACTION
+                            or handoff_row.get("outcome") != "confirmation_handoff_prepared"
+                            or handoff_row.get("resource_type") != "runtime_root"
+                            or handoff_row.get("resource_id") != root_id
+                            or handoff_row.get("detail_json") != {"acp_control": handoff_receipt,
+                                "confirmation_baseline": checked_baseline}
+                            or acp_binding_sha256(checked_baseline)
+                               != handoff_receipt["confirmation_baseline_sha256"]
+                            or handoff_row.get("audit_workspace_id") != workspace
+                            or handoff_row.get("turn_session_id") != session
+                            or handoff_row.get("turn_trace_id") != trace):
+                        raise AgentConflict("protected local handoff audit differs from its Root")
+            if handoff_receipt is not None:
+                successor_receipt = self._fetch_one("""SELECT epoch,receipt_json
+                    FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot FOR SHARE""", {
+                    "boot": handoff_receipt["new_authority"]["boot_id"]})
+                if (successor_receipt is None
+                        or successor_receipt.get("epoch") != handoff_receipt["new_authority"]["epoch"]
+                        or not isinstance(successor_receipt.get("receipt_json"), dict)
+                        or acp_binding_sha256(successor_receipt["receipt_json"])
+                           != handoff_receipt["new_authority"]["boot_receipt_sha256"]):
+                    raise AgentConflict("protected local handoff successor receipt changed")
+            local_rows[root_id] = {
+                "final_receipt": final,
+                "runtime_observation": observation,
+                "confirmation_receipt": confirmation,
+                "handoff_receipt": handoff_receipt,
+            }
+        if any(row.get("authority_status") == "closed" and (
+               (row.get("status") == "failed" and row["root_run_id"] not in local_rows)
+               or (row.get("status") == "interrupted" and row.get("terminal_sequence") is None
+                   and row.get("terminal_event_sha256") is None and row["root_run_id"] not in local_rows)
+               or row.get("status") == "completed") for row in rows):
             from .operator_process_fence import (
                 ACK_ACTION, ACK_IDEMPOTENCY_PREFIX, PROCESS_FENCE_ACTION,
-                PROCESS_FENCE_IDEMPOTENCY_PREFIX, OperatorProcessFenceHold,
+                PROCESS_FENCE_IDEMPOTENCY_PREFIX, HANDOFF_ACTION, HANDOFF_IDEMPOTENCY_PREFIX,
+                HANDOFF_ACK_ACTION, HANDOFF_ACK_IDEMPOTENCY_PREFIX, OperatorProcessFenceHold,
                 _validate_reserved_ack_row, _validate_reserved_proof_row,
+                _validate_reserved_handoff_row, _validate_reserved_handoff_ack_row,
                 require_workspace_process_fence_ack,
             )
 
@@ -1902,26 +3716,43 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                             resource_type,resource_id,outcome,idempotency_key,request_sha256,
                             detail_json,response_json,created_at
                         FROM operations_audit WHERE resource_id=:workspace
-                          AND (action IN (:proof_action,:ack_action)
+                          AND (action IN (:proof_action,:ack_action,:handoff_action,:handoff_ack_action)
                                OR idempotency_key LIKE :proof_prefix
-                               OR idempotency_key LIKE :ack_prefix)
+                               OR idempotency_key LIKE :ack_prefix
+                               OR idempotency_key LIKE :handoff_prefix
+                               OR idempotency_key LIKE :handoff_ack_prefix)
                         ORDER BY created_at,audit_id""", {
                             "workspace": workspace, "proof_action": PROCESS_FENCE_ACTION,
-                            "ack_action": ACK_ACTION,
+                            "ack_action": ACK_ACTION, "handoff_action": HANDOFF_ACTION,
+                            "handoff_ack_action": HANDOFF_ACK_ACTION,
                             "proof_prefix": PROCESS_FENCE_IDEMPOTENCY_PREFIX + "%",
                             "ack_prefix": ACK_IDEMPOTENCY_PREFIX + "%",
+                            "handoff_prefix": HANDOFF_IDEMPOTENCY_PREFIX + "%",
+                            "handoff_ack_prefix": HANDOFF_ACK_IDEMPOTENCY_PREFIX + "%",
                         })
                     proofs: dict[str, dict[str, Any]] = {}
+                    proof_rows: dict[str, dict[str, Any]] = {}
                     acknowledgements: dict[str, dict[str, Any]] = {}
+                    handoffs: dict[str, dict[str, Any]] = {}
+                    handoff_acks: dict[str, dict[str, Any]] = {}
                     for audit_row in audit_rows:
                         action = audit_row.get("action")
                         key = audit_row.get("idempotency_key")
-                        if (action == PROCESS_FENCE_ACTION or isinstance(key, str)
+                        if (action == HANDOFF_ACTION or isinstance(key, str)
+                                and key.startswith(HANDOFF_IDEMPOTENCY_PREFIX)):
+                            handoff = _validate_reserved_handoff_row(audit_row)
+                            handoffs[handoff["operation_id"]] = handoff
+                        elif (action == HANDOFF_ACK_ACTION or isinstance(key, str)
+                              and key.startswith(HANDOFF_ACK_IDEMPOTENCY_PREFIX)):
+                            ack = _validate_reserved_handoff_ack_row(audit_row)
+                            handoff_acks[ack["operation_id"]] = ack
+                        elif (action == PROCESS_FENCE_ACTION or isinstance(key, str)
                                 and key.startswith(PROCESS_FENCE_IDEMPOTENCY_PREFIX)):
                             proof = _validate_reserved_proof_row(audit_row)
                             if proof["operation_id"] in proofs:
                                 raise OperatorProcessFenceHold("duplicate process-fence proof for Workspace")
                             proofs[proof["operation_id"]] = proof
+                            proof_rows[proof["operation_id"]] = audit_row
                         elif (action == ACK_ACTION or isinstance(key, str)
                               and key.startswith(ACK_IDEMPOTENCY_PREFIX)):
                             ack = _validate_reserved_ack_row(audit_row)
@@ -1935,27 +3766,65 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                         if root_row is None:
                             continue
                         ack = acknowledgements.get(operation_id)
-                        if (ack is None or root_row.get("status") != "interrupted"
-                                or root_row.get("authority_status") != "closed"
-                                or root_row.get("terminal_sequence") is not None
-                                or root_row.get("terminal_event_sha256") is not None):
+                        handoff_ack = handoff_acks.get(operation_id)
+                        handoff = handoffs.get(operation_id)
+                        if ((handoff is None) != (handoff_ack is None)
+                                or (handoff is not None and (ack is not None
+                                    or handoff.get("proof_receipt_sha256") != proof.get("receipt_sha256")
+                                    or handoff.get("close_receipt_sha256") != _r2_digest(
+                                        proof_rows[operation_id].get("response_json"))))):
+                            raise OperatorProcessFenceHold("handoff differs from exact completed-cleanup proof")
+                        failed_fact = proof.get("operator_failed_terminal")
+                        completed_fact = proof.get("operator_completed_cleanup")
+                        if ((ack is None and handoff_ack is None) or root_row.get("authority_status") != "closed"
+                                or (failed_fact is None and completed_fact is None and (root_row.get("status") != "interrupted"
+                                    or root_row.get("terminal_sequence") is not None
+                                    or root_row.get("terminal_event_sha256") is not None))
+                                or (failed_fact is not None and (root_row.get("status") != "failed"
+                                    or root_row.get("terminal_sequence") != failed_fact["sequence"]
+                                    or root_row.get("terminal_event_sha256") != failed_fact["event_sha256"]))
+                                or (completed_fact is not None and (root_row.get("status") != "completed"
+                                    or root_row.get("terminal_acp_ingress_sequence") != completed_fact["terminal_acp_ingress_sequence"]
+                                    or root_row.get("terminal_acp_ingress_sha256") != completed_fact["terminal_acp_ingress_sha256"]
+                                    or root_row.get("terminal_unknown_claim_count") != 0
+                                    or root_row.get("terminal_unknown_claims_sha256") != completed_fact["terminal_unknown_claims_sha256"]))):
                             raise OperatorProcessFenceHold("operator fence proof does not match closed Root")
                         if root_id in operator_rows:
                             raise OperatorProcessFenceHold("multiple operator fence proofs target the same Root")
-                        operator_rows[root_id] = {
+                        operator_projection = {
                             "schema_version": "byq-business-root-operator-process-fence.v1",
                             "operation_id": operation_id,
-                            "outcome": "interrupted",
+                            "outcome": "failed" if failed_fact is not None else "completed" if completed_fact is not None else "interrupted",
                             "ack_status": "confirmed",
                             "slot_release_status": "released",
                             "process_fence_receipt_sha256": proof["process_fence_receipt_sha256"],
-                            "operator_interruption_receipt_sha256": proof["operator_interruption"]["receipt_sha256"],
-                            "close_receipt_sha256": ack["terminal_ack_sha256"],
-                            "runtime_ack_sha256": ack["runtime_ack_sha256"],
+                            ("operator_failed_terminal_receipt_sha256" if failed_fact is not None else
+                             "operator_completed_cleanup_receipt_sha256" if completed_fact is not None
+                             else "operator_interruption_receipt_sha256"):
+                                (failed_fact or completed_fact or proof.get("operator_interruption"))["receipt_sha256"],
+                            "close_receipt_sha256": (ack["terminal_ack_sha256"] if ack is not None
+                                else handoff_ack["close_receipt_sha256"]),
+                            "runtime_ack_sha256": (ack["runtime_ack_sha256"] if ack is not None
+                                else _r2_digest(handoff_ack["runtime_observation"])),
                             "proof_receipt_sha256": proof["receipt_sha256"],
-                            "ack_receipt_sha256": ack["receipt_sha256"],
-                            "superseded_terminal": ack["superseded_terminal"],
+                            "ack_receipt_sha256": (ack["receipt_sha256"] if ack is not None
+                                else handoff_ack["receipt_sha256"]),
+                            "superseded_terminal": ack["superseded_terminal"] if ack is not None else None,
+                            **({"original_terminal_receipt_sha256": completed_fact[
+                                "original_terminal_receipt_sha256"], "scope": proof["scope"],
+                                "terminal_acp_ingress_sequence": completed_fact["terminal_acp_ingress_sequence"],
+                                "terminal_acp_ingress_sha256": completed_fact["terminal_acp_ingress_sha256"],
+                                "terminal_unknown_claim_count": completed_fact["terminal_unknown_claim_count"],
+                                "terminal_unknown_claims_sha256": completed_fact["terminal_unknown_claims_sha256"]}
+                               if completed_fact is not None else {}),
                         }
+                        if handoff_ack is not None:
+                            operator_projection["handoff_receipt_sha256"] = handoff["handoff_sha256"]
+                            operator_projection["handoff"] = handoff
+                            operator_projection["close_receipt"] = proof_rows[operation_id]["response_json"]
+                            operator_projection["runtime_observation"] = handoff_ack["runtime_observation"]
+                            operator_projection["handoff_confirmation"] = handoff_ack
+                        operator_rows[root_id] = operator_projection
             except (OperatorProcessFenceHold, OperatorProcessFenceContractError) as exc:
                 raise AgentConflict("operator process-fence root projection is not fully confirmed") from exc
         return {
@@ -1971,7 +3840,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 "terminal_unknown_claim_count": row["terminal_unknown_claim_count"],
                 "terminal_unknown_claims_sha256": row["terminal_unknown_claims_sha256"],
                 "operator_process_fence": operator_rows.get(row["root_run_id"]),
-            } for row in rows],
+            } | ({"local_validation": local_rows[row["root_run_id"]]}
+                 if row["root_run_id"] in local_rows else {})
+              | ({"local_validation_pre_ack": local_pre_ack_rows[row["root_run_id"]]}
+                 if row["root_run_id"] in local_pre_ack_rows else {}) for row in rows],
         }
 
     @staticmethod
@@ -2336,6 +4208,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
 
             self._require_lifecycle_workspace(connection, owner, workspace, terminal_cleanup=False)
             self._lifecycle_lock(connection, "root:" + root_run_id)
+            _require_local_validation_root_unfenced(connection, root_run_id)
             self._lifecycle_lock(
                 connection,
                 f"acp-prebind:v1:{workspace}:{identity['runner_instance_id']}",
@@ -2422,11 +4295,63 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
 
             roots = execute(connection, """SELECT root_run_id FROM agent_runtime_turns
                 WHERE status='active' AND authority_status='active' ORDER BY root_run_id""")
-            for root in roots:
-                self._lifecycle_lock(connection, "root:" + root["root_run_id"])
+            for selected_root in roots:
+                root_run_id = selected_root["root_run_id"]
+                self._lifecycle_lock(connection, "root:" + root_run_id)
+                root = fetch_one(connection, """SELECT root_run_id,owner_principal,workspace_id,
+                        session_id,trace_id,status,authority_status,authority_boot_id
+                    FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE""",
+                    {"root": root_run_id})
+                if (root is None or root["status"] != "active"
+                        or root["authority_status"] != "active"):
+                    raise AgentConflict("runtime Root changed while rotating authority")
+                reservation_row = fetch_one(connection, """SELECT a.*,
+                        r.root_run_id AS audit_root_run_id,
+                        r.owner_principal AS audit_owner_principal,
+                        r.actor_principal AS audit_actor_principal,
+                        r.session_id AS audit_session_id,r.trace_id AS audit_trace_id,
+                        r.dsh_run_id AS audit_generation_id,
+                        t.root_run_id AS turn_root_run_id,
+                        t.owner_principal AS turn_owner_principal,
+                        t.workspace_id AS audit_workspace_id,t.workspace_id AS turn_workspace_id,
+                        t.session_id AS turn_session_id,
+                        t.trace_id AS turn_trace_id,t.authority_boot_id AS turn_authority_boot_id
+                    FROM agent_audit a
+                    LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                    LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                    WHERE a.audit_id=:id""",
+                    {"id": local_validation_reconciliation_audit_id(root_run_id)})
+                reservation = _local_validation_reservation_from_audit_row(
+                    reservation_row, root_run_id)
+                if reservation is not None:
+                    scope = reservation["scope"]
+                    if (current is None
+                            or root["authority_boot_id"] != current["boot_id"]
+                            or reservation["root_run_id"] != root_run_id
+                            or reservation["authority_boot_id"] != root["authority_boot_id"]
+                            or reservation["authority_boot_id"] != current["boot_id"]
+                            or scope["owner_principal"] != root["owner_principal"]
+                            or scope["workspace_id"] != root["workspace_id"]
+                            or scope["session_id"] != root["session_id"]
+                            or scope["trace_id"] != root["trace_id"]
+                            or scope["actor_principal"] != "byq-product-agent-" + root["session_id"]
+                            or reservation_row["audit_root_run_id"] != root_run_id
+                            or reservation_row["audit_owner_principal"] != scope["owner_principal"]
+                            or reservation_row["audit_actor_principal"] != scope["actor_principal"]
+                            or reservation_row["audit_workspace_id"] != scope["workspace_id"]
+                            or reservation_row["audit_session_id"] != scope["session_id"]
+                            or reservation_row["audit_trace_id"] != scope["trace_id"]
+                            or reservation_row["audit_generation_id"] != scope["generation"]
+                            or reservation_row["turn_root_run_id"] != root_run_id
+                            or reservation_row["turn_owner_principal"] != root["owner_principal"]
+                            or reservation_row["turn_workspace_id"] != root["workspace_id"]
+                            or reservation_row["turn_session_id"] != root["session_id"]
+                            or reservation_row["turn_trace_id"] != root["trace_id"]
+                            or reservation_row["turn_authority_boot_id"] != current["boot_id"]):
+                        raise AgentConflict("local validation reservation differs from its current Root authority")
                 registrations = execute(connection, """SELECT registration_fingerprint
                     FROM agent_runtime_registrations WHERE root_run_id=:root
-                    ORDER BY registration_fingerprint""", {"root": root["root_run_id"]})
+                    ORDER BY registration_fingerprint""", {"root": root_run_id})
                 for registration in registrations:
                     self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
             pending = execute(connection, """SELECT DISTINCT runtime_registration_fingerprint AS fingerprint
@@ -2520,6 +4445,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
 
                 self._require_lifecycle_workspace(connection, owner, workspace)
                 self._lifecycle_lock(connection, "root:" + root_run_id)
+                _require_local_validation_root_unfenced(connection, root_run_id)
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id",
                                  {"id": root_run_id})
                 if root is None:
@@ -2656,7 +4582,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
 
     def _operator_process_fence_snapshot(
         self, connection: Any, request: dict[str, Any], *, lock_rows: bool,
-        allow_closed: bool = False,
+        allow_closed: bool = False, completed_cleanup: dict[str, Any] | None = None,
+        handoff_authority_delta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Lock and validate the complete business/native preimage for one Root."""
         scope = request["scope"]
@@ -2717,17 +4644,69 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                          {"root": root_id})
         if (root is None or root.get("root_run_id") != root_id
                 or root.get("owner_principal") != owner or root.get("workspace_id") != workspace_id
-                or root.get("session_id") != session_id or root.get("trace_id") != trace_id
-                or root.get("terminal_sequence") is not None or root.get("terminal_event_sha256") is not None):
+                or root.get("session_id") != session_id or root.get("trace_id") != trace_id):
             raise AgentConflict("runtime Root identity or terminal state changed")
+        failed_terminal = root.get("status") == "failed" and root.get("authority_status") == "closed"
+        completed_terminal = (completed_cleanup is not None and root.get("status") == "completed"
+                              and root.get("authority_status") == "closed")
+        if failed_terminal:
+            if (type(root.get("terminal_sequence")) is not int
+                    or root["terminal_sequence"] < 1
+                    or not isinstance(root.get("terminal_event_sha256"), str)
+                    or len(root["terminal_event_sha256"]) != 64):
+                raise AgentConflict("failed Root has no exact terminal event")
+        elif not completed_terminal and (root.get("terminal_sequence") is not None or root.get("terminal_event_sha256") is not None):
+            raise AgentConflict("operator process fence cannot replace a terminal event")
         add("agent_runtime_turns", {"root_run_id": root_id}, root)
-        if not allow_closed and (root.get("status") != "active"
+        if completed_terminal:
+            expected = {"schema_version": "agent-run-lifecycle-receipt.v1", "root_run_id": root_id,
+                        "sequence": root.get("terminal_sequence"), "event_sha256": root.get("terminal_event_sha256")}
+            from packages.contracts.agent_run_lifecycle import lifecycle_receipt
+            original_terminal = completed_cleanup.get("original_terminal_receipt")
+            if (type(expected["sequence"]) is not int or expected["sequence"] < 1
+                    or not isinstance(expected["event_sha256"], str)
+                    or _r2_runtime_binding(request["runtime_binding_observation"]).get("settlement_receipt") != expected
+                    or original_terminal != expected):
+                raise AgentConflict("completed cleanup is not bound to the original settled terminal")
+        if not allow_closed and not failed_terminal and not completed_terminal and (root.get("status") != "active"
                                  or root.get("authority_status") not in {"active", "authority_revoked_unconfirmed"}):
             raise AgentConflict("runtime Root is not an unresolved active Root")
-        if allow_closed and (root.get("status") != "interrupted" or root.get("authority_status") != "closed"):
+        if allow_closed and not failed_terminal and not completed_terminal and (root.get("status") != "interrupted" or root.get("authority_status") != "closed"):
             raise AgentConflict("runtime Root is not closed by the exact operator fence")
 
         current = self._current_authority_row(connection, for_update=lock_rows)
+        if handoff_authority_delta is not None:
+            old_authority = handoff_authority_delta.get("old_authority")
+            new_authority = handoff_authority_delta.get("new_authority")
+            if (not isinstance(old_authority, dict) or not isinstance(new_authority, dict)
+                    or old_authority != {"boot_id": request["authority"]["current_boot_id"],
+                                         "epoch": request["authority"]["current_epoch"]}
+                    or current is None or current.get("boot_id") != new_authority.get("boot_id")
+                    or current.get("epoch") != new_authority.get("epoch")
+                    or not isinstance(current.get("receipt_json"), dict)
+                    or current["receipt_json"].get("status") != "current"
+                    or current["receipt_json"].get("boot_id") != current["boot_id"]
+                    or current["receipt_json"].get("authority_epoch") != current["epoch"]):
+                raise AgentConflict("handoff does not provide one exact current authority delta")
+            new_receipt = fetch_one(connection, """SELECT boot_id,epoch,receipt_json
+                FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot""" + lock,
+                {"boot": new_authority["boot_id"]})
+            old_current_receipt = fetch_one(connection, """SELECT boot_id,epoch,receipt_json
+                FROM agent_runtime_authority_boot_receipts WHERE boot_id=:boot""" + lock,
+                {"boot": old_authority["boot_id"]})
+            if (new_receipt is None or new_receipt.get("epoch") != new_authority["epoch"]
+                    or new_receipt.get("receipt_json") != current.get("receipt_json")
+                    or _r2_digest(new_receipt.get("receipt_json"))
+                       != handoff_authority_delta.get("new_authority_receipt_sha256")
+                    or old_current_receipt is None
+                    or old_current_receipt.get("epoch") != old_authority["epoch"]
+                    or not isinstance(old_current_receipt.get("receipt_json"), dict)
+                    or old_current_receipt["receipt_json"].get("boot_id") != old_authority["boot_id"]
+                    or old_current_receipt["receipt_json"].get("authority_epoch") != old_authority["epoch"]):
+                raise AgentConflict("handoff current or predecessor boot receipt is missing or changed")
+            current = {"boot_id": old_current_receipt["boot_id"],
+                       "epoch": old_current_receipt["epoch"],
+                       "receipt_json": old_current_receipt["receipt_json"]}
         if (current is None or current.get("boot_id") != request["authority"]["current_boot_id"]
                 or current.get("epoch") != request["authority"]["current_epoch"]
                 or not isinstance(current.get("receipt_json"), dict)
@@ -2744,6 +4723,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 or prev["receipt_json"].get("authority_epoch") != prev["epoch"]):
             raise AgentConflict("historical runtime authority receipt differs from the fence request")
         runtime_binding = _r2_runtime_binding(request["runtime_binding_observation"])
+        frozen_settlement = runtime_binding.get("settlement_receipt")
+        if failed_terminal:
+            expected_terminal_receipt = {
+                "schema_version": "agent-run-lifecycle-receipt.v1",
+                "root_run_id": root_id, "sequence": root["terminal_sequence"],
+                "event_sha256": root["terminal_event_sha256"],
+            }
+            if frozen_settlement is not None and frozen_settlement != expected_terminal_receipt:
+                raise AgentConflict("frozen Runtime settlement differs from failed Root terminal")
+        elif frozen_settlement is not None and not completed_terminal:
+            raise AgentConflict("active operator fence cannot replace a settled terminal")
         if (request["authority"]["previous_boot_id"] != scope["runtime_boot_id"]
                 or request["authority"]["previous_epoch"] != runtime_binding["previous_authority_epoch"]
                 or current["boot_id"] != runtime_binding["previous_boot_id"]
@@ -2757,7 +4747,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 or (root.get("previous_authority_boot_id") == request["authority"]["previous_boot_id"]
                     and root.get("previous_authority_epoch") != request["authority"]["previous_epoch"])):
             raise AgentConflict("Root authority chain differs from the frozen V2 binding")
-        add("agent_runtime_authority_current", {"authority_key": "current"}, current)
+        add("agent_runtime_authority_current", {"authority_key": "current"},
+            {**current, "authority_key": "current"})
         add("agent_runtime_authority_boot_receipts", {"boot_id": prev["boot_id"]}, prev)
         if current["boot_id"] != prev["boot_id"]:
             current_receipt = fetch_one(connection, """SELECT boot_id,epoch,receipt_json
@@ -2773,93 +4764,121 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             {"workspace": workspace_id, "root": root_id})
         if others:
             raise AgentConflict("another active Root occupies this Workspace")
+        if failed_terminal:
+            newer = execute(connection, """SELECT root_run_id FROM agent_runtime_turns
+                WHERE workspace_id=:workspace AND root_run_id<>:root
+                  AND created_at>=:created ORDER BY created_at,root_run_id""" + lock,
+                {"workspace": workspace_id, "root": root_id, "created": root["created_at"]})
+            if newer:
+                raise AgentConflict("another Root followed the failed terminal")
 
         agent_runs = select("agent_runs", """SELECT * FROM agent_runs WHERE root_run_id=:root
             ORDER BY run_id""", {"root": root_id}, ("run_id",))
-        active_runs = [run for run in agent_runs if run.get("status") == "active"
-                       and run.get("authority_status") in {"active", "authority_revoked_unconfirmed"}]
-        terminal_runs = [run for run in agent_runs if run not in active_runs]
-        if (not agent_runs or (not allow_closed and not active_runs)
-                or (allow_closed and active_runs)
-                or any(run.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
-                       or run.get("authority_status") != "closed" for run in terminal_runs)):
-            raise AgentConflict("bound AgentRun set has no active root or contains an unresolved terminal child")
-        by_run = {run["run_id"]: run for run in agent_runs}
-        root_runs = [run for run in agent_runs if run.get("parent_run_id") is None]
-        if len(root_runs) != 1:
-            raise AgentConflict("bound AgentRun parentage is ambiguous")
-        parent = root_runs[0]
-        if (parent not in active_runs and not allow_closed
-                or allow_closed and (parent.get("status") != "interrupted"
-                                     or parent.get("authority_status") != "closed")):
-            raise AgentConflict("bound AgentRun Root parent is not the exact active Root")
-        generation = parent.get("dsh_run_id")
-        actor = parent.get("actor_principal")
-        if (not isinstance(generation, str) or not generation.startswith("generation-")
-                or generation != scope["generation_id"]
-                or any(run.get("owner_principal") != owner or run.get("workspace_id") != workspace_id
-                       or run.get("session_id") != session_id or run.get("trace_id") != trace_id
-                       or run.get("dsh_run_id") != generation or run.get("actor_principal") != actor
-                       or run.get("authority_boot_id") not in {
-                           request["authority"]["previous_boot_id"], request["authority"]["current_boot_id"]
-                       } for run in agent_runs)):
-            raise AgentConflict("AgentRun identity or generation changed")
-        registrations = select("agent_acp_native_agent_registrations", """SELECT *
-            FROM agent_acp_native_agent_registrations WHERE root_run_id=:root
-            ORDER BY origin,native_agent_session_id""", {"root": root_id},
-            ("root_run_id", "native_agent_session_id"))
-        if (not registrations or len(registrations) != len(agent_runs)
-                or {row.get("agent_run_id") for row in registrations} != set(by_run)):
-            raise AgentConflict("native registration set does not exactly bind all AgentRuns")
-        native_roots = [row for row in registrations if row.get("origin") == "root"]
-        if len(native_roots) != 1:
-            raise AgentConflict("native root registration is ambiguous")
-        native_root_id = native_roots[0].get("native_agent_session_id")
-        native_scope = {"owner": owner, "workspace": workspace_id, "actor": actor,
-                        "session": session_id, "trace": trace_id, "generation": generation}
-        for native in registrations:
-            run = by_run[native["agent_run_id"]]
-            identity_fields = {"root_run_id": root_id, "runtime_boot_id": scope["runtime_boot_id"],
-                "native_root_session_id": native_root_id,
-                "native_agent_session_id": native.get("native_agent_session_id"),
-                "native_parent_session_id": native.get("native_parent_session_id"),
-                "origin": native.get("origin"), "depth": native.get("depth")}
-            expected_receipt = {"schema_version": "byq-acp-agent-bind-receipt.v1",
-                "root_run_id": root_id, "runtime_boot_id": scope["runtime_boot_id"],
-                "native_agent_session_id": native.get("native_agent_session_id"),
-                "native_parent_session_id": native.get("native_parent_session_id"),
-                "agent_run_id": native.get("agent_run_id"), "parent_run_id": native.get("parent_run_id"),
-                "origin": native.get("origin"), "depth": native.get("depth"), "status": "bound",
-                "binding_sha256": acp_binding_sha256(_acp_binding_fields(
-                    identity_fields, native_scope, agent_run_id=native["agent_run_id"],
-                    parent_run_id=native.get("parent_run_id"))) }
-            if (native.get("status") != "bound" or native.get("runtime_boot_id") != scope["runtime_boot_id"]
-                    or native.get("owner_principal") != owner or native.get("workspace_id") != workspace_id
-                    or native.get("actor_principal") != actor or native.get("session_id") != session_id
-                    or native.get("trace_id") != trace_id or native.get("dsh_run_id") != generation
-                    or native.get("root_run_id") != root_id
-                    or native.get("native_root_session_id") != native_root_id
-                    or native.get("receipt_json") != expected_receipt
-                    or (native.get("origin") == "root" and (native.get("depth") != 0
-                        or native.get("native_parent_session_id") is not None
-                        or native.get("parent_run_id") is not None
-                        or run.get("parent_run_id") is not None))
-                    or (native.get("origin") == "subagent" and (native.get("depth") != 1
+        if not agent_runs:
+            # A plain failed turn can have an exact Root terminal before any
+            # AgentRun or native registration was ever created.
+            registrations = select("agent_acp_native_agent_registrations", """SELECT *
+                FROM agent_acp_native_agent_registrations WHERE root_run_id=:root
+                ORDER BY origin,native_agent_session_id""", {"root": root_id},
+                ("root_run_id", "native_agent_session_id"))
+            runtime_registrations = select("agent_runtime_registrations", """SELECT *
+                FROM agent_runtime_registrations WHERE root_run_id=:root
+                ORDER BY registration_fingerprint""", {"root": root_id}, ("registration_fingerprint",))
+            if not failed_terminal and not completed_terminal or registrations or runtime_registrations:
+                raise AgentConflict("failed Root has an incomplete AgentRun graph")
+            parent = None
+            by_run = {}
+        else:
+            active_runs = [run for run in agent_runs if run.get("status") == "active"
+                           and run.get("authority_status") in {"active", "authority_revoked_unconfirmed"}]
+            if (failed_terminal or completed_terminal) and active_runs:
+                raise AgentConflict("failed Root still has an active AgentRun")
+            terminal_runs = [run for run in agent_runs if run not in active_runs]
+            if ((not allow_closed and not failed_terminal and not completed_terminal and not active_runs)
+                    or (allow_closed and not failed_terminal and not completed_terminal and active_runs)
+                    or any(run.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                           or run.get("authority_status") != "closed" for run in terminal_runs)):
+                raise AgentConflict("bound AgentRun set has no active root or contains an unresolved terminal child")
+            by_run = {run["run_id"]: run for run in agent_runs}
+            root_runs = [run for run in agent_runs if run.get("parent_run_id") is None]
+            if len(root_runs) != 1:
+                raise AgentConflict("bound AgentRun parentage is ambiguous")
+            parent = root_runs[0]
+            if (parent not in active_runs and not allow_closed and not failed_terminal and not completed_terminal
+                    or allow_closed and (parent.get("status") != "interrupted"
+                                         or parent.get("authority_status") != "closed") and not failed_terminal and not completed_terminal
+                    or failed_terminal and (parent.get("status") != "failed"
+                                            or parent.get("authority_status") != "closed")
+                    or completed_terminal and (parent.get("status") != "completed"
+                                               or parent.get("authority_status") != "closed")):
+                raise AgentConflict("bound AgentRun Root parent is not the exact active Root")
+            generation = parent.get("dsh_run_id")
+            actor = parent.get("actor_principal")
+            if (not isinstance(generation, str) or not generation.startswith("generation-")
+                    or generation != scope["generation_id"]
+                    or any(run.get("owner_principal") != owner or run.get("workspace_id") != workspace_id
+                           or run.get("session_id") != session_id or run.get("trace_id") != trace_id
+                           or run.get("dsh_run_id") != generation or run.get("actor_principal") != actor
+                           or run.get("authority_boot_id") not in {
+                               request["authority"]["previous_boot_id"], request["authority"]["current_boot_id"]
+                           } for run in agent_runs)):
+                raise AgentConflict("AgentRun identity or generation changed")
+            registrations = select("agent_acp_native_agent_registrations", """SELECT *
+                FROM agent_acp_native_agent_registrations WHERE root_run_id=:root
+                ORDER BY origin,native_agent_session_id""", {"root": root_id},
+                ("root_run_id", "native_agent_session_id"))
+            if (not registrations or len(registrations) != len(agent_runs)
+                    or {row.get("agent_run_id") for row in registrations} != set(by_run)):
+                raise AgentConflict("native registration set does not exactly bind all AgentRuns")
+            native_roots = [row for row in registrations if row.get("origin") == "root"]
+            if len(native_roots) != 1:
+                raise AgentConflict("native root registration is ambiguous")
+            native_root_id = native_roots[0].get("native_agent_session_id")
+            native_scope = {"owner": owner, "workspace": workspace_id, "actor": actor,
+                            "session": session_id, "trace": trace_id, "generation": generation}
+            for native in registrations:
+                run = by_run[native["agent_run_id"]]
+                identity_fields = {"root_run_id": root_id, "runtime_boot_id": scope["runtime_boot_id"],
+                    "native_root_session_id": native_root_id,
+                    "native_agent_session_id": native.get("native_agent_session_id"),
+                    "native_parent_session_id": native.get("native_parent_session_id"),
+                    "origin": native.get("origin"), "depth": native.get("depth")}
+                expected_receipt = {"schema_version": "byq-acp-agent-bind-receipt.v1",
+                    "root_run_id": root_id, "runtime_boot_id": scope["runtime_boot_id"],
+                    "native_agent_session_id": native.get("native_agent_session_id"),
+                    "native_parent_session_id": native.get("native_parent_session_id"),
+                    "agent_run_id": native.get("agent_run_id"), "parent_run_id": native.get("parent_run_id"),
+                    "origin": native.get("origin"), "depth": native.get("depth"), "status": "bound",
+                    "binding_sha256": acp_binding_sha256(_acp_binding_fields(
+                        identity_fields, native_scope, agent_run_id=native["agent_run_id"],
+                        parent_run_id=native.get("parent_run_id"))) }
+                if (native.get("status") != "bound" or native.get("runtime_boot_id") != scope["runtime_boot_id"]
+                        or native.get("owner_principal") != owner or native.get("workspace_id") != workspace_id
+                        or native.get("actor_principal") != actor or native.get("session_id") != session_id
+                        or native.get("trace_id") != trace_id or native.get("dsh_run_id") != generation
+                        or native.get("root_run_id") != root_id
                         or native.get("native_root_session_id") != native_root_id
-                        or native.get("native_parent_session_id") != native_root_id
-                        or native.get("parent_run_id") != parent["run_id"]
-                        or run.get("parent_run_id") != parent["run_id"]))):
-                raise AgentConflict("native registration identity or binding receipt changed")
-        runtime_registrations = select("agent_runtime_registrations", """SELECT *
-            FROM agent_runtime_registrations WHERE root_run_id=:root
-            ORDER BY registration_fingerprint""", {"root": root_id}, ("registration_fingerprint",))
-        if (len(runtime_registrations) != 1
-                or runtime_registrations[0].get("registration_fingerprint")
-                    != parent.get("runtime_registration_fingerprint")
-                or runtime_registrations[0].get("root_run_id") != root_id):
-            raise AgentConflict("runtime registration is not the exact parent Root registration")
-        for registration in runtime_registrations:
-            self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
+                        or native.get("receipt_json") != expected_receipt
+                        or (native.get("origin") == "root" and (native.get("depth") != 0
+                            or native.get("native_parent_session_id") is not None
+                            or native.get("parent_run_id") is not None
+                            or run.get("parent_run_id") is not None))
+                        or (native.get("origin") == "subagent" and (native.get("depth") != 1
+                            or native.get("native_root_session_id") != native_root_id
+                            or native.get("native_parent_session_id") != native_root_id
+                            or native.get("parent_run_id") != parent["run_id"]
+                            or run.get("parent_run_id") != parent["run_id"]))):
+                    raise AgentConflict("native registration identity or binding receipt changed")
+            runtime_registrations = select("agent_runtime_registrations", """SELECT *
+                FROM agent_runtime_registrations WHERE root_run_id=:root
+                ORDER BY registration_fingerprint""", {"root": root_id}, ("registration_fingerprint",))
+            if (len(runtime_registrations) != 1
+                    or runtime_registrations[0].get("registration_fingerprint")
+                        != parent.get("runtime_registration_fingerprint")
+                    or runtime_registrations[0].get("root_run_id") != root_id):
+                raise AgentConflict("runtime registration is not the exact parent Root registration")
+            for registration in runtime_registrations:
+                self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
 
         ingress = select("agent_acp_tool_ingress_observations", """SELECT *
             FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root ORDER BY sequence""",
@@ -2875,6 +4894,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             {"root": root_id}, ("root_run_id", "task_id", "action"))
         claims = select("agent_domain_call_claims", """SELECT * FROM agent_domain_call_claims
             WHERE root_run_id=:root ORDER BY claim_id""", {"root": root_id}, ("claim_id",))
+        if parent is None and any((ingress, domain_observations, domain_evidence,
+                                   correction_buckets, claims)):
+            raise AgentConflict("failed plain Root has late ingress or domain evidence")
         self._require_acp_root_terminal_safe(connection, root_id)
         terminal = self._acp_terminal_evidence_snapshot(connection, root_id)
         if terminal["terminal_unknown_claim_count"] != 0:
@@ -2884,7 +4906,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                              {"root": root_id})
         if judgment is not None:
             raise AgentConflict("judgment Root is outside the ordinary Product process-fence scope")
-        approvals = select("agent_approvals", """SELECT * FROM agent_approvals
+        approvals = [] if parent is None else select("agent_approvals", """SELECT * FROM agent_approvals
             WHERE run_id IN (:parent,:root_agent) ORDER BY run_id,approval_id""",
             {"parent": parent["run_id"], "root_agent": parent["run_id"]}, ("approval_id",))
         # There may be child approvals; include them with an explicit bound query.
@@ -2901,6 +4923,34 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
             ORDER BY sequence""", {"owner": owner, "workspace": workspace_id, "session": session_id},
             ("owner_principal", "workspace_id", "session_id", "sequence"))
+        if failed_terminal:
+            terminal_receipts = [row for row in runtime_receipts
+                                 if row.get("sequence") == root["terminal_sequence"]]
+            expected_receipt = {
+                "schema_version": "agent-run-lifecycle-receipt.v1",
+                "root_run_id": root_id, "sequence": root["terminal_sequence"],
+                "event_sha256": root["terminal_event_sha256"],
+            }
+            if (len(terminal_receipts) > 1
+                    or not terminal_receipts and frozen_settlement != expected_receipt
+                    or terminal_receipts and (
+                        terminal_receipts[0].get("trace_id") != trace_id
+                        or terminal_receipts[0].get("receipt_json") != expected_receipt)):
+                raise AgentConflict("failed Root terminal receipt is not exact")
+        elif completed_terminal:
+            terminal_receipts = [row for row in runtime_receipts
+                                 if row.get("sequence") == root["terminal_sequence"]]
+            expected_receipt = {
+                "schema_version": "agent-run-lifecycle-receipt.v1",
+                "root_run_id": root_id, "sequence": root["terminal_sequence"],
+                "event_sha256": root["terminal_event_sha256"],
+            }
+            if (len(terminal_receipts) > 1
+                    or (terminal_receipts and (
+                        terminal_receipts[0].get("trace_id") != trace_id
+                        or terminal_receipts[0].get("receipt_json") != expected_receipt))
+                    or frozen_settlement != expected_receipt):
+                raise AgentConflict("completed Root terminal receipt is not exact")
 
         old = request["old_runner"]
         successor = request["successor"]
@@ -2961,17 +5011,29 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if len(_r2_canonical_json(preimage)) > 2 * 1024 * 1024:
             raise AgentConflict("Backend process-fence preimage exceeds its byte bound")
         return {"root": root, "agent_runs": agent_runs, "terminal": terminal,
+                "failed_terminal": failed_terminal, "completed_terminal": completed_terminal,
                 "authority_current": current, "authority_previous": prev,
                 "preimage": preimage, "rows": rows}
 
     def close_runtime_root_by_operator_process_fence(
         self, *, request: object, operator_uid: int, operator_name: str,
+        completed_cleanup: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Atomically persist one trusted process-fence proof and close its Root."""
-        try:
-            validated = _r2_validate_request(request)
-        except OperatorProcessFenceContractError as exc:
-            raise AgentConflict("operator process-fence request is malformed") from exc
+        if completed_cleanup is not None:
+            try:
+                completed_cleanup = _r2_validate_completed_cleanup_request(completed_cleanup)
+            except OperatorProcessFenceContractError as exc:
+                raise AgentConflict("completed cleanup request is malformed") from exc
+            if (not isinstance(request, dict)
+                    or completed_cleanup["process_fence_request"] != request):
+                raise AgentConflict("completed cleanup request differs from its process-fence request")
+            validated = completed_cleanup["process_fence_request"]
+        else:
+            try:
+                validated = _r2_validate_request(request)
+            except OperatorProcessFenceContractError as exc:
+                raise AgentConflict("operator process-fence request is malformed") from exc
         if type(operator_uid) is not int or not 0 <= operator_uid <= 2**32 - 1 or not _is_bounded_utf8_text(operator_name, 256):
             raise AgentUnauthorized("Engineering operator identity is invalid")
         request_sha = _r2_digest(validated)
@@ -3003,13 +5065,27 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     proof = _validate_reserved_proof_row(existing)
                     if proof["request_sha256"] != request_sha:
                         raise AgentConflict("stored process-fence proof differs from the exact retry")
-                    current = self._operator_process_fence_snapshot(connection, validated, lock_rows=True, allow_closed=True)
+                    stored_cleanup = proof.get("operator_completed_cleanup")
+                    if ((stored_cleanup is not None) != (completed_cleanup is not None)
+                            or (stored_cleanup is not None and _r2_digest(
+                                completed_cleanup["original_terminal_receipt"])
+                                != stored_cleanup["original_terminal_receipt_sha256"])):
+                        raise AgentConflict("process-fence retry changed the completed cleanup terminal")
+                    current = self._operator_process_fence_snapshot(connection, validated, lock_rows=True,
+                        allow_closed=True, completed_cleanup=completed_cleanup)
                     if current["preimage"]["sha256"] != proof["expected_poststate_sha256"]:
                         raise AgentConflict("closed Backend snapshot changed after process-fence proof")
                     return _r2_validate_close_receipt(existing["response_json"])
 
-                snapshot = self._operator_process_fence_snapshot(connection, validated, lock_rows=True)
+                snapshot = self._operator_process_fence_snapshot(connection, validated, lock_rows=True,
+                    completed_cleanup=completed_cleanup)
                 now = _now()
+                failed_terminal = snapshot["failed_terminal"]
+                completed_terminal = snapshot["completed_terminal"]
+                if completed_terminal != (completed_cleanup is not None):
+                    raise AgentConflict("completed cleanup discriminator does not match the exact Root state")
+                if completed_terminal and snapshot["root"].get("status") != "completed":
+                    raise AgentConflict("cleanup-only proof requires the exact completed Root")
                 delta = {
                     "close_at": now,
                     "root": {"id": root_id,
@@ -3017,13 +5093,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                             "status", "authority_status", "updated_at", "terminal_acp_ingress_sequence",
                             "terminal_acp_ingress_sha256", "terminal_unknown_claim_count",
                             "terminal_unknown_claims_sha256")},
-                        "after": {"status": "interrupted", "authority_status": "closed", "updated_at": now,
-                            **snapshot["terminal"]}},
+                        "after": ({field: snapshot["root"].get(field) for field in (
+                            "status", "authority_status", "updated_at", "terminal_acp_ingress_sequence",
+                            "terminal_acp_ingress_sha256", "terminal_unknown_claim_count",
+                            "terminal_unknown_claims_sha256")}
+                            if failed_terminal or completed_terminal else {"status": "interrupted", "authority_status": "closed",
+                                "updated_at": now, **snapshot["terminal"]})},
                     "agent_runs": [{"id": run["run_id"],
                         "before": {field: run.get(field) for field in ("status", "authority_status", "updated_at", "version")},
                         "after": {"status": "interrupted", "authority_status": "closed",
                                   "updated_at": now, "version": run["version"] + 1}}
-                        for run in snapshot["agent_runs"]
+                        for run in snapshot["agent_runs"] if not completed_terminal
                         if run.get("status") == "active" and run.get("authority_status") in {
                             "active", "authority_revoked_unconfirmed"}],
                     "inserted_proof_operations_audit_id": audit_id,
@@ -3064,12 +5144,28 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     "operator": {"uid": operator_uid, "name": operator_name},
                     "disposition": "operator_process_fence_confirmed",
                 }
+                if failed_terminal:
+                    process["disposition"] = "operator_failed_terminal_fence_confirmed"
+                if completed_terminal:
+                    process["disposition"] = "operator_completed_cleanup_confirmed"
                 process_sha = _r2_digest(process)
-                interruption = {"schema_version": "byq-agent-root-operator-interruption.v1",
-                    "operation_id": operation_id, "root_run_id": root_id, "outcome": "interrupted",
+                fact_key = ("operator_failed_terminal" if failed_terminal else
+                            "operator_completed_cleanup" if completed_terminal else "operator_interruption")
+                terminal_fact = {"schema_version": (
+                        "byq-agent-root-operator-failed-terminal-fence.v1" if failed_terminal else
+                        "byq-agent-root-operator-completed-cleanup-proof.v1" if completed_terminal
+                        else "byq-agent-root-operator-interruption.v1"),
+                    "operation_id": operation_id, "root_run_id": root_id,
+                    "outcome": "failed" if failed_terminal else "completed" if completed_terminal else "interrupted",
                     "process_fence_receipt_sha256": process_sha, **snapshot["terminal"]}
-                interruption["receipt_sha256"] = _r2_digest(interruption)
-                proof = {**process, "operator_interruption": interruption,
+                if completed_terminal:
+                    terminal_fact["original_terminal_receipt_sha256"] = _r2_digest(
+                        completed_cleanup["original_terminal_receipt"])
+                if failed_terminal:
+                    terminal_fact.update({"sequence": snapshot["root"]["terminal_sequence"],
+                                          "event_sha256": snapshot["root"]["terminal_event_sha256"]})
+                terminal_fact["receipt_sha256"] = _r2_digest(terminal_fact)
+                proof = {**process, fact_key: terminal_fact,
                          "process_fence_receipt_sha256": process_sha}
                 proof["receipt_sha256"] = _r2_digest(proof)
                 try:
@@ -3080,7 +5176,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     "schema_version": _R2_CLOSE_RECEIPT_SCHEMA, "operation_id": operation_id,
                     "workspace_id": workspace_id, "root_run_id": root_id,
                     "process_fence_receipt_sha256": proof["process_fence_receipt_sha256"],
-                    "operator_interruption": interruption, "scope": validated["scope"],
+                    fact_key: terminal_fact, "scope": validated["scope"],
                     "authority": validated["authority"],
                     "runner": {"old_runner_instance_id": validated["old_runner"]["runner_instance_id"],
                         "successor_runner_instance_id": validated["successor"]["runner_instance_id"],
@@ -3094,7 +5190,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     raise AgentConflict("constructed process-fence close receipt is invalid") from exc
                 # Terminal lifecycle sequence/hash stay NULL: this is a distinct
                 # operator interruption fact, not a fabricated Adapter event.
-                updated_roots = execute(connection, """UPDATE agent_runtime_turns SET status='interrupted',authority_status='closed',
+                if failed_terminal or completed_terminal:
+                    updated_roots = [{"root_run_id": root_id}]
+                else:
+                    updated_roots = execute(connection, """UPDATE agent_runtime_turns SET status='interrupted',authority_status='closed',
                     updated_at=:now,terminal_acp_ingress_sequence=:ingress_sequence,
                     terminal_acp_ingress_sha256=:ingress_sha,terminal_unknown_claim_count=:unknown_count,
                     terminal_unknown_claims_sha256=:unknown_sha WHERE root_run_id=:root
@@ -3125,6 +5224,202 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                      "response": json.dumps(close_receipt, separators=(",", ":")), "now": now})
                 return close_receipt
 
+    def persist_operator_process_fence_handoff(
+        self, *, close_receipt: object, handoff: object, operator_uid: int, operator_name: str,
+    ) -> dict[str, Any]:
+        """Persist one exact cleanup-confirmation authority handoff before Runtime I/O."""
+        try:
+            close = _r2_validate_close_receipt(close_receipt)
+            value = _r2_validate_handoff(handoff, close_receipt=close)
+        except OperatorProcessFenceContractError as exc:
+            raise AgentConflict("operator handoff is malformed") from exc
+        if (type(operator_uid) is not int or not 0 <= operator_uid <= 2**32 - 1
+                or not _is_bounded_utf8_text(operator_name, 256)
+                or value["operator"] != {"uid": operator_uid, "name": operator_name}):
+            raise AgentUnauthorized("Engineering handoff identity is invalid")
+        operation_id = value["operation_id"]
+        root_id = value["root_run_id"]
+        workspace_id = value["scope"]["workspace_id"]
+        proof_key = _R2_FENCE_PREFIX + operation_id
+        handoff_key = _R2_HANDOFF_PREFIX + operation_id  # gitleaks:allow
+        audit_id = self._operator_process_fence_audit_id("ops_acp_process_fence_handoff_", handoff_key)
+        guard_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if guard_engine is None:
+            raise AgentPersistenceError("runtime authority writer gate is unavailable")
+        with transaction(guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, "workspace-reset|" + workspace_id)
+                self._lifecycle_lock(connection, "root:" + root_id)
+                authority = self._current_authority_row(connection, for_update=True)
+                if (authority is None or authority.get("boot_id") != value["new_authority"]["boot_id"]
+                        or authority.get("epoch") != value["new_authority"]["epoch"]):
+                    raise AgentConflict("handoff does not name the exact current Runtime authority")
+                proof_row = fetch_one(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                    FROM operations_audit WHERE idempotency_key=:key FOR UPDATE""", {"key": proof_key})
+                if proof_row is None:
+                    raise AgentConflict("original process-fence proof is missing")
+                from .operator_process_fence import _validate_reserved_proof_row
+                proof = _validate_reserved_proof_row(proof_row)
+                if (proof.get("receipt_sha256") != value["proof_receipt_sha256"]
+                        or proof.get("request_sha256") != value["original_request_sha256"]
+                        or proof_row.get("response_json") != close
+                        or proof.get("runtime_binding_sha256") != value["runtime_binding_sha256"]
+                        or proof.get("operation_id") != operation_id
+                        or proof.get("scope") != value["scope"]
+                        or "operator_completed_cleanup" not in proof):
+                    raise AgentConflict("handoff differs from the immutable completed-cleanup proof")
+                snapshot = self._operator_process_fence_snapshot(connection, {
+                    "scope": proof["scope"], "authority": proof["authority"],
+                    "old_runner": proof["old_runner"], "successor": proof["successor"],
+                    "prestart_binding": proof["prestart_binding"],
+                    "runtime_binding_observation": proof["runtime_binding_observation"],
+                }, lock_rows=True, allow_closed=True,
+                    completed_cleanup={"original_terminal_receipt": _r2_runtime_binding(
+                        proof["runtime_binding_observation"]).get("settlement_receipt")},
+                    handoff_authority_delta={"old_authority": value["old_authority"],
+                                             "new_authority": value["new_authority"],
+                                             "new_authority_receipt_sha256":
+                                                 value["preflight"]["new_authority_receipt_sha256"]})
+                if snapshot["preimage"]["sha256"] != proof["expected_poststate_sha256"]:
+                    raise AgentConflict("Backend post-image changed before Runtime replacement handoff")
+                root = fetch_one(connection, """SELECT status,authority_status,terminal_sequence,
+                        terminal_event_sha256 FROM agent_runtime_turns WHERE root_run_id=:root FOR UPDATE""",
+                    {"root": root_id})
+                terminal = _r2_runtime_binding(proof["runtime_binding_observation"]).get("settlement_receipt")
+                if (root is None or root["status"] != "completed" or root["authority_status"] != "closed"
+                        or root["terminal_sequence"] != 344
+                        or root["terminal_event_sha256"] != "0763e967f42dc958edbf3fb832b1dc5f84b4dfc2455cc4a774debc763fe45e1e"
+                        or not isinstance(terminal, dict) or terminal.get("sequence") != 344
+                        or terminal.get("event_sha256") != root["terminal_event_sha256"]):
+                    raise AgentConflict("A-only completed terminal post-image changed")
+                old_ack = fetch_one(connection, "SELECT audit_id FROM operations_audit WHERE idempotency_key=:key FOR UPDATE",
+                    {"key": _R2_ACK_PREFIX + operation_id})
+                if old_ack is not None:
+                    raise AgentConflict("original ACK already exists; handoff is not pending")
+                retry_rows = execute(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json
+                    FROM operations_audit WHERE audit_id=:id OR idempotency_key=:key FOR UPDATE""",
+                    {"id": audit_id, "key": handoff_key})
+                if len(retry_rows) > 1:
+                    raise AgentConflict("handoff audit identity is ambiguous")
+                if retry_rows:
+                    row = retry_rows[0]
+                    from .operator_process_fence import _validate_reserved_handoff_row
+                    saved = _validate_reserved_handoff_row(row)
+                    if row.get("detail_json") != {"close_receipt": close, "handoff": value} or saved != value:
+                        raise AgentConflict("handoff retry changed its immutable input")
+                    return saved
+                now = _now()
+                execute(connection, """INSERT INTO operations_audit
+                    (audit_id,actor_principal,action,resource_type,resource_id,outcome,idempotency_key,
+                     request_sha256,detail_json,response_json,created_at)
+                    VALUES (:id,:actor,:action,'workspace',:workspace,'pending',:key,:request_sha,
+                        CAST(:detail AS jsonb),CAST(:response AS jsonb),:now)""",
+                    {"id": audit_id, "actor": f"engineering:{operator_name}:{operator_uid}",
+                     "action": _R2_HANDOFF_ACTION, "workspace": workspace_id, "key": handoff_key,
+                     "request_sha": _r2_digest({"close_receipt": close, "handoff": value}),
+                     "detail": json.dumps({"close_receipt": close, "handoff": value}, separators=(",", ":")),
+                     "response": json.dumps(value, separators=(",", ":")), "now": now})
+                return value
+
+    def confirm_operator_process_fence_handoff(
+        self, *, close_receipt: object, handoff: object, runtime_observation: object,
+        operator_uid: int, operator_name: str,
+    ) -> dict[str, Any]:
+        """Persist the exact new-Runtime observation after the separate handoff audit."""
+        try:
+            close = _r2_validate_close_receipt(close_receipt)
+            value = _r2_validate_handoff(handoff, close_receipt=close)
+            observation = _r2_validate_handoff_observation(runtime_observation, handoff=value)
+        except OperatorProcessFenceContractError as exc:
+            raise AgentConflict("Runtime handoff observation is malformed") from exc
+        if type(operator_uid) is not int or not _is_bounded_utf8_text(operator_name, 256):
+            raise AgentUnauthorized("Engineering handoff identity is invalid")
+        operation_id, root_id = value["operation_id"], value["root_run_id"]
+        workspace_id = value["scope"]["workspace_id"]
+        handoff_key = _R2_HANDOFF_PREFIX + operation_id  # gitleaks:allow
+        ack_key = _R2_HANDOFF_ACK_PREFIX + operation_id  # gitleaks:allow
+        ack_id = self._operator_process_fence_audit_id("ops_acp_process_fence_handoff_ack_", ack_key)
+        guard_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if guard_engine is None:
+            raise AgentPersistenceError("runtime authority writer gate is unavailable")
+        with transaction(guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, "workspace-reset|" + workspace_id)
+                self._lifecycle_lock(connection, "root:" + root_id)
+                authority = self._current_authority_row(connection, for_update=True)
+                if (authority is None or authority.get("boot_id") != value["new_authority"]["boot_id"]
+                        or authority.get("epoch") != value["new_authority"]["epoch"]):
+                    raise AgentConflict("Runtime handoff observation lost current authority")
+                from .operator_process_fence import _validate_reserved_handoff_row, _validate_reserved_handoff_ack_row
+                handoff_row = fetch_one(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                    FROM operations_audit WHERE idempotency_key=:key FOR UPDATE""", {"key": handoff_key})
+                if handoff_row is None or _validate_reserved_handoff_row(handoff_row) != value:
+                    raise AgentConflict("protected Runtime handoff record is missing or changed")
+                proof_row = fetch_one(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
+                    FROM operations_audit WHERE idempotency_key=:key FOR UPDATE""",
+                    {"key": _R2_FENCE_PREFIX + operation_id})
+                if proof_row is None:
+                    raise AgentConflict("original process-fence proof disappeared")
+                from .operator_process_fence import _validate_reserved_proof_row
+                proof = _validate_reserved_proof_row(proof_row)
+                if (proof.get("receipt_sha256") != value["proof_receipt_sha256"]
+                        or proof_row.get("response_json") != close):
+                    raise AgentConflict("handoff no longer matches original close proof")
+                original_binding = _r2_runtime_binding(proof["runtime_binding_observation"])
+                snapshot = self._operator_process_fence_snapshot(connection, {
+                    "scope": proof["scope"], "authority": proof["authority"],
+                    "old_runner": proof["old_runner"], "successor": proof["successor"],
+                    "prestart_binding": proof["prestart_binding"],
+                    "runtime_binding_observation": proof["runtime_binding_observation"],
+                }, lock_rows=True, allow_closed=True,
+                    completed_cleanup={"original_terminal_receipt": original_binding.get("settlement_receipt")},
+                    handoff_authority_delta={"old_authority": value["old_authority"],
+                                             "new_authority": value["new_authority"],
+                                             "new_authority_receipt_sha256":
+                                                 value["preflight"]["new_authority_receipt_sha256"]})
+                if snapshot["preimage"]["sha256"] != proof["expected_poststate_sha256"]:
+                    raise AgentConflict("Backend post-image changed before handoff confirmation")
+                retry_rows = execute(connection, """SELECT audit_id,actor_principal,action,resource_type,
+                        resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json
+                    FROM operations_audit WHERE audit_id=:id OR idempotency_key=:key FOR UPDATE""",
+                    {"id": ack_id, "key": ack_key})
+                if len(retry_rows) > 1:
+                    raise AgentConflict("handoff ACK identity is ambiguous")
+                confirmation = {"schema_version": _R2_HANDOFF_CONFIRMATION_SCHEMA,
+                    "operation_id": operation_id, "handoff_sha256": value["handoff_sha256"],
+                    "proof_receipt_sha256": value["proof_receipt_sha256"],
+                    "close_receipt_sha256": value["close_receipt_sha256"],
+                    "runtime_observation": observation,
+                    "operator": {"uid": operator_uid, "name": operator_name}, "confirmed_at": _now()}
+                confirmation["receipt_sha256"] = _r2_digest(confirmation)
+                confirmation = _r2_validate_handoff_confirmation(confirmation, handoff=value)
+                if retry_rows:
+                    row = retry_rows[0]
+                    saved = _validate_reserved_handoff_ack_row(row)
+                    if row.get("detail_json") != {"handoff": value, "runtime_observation": observation}:
+                        raise AgentConflict("handoff ACK retry changed its exact observation")
+                    return saved
+                now = _now()
+                execute(connection, """INSERT INTO operations_audit
+                    (audit_id,actor_principal,action,resource_type,resource_id,outcome,idempotency_key,
+                     request_sha256,detail_json,response_json,created_at)
+                    VALUES (:id,:actor,:action,'workspace',:workspace,'confirmed',:key,:request_sha,
+                        CAST(:detail AS jsonb),CAST(:response AS jsonb),:now)""",
+                    {"id": ack_id, "actor": f"engineering:{operator_name}:{operator_uid}",
+                     "action": _R2_HANDOFF_ACK_ACTION, "workspace": workspace_id, "key": ack_key,
+                     "request_sha": _r2_digest({"handoff": value, "runtime_observation": observation}),
+                     "detail": json.dumps({"handoff": value, "runtime_observation": observation}, separators=(",", ":")),
+                     "response": json.dumps(confirmation, separators=(",", ":")), "now": now})
+                return confirmation
+
     def confirm_operator_process_fence_ack(
         self, *, close_receipt: object, runtime_observation: object,
         operator_uid: int, operator_name: str,
@@ -3152,6 +5447,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 self._lifecycle_lock(connection, "runtime-authority:current")
                 self._lifecycle_lock(connection, "workspace-reset|" + workspace_id)
                 self._lifecycle_lock(connection, "root:" + root_id)
+                _require_local_validation_root_unfenced(connection, root_id)
                 proof_row = fetch_one(connection, """SELECT audit_id,actor_principal,action,resource_type,
                         resource_id,outcome,idempotency_key,request_sha256,detail_json,response_json,created_at
                     FROM operations_audit WHERE idempotency_key=:key FOR UPDATE""", {"key": proof_key})
@@ -3159,6 +5455,12 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     raise AgentConflict("operator process-fence proof is missing")
                 from .operator_process_fence import _validate_reserved_proof_row
                 proof = _validate_reserved_proof_row(proof_row)
+                fact_key = ("operator_failed_terminal" if "operator_failed_terminal" in proof else
+                            "operator_completed_cleanup" if "operator_completed_cleanup" in proof
+                            else "operator_interruption")
+                fact_digest_key = ("operator_failed_terminal_receipt_sha256" if fact_key == "operator_failed_terminal"
+                                   else "operator_completed_cleanup_receipt_sha256" if fact_key == "operator_completed_cleanup"
+                                   else "operator_interruption_receipt_sha256")
                 if proof_row.get("response_json") != close or proof["operation_id"] != operation_id:
                     raise AgentConflict("Runtime observation references another process-fence proof")
                 if observation["close_receipt_sha256"] != _r2_digest(close):
@@ -3185,12 +5487,15 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     ack_request = _r2_validate_ack_request(ack_request)
                 except OperatorProcessFenceContractError as exc:
                     raise AgentConflict("Runtime observation does not form the exact ACK request") from exc
+                cleanup_retry = ({"original_terminal_receipt": _r2_runtime_binding(
+                    proof["runtime_binding_observation"]).get("settlement_receipt")}
+                    if fact_key == "operator_completed_cleanup" else None)
                 snapshot = self._operator_process_fence_snapshot(connection, {
                     "scope": proof["scope"], "authority": proof["authority"],
                     "old_runner": proof["old_runner"], "successor": proof["successor"],
                     "prestart_binding": proof["prestart_binding"],
                     "runtime_binding_observation": proof["runtime_binding_observation"],
-                }, lock_rows=True, allow_closed=True)
+                }, lock_rows=True, allow_closed=True, completed_cleanup=cleanup_retry)
                 if snapshot["preimage"]["sha256"] != proof["expected_poststate_sha256"]:
                     raise AgentConflict("Backend snapshot changed before operator ACK confirmation")
                 if retry is not None:
@@ -3208,7 +5513,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     "schema_version": _R2_ACK_SCHEMA, "operation_id": operation_id,
                     "proof_audit_id": proof_row["audit_id"],
                     "proof_receipt_sha256": proof["receipt_sha256"],
-                    "operator_interruption_receipt_sha256": proof["operator_interruption"]["receipt_sha256"],
+                    fact_digest_key: proof[fact_key]["receipt_sha256"],
                     "scope": proof["scope"], "authority": proof["authority"], "runner": runner,
                     "runtime_ack_sha256": _r2_digest(observation["runtime_ack"]),
                     "root_binding_sha256": close["runtime_binding_sha256"],
@@ -3256,6 +5561,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         with self._transaction() as connection:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._lifecycle_lock(connection, "root:" + root_run_id)
+            _require_local_validation_root_unfenced(connection, root_run_id)
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id",
                              {"id": root_run_id})
             if root is None:
@@ -3377,6 +5683,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             active_identity = self._require_lifecycle_workspace(connection, owner, workspace,
                                                                terminal_cleanup=outcome != "active")
             self._lifecycle_lock(connection, "root:" + root_id)
+            _require_local_validation_root_unfenced(connection, root_id)
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
             if root and (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (owner, workspace, session, trace):
                 raise AgentUnauthorized("runtime root does not match trusted context")
@@ -3552,6 +5859,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 trusted_owner=trusted_owner, trusted_actor=trusted_actor,
                 trusted_session_id=trusted_session_id, trusted_dsh_run_id=trusted_dsh_run_id,
                 trusted_boot_id=trusted_boot_id)
+            root_id = context["run"].get("root_run_id")
+            if root_id:
+                self._lifecycle_lock(connection, "root:" + root_id)
+                _require_local_validation_root_unfenced(connection, root_id)
             self._record_audit_row(context["run"], action=context["action"],
                 outcome=("denied" if denied else
                     ("approval_required" if result["decision"] == "approval_required" else "authorized")),
@@ -3590,6 +5901,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
                 WHERE root_run_id=:root FOR UPDATE""", {"root": identity["root_run_id"]})
             if root is None or any(root.get(key) != value for key, value in {
@@ -3718,6 +6030,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + mcp_request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
                 WHERE root_run_id=:root FOR SHARE""", {"root": identity["root_run_id"]})
             if root is None:
@@ -3872,6 +6185,19 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     detail=detail,
                     connection=connection,
                 )
+        if row.get("root_run_id"):
+            root_id = row["root_run_id"]
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "root:" + root_id)
+                _require_local_validation_root_unfenced(connection, root_id)
+                current = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:run_id FOR UPDATE",
+                                    {"run_id": run_id})
+                if current is None:
+                    raise AgentNotFound("agent run not found")
+                self._check_run_access(current, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+                return self._record_audit_row(current, action=action, outcome=outcome,
+                    resource_type=payload.get("resource_type"), resource_id=payload.get("resource_id"),
+                    detail=detail, connection=connection)
         return self._record_audit_row(row, action=action, outcome=outcome,
             resource_type=payload.get("resource_type"), resource_id=payload.get("resource_id"), detail=detail)
 
@@ -4517,7 +6843,21 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         outcome_text = _text(outcome, field="outcome", max_length=64)
         resource_type_text = _text(resource_type, field="resource_type", max_length=64) if resource_type is not None else None
         resource_id_text = _text(resource_id, field="resource_id", max_length=128) if resource_id is not None else None
-        detail_value, _ = _audit_detail_object(detail, field="detail")
+        if action_text == _LOCAL_VALIDATION_HANDOFF_ACTION:
+            if (not isinstance(detail, dict)
+                    or set(detail) != {"acp_control", "confirmation_baseline"}
+                    or not isinstance(detail["confirmation_baseline"], dict)
+                    or acp_binding_sha256(detail["confirmation_baseline"])
+                       != "923e0702c1495e0c8ddeab6ff4fcb4367492ad0241a716b5fa1c9d4579f86e6a"
+                    or validate_local_validation_handoff(detail["acp_control"])["confirmation_baseline_sha256"]
+                       != acp_binding_sha256(detail["confirmation_baseline"])):
+                raise ValueError("local validation handoff audit baseline is invalid")
+            _reject_secret_keys(detail)
+            if len(_r2_canonical_json(detail)) > 64 * 1024:
+                raise ValueError("local validation handoff audit detail exceeds 65536 bytes")
+            detail_value = detail
+        else:
+            detail_value, _ = _audit_detail_object(detail, field="detail")
         audit_id = audit_id or _new_id("agent_audit")
         created_at = _now()
         params = {
@@ -4554,6 +6894,117 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             "detail": detail_value,
             "created_at": created_at,
         }
+
+    def _record_local_validation_callback_exit(self, claim_id: str,
+                                                mcp_request_id: str) -> dict[str, Any]:
+        """Persist the exact exit of one ACP local StrategyDraft validation callback."""
+        if (not isinstance(claim_id, str) or re.fullmatch(r"[0-9a-f]{32}", claim_id) is None
+                or not isinstance(mcp_request_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", mcp_request_id) is None):
+            raise AgentConflict("local validation callback claim identity is invalid")
+        audit_id = local_validation_callback_exit_audit_id(claim_id)
+        with self._transaction() as connection:
+            claim_ref = fetch_one(connection, "SELECT root_run_id FROM agent_domain_call_claims WHERE claim_id=:id",
+                                  {"id": claim_id})
+            if claim_ref is None:
+                raise AgentConflict("local validation callback claim is missing")
+            root = claim_ref["root_run_id"]
+            self._lifecycle_lock(connection, "root:" + root)
+            row = fetch_one(connection, """SELECT c.*,e.owner_principal,e.workspace_id,e.session_id,e.trace_id,
+                    e.generation,e.evidence_json,e.receipt_json,e.sequence,e.action AS evidence_action,
+                    e.agent_run_id AS evidence_agent_run_id,e.task_id AS evidence_task_id,
+                    e.idempotency_key AS evidence_idempotency_key,e.request_sha256 AS evidence_request_sha256,
+                    e.input_sha256 AS evidence_input_sha256
+                FROM agent_domain_call_claims c JOIN agent_domain_call_evidence e
+                  ON e.root_run_id=c.root_run_id AND e.task_id=c.task_id AND e.action=c.action
+                 AND e.idempotency_key=c.idempotency_key AND e.request_sha256=c.request_sha256
+                 AND e.input_sha256=c.input_sha256 AND e.sequence=c.evidence_sequence
+                 AND e.agent_run_id=c.agent_run_id
+                WHERE c.claim_id=:id FOR UPDATE OF c""", {"id": claim_id})
+            if row is None or row["action"] != "byq_strategy_validate":
+                raise AgentConflict("callback-exit proof is limited to an exact strategy validation claim")
+            if row["evidence_action"] != "byq_strategy_validate":
+                raise AgentConflict("callback-exit evidence action differs from its claim")
+            evidence = row["evidence_json"]
+            if (not isinstance(evidence, dict) or evidence.get("action") != "byq_strategy_validate"
+                    or evidence.get("root_run_id") != root
+                    or evidence.get("sequence") != row["evidence_sequence"]
+                    or evidence.get("agent_run_id") != row["agent_run_id"]
+                    or evidence.get("task_id") != row["task_id"]
+                    or evidence.get("idempotency_key") != row["idempotency_key"]
+                    or evidence.get("request_sha256") != row["request_sha256"]
+                    or evidence.get("input_sha256") != row["input_sha256"]):
+                raise AgentConflict("callback-exit evidence does not match the exact claim")
+            observations = execute(connection, """SELECT * FROM agent_acp_domain_call_observations
+                WHERE root_run_id=:root AND evidence_sequence=:sequence AND action='byq_strategy_validate'
+                  AND agent_run_id=:run AND task_id=:task AND idempotency_key=:key
+                  AND request_sha256=:request AND input_sha256=:input
+                ORDER BY mcp_request_id""", {"root": root, "sequence": row["evidence_sequence"],
+                    "run": row["agent_run_id"], "task": row["task_id"], "key": row["idempotency_key"],
+                    "request": row["request_sha256"], "input": row["input_sha256"]})
+            if len(observations) != 1:
+                raise AgentConflict("callback-exit proof requires one exact ACP observation")
+            observation = observations[0]
+            if observation["mcp_request_id"] != mcp_request_id:
+                raise AgentConflict("callback-exit proof differs from the verified ACP observation")
+            expected_observation = {
+                "owner_principal": row["owner_principal"], "workspace_id": row["workspace_id"],
+                "session_id": row["session_id"], "trace_id": row["trace_id"],
+                "dsh_run_id": row["generation"], "root_run_id": root,
+                "evidence_sequence": row["evidence_sequence"], "agent_run_id": row["agent_run_id"],
+                "task_id": row["task_id"], "action": row["action"],
+                "idempotency_key": row["idempotency_key"], "request_sha256": row["request_sha256"],
+                "input_sha256": row["input_sha256"],
+            }
+            if any(observation.get(key) != value for key, value in expected_observation.items()):
+                raise AgentConflict("callback-exit observation differs from the original claim scope")
+            binding = fetch_one(connection, """SELECT status,runtime_boot_id,agent_run_id FROM
+                agent_acp_native_agent_registrations WHERE root_run_id=:root
+                  AND native_agent_session_id=:native""",
+                {"root": root, "native": observation["native_agent_session_id"]})
+            if (binding is None or binding["status"] != "bound"
+                    or binding["runtime_boot_id"] != observation["runtime_boot_id"]
+                    or binding["agent_run_id"] != row["agent_run_id"]):
+                raise AgentConflict("callback-exit observation lacks its exact bound native identity")
+            run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:id AND owner_principal=:owner",
+                            {"id": row["agent_run_id"], "owner": row["owner_principal"]})
+            if (run is None or run.get("root_run_id") != root
+                    or run.get("actor_principal") != observation["actor_principal"]
+                    or observation["actor_principal"] != "byq-product-agent-" + row["session_id"]):
+                raise AgentConflict("callback-exit AgentRun is missing")
+            scope = {"owner_principal": row["owner_principal"], "workspace_id": row["workspace_id"],
+                "actor_principal": observation["actor_principal"], "session_id": row["session_id"],
+                "trace_id": row["trace_id"], "generation": row["generation"]}
+            observation_identity = {key: observation[key] for key in (
+                "mcp_request_id", "owner_principal", "workspace_id", "actor_principal", "session_id",
+                "trace_id", "dsh_run_id", "runtime_boot_id", "root_run_id", "native_agent_session_id",
+                "sequence", "evidence_sequence", "agent_run_id", "task_id", "action",
+                "idempotency_key", "request_sha256", "input_sha256", "event_sha256", "receipt_json")}
+            base = {"schema_version": _LOCAL_VALIDATION_CALLBACK_EXIT_SCHEMA, "claim_id": claim_id,
+                "root_run_id": root, "mcp_request_id": observation["mcp_request_id"], "scope": scope,
+                "authority_boot_id": observation["runtime_boot_id"],
+                "evidence_sequence": row["evidence_sequence"], "agent_run_id": row["agent_run_id"],
+                "task_id": row["task_id"], "action": row["action"],
+                "idempotency_key": row["idempotency_key"], "request_sha256": row["request_sha256"],
+                "input_sha256": row["input_sha256"], "evidence_sha256": acp_binding_sha256(evidence),
+                "observation_sha256": acp_binding_sha256(observation_identity),
+                "callback_disposition": _LOCAL_VALIDATION_CALLBACK_EXIT_OUTCOME}
+            receipt = {**base, "receipt_sha256": acp_binding_sha256(base)}
+            existing = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                    r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                    t.workspace_id AS audit_workspace_id
+                FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id WHERE a.audit_id=:id""",
+                {"id": audit_id})
+            if existing is not None:
+                prior = _local_validation_callback_exit_from_audit_row(existing, claim_id)
+                if prior != receipt or existing["audit_root_run_id"] != root:
+                    raise AgentConflict("callback-exit retry differs from its immutable receipt")
+                return prior
+            self._record_audit_row(run, action=_LOCAL_VALIDATION_CALLBACK_EXIT_ACTION,
+                outcome=_LOCAL_VALIDATION_CALLBACK_EXIT_OUTCOME, resource_type="domain_call_claim",
+                resource_id=claim_id, detail={"acp_control": receipt}, connection=connection, audit_id=audit_id)
+            return receipt
 
     @staticmethod
     def _run_row(row: dict[str, Any]) -> dict[str, object]:

@@ -44,8 +44,12 @@ from packages.contracts.continuation_request import (
     validate_request_usage,
 )
 from packages.contracts.product_turn_request import (
+    OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID,
+    OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL,
     validate_product_turn_limits,
     validate_product_turn_profile,
+    validate_official_product_turn_execution_profile,
+    validate_ordinary_product_execution_profile,
     product_turn_execution_limits,
     validate_product_turn_execution_limits,
     validate_product_turn_execution_profile,
@@ -123,6 +127,13 @@ def _tool_payload_bytes(parsed: dict) -> int:
             calls = message.get("tool_calls")
             if isinstance(calls, list):
                 total += _canonical_bytes(calls)
+            content = message.get("content")
+            if isinstance(content, list):
+                total += sum(
+                    _canonical_bytes(block) for block in content
+                    if isinstance(block, dict)
+                    and block.get("type") in {"tool_use", "tool_result"}
+                )
     return total
 
 
@@ -144,10 +155,12 @@ DECLARED_LIMIT_REASONS = frozenset({
 })
 
 
-def forwarded_request_headers(incoming) -> dict:
+def forwarded_request_headers(incoming, *, official_messages: bool = False) -> dict:
     """Return only the allowlisted provider headers (never BYQ/internal secrets)."""
 
-    allowed = set(_FORWARDED_REQUEST_HEADERS)
+    allowed = (set(_FORWARDED_REQUEST_HEADERS) if not official_messages else {
+        "content-type", "accept", "user-agent", "x-api-key", "anthropic-version",
+    })
     forwarded: dict = {}
     for name, value in incoming.items():
         key = str(name).lower()
@@ -199,7 +212,7 @@ def request_role(parsed: object, *, persona_tool: str = PERSONA_TOOL) -> str:
     return "child"
 
 
-def parse_response_usage(body: bytes) -> dict:
+def parse_response_usage(body: bytes, *, official_messages: bool = False) -> dict:
     """Provider-reported actual usage, or structured ``unknown`` when unprovable.
 
     Supports the two OpenAI-compatible response shapes the DSH runtime receives:
@@ -215,6 +228,13 @@ def parse_response_usage(body: bytes) -> dict:
     except Exception:  # noqa: BLE001
         return _unknown_usage()
     usage: dict | None = None
+    messages_input: int | None = None
+    messages_output: int | None = None
+    messages_cache_read: int | None = None
+    messages_started = False
+    messages_final_usage = False
+    messages_stopped = False
+    messages_stream_invalid = False
     for line in text.splitlines():
         line = line.strip()
         if not line.startswith("data:"):
@@ -225,16 +245,81 @@ def parse_response_usage(body: bytes) -> dict:
         try:
             value = json.loads(payload)
         except json.JSONDecodeError:
+            if official_messages:
+                messages_stream_invalid = True
             continue
-        if isinstance(value, dict) and isinstance(value.get("usage"), dict):
+        if not isinstance(value, dict):
+            if official_messages:
+                messages_stream_invalid = True
+            continue
+        if official_messages:
+            event_type = value.get("type")
+            if messages_stopped:
+                # A terminal marker must be the final provider event.
+                messages_stream_invalid = True
+                continue
+            if event_type == "message_start":
+                if messages_started or messages_final_usage:
+                    messages_stream_invalid = True
+                    continue
+                messages_started = True
+                message = value.get("message")
+                start_usage = message.get("usage") if isinstance(message, dict) else None
+                if not isinstance(start_usage, dict):
+                    messages_stream_invalid = True
+                    continue
+                candidate = start_usage.get("input_tokens")
+                if type(candidate) is int and candidate >= 0:
+                    messages_input = candidate
+                else:
+                    messages_stream_invalid = True
+                candidate = start_usage.get("cache_read_input_tokens")
+                if type(candidate) is int and candidate >= 0:
+                    messages_cache_read = candidate
+            elif event_type == "message_delta":
+                if not messages_started:
+                    messages_stream_invalid = True
+                    continue
+                messages_final_usage = False
+                delta_usage = value.get("usage")
+                if not isinstance(delta_usage, dict):
+                    continue
+                candidate = delta_usage.get("input_tokens")
+                if type(candidate) is int and candidate >= 0:
+                    messages_input = candidate
+                candidate = delta_usage.get("output_tokens")
+                if type(candidate) is int and candidate >= 0:
+                    messages_output = candidate
+                    messages_final_usage = True
+                candidate = delta_usage.get("cache_read_input_tokens")
+                if type(candidate) is int and candidate >= 0:
+                    messages_cache_read = candidate
+            elif event_type == "message_stop":
+                if not messages_started or not messages_final_usage:
+                    messages_stream_invalid = True
+                else:
+                    messages_stopped = True
+        elif isinstance(value.get("usage"), dict):
             usage = value["usage"]
-    if usage is None:
+    if (official_messages and not messages_stream_invalid
+            and messages_stopped and messages_final_usage
+            and messages_input is not None and messages_output is not None):
+        return {
+            "actual_input_tokens": messages_input if messages_input is not None else UNKNOWN,
+            "actual_cache_read_tokens": (
+                messages_cache_read if messages_cache_read is not None else UNKNOWN),
+            "actual_output_tokens": messages_output if messages_output is not None else UNKNOWN,
+            "usage_source": "provider_response",
+        }
+    if usage is None and not official_messages:
         try:
             value = json.loads(text.strip())
         except json.JSONDecodeError:
             value = None
         if isinstance(value, dict) and isinstance(value.get("usage"), dict):
             usage = value["usage"]
+    if official_messages:
+        return _unknown_usage()
     if usage is None:
         return _unknown_usage()
     input_tokens = usage.get("prompt_tokens")
@@ -278,6 +363,7 @@ class ResearchRequestGate:
         # fall through to either Product profile when its binding is invalid.
         self.product_turn = False
         self.product_turn_v2 = False
+        self.product_turn_official = False
         self.task_ready_v2 = False
         self.execution_profile = None
         if execution_profile is not None:
@@ -285,6 +371,11 @@ class ResearchRequestGate:
                     and execution_profile.get("profile_id") == TASK_READY_PROFILE_ID_V2):
                 self.execution_profile = validate_task_ready_execution_profile_v2(execution_profile)
                 self.task_ready_v2 = True
+            elif (isinstance(execution_profile, dict)
+                    and execution_profile.get("profile_id") == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID):
+                self.execution_profile = validate_official_product_turn_execution_profile(
+                    execution_profile)
+                self.product_turn_official = True
             else:
                 try:
                     self.execution_profile = validate_profile_binding(execution_profile)
@@ -296,10 +387,11 @@ class ResearchRequestGate:
                         self.execution_profile = validate_product_turn_profile(execution_profile)
                         self.product_turn = True
         self.continuation_mode = self.execution_profile is not None
-        self._optional_execution = self.product_turn_v2 or self.task_ready_v2
+        self._optional_execution = (
+            self.product_turn_v2 or self.product_turn_official or self.task_ready_v2)
         if self.task_ready_v2:
             self.limits = validate_task_ready_request_limits_v2(limits, self.execution_profile)
-        elif self.product_turn_v2:
+        elif self.product_turn_v2 or self.product_turn_official:
             self.limits = validate_product_turn_execution_limits(limits, self.execution_profile)
         elif self.product_turn:
             self.limits = validate_product_turn_limits(limits)
@@ -609,7 +701,7 @@ class ResearchRequestGate:
         """
 
         with self._lock:
-            if (not self.product_turn_v2 or self._journal_failed
+            if (not (self.product_turn_v2 or self.product_turn_official) or self._journal_failed
                     or self._settlement_state_locked() != KNOWN_BLOCKED):
                 return False
             blocked_rows = [
@@ -719,7 +811,7 @@ class ResearchRequestGate:
                 receipt, status=status, body=body, outcome_unknown=outcome_unknown)
         elapsed_ms = max(0, int((self._monotonic() - receipt.get("_started", self._monotonic()))
                                 * 1000))
-        actual = parse_response_usage(body)
+        actual = parse_response_usage(body, official_messages=self.product_turn_official)
         declared_max = int(receipt.get("declared_max_output_tokens") or 0)
         now_ms = int(self._wall() * 1000)
         late = now_ms >= self.limits["deadline_at_ms"]
@@ -850,7 +942,9 @@ class ResearchRequestGate:
             self._reject_continuation_request("budget_invalid", input_bytes=len(body))
         if not isinstance(parsed, dict):
             self._reject_continuation_request("budget_invalid", input_bytes=len(body))
-        if parsed.get("model") != CONTINUATION_MODEL:
+        expected_model = (self.execution_profile["model"] if self.product_turn_official
+                          else CONTINUATION_MODEL)
+        if parsed.get("model") != expected_model:
             self._reject_continuation_request("model_route_unqualified", input_bytes=len(body))
         declared, declared_reason = resolve_declared_output_tokens(parsed)
         if self._optional_execution:
@@ -997,10 +1091,19 @@ class ResearchRequestGate:
     ) -> dict:
         elapsed_ms = max(0, int((self._monotonic()
             - receipt.get("_started", self._monotonic())) * 1000))
-        actual = parse_response_usage(body)
+        actual = parse_response_usage(body, official_messages=self.product_turn_official)
         declared = receipt.get("declared_max_output_tokens")
         total_elapsed_ms = max(0, int((self._monotonic() - self._continuation_started) * 1000))
-        if (self._optional_execution
+        if (self.product_turn_official and (
+                outcome_unknown or (200 <= status < 300 and (
+                    actual["actual_input_tokens"] == UNKNOWN
+                    or actual["actual_output_tokens"] == UNKNOWN)))):
+            # Official Messages only settles a successful response when the
+            # stream supplied message_stop and its authoritative token usage.
+            # This precedes the runtime-limit classifier so it cannot turn an
+            # unknown provider result into a known, reusable budget stop.
+            reason = "provider_outcome_unknown"
+        elif (self._optional_execution
                 and self.limits["max_runtime_seconds"] is not None
                 and total_elapsed_ms >= self.limits["max_runtime_seconds"] * 1000):
             reason = "product_runtime_limit"
@@ -1378,14 +1481,18 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
         gate: ResearchRequestGate = self.server.gate  # type: ignore[attr-defined]
         upstream: str = self.server.upstream  # type: ignore[attr-defined]
         if (gate.task_ready_v2
-                and self.path != gate.execution_profile["upstream_request_target"]):
-            try:
-                gate.reject_provider_path()
-            except RequestGateBlocked as error:
-                self.close_connection = True
-                self._failure(error.reason)
-            return
-        if (gate.continuation_mode and not gate.task_ready_v2
+                or gate.product_turn_v2 or gate.product_turn_official):
+            if self.path == gate.execution_profile["upstream_request_target"]:
+                pass
+            else:
+                try:
+                    gate.reject_provider_path()
+                except RequestGateBlocked as error:
+                    self.close_connection = True
+                    self._failure(error.reason)
+                return
+        if (gate.continuation_mode and not (
+                gate.task_ready_v2 or gate.product_turn_v2 or gate.product_turn_official)
                 and self.path not in {"/chat/completions", "/v1/chat/completions"}):
             try:
                 gate.reject_provider_path()
@@ -1437,7 +1544,8 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
             return
         request = urllib.request.Request(
             upstream.rstrip("/") + self.path, data=body, method="POST",
-            headers=forwarded_request_headers(self.headers))
+            headers=forwarded_request_headers(
+                self.headers, official_messages=gate.product_turn_official))
         status = 502
         data = b""
         content_type = "application/json"
@@ -1565,7 +1673,11 @@ class RequestGateProxy:
 
     def __init__(self, gate: ResearchRequestGate, upstream: str, *,
                  bind_host: str = "127.0.0.1", advertise_host: str | None = None) -> None:
-        if gate.task_ready_v2:
+        if gate.product_turn_official:
+            qualified_upstream = OFFICIAL_PRODUCT_TURN_UPSTREAM_BASE_URL.rstrip("/")
+            if upstream.rstrip("/") != qualified_upstream:
+                raise ValueError("official ordinary provider is not a qualified endpoint")
+        elif gate.task_ready_v2:
             qualified_upstream = gate.execution_profile["upstream_base_url"].rstrip("/")
             if upstream.rstrip("/") != qualified_upstream:
                 raise ValueError("continuation provider is not a qualified endpoint")
@@ -1740,7 +1852,7 @@ def build_task_ready_v2_request_gate(*, request_id: str, execution_profile: dict
 def build_product_turn_request_gate(*, request_id: str, execution_profile: dict,
                                     journal: Path | None = None) -> ResearchRequestGate:
     """Build the ordinary Product gate from its exact trusted option snapshot."""
-    profile = validate_product_turn_execution_profile(execution_profile)
+    profile = validate_ordinary_product_execution_profile(execution_profile)
     return ResearchRequestGate(
         product_turn_execution_limits(profile['options']),
         execution_profile=profile,

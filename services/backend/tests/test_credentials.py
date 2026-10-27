@@ -157,7 +157,7 @@ def test_search_credential_is_owner_scoped_unique_and_not_a_model_key() -> None:
         with pytest.raises(CredentialConflict):
             store.create_credential(
                 "alice", _search_credential_payload(
-                    "other-search-secret-5678", idempotency_key="search-create-2",
+                    "other-search-secret-5678", idempotency_key="search-create-2",  # gitleaks:allow -- fixed synthetic test key
                 ), actor="alice",
             )
         with pytest.raises(ValueError, match="deepseek"):
@@ -183,7 +183,7 @@ def test_search_credential_is_owner_scoped_unique_and_not_a_model_key() -> None:
         with pytest.raises(CredentialConflict):
             store.create_credential(
                 "alice", _search_credential_payload(
-                    "replacement-search-secret-5678", idempotency_key="search-create-3",
+                    "replacement-search-secret-5678", idempotency_key="search-create-3",  # gitleaks:allow -- fixed synthetic test key
                 ), actor="alice",
             )
         revoked = store.revoke_credential(
@@ -194,7 +194,7 @@ def test_search_credential_is_owner_scoped_unique_and_not_a_model_key() -> None:
         assert store.resolve_search("alice") is None
         replacement = store.create_credential(
             "alice", _search_credential_payload(
-                "replacement-search-secret-5678", idempotency_key="search-create-4",
+                "replacement-search-secret-5678", idempotency_key="search-create-4",  # gitleaks:allow -- fixed synthetic test key
             ), actor="alice",
         )
         assert replacement["credential_id"] != first["credential_id"]

@@ -108,6 +108,22 @@ def validate_workflow_trace_event(event: object) -> WorkflowTraceEvent:
     source = cast(WorkflowSource, event["source"])
     if kind in CARD_KINDS:
         _validate_card(kind, source, payload)
+    elif kind == "session.reattached":
+        _exact_fields(payload, required={"schema_version", "root_run_id", "settlement_receipt_sha256",
+                                         "prior_sequence", "runtime_boot_id", "authority_epoch"},
+                      allowed={"schema_version", "root_run_id", "settlement_receipt_sha256",
+                               "prior_sequence", "runtime_boot_id", "authority_epoch"})
+        if source != "runtime-adapter" or payload["schema_version"] != "runtime-recovery-boundary-event.v1":
+            raise ValueError("reattachment events require the Runtime recovery boundary schema")
+        if (not isinstance(payload["root_run_id"], str)
+                or re.fullmatch(r"[0-9a-f]{32}", payload["root_run_id"]) is None
+                or not isinstance(payload["settlement_receipt_sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", payload["settlement_receipt_sha256"]) is None
+                or not _integer(payload["prior_sequence"], minimum=0, maximum=2_147_483_646)
+                or not isinstance(payload["runtime_boot_id"], str)
+                or re.fullmatch(r"[0-9a-f]{32}", payload["runtime_boot_id"]) is None
+                or not _integer(payload["authority_epoch"], minimum=1, maximum=2_147_483_647)):
+            raise ValueError("reattachment event recovery proof is invalid")
     elif kind == "agent.output.delta":
         _validate_answer(payload)
     elif kind == "agent.activity":

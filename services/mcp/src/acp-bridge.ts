@@ -424,8 +424,9 @@ export async function observeAcpDomainCall(
   action: string,
   args: Record<string, unknown>,
   fetcher: Fetcher = fetch,
+  mcpRequestId: string = randomBytes(16).toString("hex"),
 ): Promise<AcpDomainObservationReceipt | undefined> {
-  const mcpRequestId = randomBytes(16).toString("hex");
+  if (!MCP_REQUEST_ID.test(mcpRequestId)) return undefined;
   const headers = scopeHeaders(claims, proofToken);
   const body = {
     schema_version: "byq-acp-domain-call-observe.v1",

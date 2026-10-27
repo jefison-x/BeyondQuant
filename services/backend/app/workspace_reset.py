@@ -373,6 +373,73 @@ class WorkspaceResetStore(PgStoreMixin):
                 "ADR-0113 reconciliation proof has no durable Gateway ACK and slot-release record"
             )
 
+        from .agent_research import (
+            AgentConflict,
+            _LOCAL_VALIDATION_CALLBACK_EXIT_ACTION,
+            _local_validation_callback_exit_from_audit_row,
+        )
+        callback_proofs = execute(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                t.workspace_id AS audit_workspace_id,c.status AS claim_status,
+                t.status AS root_status,t.authority_status AS root_authority_status
+            FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+            LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+            LEFT JOIN agent_domain_call_claims c ON c.claim_id=a.resource_id
+            WHERE a.action=:action
+              AND (a.owner_principal=:owner OR a.detail_json->'acp_control'->'scope'->>'owner_principal'=:owner)
+              AND (t.workspace_id=:workspace OR a.detail_json->'acp_control'->'scope'->>'workspace_id'=:workspace)
+            ORDER BY a.audit_id""", {**params, "action": _LOCAL_VALIDATION_CALLBACK_EXIT_ACTION})
+        for callback_row in callback_proofs:
+            try:
+                proof = _local_validation_callback_exit_from_audit_row(
+                    callback_row, callback_row.get("resource_id"))
+            except (AgentConflict, TypeError, ValueError) as error:
+                raise WorkspaceResetBlocked("local validation callback-exit proof is malformed") from error
+            if (proof is None or callback_row["claim_status"] not in {"succeeded", "correctable_failure"}
+                    or callback_row["root_status"] == "active"
+                    or callback_row["root_authority_status"] != "closed"):
+                raise WorkspaceResetBlocked(
+                    "unresolved local validation callback-exit proof prevents workspace reset"
+                )
+
+        from .agent_research import (
+            AgentConflict,
+            _local_validation_reservation_from_audit_row,
+            local_validation_reconciliation_audit_id,
+        )
+        scoped_roots = execute(connection, """SELECT root_run_id FROM agent_runtime_turns
+            WHERE owner_principal=:owner AND workspace_id=:workspace ORDER BY root_run_id""", params)
+        for scoped_root in scoped_roots:
+            root_id = scoped_root["root_run_id"]
+            reservation_row = WorkspaceResetStore._first_row(connection, """SELECT a.*,
+                    r.root_run_id AS audit_root_run_id,r.owner_principal AS audit_owner_principal,
+                    r.actor_principal AS audit_actor_principal,t.owner_principal AS root_owner_principal,
+                    t.workspace_id AS audit_workspace_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                WHERE a.audit_id=:audit_id""",
+                {"audit_id": local_validation_reconciliation_audit_id(root_id)})
+            if reservation_row is None:
+                continue
+            try:
+                receipt = _local_validation_reservation_from_audit_row(
+                    reservation_row, root_id)
+            except (AgentConflict, TypeError, ValueError) as error:
+                raise WorkspaceResetBlocked("local validation reservation is malformed") from error
+            if (receipt is None or reservation_row.get("audit_root_run_id") != root_id
+                    or reservation_row.get("audit_owner_principal") != owner
+                    or reservation_row.get("owner_principal") != owner
+                    or reservation_row.get("actor_principal") != receipt["scope"].get("actor_principal")
+                    or reservation_row.get("audit_actor_principal") != receipt["scope"].get("actor_principal")
+                    or reservation_row.get("root_owner_principal") != owner
+                    or reservation_row.get("audit_workspace_id") != workspace
+                    or receipt["scope"].get("owner_principal") != owner
+                    or receipt["scope"].get("workspace_id") != workspace):
+                raise WorkspaceResetBlocked("local validation reservation identity is malformed")
+            raise WorkspaceResetBlocked(
+                "local validation reservation has no durable terminal ACK and slot-release record"
+            )
+
         if not allow_active_agent_roots:
             root = WorkspaceResetStore._first_row(connection, """
                 SELECT root_run_id FROM agent_runtime_turns

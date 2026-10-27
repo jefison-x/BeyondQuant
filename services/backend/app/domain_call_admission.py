@@ -4,6 +4,7 @@ import hashlib
 import math
 import re
 import uuid
+import logging
 from contextlib import nullcontext
 
 from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence, validate_call_evidence
@@ -275,7 +276,49 @@ DOMAIN_CALL_DDL = [
 class DomainCallEvidenceMixin:
     def _require_acp_root_terminal_safe(self, connection, root_run_id: str) -> None:
         """Reject terminal ACK while ACP bind, tool dispatch, or domain claim is unresolved."""
-        from .agent_research import AgentConflict, _historical_reconciliation_row
+        from .agent_research import (AgentConflict, AgentResearchStore, _historical_reconciliation_row,
+            _local_validation_final_from_audit_row, _local_validation_final_audit_id,
+            _local_validation_reservation_from_audit_row, local_validation_reconciliation_audit_id,
+            _local_validation_unknown_ingress_digest, local_validation_callback_exit_audit_id,
+            _require_local_validation_root_unfenced)
+
+        local_final = None
+        try:
+            _require_local_validation_root_unfenced(connection, root_run_id)
+        except AgentConflict:
+            final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+            local_final = _local_validation_final_from_audit_row(final_row, root_run_id)
+            reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                {"id": local_validation_reconciliation_audit_id(root_run_id)})
+            reservation = _local_validation_reservation_from_audit_row(reservation_row, root_run_id)
+            if (local_final is None or reservation is None
+                    or local_final["reservation_sha256"] != reservation["reservation_sha256"]
+                    or local_final["scope"]["root_run_id"] != root_run_id
+                    or any(local_final["scope"][k] != reservation["scope"][v] for k, v in {
+                        "owner_principal":"owner_principal", "workspace_id":"workspace_id",
+                        "session_id":"session_id", "trace_id":"trace_id",
+                        "generation_id":"generation"}.items())):
+                raise AgentConflict("fenced Root lacks an exact local terminal reservation")
+            frozen = AgentResearchStore._local_validation_frozen_snapshot(
+                connection, root_run_id, local_final["task_id"], reservation["idempotency_key"])
+            frozen_claim = next((row for row in frozen["agent_domain_call_claims"]
+                                 if row["claim_id"] == local_final["claim_id"]), None)
+            callback_id = local_validation_callback_exit_audit_id(local_final["claim_id"])
+            callback_fact = next((row for row in frozen["agent_audit"]
+                                  if row["audit_id"] == callback_id), None)
+            source_sha = acp_binding_sha256({"claim": frozen_claim,
+                "business_facts": frozen["local_validation_business_facts"], "callback_exit": callback_fact})
+            raw_unknown = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                WHERE root_run_id=:root AND status IN ('pending','unknown') ORDER BY sequence""",
+                {"root": root_run_id})
+            if (source_sha != local_final["source_rows_sha256"] or len(raw_unknown) != 1
+                    or raw_unknown[0]["status"] != "unknown"
+                    or local_final["unknown_ingress_count"] != 1
+                    or local_final["unknown_ingress_sha256"] != _local_validation_unknown_ingress_digest(raw_unknown)):
+                raise AgentConflict("local final receipt does not cover the exact frozen source rows")
 
         pending_registration = fetch_one(connection, """SELECT count(*) AS count
             FROM agent_acp_native_agent_registrations
@@ -293,9 +336,38 @@ class DomainCallEvidenceMixin:
             audit_row = _historical_reconciliation_row(connection, root_run_id)
             receipt = (audit_row.get("detail_json", {}).get("acp_control")
                        if audit_row is not None else None)
-            if not isinstance(receipt, dict):
-                raise AgentConflict("unknown ACP tool ingress prevents root close")
-            _historical_audit_unknown_coverage(connection, root_run_id, receipt)
+            if isinstance(receipt, dict):
+                _historical_audit_unknown_coverage(connection, root_run_id, receipt)
+            else:
+                local_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                    {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+                local = local_final or _local_validation_final_from_audit_row(local_row, root_run_id)
+                if (local is None or len(unsettled_rows) != 1 or local["unknown_ingress_count"] != 1
+                        or local["unknown_ingress_sha256"] != _local_validation_unknown_ingress_digest(unsettled_rows)):
+                    raise AgentConflict("unknown ACP tool ingress prevents root close")
+                terminal_snapshot = self._acp_terminal_evidence_snapshot(connection, root_run_id)
+                if any(local[key] != terminal_snapshot[source] for key, source in {
+                    "terminal_acp_ingress_sequence": "terminal_acp_ingress_sequence",
+                    "terminal_acp_ingress_sha256": "terminal_acp_ingress_sha256",
+                    "terminal_unknown_claim_count": "terminal_unknown_claim_count",
+                    "terminal_unknown_claims_sha256": "terminal_unknown_claims_sha256",
+                }.items()):
+                    raise AgentConflict("local terminal receipt differs from unchanged raw terminal counts")
+                covered_claim = fetch_one(connection, """SELECT claim_id,root_run_id,task_id,action,
+                    idempotency_key,status FROM agent_domain_call_claims WHERE claim_id=:claim""",
+                    {"claim": local["claim_id"]})
+                if (covered_claim is None or covered_claim["root_run_id"] != root_run_id
+                        or covered_claim["task_id"] != local["task_id"]
+                        or covered_claim["action"] != "byq_strategy_validate"
+                        or hashlib.sha256(covered_claim["idempotency_key"].encode()).hexdigest()
+                           != local["idempotency_key_sha256"]
+                        or (local["disposition"] == "uncommitted"
+                            and (covered_claim["status"] != local["claim_status"]
+                                 or local["claim_status"] not in {"executing", "correctable_failure"}))
+                        or (local["disposition"] == "committed"
+                            and (local["claim_status"] != "succeeded" or covered_claim["status"] != "succeeded"))):
+                    raise AgentConflict("local terminal receipt does not cover the exact unknown claim")
 
         acp_marker = fetch_one(connection, """SELECT
             (SELECT count(*) FROM agent_acp_native_agent_registrations WHERE root_run_id=:root)
@@ -307,7 +379,22 @@ class DomainCallEvidenceMixin:
                 FROM agent_domain_call_claims
                 WHERE root_run_id=:root AND status IN ('claimed','executing')""", {"root": root_run_id})
             if unresolved_claims["count"]:
-                raise AgentConflict("unresolved ACP domain call claim prevents root close")
+                local = None
+                local_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                    {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+                if local_row is not None:
+                    local = _local_validation_final_from_audit_row(local_row, root_run_id)
+                exact = fetch_one(connection, """SELECT claim_id,task_id,idempotency_key,status
+                    FROM agent_domain_call_claims WHERE root_run_id=:root
+                    AND status IN ('claimed','executing') ORDER BY claim_id""", {"root": root_run_id})
+                if (unresolved_claims["count"] != 1 or local is None
+                        or local["disposition"] != "uncommitted" or exact is None
+                        or exact["status"] != "executing" or exact["claim_id"] != local["claim_id"]
+                        or exact["task_id"] != local["task_id"]
+                        or hashlib.sha256(exact["idempotency_key"].encode()).hexdigest()
+                           != local["idempotency_key_sha256"]):
+                    raise AgentConflict("unresolved ACP domain call claim prevents root close")
 
     def _require_judgment_root_result_before_close(self, connection, root_run_id: str,
                                                     outcome: str) -> None:
@@ -1023,6 +1110,8 @@ class DomainCallEvidenceMixin:
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                               {"root": identity["root_run_id"]})
             if root is None:
@@ -1140,6 +1229,8 @@ class DomainCallEvidenceMixin:
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                               {"root": identity["root_run_id"]})
             if root is None:
@@ -1448,6 +1539,8 @@ class DomainCallEvidenceMixin:
             self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             self._require_judgment_tool_scope(
                 connection, identity, trusted_scope, tool_name, None, new_dispatch=False)
             row = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
@@ -1622,6 +1715,8 @@ class DomainCallEvidenceMixin:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             prior = fetch_one(connection, "SELECT * FROM agent_acp_domain_call_observations WHERE mcp_request_id=:id",
                               {"id": request_id})
@@ -1731,6 +1826,8 @@ class DomainCallEvidenceMixin:
         self._lifecycle_lock(connection, "runtime-authority:current")
         self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
         self._lifecycle_lock(connection, "root:" + context["root"])
+        from .agent_research import _require_local_validation_root_unfenced
+        _require_local_validation_root_unfenced(connection, context["root"])
         root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root", context)
         if root is None:
             raise AgentConflict("runtime root binding is not yet confirmed")
@@ -1785,6 +1882,7 @@ class DomainCallEvidenceMixin:
             "session": _trace(trusted_session_id, field="session_id"), "trace": trusted_trace_id,
             "root": trusted_root, "boot_id": trusted_boot_id}
         scope = {**value, **context}
+        acp_observation_id = None
         with self._transaction() as connection:
             # No proof means no claim and no execution, including when the
             # root/registration delivery itself is still pending. Do not turn
@@ -1822,6 +1920,7 @@ class DomainCallEvidenceMixin:
                         or binding["runtime_boot_id"] != trusted_boot_id
                         or binding["agent_run_id"] != value["agent_run_id"]):
                     raise AgentConflict("ACP observation does not have a bound native AgentRun")
+                acp_observation_id = trusted_acp_observation_id
                 proof = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                     WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
                       AND trace_id=:trace AND sequence=:sequence AND root_run_id=:root
@@ -1876,7 +1975,8 @@ class DomainCallEvidenceMixin:
         # Internal capability, never an HTTP/model-facing result. No raw request
         # is persisted. Caller alone may execute this newly claimed operation.
         return {"state": "claimed", "claim_id": claim_id, "context": context,
-                "evidence": proof["evidence_json"]}
+                "evidence": proof["evidence_json"],
+                **({"acp_observation_id": acp_observation_id} if acp_observation_id is not None else {})}
 
     def execute_domain_call(self, claim, operation):
         """Artifact and success receipt share one transaction; crashes stay charged."""
@@ -1892,6 +1992,7 @@ class DomainCallEvidenceMixin:
             if row["status"] != "claimed":
                 return {"state": "unknown"} if row["status"] == "executing" else row["result_json"]
             execute(connection, "UPDATE agent_domain_call_claims SET status='executing' WHERE claim_id=:id", {"id": claim["claim_id"]})
+        owns_callback = True
         try:
             with self._transaction() as connection:
                 self._domain_identity(connection, evidence, context, active=True)
@@ -1910,6 +2011,8 @@ class DomainCallEvidenceMixin:
             with self._transaction() as connection:
                 self._lifecycle_lock(connection, "runtime-authority:current")
                 self._lifecycle_lock(connection, "root:" + context["root"])
+                from .agent_research import _require_local_validation_root_unfenced
+                _require_local_validation_root_unfenced(connection, context["root"])
                 authority = self._current_authority_row(connection)
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                                  {"root": context["root"]})
@@ -1932,6 +2035,21 @@ class DomainCallEvidenceMixin:
                 execute(connection, "UPDATE agent_domain_call_claims SET status='correctable_failure',result_json=CAST(:result AS jsonb) WHERE claim_id=:id",
                         {"id": claim["claim_id"], "result": json.dumps(result)})
             return result
+        finally:
+            # This exact callback receipt is written only by the invocation
+            # that committed claimed -> executing. It says the local callback
+            # exited; it does not classify its business outcome.
+            if (owns_callback and evidence.get("action") == "byq_strategy_validate"
+                    and isinstance(claim.get("acp_observation_id"), str)):
+                try:
+                    self._record_local_validation_callback_exit(
+                        claim["claim_id"], claim["acp_observation_id"])
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "local validation callback-exit proof missing",
+                        extra={"root_run_id": claim["context"]["root"],
+                               "claim_id": claim["claim_id"],
+                               "reason": "local_validation_callback_exit_proof_missing"})
 
     def consume_domain_call_evidence(self, value, *, trusted_owner, trusted_workspace,
                                     trusted_session_id, trusted_trace_id, conversation_id,
@@ -1957,6 +2075,8 @@ class DomainCallEvidenceMixin:
                 raise AgentUnauthorized("private call does not match the original conversation")
             self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
             self._lifecycle_lock(connection, "root:" + context["root"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, context["root"])
             self._lifecycle_lock(connection, "domain-call-session:" + context["session"])
             existing = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                 WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND sequence=:sequence""", context)

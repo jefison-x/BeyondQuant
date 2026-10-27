@@ -39,6 +39,14 @@ root's signed native AgentRun binding exists before any delegate child spawns;
 only after that bound and active binding does it spawn the child. A turn with no
 BYQ business tool and no DSH delegation needs no registration. Then call `byq_agent_authorize` before a domain action and
 `byq_agent_audit` with the bounded outcome afterward.
+Its `detail` is optional. If used, pass a JSON object of at most 16 KiB,
+such as `{"summary":"ResearchTask read succeeded"}`. Never include credential
+values or keys whose case/punctuation-normalized names contain `token`,
+`password`, `secret`, `apikey`, `accesskey`, `privatekey`, `credential`, or
+`authorization` at any depth. The reserved key `acp_control` and its
+case/punctuation variants are also forbidden.
+The only authorization-key exception is top-level `authorization_decision`,
+whose value must be `allowed`, `denied`, or `approval_required`.
 
 Registration may return `pending_binding`; it is not an active authorization.
 For pending or unknown registration outcomes, query `byq_agent_run_start` with

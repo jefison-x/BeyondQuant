@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
 import json
 import sys
@@ -9,8 +10,14 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+from packages.contracts.acp_operator_process_fence import digest as fence_digest
+from packages.contracts.acp_operator_process_fence import OperatorProcessFenceContractError
+from packages.contracts.acp_operator_process_fence import validate_fence_close_receipt
+from packages.contracts.acp_operator_process_fence import validate_process_fence_proof
 
 from app.acp_product_slot_client import (
     ProductSlotBusy,
@@ -1187,6 +1194,356 @@ def test_lazy_slot_start_busy_retry_and_exact_ack_release(slot_runtime):
     runtime.acknowledge_terminal("slot-second", second_receipt)
 
 
+def _frozen_failed_v2(
+    runtime: RuntimeAdapter, workspace: str, *, settled: bool = False,
+) -> tuple[dict, bytes]:
+    """A persisted qualified binding from an earlier boot, with no live record."""
+    scope = _scope(workspace, "a")
+    cwd = runtime._session_root / workspace / scope["cwd_leaf"]
+    cwd.mkdir(parents=True, exist_ok=True)
+    binding = {
+        "schema_version": "byq-acp-root-binding.v2",
+        "session_id": scope["session_id"], "trace_id": scope["trace_id"],
+        "owner_principal": scope["owner_principal"], "workspace_id": workspace,
+        "root_run_id": scope["root_run_id"], "native_session_id": "old-native-session",
+        "runtime_generation": scope["generation_id"],
+        "model_provider": "opencode-go-chat", "model_id": "deepseek-v4.1-flash",
+        "cwd": str(cwd), "previous_boot_id": scope["runtime_boot_id"],
+        "previous_authority_epoch": 1, "sequence": 314 if settled else 300,
+        "settlement_receipt": ({
+            "schema_version": "agent-run-lifecycle-receipt.v1",
+            "root_run_id": scope["root_run_id"], "sequence": 314,
+            "event_sha256": "c" * 64,
+        } if settled else None), "domain_call_sequence": 0,
+        "domain_call_drained_sequence": 0, "native_session_close_confirmed": False,
+        "process_exit_confirmed": False, "cleanup_unconfirmed": False, "closed": False,
+        "operator_scope": scope,
+        "operator_binding": {
+            "schema_version": "byq-acp-product-runner-start-binding.v1",
+            "runner_instance_id": "1" * 64, "runner_boot_id": "2" * 32,
+            "state_generation": "3" * 64, "signed_instance_sha256": "4" * 64,
+            "prepared_receipt_sha256": "5" * 64, "backend_binding_nonce": "6" * 64,
+            "install_receipt_sha256": "7" * 64, "backend_activation_id": "8" * 32,
+            "backend_activation_receipt_sha256": "9" * 64,
+        },
+    }
+    raw = json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()
+    path = runtime._acp_binding_path(scope["session_id"], workspace)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    assert runtime._read_acp_binding(scope["session_id"]) == binding
+    return binding, raw
+
+
+def test_restart_empty_registry_still_holds_unconfirmed_v2_binding(slot_runtime):
+    runtime, compatibility, registry = slot_runtime
+    workspace = "workspace_slot_a"
+    _create(runtime, "slot-other-after-restart", workspace)
+    binding, _raw = _frozen_failed_v2(runtime, workspace)
+    assert registry._leases == {}
+    with pytest.raises(SessionConflict, match="prior ACP cleanup is unconfirmed"):
+        _create(runtime, "slot-new-after-restart", workspace)
+    before = len(compatibility.start_attempts)
+    with pytest.raises(SessionConflict, match="prior ACP cleanup is unconfirmed"):
+        runtime.submit_prompt("slot-other-after-restart", "second", conversation_context=[])
+    assert len(compatibility.start_attempts) == before
+    # A normal, durably cleaned qualified binding no longer fences START.
+    binding["process_exit_confirmed"] = True
+    path = runtime._acp_binding_path(binding["session_id"], workspace)
+    path.write_bytes(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode())
+    assert runtime._read_acp_binding(binding["session_id"])["process_exit_confirmed"] is True
+    _root, other_receipt = _run_to_idle(runtime, "slot-other-after-restart", "second")
+    runtime.acknowledge_terminal("slot-other-after-restart", other_receipt)
+
+
+def test_failed_terminal_cleanup_only_ack_preserves_original_terminal_and_rejects_new_lease(
+    slot_runtime,
+):
+    runtime, compatibility, registry = slot_runtime
+    workspace = "workspace_slot_a"
+    binding, raw = _frozen_failed_v2(runtime, workspace, settled=True)
+    scope = binding["operator_scope"]
+    operation_id = "e" * 32
+    fence_hash = "f" * 64
+    failed = {
+        "schema_version": "byq-agent-root-operator-failed-terminal-fence.v1",
+        "operation_id": operation_id, "root_run_id": scope["root_run_id"],
+        "outcome": "failed", "process_fence_receipt_sha256": fence_hash,
+        "terminal_acp_ingress_sequence": 12, "terminal_acp_ingress_sha256": "a" * 64,
+        "terminal_unknown_claim_count": 0, "terminal_unknown_claims_sha256": "b" * 64,
+        "sequence": 314, "event_sha256": "c" * 64,
+    }
+    failed["receipt_sha256"] = fence_digest(failed)
+    close = {
+        "schema_version": "byq-acp-operator-process-fence-close-receipt.v1",
+        "operation_id": operation_id, "workspace_id": workspace,
+        "root_run_id": scope["root_run_id"], "process_fence_receipt_sha256": fence_hash,
+        "operator_failed_terminal": failed, "scope": scope,
+        "authority": {"previous_boot_id": scope["runtime_boot_id"],
+                      "previous_epoch": 1, "current_boot_id": runtime.boot_id,
+                      "current_epoch": 7},
+        "runner": {"old_runner_instance_id": binding["operator_binding"]["runner_instance_id"],
+                   "successor_runner_instance_id": "d" * 64,
+                   "tombstone_sha256": "e" * 64},
+        "engineering_evidence_sha256": "9" * 64,
+        "runtime_binding_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    assert validate_fence_close_receipt(close) == close
+    for changed in ({"sequence": 315}, {"event_sha256": "d" * 64}):
+        other_failed = {**failed, **changed}
+        other_failed["receipt_sha256"] = fence_digest({
+            key: item for key, item in other_failed.items() if key != "receipt_sha256"})
+        with pytest.raises(SessionConflict, match="cleanup fence is not exact"):
+            runtime.acknowledge_terminal(scope["session_id"], {
+                **close, "operator_failed_terminal": other_failed})
+    # A new lease in the same Workspace cannot be displaced by old cleanup.
+    newer_scope = _scope(workspace, "b")
+    registry.reserve(newer_scope)
+    with pytest.raises(SessionConflict, match="cleanup fence is not exact"):
+        runtime.acknowledge_terminal(scope["session_id"], close)
+    assert registry.owns(newer_scope)
+    assert runtime._read_acp_binding(scope["session_id"]) == binding
+    registry.release_operator_fence(newer_scope, persist_observation=lambda: None)
+    # The current cleanup fence is distinct from proof of a historical lease.
+    registry.reserve(scope)
+    wrong_scope = {**close, "scope": {**scope, "trace_id": "other-trace"}}
+    with pytest.raises(SessionConflict, match="cleanup fence is not exact"):
+        runtime.acknowledge_terminal(scope["session_id"], wrong_scope)
+    assert registry.owns(scope)
+    result = runtime.acknowledge_terminal(scope["session_id"], close)
+    observed = result["operator_observation"]
+    assert observed["operator_failed_terminal"] == failed
+    assert observed["runtime_ack"]["root_binding_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert observed["superseded_terminal"] is None
+    assert runtime._read_acp_binding(scope["session_id"])["schema_version"] == "byq-acp-root-binding.v3"
+    recovery = runtime.recovery_binding(scope["session_id"])
+    assert recovery["state"] == "operator_failed_terminal"
+    assert workspace not in registry._leases
+    assert runtime.acknowledge_terminal(scope["session_id"], close) == result
+    runtime.recover_acp_session(scope["session_id"], recovery, 314)
+    assert runtime._get(scope["session_id"]).settlement_receipt == binding["settlement_receipt"]
+    next_root, next_receipt = _run_to_idle(runtime, scope["session_id"], "next prompt")
+    assert next_root != scope["root_run_id"]
+    runtime.acknowledge_terminal(scope["session_id"], next_receipt)
+
+
+def test_plain_failed_root_proof_accepts_empty_child_graph_and_rejects_orphans(slot_runtime):
+    runtime, _compatibility, registry = slot_runtime
+    binding, raw = _frozen_failed_v2(runtime, "workspace_slot_a", settled=True)
+    scope = binding["operator_scope"]
+    root_id = scope["root_run_id"]
+    operation_id = "e" * 32
+    terminal = {"terminal_acp_ingress_sequence": 0,
+                "terminal_acp_ingress_sha256": "a" * 64,
+                "terminal_unknown_claim_count": 0,
+                "terminal_unknown_claims_sha256": "b" * 64}
+    root_mutable = {"status": "failed", "authority_status": "closed",
+                    "updated_at": "2026-10-18T00:00:00Z", **terminal}
+    root = {"root_run_id": root_id, **root_mutable, "terminal_sequence": 314,
+            "terminal_event_sha256": "c" * 64,
+            "owner_principal": scope["owner_principal"],
+            "workspace_id": scope["workspace_id"], "session_id": scope["session_id"],
+            "trace_id": scope["trace_id"]}
+    receipt = {"schema_version": "agent-run-lifecycle-receipt.v1",
+               "root_run_id": root_id, "sequence": 314, "event_sha256": "c" * 64}
+    rows = [
+        {"table": "agent_runtime_authority_current", "key": {"authority_key": "current"},
+         "row": {"authority_key": "current", "boot_id": runtime.boot_id, "epoch": 7,
+                 "receipt_json": {"status": "current", "boot_id": runtime.boot_id,
+                                  "authority_epoch": 7}}},
+        {"table": "agent_runtime_receipts", "key": {"sequence": 314},
+         "row": {"sequence": 314, "trace_id": scope["trace_id"],
+                 "receipt_json": receipt}},
+        {"table": "agent_runtime_turns", "key": {"root_run_id": root_id}, "row": root},
+        {"table": "product_conversations", "key": {"conversation_id": "conversation-old"},
+         "row": {"conversation_id": "conversation-old", "owner_principal": scope["owner_principal"],
+                 "runtime_session_id": scope["session_id"], "trace_id": scope["trace_id"],
+                 "status": "active"}},
+        {"table": "users", "key": {"user_id": "user-old"},
+         "row": {"user_id": "user-old", "username": scope["owner_principal"],
+                 "status": "active"}},
+        {"table": "workspace_memberships", "key": {"membership_id": "member-old"},
+         "row": {"membership_id": "member-old", "user_id": "user-old",
+                 "workspace_id": scope["workspace_id"], "role": "owner", "status": "active"}},
+        {"table": "workspaces", "key": {"workspace_id": scope["workspace_id"]},
+         "row": {"workspace_id": scope["workspace_id"], "kind": "personal",
+                 "status": "active", "reset_id": None, "owner_user_id": "user-old"}},
+    ]
+    start = binding["operator_binding"]
+    old = {"runner_instance_id": start["runner_instance_id"],
+           "runner_boot_id": start["runner_boot_id"],
+           "state_generation": start["state_generation"],
+           "signed_instance_sha256": start["signed_instance_sha256"],
+           "prestart_binding_sha256": fence_digest(start),
+           "deployment": {"daemon_id": "daemon", "deployment_id": "deployment",
+                          "service": "runner", "container_id": "container",
+                          "image_digest": "sha256:" + "d" * 64,
+                          "started_at": "2026-10-18T00:00:00Z", "pid_namespace_id": "pidns"},
+           "state_volume": {"name": "state", "driver": "local", "scope": "local",
+                            "source": "/state", "mount_destination": "/state"}}
+    request = {
+        "schema_version": "byq-acp-operator-process-fence-request.v1",
+        "operation_id": operation_id, "scope": scope,
+        "authority": {"previous_boot_id": scope["runtime_boot_id"],
+                      "previous_epoch": 1, "current_boot_id": runtime.boot_id,
+                      "current_epoch": 7},
+        "old_runner": old,
+        "native_fence": {"old_container_stopped": True, "pid_count": 0,
+                         "paused": False, "restarting": False,
+                         "restart_disabled": True,
+                         "pre_finalize_evidence_sha256": "e" * 64,
+                         "pre_finalize_observed_at": "2026-10-18T00:00:00Z"},
+        "successor": {"runner_instance_id": "d" * 64, "runner_boot_id": "f" * 32,
+                      "state_generation": start["state_generation"],
+                      "signed_instance_sha256": "1" * 64,
+                      "active_binding_receipt_sha256": "2" * 64,
+                      "tombstone_sha256": "3" * 64},
+        "prestart_binding": start,
+        "runtime_binding_observation": {
+            "schema_version": "byq-engineering-runtime-root-binding-observation.v1",
+            "raw_binding_utf8": raw.decode(), "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "evidence_sha256": "4" * 64, "observed_at": "2026-10-18T00:00:00Z"},
+    }
+    # A restarted Runtime has no session record. Backend rollback after the
+    # first reserve must permit only the exact same operation to retry.
+    live = SimpleNamespace(
+        session_id=scope["session_id"], trace_id=scope["trace_id"],
+        owner_principal=scope["owner_principal"], workspace_id=scope["workspace_id"],
+        boot_id=runtime.boot_id, process_root_id=root_id,
+        runtime_generation=scope["generation_id"],
+        qualified_runtime_generation=scope["generation_id"],
+        qualified_operator_scope=scope,
+        qualified_operator_binding=binding["operator_binding"],
+        qualified_authority_epoch=1,
+        settlement_receipt=binding["settlement_receipt"],
+        conversation_ended=False, release_finalized=False,
+        current_generation=SimpleNamespace(
+            process_root_id=root_id, generation_id=scope["generation_id"]),
+        active_run=object(), status=SessionStatus.IDLE, lock=threading.RLock())
+    runtime._sessions[scope["session_id"]] = live
+    with pytest.raises(SessionConflict, match="existing lease changed"):
+        runtime.reserve_operator_process_fence(scope["session_id"], request)
+    del runtime._sessions[scope["session_id"]]
+    assert not registry.owns(scope)
+    registry.reserve(scope)
+    with pytest.raises(SessionConflict, match="Workspace slot is occupied"):
+        runtime.reserve_operator_process_fence(scope["session_id"], request)
+    runtime._sessions[scope["session_id"]] = live
+    with pytest.raises(SessionConflict, match="existing lease changed"):
+        runtime.reserve_operator_process_fence(scope["session_id"], request)
+    with pytest.raises(ProductSlotBusy):
+        registry.reserve_operator_fence(
+            _scope(scope["workspace_id"], "b"), operation_id=operation_id,
+            request_sha256=fence_digest(request), allow_existing_live_lease=True)
+    live.active_run = None
+    live.trace_id = "other-trace"
+    with pytest.raises(SessionConflict, match="existing lease changed"):
+        runtime.reserve_operator_process_fence(scope["session_id"], request)
+    live.trace_id = scope["trace_id"]
+    assert runtime.reserve_operator_process_fence(scope["session_id"], request) == {
+        "state": "reserved", "operation_id": operation_id}
+    assert registry._leases[scope["workspace_id"]].fence_operation_id == operation_id
+    del runtime._sessions[scope["session_id"]]
+    registry.release_operator_fence(scope, persist_observation=lambda: None)
+    assert runtime.reserve_operator_process_fence(scope["session_id"], request) == {
+        "state": "reserved", "operation_id": operation_id}
+    assert runtime.reserve_operator_process_fence(scope["session_id"], request) == {
+        "state": "reserved", "operation_id": operation_id}
+    with pytest.raises(ProductSlotBusy):
+        registry.reserve_operator_fence(
+            _scope(scope["workspace_id"], "b"), operation_id=operation_id,
+            request_sha256=fence_digest(request))
+    with pytest.raises(SessionConflict, match="Workspace slot is occupied"):
+        runtime.reserve_operator_process_fence(
+            scope["session_id"], {**request, "operation_id": "d" * 32})
+    changed_fence = {**request["native_fence"], "pre_finalize_evidence_sha256": "6" * 64}
+    with pytest.raises(SessionConflict, match="Workspace slot is occupied"):
+        runtime.reserve_operator_process_fence(
+            scope["session_id"], {**request, "native_fence": changed_fence})
+    registry.release_operator_fence(scope, persist_observation=lambda: None)
+    assert not registry.owns(scope)
+    delta = {"close_at": "2026-10-18T00:00:00Z",
+             "root": {"id": root_id, "before": root_mutable, "after": root_mutable},
+             "agent_runs": [],
+             "inserted_proof_operations_audit_id": "ops_acp_process_fence_" +
+             hashlib.sha256(("acp-operator-process-fence:" + operation_id).encode()).hexdigest()}
+    delta["sha256"] = fence_digest(delta)
+
+    def proof_for(snapshot_rows):
+        ordered = sorted(snapshot_rows, key=lambda row: (row["table"],
+            json.dumps(row["key"], sort_keys=True, separators=(",", ":")).encode()))
+        preimage = {"schema_version": "byq-acp-r2-preimage.v1", "rows": ordered}
+        preimage["sha256"] = fence_digest(preimage)
+        proof = {"schema_version": "byq-acp-operator-process-fence.v1",
+                 "operation_id": operation_id, "request_sha256": fence_digest(request),
+                 **{key: request[key] for key in request if key not in {"schema_version", "operation_id"}},
+                 "backend_preimage": preimage, "allowed_poststate_delta": delta,
+                 "expected_poststate_sha256": preimage["sha256"],
+                 "backend_snapshot_sha256": preimage["sha256"],
+                 "runtime_binding_sha256": request["runtime_binding_observation"]["raw_sha256"],
+                 "engineering_evidence_sha256": "5" * 64, **terminal,
+                 "operator": {"uid": 1000, "name": "operator"},
+                 "disposition": "operator_failed_terminal_fence_confirmed"}
+        process_hash = fence_digest(proof)
+        failed = {"schema_version": "byq-agent-root-operator-failed-terminal-fence.v1",
+                  "operation_id": operation_id, "root_run_id": root_id,
+                  "outcome": "failed", "process_fence_receipt_sha256": process_hash,
+                  **terminal, "sequence": 314, "event_sha256": "c" * 64}
+        failed["receipt_sha256"] = fence_digest(failed)
+        proof.update({"operator_failed_terminal": failed,
+                      "process_fence_receipt_sha256": process_hash})
+        proof["receipt_sha256"] = fence_digest(proof)
+        return proof
+
+    assert validate_process_fence_proof(proof_for(rows))["allowed_poststate_delta"]["agent_runs"] == []
+    authority_without_key = [{**row, "row": {key: item for key, item in row["row"].items()
+                                              if key != "authority_key"}}
+                             if row["table"] == "agent_runtime_authority_current" else row
+                             for row in rows]
+    with pytest.raises(OperatorProcessFenceContractError):
+        validate_process_fence_proof(proof_for(authority_without_key))
+    without_ledger = [row for row in rows if row["table"] != "agent_runtime_receipts"]
+    assert validate_process_fence_proof(proof_for(without_ledger))["allowed_poststate_delta"]["agent_runs"] == []
+    wrong_trace = [{**row, "row": {**row["row"], "trace_id": "other-trace"}}
+                   if row["table"] == "agent_runtime_receipts" else row for row in rows]
+    with pytest.raises(OperatorProcessFenceContractError):
+        validate_process_fence_proof(proof_for(wrong_trace))
+    with pytest.raises(OperatorProcessFenceContractError):
+        validate_process_fence_proof(proof_for(rows + [rows[0]]))
+    original_observation = request["runtime_binding_observation"]
+    null_binding = {**binding, "settlement_receipt": None}
+    null_raw = json.dumps(null_binding, sort_keys=True, separators=(",", ":")).encode()
+    request["runtime_binding_observation"] = {
+        **original_observation, "raw_binding_utf8": null_raw.decode(),
+        "raw_sha256": hashlib.sha256(null_raw).hexdigest(),
+    }
+    with pytest.raises(OperatorProcessFenceContractError):
+        validate_process_fence_proof(proof_for(without_ledger))
+    request["runtime_binding_observation"] = original_observation
+    for changed in ({"sequence": 313}, {"event_sha256": "d" * 64}):
+        changed_binding = {**binding,
+                           "settlement_receipt": {**binding["settlement_receipt"], **changed}}
+        changed_raw = json.dumps(changed_binding, sort_keys=True, separators=(",", ":")).encode()
+        request["runtime_binding_observation"] = {
+            **original_observation, "raw_binding_utf8": changed_raw.decode(),
+            "raw_sha256": hashlib.sha256(changed_raw).hexdigest(),
+        }
+        with pytest.raises(OperatorProcessFenceContractError):
+            validate_process_fence_proof(proof_for(rows))
+        with pytest.raises(OperatorProcessFenceContractError):
+            validate_process_fence_proof(proof_for(without_ledger))
+    request["runtime_binding_observation"] = original_observation
+    for table, key, row in (
+        ("agent_runtime_registrations", {"registration_fingerprint": "orphan"},
+         {"registration_fingerprint": "orphan", "root_run_id": root_id}),
+        ("agent_acp_tool_ingress_observations", {"mcp_request_id": "late"},
+         {"mcp_request_id": "late", "root_run_id": root_id}),
+    ):
+        with pytest.raises(OperatorProcessFenceContractError):
+            validate_process_fence_proof(proof_for(rows + [{"table": table, "key": key, "row": row}]))
+
+
 def test_busy_replacement_preserves_acked_native_reuse_for_retry(slot_runtime):
     runtime, compatibility, registry = slot_runtime
     workspace = "workspace_slot_a"
@@ -2160,6 +2517,10 @@ def test_known_budget_block_keeps_conversation_promptable_and_never_reuses_faile
 
     runtime.acknowledge_terminal("ord-budget", record.terminal_receipts[first_root])
     assert not record.reuse_native_session_ready
+    compatibility.block_prompt = False
+    _create(runtime, "ord-budget-other", workspace)
+    other_root, other_receipt = _run_to_idle(runtime, "ord-budget-other", "fresh after failed ACK")
+    runtime.acknowledge_terminal("ord-budget-other", other_receipt)
 
     # An explicit new instruction is admitted as a fresh root with a fresh native
     # session, new generation and its own gate; the failed turn is never replayed.

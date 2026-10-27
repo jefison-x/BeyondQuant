@@ -200,6 +200,8 @@ class _Lease:
     scope: dict[str, str]
     cleanup_proven: bool = False
     backend_acknowledged: bool = False
+    fence_operation_id: str | None = None
+    fence_request_sha256: str | None = None
 
 
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -383,6 +385,39 @@ class ProductSlotRegistry:
                 raise ProductSlotBusy("Product ACP workspace slot is busy")
             self._leases[workspace_id] = _Lease(digest, checked_scope)
 
+    def reserve_operator_fence(
+        self, scope: Mapping[str, object], *, operation_id: str, request_sha256: str,
+        allow_existing_live_lease: bool = False,
+    ) -> None:
+        """Reserve or retry only the same current-process cleanup operation."""
+        checked_scope, digest = _checked_scope(scope)
+        if (not isinstance(operation_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", operation_id) is None
+                or not isinstance(request_sha256, str)
+                or _HEX64.fullmatch(request_sha256) is None):
+            raise ProductSlotLeaseMismatch("operator fence reservation identity is invalid")
+        workspace_id = checked_scope["workspace_id"]
+        with self._lock:
+            if workspace_id not in self._bindings:
+                raise ProductSlotUnavailable("No Product ACP slot is configured for this workspace")
+            lease = self._leases.get(workspace_id)
+            if lease is None:
+                self._leases[workspace_id] = _Lease(
+                    digest, checked_scope, fence_operation_id=operation_id,
+                    fence_request_sha256=request_sha256)
+            elif (allow_existing_live_lease is True
+                  and hmac.compare_digest(lease.digest, digest)
+                  and lease.fence_operation_id is None
+                  and lease.fence_request_sha256 is None
+                  and not lease.backend_acknowledged and not lease.cleanup_proven):
+                lease.fence_operation_id = operation_id
+                lease.fence_request_sha256 = request_sha256
+            elif (not hmac.compare_digest(lease.digest, digest)
+                  or lease.fence_operation_id != operation_id
+                  or lease.fence_request_sha256 != request_sha256
+                  or lease.backend_acknowledged or lease.cleanup_proven):
+                raise ProductSlotBusy("Product ACP workspace slot is busy")
+
     def acknowledge(self, scope: Mapping[str, object]) -> None:
         """Record a Backend ACK for the exact root and release if cleanup is proven."""
         checked_scope, digest = _checked_scope(scope)
@@ -405,6 +440,7 @@ class ProductSlotRegistry:
 
     def release_operator_fence(
         self, scope: Mapping[str, object], *, persist_observation: Callable[[], None],
+        operation_id: str | None = None,
     ) -> bool:
         """Persist one operator-fence observation before releasing its exact lease.
 
@@ -416,6 +452,9 @@ class ProductSlotRegistry:
         checked_scope, digest = _checked_scope(scope)
         if not callable(persist_observation):
             raise ProductSlotLeaseMismatch("operator fence persistence is unavailable")
+        if operation_id is not None and (not isinstance(operation_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", operation_id) is None):
+            raise ProductSlotLeaseMismatch("operator fence operation identity is invalid")
         with self._lock:
             lease = self._leases.get(checked_scope["workspace_id"])
             if lease is None:
@@ -423,10 +462,73 @@ class ProductSlotRegistry:
             if not hmac.compare_digest(lease.digest, digest):
                 raise ProductSlotLeaseMismatch(
                     "operator fence does not match the active workspace lease")
+            if operation_id is not None and lease.fence_operation_id != operation_id:
+                raise ProductSlotLeaseMismatch(
+                    "operator fence lease belongs to another operation")
             persist_observation()
             if self._leases.get(checked_scope["workspace_id"]) is not lease:
                 raise ProductSlotLeaseMismatch(
                     "operator fence lease changed before release")
+            del self._leases[checked_scope["workspace_id"]]
+            return True
+
+    def verify_local_validation_cleanup(
+        self, scope: Mapping[str, object],
+    ) -> tuple[dict[str, object], str]:
+        """Verify the existing signed cleanup receipt for one exact local Root."""
+        checked_scope, _digest = _checked_scope(scope)
+        with self._lock:
+            binding = self._bindings.get(checked_scope["workspace_id"])
+            if binding is None:
+                raise ProductSlotUnavailable("No Product ACP slot is configured for this workspace")
+            control_key = binding.secret
+        return read_product_cleanup_receipt_with_sha256(
+            Path(binding.public.socket_path).parent, control_key, checked_scope,
+        )
+
+    def release_local_validation_ack(
+        self, scope: Mapping[str, object], *, cleanup_receipt_sha256: str,
+        persist_observation: Callable[[], None],
+        operation_id: str | None = None, request_sha256: str | None = None,
+    ) -> bool:
+        """Persist one local ACK observation before deleting only its exact lease."""
+        checked_scope, digest = _checked_scope(scope)
+        if not callable(persist_observation):
+            raise ProductSlotLeaseMismatch("local validation ACK persistence is unavailable")
+        if ((operation_id is None) != (request_sha256 is None)
+                or (operation_id is not None and (not isinstance(operation_id, str)
+                    or re.fullmatch(r"[0-9a-f]{32}", operation_id) is None
+                    or not isinstance(request_sha256, str) or _HEX64.fullmatch(request_sha256) is None))):
+            raise ProductSlotLeaseMismatch("local validation ACK operation identity is invalid")
+        with self._lock:
+            lease = self._leases.get(checked_scope["workspace_id"])
+            if lease is None:
+                return False
+            if not hmac.compare_digest(lease.digest, digest):
+                raise ProductSlotLeaseMismatch("local validation ACK does not match the active lease")
+            if lease.scope != checked_scope:
+                raise ProductSlotLeaseMismatch("local validation lease scope changed")
+            if (operation_id is not None
+                    and (lease.fence_operation_id != operation_id
+                         or lease.fence_request_sha256 != request_sha256)):
+                raise ProductSlotLeaseMismatch("local validation lease belongs to another operation")
+            if operation_id is None and lease.cleanup_proven is not True:
+                raise ProductSlotLeaseMismatch("local validation lease lacks exact proven cleanup")
+            binding = self._bindings.get(checked_scope["workspace_id"])
+            if binding is None:
+                raise ProductSlotUnavailable("No Product ACP slot is configured for this workspace")
+            cleanup, raw_sha256 = read_product_cleanup_receipt_with_sha256(
+                Path(binding.public.socket_path).parent, binding.secret, checked_scope,
+            )
+            if (cleanup.get("cleanup") != "proven"
+                    or not isinstance(cleanup_receipt_sha256, str)
+                    or not hmac.compare_digest(raw_sha256, cleanup_receipt_sha256)):
+                raise ProductSlotLeaseMismatch("local validation signed cleanup changed before release")
+            if operation_id is not None:
+                lease.cleanup_proven = True
+            persist_observation()
+            if self._leases.get(checked_scope["workspace_id"]) is not lease:
+                raise ProductSlotLeaseMismatch("local validation ACK lease changed before release")
             del self._leases[checked_scope["workspace_id"]]
             return True
 
