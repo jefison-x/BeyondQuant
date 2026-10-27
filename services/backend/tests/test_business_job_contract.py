@@ -3,6 +3,20 @@ from __future__ import annotations
 import pytest
 
 from app.business_job import project_business_job
+from app.signal_producer import SignalJobStore
+
+
+def test_signal_job_public_projection_hides_newer_private_origin() -> None:
+    row = {
+        "job_id": "signaljob_1", "status": "queued",
+        "input_json": {"schema_version": "signal-producer-job-v1", "universe": {"symbols": ["000001.SZ"]}},
+        "submission_origin": {"kind": "authorized_agent", "mcp_request_id": "private-request"},
+    }
+    public = SignalJobStore._public_row(row)
+    assert public["job_id"] == "signaljob_1"
+    assert public["input"]["symbol_count"] == 1
+    assert "submission_origin" not in public
+    assert "submission_origin" in row
 
 
 def test_backtest_projection_keeps_stable_job_and_artifact_identity() -> None:
