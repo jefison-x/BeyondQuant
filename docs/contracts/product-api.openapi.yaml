@@ -145,6 +145,32 @@ paths:
   /api/product/plugins/qualifications:
     post: {summary: 为已登记的 exact plugin version 排队 Qualification；成功也不会自动启用。, responses: *acceptedResponses}
 
+  /api/product/agent/conversations/{conversation_id}/execution-options:
+    parameters: [{name: conversation_id, in: path, required: true, schema: {type: string}}]
+    get: {summary: 读取当前 owner-scoped conversation 的持久执行参数与版本。, responses: *okResponses}
+    put: {summary: 由已登录用户更新当前 conversation 的可选执行参数；只作用后续 root。, responses: *okResponses}
+  /api/product/research/approval-requests:
+    get:
+      summary: 分页读取 owner-scoped research approval requests。
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [pending, unresolved, approved, rejected, all], default: pending}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses: *okResponses
+    post: {summary: 由已登录用户明确确认创建精确 research approval request。, responses: *createdResponses}
+  /api/product/research/approval-requests/by-key/{request_key}:
+    parameters: [{name: request_key, in: path, required: true, schema: {type: string}}]
+    get: {summary: 按原请求键只读核对 owner-scoped approval request。, responses: *okResponses}
+  /api/product/research/approval-requests/{request_id}:
+    parameters: [{name: request_id, in: path, required: true, schema: {type: string}}]
+    get: {summary: 获取一个 owner-scoped research approval request 的当前状态。, responses: *okResponses}
+  /api/product/research/approval-requests/{request_id}/reconcile:
+    parameters: [{name: request_id, in: path, required: true, schema: {type: string}}]
+    post: {summary: 由已登录用户明确确认核对同一 approval request 的原动作结果。, responses: *okResponses}
+  /api/product/research/approval-requests/{request_id}/decision:
+    parameters: [{name: request_id, in: path, required: true, schema: {type: string}}]
+    post: {summary: 由已登录用户明确确认同一 approval request 的审批决定。, responses: *okResponses}
+
   /api/product/research/{entity_type}/{entity_id}:
     parameters:
       - $ref: "#/components/parameters/EntityType"

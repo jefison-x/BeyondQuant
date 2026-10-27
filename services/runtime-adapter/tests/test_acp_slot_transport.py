@@ -134,8 +134,11 @@ def _fake_client(monkeypatch, registry, session=None, *, failure=None,
         def __init__(self, actual_registry):
             assert actual_registry is registry
 
-        def start(self, *, scope, env, deadline_at_ms, expected_cwd, guard_b64=None):
+        def start(self, *, scope, env, deadline_at_ms, expected_cwd, guard_b64=None,
+                  prepare_start=None, prelaunch_reject=None):
             assert env["BYQ_WORKSPACE_ID"] == SCOPE["workspace_id"]
+            assert prepare_start is None
+            assert prelaunch_reject is None
             if allow_unbounded_deadline:
                 assert deadline_at_ms is None
             else:

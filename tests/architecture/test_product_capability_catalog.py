@@ -15,7 +15,8 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
                           "original submission identity", "Unknown or mismatched kind/schema"):
             self.assertIn(invariant, ml)
         self.assertIn("not `ml_strategy_version`", rules)
-        self.assertIn("task-bound continuation permission", roles)
+        self.assertIn("A trusted Product continuation may\nresume only the exact task", roles)
+        self.assertIn("authorize the exact next business action", roles)
         self.assertIn("A model turn ending is not completion", roles)
 
     def test_product_capability_catalog_matches_product_and_mcp_surfaces(self) -> None:
@@ -29,7 +30,7 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         self.assertIn("byq_product_help_query", skill)
         self.assertIn('"byq_product_help_query"', role)
         self.assertIn("Read-only; this never grants access or mutates Domain state", mcp)
-        self.assertIn("do not start a domain AgentRun", skill)
+        self.assertIn("do not start a domain AgentRun", " ".join(skill.split()))
 
     def test_backtest_agent_surface_is_task_only_and_never_accepts_raw_inputs(self) -> None:
         root = Path(__file__).resolve().parents[2]

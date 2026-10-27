@@ -46,7 +46,9 @@ def terminal_ack_fixture(monkeypatch):
         "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
         "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt}
     monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: evidence)
-    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k: {"receipt": receipt})
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda method, *_a, **_k:
+        {"schema_version": "byq-business-root-status.v1", "roots": []} if method == "GET"
+        else {"receipt": receipt})
     use_live_adapter_boot(monkeypatch)
     return value, receipt
 
@@ -63,6 +65,9 @@ def test_active_root_registration_still_uses_the_existing_backend_path(monkeypat
     reply = {"receipt": lifecycle_receipt(value)}
     calls = []
     monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: calls.append((a, k)) or reply)
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda method, *_a, **_k:
+        {"schema_version": "byq-business-root-status.v1", "roots": []} if method == "GET"
+        else pytest.fail("active root registration has no terminal close"))
     monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: pytest.fail("active roots have no terminal ACK"))
     assert main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID) == reply
     assert len(calls) == 1
@@ -80,8 +85,9 @@ def test_terminal_close_keeps_exact_same_boot_receipt_fence(monkeypatch, caplog)
         "schema_version": main.RUNTIME_TERMINAL_EVIDENCE_SCHEMA,
         "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
         "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt})
-    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k:
-        closes.append((a, k)) or {"receipt": receipt})
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda method, *a, **k:
+        {"schema_version": "byq-business-root-status.v1", "roots": []} if method == "GET"
+        else closes.append(((method, *a), k)) or {"receipt": receipt})
     def acknowledge(*args, **kwargs):
         acknowledgements.append((args, kwargs))
         if len(acknowledgements) == 1:
@@ -155,7 +161,9 @@ def test_terminal_ack_does_not_cross_an_adapter_boot_change(monkeypatch, caplog)
         "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
         "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt}
     monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: evidence)
-    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k: {"receipt": receipt})
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda method, *_a, **_k:
+        {"schema_version": "byq-business-root-status.v1", "roots": []} if method == "GET"
+        else {"receipt": receipt})
     monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": "b" * 32})
     acknowledgements = []
     monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: acknowledgements.append((a, k)))

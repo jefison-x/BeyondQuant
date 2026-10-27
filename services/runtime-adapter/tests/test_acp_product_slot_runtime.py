@@ -225,6 +225,23 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         assert url.startswith("http://backend.test/")
         assert timeout == 2.0
         assert headers["Authorization"] == "Bearer synthetic-runtime-authority-token"
+        path = urlsplit(url).path
+        roots_prefix = "/internal/runtime-authority/sessions/"
+        if path.startswith(roots_prefix) and path.endswith("/roots"):
+            session_id = unquote(path[len(roots_prefix):-len("/roots")])
+            record = runtime._get(session_id)
+            assert headers == {
+                "Authorization": "Bearer synthetic-runtime-authority-token",
+                "X-BYQ-Owner-Principal": record.owner_principal,
+                "X-BYQ-Workspace-ID": record.workspace_id,
+                "X-BYQ-Trace-ID": record.trace_id,
+            }
+            return httpx.Response(200, json={
+                "schema_version": "byq-business-root-status.v1",
+                "roots": [{"root_run_id": record.process_root_id,
+                           "local_validation_pre_ack": None,
+                           "local_validation": None}],
+            }, request=httpx.Request("GET", url))
         session_id = headers["X-BYQ-Session-ID"]
         owner = headers["X-BYQ-Owner-Principal"]
         workspace_id = headers["X-BYQ-Workspace-ID"]
@@ -233,7 +250,6 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         assert headers["X-BYQ-DSH-Run-ID"]
         assert headers["X-BYQ-Runtime-Boot-ID"]
         assert headers["X-BYQ-Root-Run-ID"]
-        path = urlsplit(url).path
         if path.startswith("/v1/product/conversations/by-runtime/"):
             path_session = unquote(path.rsplit("/", 1)[-1])
             assert path_session == session_id
@@ -2289,8 +2305,8 @@ def test_ordinary_submit_loopback_gate_cap_posts0_and_root_journal(slot_runtime,
         over = {"model": "deepseek-v4.1-flash", "max_tokens": 8,
                 "messages": [{"role": "user", "content": "synthetic"}],
                 "tools": _tools_with_payload_bytes(131073)}
-        response = httpx.post(f"http://127.0.0.1:{port}/chat/completions",
-                              content=json.dumps(over).encode(), timeout=3)
+        response = httpx.request("POST", f"http://127.0.0.1:{port}/chat/completions",
+                                 content=json.dumps(over).encode(), timeout=3)
         captured["status"] = response.status_code
 
     monkeypatch.setattr(compatibility, "start", start_and_probe)
@@ -2426,12 +2442,12 @@ def test_ordinary_submit_loopback_gate_unknown_blocks_next_http(slot_runtime, mo
         body = json.dumps({"model": "deepseek-v4.1-flash", "max_tokens": 8,
                            "messages": [{"role": "user", "content": "synthetic"}]}).encode()
         try:
-            statuses.append(httpx.post(f"http://127.0.0.1:{port}/chat/completions",
-                                       content=body, timeout=3).status_code)
+            statuses.append(httpx.request("POST", f"http://127.0.0.1:{port}/chat/completions",
+                                          content=body, timeout=3).status_code)
         except httpx.HTTPError:
             statuses.append("error")
-        statuses.append(httpx.post(f"http://127.0.0.1:{port}/chat/completions",
-                                   content=body, timeout=3).status_code)
+        statuses.append(httpx.request("POST", f"http://127.0.0.1:{port}/chat/completions",
+                                      content=body, timeout=3).status_code)
 
     monkeypatch.setattr(compatibility, "start", start_and_probe)
     runtime._resolve_model = lambda **_kwargs: {

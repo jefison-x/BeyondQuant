@@ -272,7 +272,7 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
   await expect(page.getByLabel("公开执行进度").getByText("理解请求", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "批准" })).not.toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: /待人工审批，1 项/ }).click();
+  await page.getByRole("button", { name: "审批中心，1 项待审批" }).click();
   await expect(page.getByRole("button", { name: "批准" })).toBeVisible();
 });
 
@@ -926,8 +926,8 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(page.getByText("创建日线同步", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "关闭系统设置" }).click();
   await expect(page).toHaveURL(/\/user\/appearance$/);
-  await openNav(page, "研究与审批");
-  await expect(page.getByRole("heading", { name: "研究与审批" })).toBeVisible();
+  await openNav(page, "审批历史");
+  await expect(page.locator(".research-history").getByRole("heading", { name: "审批历史" })).toBeVisible();
 });
 
 test("mobile shell uses a drawer and keeps account destinations reachable", async ({ page }) => {
@@ -949,7 +949,9 @@ test("mobile shell uses a drawer and keeps account destinations reachable", asyn
   await page.getByRole("button", { name: "打开产品导航" }).click();
   await page.getByTitle(/用户设置/).click();
   await expect(page.getByRole("menuitem", { name: "资产管理" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "系统设置" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "系统设置" }).click();
+  await expect(page).toHaveURL(/\/settings\/agent-runtime\?returnTo=/);
+  await expect(page.locator(".runtime-settings").getByRole("heading", { name: "Agent运行参数" })).toBeVisible();
 });
 
 test("system settings entry is visible only to administrators", async ({ page }) => {

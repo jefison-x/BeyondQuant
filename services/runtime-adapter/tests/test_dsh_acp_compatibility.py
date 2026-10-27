@@ -1011,7 +1011,8 @@ def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
     class CapturingSlotAcpProcess:
         def __init__(self, command, cwd, environment, *, registry, guard_b64=None,
                      deadline_at_ms=None, ordinary_execution=False,
-                     task_ready_execution=False):
+                     task_ready_execution=False, prepare_start=None,
+                     prelaunch_reject=None):
             self.scope = {"root_run_id": environment["BYQ_ROOT_RUN_ID"]}
             self.process = None
             captured.append({
@@ -1023,6 +1024,8 @@ def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
                 "deadline_at_ms": deadline_at_ms,
                 "ordinary_execution": ordinary_execution,
                 "task_ready_execution": task_ready_execution,
+                "prepare_start": prepare_start,
+                "prelaunch_reject": prelaunch_reject,
             })
 
         def start(self):
@@ -1059,5 +1062,7 @@ def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
     assert captured[0]["deadline_at_ms"] == expected_deadline_at_ms
     assert captured[0]["ordinary_execution"] is True
     assert captured[0]["task_ready_execution"] is False
+    assert captured[0]["prepare_start"] is None
+    assert captured[0]["prelaunch_reject"] is None
     assert captured[0]["registry"] is compatibility.product_slots
     assert harness.slot_scope == {"root_run_id": environment["BYQ_ROOT_RUN_ID"]}

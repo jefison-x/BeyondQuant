@@ -222,8 +222,9 @@ def test_task_ready_v2_guard_cross_language_apply_writes_python_readable_fsynced
         'idempotencyKey': reservation['idempotency_key'],
         'sourceFactSha256': reservation['source_fact_sha256'],
     }
-    repository_root = Path(__file__).resolve().parents[3]
-    plugin_path = repository_root / 'plugins/dsh-byq/runtime/byq-continuation-budget.js'
+    plugin_path = Path('/opt/byq/runtime/byq-continuation-budget.js')
+    if not plugin_path.is_file():
+        plugin_path = Path(__file__).resolve().parents[3] / 'plugins/dsh-byq/runtime/byq-continuation-budget.js'
     node = shutil.which('node')
     assert node is not None, 'the pinned test image must provide Node for the cross-language contract test'
     script = r"""
@@ -248,7 +249,7 @@ for (const effect of effects) effect()();
 """
     completed = subprocess.run(
         [node, '--input-type=module', '-e', script],
-        cwd=repository_root,
+        cwd=plugin_path.parent,
         env={
             'BYQ_PLUGIN_PATH': str(plugin_path),
             'BYQ_GUARD_CONFIG': json.dumps(config, separators=(',', ':')),

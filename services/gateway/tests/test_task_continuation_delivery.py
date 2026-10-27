@@ -914,14 +914,17 @@ def test_pending_cancel_fence_precedes_reconcile_and_consumption(tmp_path, monke
 
     delivery.tick()
 
-    assert calls == [('fence', context, reservation_id, 'hard')]
+    assert calls == [('fence', context, reservation_id, 'hard'), ('reconcile', context)]
     assert delivery.pending_cancel(context) == (reservation_id, 'hard')
 
     fence_ok[0] = True
     delivery.tick()
 
-    assert calls[1:] == [('fence', context, reservation_id, 'hard'), ('reconcile', context), ('consume', context)]
+    assert calls[2:] == [('fence', context, reservation_id, 'hard'), ('reconcile', context)]
     assert delivery.pending_cancel(context) is None
+
+    delivery.tick()
+    assert calls[4:] == [('reconcile', context), ('consume', context)]
 
 
 def test_collector_registers_business_context_for_gateway_restart(monkeypatch, tmp_path):
@@ -999,7 +1002,7 @@ def test_restarted_gateway_attaches_to_original_runtime_without_prompting(monkey
         if path == '/internal/runtime/sessions':
             assert payload['attach_live_only'] is True
             return {'session_id': context['session_id'], 'trace_id': context['trace_id'],
-                    'status': 'ready', 'boot_id': 'a' * 32}
+                    'status': 'ready', 'boot_id': 'a' * 32, 'sequence': 0}
         raise AssertionError(f'unexpected Adapter POST: {path}')
     monkeypatch.setattr(main, '_catalog_request', catalog)
     monkeypatch.setattr(main, '_adapter_post', adapter_post)
@@ -1261,6 +1264,10 @@ def _v3_cancel_route_fixture(monkeypatch, tmp_path, *, mode='soft'):
     def backend(method, path, principal, workspace, payload=None):
         calls.append(('backend', method, path, payload))
         assert principal.subject == context['owner'] and workspace == context['workspace_id']
+        if path == (f"/internal/task-continuation/{context['conversation_id']}"
+                f"/reservations/{reservation_id}"):
+            assert method == 'GET' and payload is None
+            return state['intent']
         if path.endswith('/peek'):
             return intent
         if path.endswith('/cancel'):
@@ -1368,7 +1375,7 @@ def test_v3_cancel_persists_intent_and_runtime_cancel_runs_after_backend_failure
     response = main.cancel_product_session('conversation-a', main.ProductCancelRequest(mode='soft'), object())
 
     assert [call[0] for call in calls] == ['backend', 'adapter_get', 'backend', 'runtime']
-    assert calls[0][2].endswith('/peek') and calls[2][2].endswith('/cancel')
+    assert calls[0][2].endswith(f'/reservations/{reservation_id}') and calls[2][2].endswith('/cancel')
     assert calls[-1][1].endswith(f'?mode=soft&expected_root_run_id={"f" * 32}')
     assert delivery.pending_cancel(context) == (reservation_id, 'soft')
     assert registry.v3_cancel_blocks_dispatch(session, reservation_id)
@@ -1527,7 +1534,7 @@ def test_v3_cancel_marker_write_failure_still_attempts_backend_and_runtime(monke
     assert response['continuation_cancel']['runtime_cancel_acknowledged'] is True
 
 
-def test_v3_cancel_exact_backend_confirmation_clears_marker_without_releasing_hold(monkeypatch, tmp_path):
+def test_v3_cancel_exact_backend_confirmation_keeps_marker_until_terminal_ack(monkeypatch, tmp_path):
     context, registry, session, reservation_id, delivery, state, calls = _v3_cancel_route_fixture(
         monkeypatch, tmp_path)
     response = main.cancel_product_session('conversation-a', main.ProductCancelRequest(mode='soft'), object())
@@ -1535,8 +1542,8 @@ def test_v3_cancel_exact_backend_confirmation_clears_marker_without_releasing_ho
     assert [call[0] for call in calls] == ['backend', 'adapter_get', 'backend', 'runtime']
     assert 'idempotency_key' not in state['backend_receipt']
     assert state['intent']['receipt']['idempotency_key'] == state['carrier']['idempotency_key']
-    assert delivery.pending_cancel(context) is None
-    assert response['continuation_cancel']['durable_cancel_confirmed'] is True
+    assert delivery.pending_cancel(context) == (reservation_id, 'soft')
+    assert response['continuation_cancel']['durable_cancel_confirmed'] is False
     assert response['continuation_cancel']['backend_status'] == 'accepted'
     assert session.continuation_reservation == reservation_id
     assert session.continuation_deadline is None
@@ -1611,6 +1618,8 @@ def test_v3_cancel_accepts_only_matching_terminal_root_closure(
         'settlement_sha256': hashlib.sha256(json.dumps(
             settled_facts, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
     }
+    state['backend_receipt'].update(state['adapter_receipt'])
+    state['intent']['receipt'].update(state['adapter_receipt'])
     state['trace_events'].append(terminal_event)
     state['root_rows'] = [{
         'root_run_id': run_id, 'status': 'cancelled', 'authority_status': 'closed',
@@ -1622,10 +1631,9 @@ def test_v3_cancel_accepts_only_matching_terminal_root_closure(
 
     assert response['continuation_cancel']['runtime_target_closed'] is expected_closed
     assert response['continuation_cancel']['runtime_cancel_attempted'] is False
-    assert response['continuation_cancel']['durable_cancel_confirmed'] is expected_closed
+    assert response['continuation_cancel']['durable_cancel_confirmed'] is False
     assert [call[0] for call in calls if call[0] == 'runtime'] == []
-    assert delivery.pending_cancel(context) == (
-        None if expected_closed else (reservation_id, 'soft'))
+    assert delivery.pending_cancel(context) == (reservation_id, 'soft')
     assert session.continuation_reservation == reservation_id
     assert registry.v3_cancel_blocks_dispatch(session, reservation_id)
 
@@ -1642,7 +1650,7 @@ def test_v3_cancel_hard_mode_uses_exact_runtime_route(monkeypatch, tmp_path):
         f'/internal/runtime/sessions/{session.session_id}/cancel'
         f'?mode=hard&expected_root_run_id={"f" * 32}',
     ]
-    assert delivery.pending_cancel(context) is None
+    assert delivery.pending_cancel(context) == (reservation_id, 'hard')
     assert registry.v3_cancel_blocks_dispatch(session, reservation_id)
 
 
@@ -1709,9 +1717,12 @@ def test_v3_cancel_poller_restart_retries_both_fences_with_original_mode(
     monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     restarted.tick()
 
-    assert delivery.pending_cancel(context) is None
+    assert delivery.pending_cancel(context) == (reservation_id, mode)
     assert registry.v3_cancel_blocks_dispatch(session, reservation_id)
-    assert [call[0] for call in calls].count('backend') == 4
+    backend_calls = [call for call in calls if call[0] == 'backend']
+    assert [call[1] for call in backend_calls] == ['GET', 'POST', 'GET', 'GET', 'POST', 'GET']
+    assert all(call[2].endswith(f'/reservations/{reservation_id}') if call[1] == 'GET'
+               else call[2].endswith('/cancel') for call in backend_calls)
     assert [call[0] for call in calls].count('runtime') == 2
     assert [call[1] for call in calls if call[0] == 'runtime'] == [
         f'/internal/runtime/sessions/{session.session_id}/cancel'

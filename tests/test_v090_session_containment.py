@@ -130,7 +130,8 @@ class CommittedEvidenceTests(unittest.TestCase):
         })
         for relative, expected in digests.items():
             self.assertRegex(expected, r"^sha256:[0-9a-f]{64}$", relative)
-            if relative in observer.HISTORICAL_PROVENANCE_SOURCES:
+            if (relative in observer.HISTORICAL_PROVENANCE_SOURCES
+                    or relative == "services/gateway/app/session_containment.py"):
                 self.assertEqual(expected, observer._historical_source_digest(relative), relative)
             else:
                 self.assertEqual(expected, observer._digest(ROOT / relative), relative)

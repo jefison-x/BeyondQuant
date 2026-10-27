@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.compat import compatibility_for_release
-from app.runtime import RuntimeAdapter
+from app.runtime import RuntimeAdapter, SessionConflict
 from .test_process_cleanup import FakeHarness, release_compatibility
 from .test_session_rehydration import _simulate_process_death
 from packages.contracts.continuation_request import profile_binding, request_limits
@@ -149,10 +149,10 @@ def test_missing_continuation_receipt_does_not_scan_old_guard_files(tmp_path, mo
         FakeHarness.allow_run.set()
 
 
-def test_acp_recovery_accepts_closed_before_ack_receipt_without_resume_or_replay(
+def test_acp_recovery_rejects_unproven_trace_gap_after_closed_before_ack(
     tmp_path, monkeypatch,
 ):
-    """A Backend close receipt repairs the ACK race without reopening DSH."""
+    """A Backend close receipt alone cannot account for a missing trace event."""
     session_id = "ack-race-session"
     trace_id = "ack-race-trace"
     root_run_id = "a" * 32
@@ -212,30 +212,11 @@ def test_acp_recovery_accepts_closed_before_ack_receipt_without_resume_or_replay
     }
 
     try:
-        result = adapter.recover_acp_session(
-            session_id, lifecycle_receipt, initial_sequence=5,
-        )
-
-        assert result["status"] == "idle"
-        assert result["continuity"] == "reattached"
-        assert result["resumed_from_run_id"] is None
-        persisted = json.loads(binding_path.read_text(encoding="utf-8"))
-        assert persisted["settlement_receipt"] == lifecycle_receipt
-        assert persisted["native_session_id"] == native_session_id
-        assert persisted["runtime_generation"] == runtime_generation
-        assert adapter.recovery_binding(session_id) == {
-            "schema_version": "byq-runtime-recovery-binding.v1",
-            "state": "settled",
-            "session_id": session_id,
-            "trace_id": trace_id,
-            "owner_principal": "alice",
-            "workspace_id": "workspace_alice",
-            "root_run_id": root_run_id,
-            "previous_boot_id": adapter.boot_id,
-            "previous_authority_epoch": 8,
-            "sequence": 5,
-            "settlement_receipt": lifecycle_receipt,
-        }
-        assert adapter._get(session_id).history == []
+        with pytest.raises(SessionConflict, match="recovery trace does not meet its durable binding"):
+            adapter.recover_acp_session(
+                session_id, lifecycle_receipt, initial_sequence=5,
+            )
+        assert json.loads(binding_path.read_text(encoding="utf-8")) == binding
+        assert session_id not in adapter._sessions
     finally:
         adapter.close()

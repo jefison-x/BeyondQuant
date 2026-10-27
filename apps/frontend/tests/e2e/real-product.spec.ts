@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { selectContinuationStrategy } from "./continuation-permission-controls";
 
 async function openUserDestination(page: Page, label: string) {
   await page.getByTitle(/用户设置/).click();
@@ -275,7 +274,40 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
   await page.getByLabel("研究名称", { exact: true }).fill(`LightGBM 收益排序-${Date.now()}`);
+  const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/product/ml/strategies/versions") && response.request().method() === "POST");
   await page.getByTestId("ml-save").click(); await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
+  const created = (await (await createdResponse).json()).artifact;
+  expect(created.task_id).toMatch(/^task_[0-9a-f]{32}$/);
+  expect(created.artifact_id).toMatch(/^artifact_[0-9a-f]{32}$/);
+  const requestedResponse = page.waitForResponse(response => response.url().endsWith("/api/product/research/approval-requests") && response.request().method() === "POST");
+  await page.getByTestId("ml-train").click(); await page.getByLabel("确认训练范围").getByRole("button", { name: "开始训练" }).click();
+  const requested = await requestedResponse;
+  expect(requested.status()).toBe(201);
+  expect(requested.request().postDataJSON()).toMatchObject({ request_type: "ml_strategy_version", task_id: created.task_id, ml_strategy_artifact_id: created.artifact_id });
+  const approval = (await requested.json()).request;
+  expect(approval).toMatchObject({ request_type: "ml_strategy_version", status: "pending", task_id: created.task_id, ml_strategy_artifact_id: created.artifact_id });
+  const approvalCard = page.locator(".business-approval-list .request-card").filter({ hasText: approval.request_id });
+  await expect(approvalCard).toContainText(created.task_id);
+  await expect(approvalCard).toContainText(created.artifact_id);
+  const decisionResponse = page.waitForResponse(response => response.url().endsWith(`/api/product/research/approval-requests/${approval.request_id}/decision`) && response.request().method() === "POST");
+  await approvalCard.getByRole("button", { name: "批准", exact: true }).click();
+  await page.getByPlaceholder("审批理由").fill("确认该冻结模型策略用于本次可信训练");
+  const refreshedDetailResponse = page.waitForResponse(async response => {
+    if (!response.url().endsWith(`/api/product/ml/studies/${created.artifact_id}`) || response.request().method() !== "GET" || response.status() !== 200) return false;
+    const detail = await response.json();
+    return detail.study?.artifact_id === created.artifact_id && /^artifact_[0-9a-f]{32}$/.test(String(detail.approval_artifact_id ?? ""));
+  });
+  await page.getByRole("button", { name: "确认批准" }).click();
+  const decision = await decisionResponse;
+  expect(decision.status()).toBe(200);
+  const decided = (await decision.json()).request;
+  expect(decided).toMatchObject({ request_id: approval.request_id, status: "approved", task_id: created.task_id, ml_strategy_artifact_id: created.artifact_id });
+  expect(decided.domain_artifact_id).toMatch(/^artifact_[0-9a-f]{32}$/);
+  expect((await (await refreshedDetailResponse).json()).approval_artifact_id).toBe(decided.domain_artifact_id);
+  await expect(page.getByText("按需加载研究详情...")).toHaveCount(0);
+  await expect(approvalCard).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("ml-train")).toBeVisible();
   await page.getByTestId("ml-train").click(); await page.getByLabel("确认训练范围").getByRole("button", { name: "开始训练" }).click();
   await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 120_000 });
   await expect(page.getByText("训练结果")).toBeVisible();
@@ -308,8 +340,42 @@ test("Phase 86 real HS300 regime experts to routed frozen-signal backtest journe
   await dialog.getByLabel("研究名称").fill(`沪深300市场状态专家模型-${Date.now()}`);
   await expect(dialog.getByText("沪深300状态专家", { exact: true })).toBeVisible();
   await expect(dialog.getByTestId("ml-expert-risk_on")).toBeVisible();
+  const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/product/ml/strategies/versions") && response.request().method() === "POST");
   await page.getByTestId("ml-save").click();
   await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
+  const created = (await (await createdResponse).json()).artifact;
+  expect(created.task_id).toMatch(/^task_[0-9a-f]{32}$/);
+  expect(created.artifact_id).toMatch(/^artifact_[0-9a-f]{32}$/);
+  const requestedResponse = page.waitForResponse(response => response.url().endsWith("/api/product/research/approval-requests") && response.request().method() === "POST");
+  await page.getByTestId("ml-train").click();
+  await page.getByLabel("确认训练范围").getByRole("button", { name: "开始训练" }).click();
+  const requested = await requestedResponse;
+  expect(requested.status()).toBe(201);
+  expect(requested.request().postDataJSON()).toMatchObject({ request_type: "ml_strategy_version", task_id: created.task_id, ml_strategy_artifact_id: created.artifact_id });
+  const approval = (await requested.json()).request;
+  expect(approval).toMatchObject({ request_type: "ml_strategy_version", status: "pending", task_id: created.task_id, ml_strategy_artifact_id: created.artifact_id });
+  const approvalCard = page.locator(".business-approval-list .request-card").filter({ hasText: approval.request_id });
+  await expect(approvalCard).toContainText(created.task_id);
+  await expect(approvalCard).toContainText(created.artifact_id);
+  const decisionResponse = page.waitForResponse(response => response.url().endsWith(`/api/product/research/approval-requests/${approval.request_id}/decision`) && response.request().method() === "POST");
+  await approvalCard.getByRole("button", { name: "批准", exact: true }).click();
+  await page.getByPlaceholder("审批理由").fill("确认该冻结状态专家模型用于本次可信训练");
+  const refreshedDetailResponse = page.waitForResponse(async response => {
+    if (!response.url().endsWith(`/api/product/ml/studies/${created.artifact_id}`) || response.request().method() !== "GET" || response.status() !== 200) return false;
+    const detail = await response.json();
+    return detail.study?.artifact_id === created.artifact_id && /^artifact_[0-9a-f]{32}$/.test(String(detail.approval_artifact_id ?? ""));
+  });
+  await page.getByRole("button", { name: "确认批准" }).click();
+  const decision = await decisionResponse;
+  expect(decision.status()).toBe(200);
+  const decided = (await decision.json()).request;
+  expect(decided).toMatchObject({ request_id: approval.request_id, status: "approved", task_id: created.task_id, ml_strategy_artifact_id: created.artifact_id });
+  expect(decided.domain_artifact_id).toMatch(/^artifact_[0-9a-f]{32}$/);
+  expect((await (await refreshedDetailResponse).json()).approval_artifact_id).toBe(decided.domain_artifact_id);
+  await expect(page.getByText("按需加载研究详情...")).toHaveCount(0);
+  await expect(approvalCard).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("ml-train")).toBeVisible();
   await page.getByTestId("ml-train").click();
   await page.getByLabel("确认训练范围").getByRole("button", { name: "开始训练" }).click();
   await expect(page.getByTestId("ml-predict")).toBeVisible({ timeout: 180_000 });
@@ -658,7 +724,7 @@ async function legacyFeedbackBookmarkJourney({ page, baseURL }: { page: Page; ba
 }
 
 for (const viewport of ['desktop', 'mobile'] as const) {
-  test(`F6 real Product API permission persists and revokes (${viewport})`, async ({ page, browser, baseURL }, testInfo) => {
+  test(`F6 real Product API auto-continuation option persists and remains owner-scoped (${viewport})`, async ({ page, browser, baseURL }, testInfo) => {
     await page.setViewportSize(viewport === 'desktop' ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
     const unexpected = new Set<string>();
     const errors: string[] = [];
@@ -675,38 +741,41 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await page.getByLabel('密码').fill('test-password-123');
     await page.getByRole('button', { name: '进入' }).click();
     await expect(page).toHaveURL(/\/agent$/);
-    await page.goto('/user/research');
-    await page.getByRole('button', { name: '查看许可', exact: true }).click();
-    const panel = page.getByRole('region', { name: '任务后台续接许可' });
-    await expect(panel.getByRole('status')).toContainText('尚未授权');
-    await expect(panel).toContainText('task-ready-read.v1');
-    await expect(panel.getByRole('list', { name: '可信单次请求资源上限' })).toContainText('模型请求次数：16');
-    await expect(panel.getByRole('spinbutton')).toHaveCount(0);
-    await selectContinuationStrategy(page, panel);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await panel.screenshot({ path: testInfo.outputPath(`f6-permission-form-${viewport}.png`) });
-    const saved = page.waitForResponse(response => response.url().endsWith('/continuation-permission') && response.request().method() === 'POST');
-    await panel.getByRole('button', { name: '保存单次请求许可' }).click();
+    const identity = await (await page.request.get('/api/product/auth/me')).json();
+    const createdResponse = await page.request.post('/v1/agent/sessions');
+    expect(createdResponse.status()).toBe(201);
+    const conversationId = (await createdResponse.json()).session_id as string;
+    expect(conversationId).toMatch(/^conversation_[0-9a-f]{32}$/);
+    const optionsPath = `/api/product/agent/conversations/${encodeURIComponent(conversationId)}/execution-options`;
+    const initialResponse = await page.request.get(optionsPath);
+    expect(initialResponse.status()).toBe(200);
+    const initial = await initialResponse.json();
+    expect(initial).toMatchObject({ schema_version: 'agent-execution-options.v1', conversation_id: conversationId,
+      owner_principal: identity.subject, workspace_id: identity.workspace.workspace_id,
+      options: { auto_continue: true } });
+    expect(Object.entries(initial.options).filter(([key]) => key !== 'auto_continue').every(([, value]) => value === null)).toBe(true);
+    await page.goto(`/settings/agent-runtime?conversation_id=${encodeURIComponent(conversationId)}`);
+    const settings = page.getByRole('dialog', { name: /系统设置/ }).locator('.runtime-settings');
+    await expect(settings.getByText(`当前会话：`, { exact: false })).toContainText(conversationId);
+    const autoContinue = settings.getByRole('switch', { name: '允许自动接续' });
+    await expect(autoContinue).toBeChecked();
+    await settings.locator('.setting-value .el-switch').click();
+    await expect(autoContinue).not.toBeChecked();
+    const saved = page.waitForResponse(response => response.url().endsWith(optionsPath) && response.request().method() === 'PUT');
+    await settings.getByRole('button', { name: '保存参数' }).click();
     const response = await saved;
-    expect(response.status()).toBe(201);
-    const sent = response.request().postDataJSON();
-    expect(sent.execution_profile_id).toBe('task-ready-read.v1');
-    expect(Object.keys(sent).sort()).toEqual(['confirmed_artifact_ids', 'execution_profile_id', 'idempotency_key']);
-    expect(sent).not.toHaveProperty('token_limit');
-    const grant = await response.json();
-    expect(grant.schema_version).toBe('task-continuation-permission.v2');
-    expect(grant.permission.execution_profile.profile_id).toBe('task-ready-read.v1');
-    expect(grant.permission.execution_profile.profile_version).toBe(1);
-    expect(grant.permission.execution_profile.profile_sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(grant.permission.max_turns).toBe(1);
-    expect(grant.permission.request_limits.max_provider_calls).toBe(16);
-    expect(grant.permission).not.toHaveProperty('token_limit');
-    await expect(panel).toContainText(grant.permission.execution_profile.profile_sha256);
+    expect(response.status()).toBe(200);
+    expect(response.request().postDataJSON()).toEqual({ schema_version: 'agent-execution-options.v1',
+      expected_revision: initial.revision, options: { ...initial.options, auto_continue: false } });
+    const updated = await response.json();
+    expect(updated).toMatchObject({ conversation_id: conversationId, revision: initial.revision + 1,
+      options: { ...initial.options, auto_continue: false } });
     await page.reload();
-    await page.getByRole('button', { name: '查看许可', exact: true }).click();
-    await expect(panel).toContainText(grant.permission.execution_profile.profile_sha256);
-    await expect(panel.getByRole('button', { name: '保存单次请求许可' })).toHaveCount(0);
-    await panel.screenshot({ path: testInfo.outputPath(`f6-permission-${viewport}.png`) });
+    await expect(settings.getByRole('switch', { name: '允许自动接续' })).not.toBeChecked();
+    expect((await (await page.request.get(optionsPath)).json()).revision).toBe(updated.revision);
+    await expect(settings.getByRole('button', { name: '保存单次请求许可' })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    await settings.screenshot({ path: testInfo.outputPath(`f6-auto-continuation-${viewport}.png`) });
     const other = await browser.newContext({ baseURL });
     try {
       const otherPage = await other.newPage();
@@ -715,17 +784,10 @@ for (const viewport of ['desktop', 'mobile'] as const) {
       await otherPage.getByLabel('密码').fill('test-password-123');
       await otherPage.getByRole('button', { name: '进入' }).click();
       await expect(otherPage).toHaveURL(/\/agent$/);
-      const denied = await otherPage.request.get(`/api/product/research/tasks/${grant.task_id}/continuation-permission`);
-      expect([403, 404, 422]).toContain(denied.status());
-      const deniedBody = await denied.text();
-      expect(deniedBody).not.toContain(grant.task_id);
-      expect(deniedBody).not.toContain(grant.permission.confirmation_id);
+      const denied = await otherPage.request.get(optionsPath);
+      expect([403, 404]).toContain(denied.status());
+      expect(await denied.text()).not.toContain(conversationId);
     } finally { await other.close(); }
-    await panel.getByRole('button', { name: '撤销后台续接许可' }).click();
-    await expect(panel.getByRole('status')).toContainText('撤销');
-    await page.reload();
-    await page.getByRole('button', { name: '查看许可', exact: true }).click();
-    await expect(panel.getByRole('status')).toContainText('撤销');
     expect([...unexpected]).toEqual([]);
     expect(errors).toEqual([]);
   });
@@ -769,13 +831,28 @@ for (const viewport of ['desktop','mobile'] as const) {
     const body=await sessions.json();
     const conversation=body.sessions[0].session_id;
     historicalConversation=conversation;
+    const receiptsResponse=await page.request.get('/api/product/research/submission-watches?conversation_id='+encodeURIComponent(conversation));
+    expect(receiptsResponse.status()).toBe(200);
+    const receipts=await receiptsResponse.json();
+    expect(receipts).toMatchObject({schema_version:'research-receipt-list.v1',conversation_id:conversation});
+    const confirmed=receipts.receipts.find((row:Record<string,unknown>)=>row.status==='confirmed');
+    const unknown=receipts.receipts.find((row:Record<string,unknown>)=>row.status==='needs_attention');
+    expect(confirmed?.watch_id).toBeTruthy();
+    expect(confirmed?.entity_id).toBeTruthy();
+    expect(unknown?.watch_id).toBeTruthy();
+    expect(unknown?.entity_id).toBeNull();
+    const taskResponse=await page.request.get('/api/product/research/tasks/'+encodeURIComponent(confirmed.entity_id));
+    expect(taskResponse.status()).toBe(200);
+    expect(await taskResponse.json()).toMatchObject({task_id:confirmed.entity_id,owner_principal:'f2-browser-'+viewport});
     await page.goto('/agent?session='+encodeURIComponent(conversation));
-    const panel=page.getByRole('region',{name:'研究提交核对'});
-    await expect(panel).toContainText('已确认创建');
+    const panel=page.getByRole('region',{name:'研究提交回执待确认'});
     await expect(panel).toContainText('结果仍未确认');
     await expect(panel).toContainText('不代表研究或计算已完成');
+    await expect(panel).not.toContainText('已确认创建');
     await page.reload();
-    await expect(panel).toContainText('已确认创建');
+    await expect(panel).toContainText('结果仍未确认');
+    await expect(panel).not.toContainText('已确认创建');
+    expect((await (await page.request.get('/api/product/research/submission-watches?conversation_id='+encodeURIComponent(conversation))).json()).receipts).toEqual(receipts.receipts);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await panel.screenshot({path:testInfo.outputPath('f2-receipts-'+viewport+'.png')});
     const other=await browser.newContext({baseURL});

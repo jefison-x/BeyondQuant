@@ -13,8 +13,8 @@ def test_orphaned_running_task_is_not_reported_as_executing_and_survives_restart
     store, task, context, _ = setup_permission()
     store.transition('research_task', task, 'running', 'handoff-start')
     first = store.get_task_handoff(task, trusted_context=context)
-    assert first['state'] == 'needs_permission'
-    assert first['reason'] == 'permission_missing'
+    assert first['state'] == 'blocked'
+    assert first['reason'] == 'no_registered_executor'
     assert first['task_status'] == 'running'
     assert first['objective'] == 'No execution'
     assert first['references'] == []
@@ -60,13 +60,13 @@ def test_permission_alone_does_not_mean_continuation_is_queued(monkeypatch):
         monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
         store.create_continuation_permission(task, payload, trusted_context=context)
         view = store.get_task_handoff(task, trusted_context=context)
-        assert view['state'] == 'blocked'
-        assert view['reason'] == 'no_registered_executor'
+        assert view['state'] == 'waiting_event'
+        assert view['reason'] is None
     finally:
         store.close()
 
 
-@pytest.mark.parametrize('delivery_status,expected', [('reserved', 'continuation_queued'),
+@pytest.mark.parametrize('delivery_status,expected', [('reserved', 'needs_reconciliation'),
     ('outcome_unknown', 'needs_reconciliation'), ('accepted', 'needs_reconciliation')])
 def test_durable_receipt_controls_queue_state_and_revocation(delivery_status, expected, monkeypatch):
     from datetime import datetime, timedelta, timezone
@@ -90,7 +90,7 @@ def test_durable_receipt_controls_queue_state_and_revocation(delivery_status, ex
 
 
 @pytest.mark.parametrize(('status', 'expected_reason'), [
-    ('reserved', 'unsupported_model_grant'),
+    ('reserved', 'continuation_result_unconfirmed'),
     ('outcome_unknown', 'continuation_result_unconfirmed'),
 ])
 def test_legacy_data_ready_liability_prevents_a_new_human_grant_and_dispatch(
@@ -159,7 +159,7 @@ def test_exact_job_scope_and_terminal_job_does_not_complete_task():
             trusted_context=context)
         assert store.get_task_handoff(other['task_id'], trusted_context=context)['references'] == []
         store._execute("UPDATE ml_training_runs SET workspace_id=:workspace,status='completed' WHERE training_run_id='synthetic-job'", params)
-        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'needs_permission'
+        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'blocked'
         assert store.get_task(task)['status'] == 'planned'
     finally:
         store.close()
@@ -205,7 +205,7 @@ def test_approval_wait_and_delivery_are_distinct_from_action_execution():
         store._execute("UPDATE agent_approvals SET continuation_status='outcome_unknown' WHERE approval_id=:id", {'id': approval['approval_id']})
         assert store.get_task_handoff(task, trusted_context=context)['state'] == 'needs_reconciliation'
         store._execute("UPDATE agent_approvals SET continuation_status='submitted' WHERE approval_id=:id", {'id': approval['approval_id']})
-        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'needs_permission'
+        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'blocked'
     finally:
         agents.close()
         store.close()

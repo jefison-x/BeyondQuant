@@ -5,6 +5,7 @@ import ElementPlus, { ElMessageBox } from "element-plus";
 import { AgentRequestError } from "@/api/agent";
 import type { AgentExecutionOptions } from "@/api/agent";
 import AgentView from "./AgentView.vue";
+import AgentRuntimeSettingsView from "./AgentRuntimeSettingsView.vue";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 
@@ -47,11 +48,8 @@ vi.mock("vue-router", async () => {
   };
 });
 
-vi.mock("@/api/agent", () => ({
-  AGENT_EXECUTION_OPTIONS_SCHEMA: "agent-execution-options.v1",
-  AgentRequestError: class AgentRequestError extends Error {
-    constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
-  },
+vi.mock("@/api/agent", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/api/agent")>(),
   cancelSession: (...args: unknown[]) => cancelSession(...args),
   createAgentSession: (...args: unknown[]) => createAgentSession(...args),
   deleteAgentSession: (...args: unknown[]) => deleteAgentSession(...args),
@@ -208,26 +206,30 @@ describe("AgentView", () => {
 
   it("does not invent or save an execution option before a conversation exists", async () => {
     listAgentSessions.mockResolvedValueOnce({ sessions: [], total: 0, limit: 100, offset: 0 });
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
 
     expect(getAgentExecutionOptions).not.toHaveBeenCalled();
     expect(updateAgentExecutionOptions).not.toHaveBeenCalled();
-    expect(wrapper.find(".execution-options-switch").exists()).toBe(false);
-    expect(wrapper.text()).toContain("发送第一条消息后才能读取和设置此会话选项");
+    expect(wrapper.find(".setting-value").exists()).toBe(false);
+    expect(wrapper.text()).toContain("未读取或修改其参数");
     wrapper.unmount();
   });
 
   it("keeps the switch unavailable when the Product API settings read fails", async () => {
     getAgentExecutionOptions.mockRejectedValueOnce(new Error("settings unavailable"));
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     const view = wrapper.vm as any;
 
-    expect(wrapper.find(".execution-options-switch").exists()).toBe(false);
-    expect(view.executionOptions).toBe(null);
-    expect(wrapper.text()).toContain("自动接续状态未知；未使用本地默认值");
-    await view.changeAutoContinue(false);
+    expect(wrapper.find(".setting-value").exists()).toBe(false);
+    expect(view.options).toBe(null);
+    expect(wrapper.text()).toContain("自动接续状态未知：settings unavailable");
+    await view.saveOptions();
     expect(updateAgentExecutionOptions).not.toHaveBeenCalled();
     wrapper.unmount();
   });
@@ -238,14 +240,18 @@ describe("AgentView", () => {
     getAgentExecutionOptions.mockResolvedValueOnce(current);
     let resolveUpdate: (value: unknown) => void = () => undefined;
     updateAgentExecutionOptions.mockReturnValueOnce(new Promise(resolve => { resolveUpdate = resolve; }));
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     const view = wrapper.vm as any;
 
     expect(getAgentExecutionOptions).toHaveBeenCalledWith("session-1", "");
-    expect(view.executionOptions.options.max_provider_calls).toBe(19);
-    const saving = view.changeAutoContinue(false);
-    await view.changeAutoContinue(true);
+    expect(view.options.options.max_provider_calls).toBe(19);
+    view.setDraftAutoContinue(false);
+    const saving = view.saveOptions();
+    view.setDraftAutoContinue(true);
+    await view.saveOptions();
     expect(updateAgentExecutionOptions).toHaveBeenCalledTimes(1);
     expect(updateAgentExecutionOptions).toHaveBeenCalledWith("session-1", {
       schema_version: "agent-execution-options.v1",
@@ -255,11 +261,11 @@ describe("AgentView", () => {
 
     resolveUpdate(executionOptionsRecord("session-1", 8, { ...currentOptions, auto_continue: false }));
     await saving;
-    expect(view.executionOptions.revision).toBe(8);
-    expect(view.executionOptions.options.auto_continue).toBe(false);
-    expect(view.executionOptions.options.max_provider_calls).toBe(19);
-    expect(view.executionOptions.options.max_tool_calls).toBe(3);
-    expect(wrapper.text()).toContain("已运行任务的参数快照不变");
+    expect(view.options.revision).toBe(8);
+    expect(view.options.options.auto_continue).toBe(false);
+    expect(view.options.options.max_provider_calls).toBe(19);
+    expect(view.options.options.max_tool_calls).toBe(3);
+    expect(wrapper.text()).toContain("不改变它保存的参数快照");
     wrapper.unmount();
   });
 
@@ -270,17 +276,20 @@ describe("AgentView", () => {
       .mockResolvedValueOnce(executionOptionsRecord("session-1", 5, { ...defaultExecutionOptions(), auto_continue: false }));
     updateAgentExecutionOptions.mockReset();
     updateAgentExecutionOptions.mockRejectedValueOnce(new AgentRequestError("stale revision", 409));
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     const view = wrapper.vm as any;
 
-    await view.changeAutoContinue(false);
+    view.setDraftAutoContinue(false);
+    await view.saveOptions();
 
     expect(updateAgentExecutionOptions).toHaveBeenCalledTimes(1);
     expect(getAgentExecutionOptions).toHaveBeenCalledTimes(2);
-    expect(view.executionOptions.revision).toBe(5);
-    expect(view.executionOptions.options.auto_continue).toBe(false);
-    expect(view.executionOptionsError).toContain("请再次操作");
+    expect(view.options.revision).toBe(5);
+    expect(view.options.options.auto_continue).toBe(false);
+    expect(view.optionsError).toContain("请再次操作");
     wrapper.unmount();
   });
 
@@ -291,17 +300,20 @@ describe("AgentView", () => {
       .mockResolvedValueOnce(executionOptionsRecord("session-1", 3, { ...defaultExecutionOptions(), auto_continue: false }));
     updateAgentExecutionOptions.mockReset();
     updateAgentExecutionOptions.mockRejectedValueOnce(new Error("request outcome unknown"));
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     const view = wrapper.vm as any;
 
-    await view.changeAutoContinue(false);
+    view.setDraftAutoContinue(false);
+    await view.saveOptions();
 
     expect(updateAgentExecutionOptions).toHaveBeenCalledTimes(1);
     expect(getAgentExecutionOptions).toHaveBeenCalledTimes(2);
-    expect(view.executionOptions.revision).toBe(3);
-    expect(view.executionOptions.options.auto_continue).toBe(false);
-    expect(view.executionOptionsError).toContain("设置保存未确认");
+    expect(view.options.revision).toBe(3);
+    expect(view.options.options.auto_continue).toBe(false);
+    expect(view.optionsError).toContain("保存结果未确认");
     wrapper.unmount();
   });
 
@@ -314,41 +326,36 @@ describe("AgentView", () => {
       .mockResolvedValueOnce(executionOptionsRecord("session-2", 2, { ...defaultExecutionOptions(), auto_continue: false }));
     updateAgentExecutionOptions.mockReset();
     updateAgentExecutionOptions.mockReturnValueOnce(new Promise(resolve => { resolveOldWrite = resolve; }));
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    listAgentSessions.mockResolvedValueOnce({ sessions: [
+      { session_id: "session-1", trace_id: "trace-1", title: "原会话" },
+      { session_id: "session-2", trace_id: "trace-2", title: "另一会话" },
+    ], total: 2 });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     const view = wrapper.vm as any;
 
-    getAgentSession.mockResolvedValueOnce({
-      conversation: { session_id: "session-2", trace_id: "trace-2", title: "另一会话" },
-      messages: [], events: [],
-    });
-    await view.openSession("session-2", false);
+    view.selectedConversationId = "session-2";
     await flushPromises();
     resolveOldRead(executionOptionsRecord("session-1", 8, defaultExecutionOptions()));
     await flushPromises();
-    expect(view.executionOptions.conversation_id).toBe("session-2");
+    expect(view.options.conversation_id).toBe("session-2");
 
-    getAgentSession.mockResolvedValueOnce({
-      conversation: { session_id: "session-1", trace_id: "trace-1", title: "原会话" },
-      messages: [], events: [],
-    });
     getAgentExecutionOptions.mockResolvedValueOnce(executionOptionsRecord("session-1", 8, defaultExecutionOptions()));
-    await view.openSession("session-1", false);
+    view.selectedConversationId = "session-1";
     await flushPromises();
-    const staleWrite = view.changeAutoContinue(false);
-    getAgentSession.mockResolvedValueOnce({
-      conversation: { session_id: "session-2", trace_id: "trace-2", title: "另一会话" },
-      messages: [], events: [],
-    });
+    view.setDraftAutoContinue(false);
+    const staleWrite = view.saveOptions();
     getAgentExecutionOptions.mockResolvedValueOnce(executionOptionsRecord("session-2", 3, { ...defaultExecutionOptions(), auto_continue: false }));
-    await view.openSession("session-2", false);
+    view.selectedConversationId = "session-2";
     await flushPromises();
     resolveOldWrite(executionOptionsRecord("session-1", 9, { ...defaultExecutionOptions(), auto_continue: false }));
     await staleWrite;
 
-    expect(view.executionOptions.conversation_id).toBe("session-2");
-    expect(view.executionOptions.revision).toBe(3);
-    expect(view.executionOptions.options.auto_continue).toBe(false);
+    expect(view.options.conversation_id).toBe("session-2");
+    expect(view.options.revision).toBe(3);
+    expect(view.options.options.auto_continue).toBe(false);
     wrapper.unmount();
   });
 
@@ -371,30 +378,31 @@ describe("AgentView", () => {
         payload.options,
       )));
 
-    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    listAgentSessions.mockResolvedValueOnce({ sessions: [
+      { session_id: "session-1", trace_id: "trace-1", title: "原会话" },
+      { session_id: "session-2", trace_id: "trace-2", title: "另一会话" },
+    ], total: 2 });
+    routerHarness.route.path = "/settings/agent-runtime";
+    routerHarness.route.query = { conversation_id: "session-1" };
+    const wrapper = shallowMount(AgentRuntimeSettingsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     const view = wrapper.vm as any;
-    const firstAWrite = view.changeAutoContinue(false);
-    expect(view.executionOptionsSaving).toBe(true);
+    view.setDraftAutoContinue(false);
+    const firstAWrite = view.saveOptions();
+    expect(view.optionsSaving).toBe(true);
 
-    getAgentSession.mockResolvedValueOnce({
-      conversation: { session_id: "session-2", trace_id: "trace-2", title: "另一会话" },
-      messages: [], events: [],
-    });
-    await view.openSession("session-2", false);
+    view.selectedConversationId = "session-2";
     await flushPromises();
-    const bWrite = view.changeAutoContinue(true);
+    view.setDraftAutoContinue(true);
+    const bWrite = view.saveOptions();
     expect(updateAgentExecutionOptions).toHaveBeenCalledTimes(2);
-    expect(view.executionOptionsSaving).toBe(true);
+    expect(view.optionsSaving).toBe(true);
 
-    getAgentSession.mockResolvedValueOnce({
-      conversation: { session_id: "session-1", trace_id: "trace-1", title: "原会话" },
-      messages: [], events: [],
-    });
-    await view.openSession("session-1", false);
+    view.selectedConversationId = "session-1";
     await flushPromises();
-    expect(view.executionOptionsSaving).toBe(true);
-    await view.changeAutoContinue(true);
+    expect(view.optionsSaving).toBe(true);
+    view.setDraftAutoContinue(true);
+    await view.saveOptions();
     expect(updateAgentExecutionOptions).toHaveBeenCalledTimes(2);
 
     getAgentExecutionOptions.mockReturnValueOnce(new Promise(resolve => { resolveAReconcile = resolve; }));
@@ -402,30 +410,31 @@ describe("AgentView", () => {
     await flushPromises();
     expect(getAgentExecutionOptions).toHaveBeenCalledTimes(4);
     expect(getAgentExecutionOptions).toHaveBeenLastCalledWith("session-1", "");
-    expect(view.executionOptions).toBe(null);
-    expect(view.executionOptionsLoading).toBe(true);
-    expect(view.executionOptionsSaving).toBe(false);
+    expect(view.options).toBe(null);
+    expect(view.optionsLoading).toBe(true);
+    expect(view.optionsSaving).toBe(false);
 
     resolveAReconcile(executionOptionsRecord("session-1", 2, { ...defaultExecutionOptions(), auto_continue: false }));
     await firstAWrite;
-    expect(view.executionOptions.revision).toBe(2);
-    expect(view.executionOptions.options.auto_continue).toBe(false);
-    expect(view.executionOptionsSavingFor.has("session-2")).toBe(true);
-    await view.changeAutoContinue(true);
+    expect(view.options.revision).toBe(2);
+    expect(view.options.options.auto_continue).toBe(false);
+    expect(view.savingConversationIds.has("session-2")).toBe(true);
+    view.setDraftAutoContinue(true);
+    await view.saveOptions();
     expect(updateAgentExecutionOptions).toHaveBeenCalledTimes(3);
     expect(updateAgentExecutionOptions).toHaveBeenLastCalledWith("session-1", {
       schema_version: "agent-execution-options.v1",
       expected_revision: 2,
       options: { ...defaultExecutionOptions(), auto_continue: true },
     }, "");
-    expect(view.executionOptions.revision).toBe(3);
-    expect(view.executionOptions.options.auto_continue).toBe(true);
+    expect(view.options.revision).toBe(3);
+    expect(view.options.options.auto_continue).toBe(true);
 
     resolveBWrite(executionOptionsRecord("session-2", 5, { ...defaultExecutionOptions(), auto_continue: true }));
     await bWrite;
     expect(getAgentExecutionOptions).toHaveBeenCalledTimes(4);
-    expect(view.executionOptions.conversation_id).toBe("session-1");
-    expect(view.executionOptions.revision).toBe(3);
+    expect(view.options.conversation_id).toBe("session-1");
+    expect(view.options.revision).toBe(3);
     wrapper.unmount();
   });
 
@@ -445,7 +454,7 @@ describe("AgentView", () => {
     expect(cancelSession).toHaveBeenCalledWith("session-1", "soft", "");
     expect((wrapper.vm as any).error).toContain("只停止当前回复");
     expect((wrapper.vm as any).error).toContain("独立后台任务可能稍后接续");
-    expect((wrapper.vm as any).error).toContain("关闭自动接续可阻止后续事件");
+    expect((wrapper.vm as any).error).toContain("可在系统设置中关闭后续自动接续");
     expect((wrapper.vm as any).terminalSessionId).toBe("");
     expect(streamWorkflowEvents).toHaveBeenCalled();
     expect(resumeSession).not.toHaveBeenCalled();

@@ -42,7 +42,7 @@ const watchId = "researchwatch_" + "f".repeat(32);
 const originalKey = "original/key &中文";
 const backendExecutionNote = "BACKEND_EXECUTION_NOTE_MUST_NOT_PASS";
 const backendContinuationNote = "BACKEND_CONTINUATION_NOTE_MUST_NOT_PASS";
-const expectedResearchExecutionNote = "Business task status and handoff describe current state, not permission. This query grants no execution permission; follow the current trusted Root instruction and obtain required authorization before any allowed action.";
+const expectedResearchExecutionNote = "This query reports existing task state and grants no authority. Automatic continuation uses saved conversation settings and trusted events without a separate continuation permission; business actions still require their current authorization and approval.";
 const expectedResearchWaitingJobNote = "Task is waiting on an existing Domain Job. This query does not advance or resume it.";
 
 const claims = {
@@ -517,8 +517,8 @@ try {
     // L11-L14 legal state/reason pairs.
     for (const [state, reason, expected] of [
       ["needs_reconciliation", "continuation_result_unconfirmed", /unconfirmed/],
-      ["needs_reconciliation", "permission_revoked", /revoked/],
-      ["needs_permission", "permission_expired", /expired/],
+      ["needs_reconciliation", "execution_options_invalid", /settings/],
+      ["blocked", "automatic_continuation_stopped", /stop/],
       ["conversation_active", "task_execution_unconfirmed", /unconfirmed/],
     ] as const) {
       researchHandoff = { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state, reason };
@@ -547,6 +547,8 @@ try {
     // L17 contradictory / invalid pairs, L18 foreign/missing schema, L19 foreign/missing task ID.
     for (const handoff of [
       { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state: "completed", reason: "permission_revoked" },
+      { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state: "needs_reconciliation", reason: "permission_revoked" },
+      { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state: "needs_permission", reason: "permission_expired" },
       { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state: "future_state", reason: "permission_missing" },
       { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state: "needs_permission", reason: "completion_evidence_missing" },
       { schema_version: "research-task-handoff.v1", task_id: researchTaskId, state: "waiting_job", reason: "task_execution_unconfirmed" },
@@ -750,7 +752,7 @@ try {
         target_status: "running", idempotency_key: "acp-denied-write" }, root_run_id: root });
 
     assert.deepEqual(unexpected, [], "synthetic Backend must reject unexpected routes/methods");
-    assert.equal(toolCallCount, 48, "34 labelled groups expand to 48 actual tools/call requests");
+    assert.equal(toolCallCount, 50, "34 labelled groups expand to 50 actual tools/call requests");
   })();
 
   const runOutcome = run.then(

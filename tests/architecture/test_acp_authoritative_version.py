@@ -190,7 +190,7 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
 
         runtime = (ROOT / "services/runtime-adapter/app/runtime.py").read_text(encoding="utf-8")
         self.assertIn("/internal/credentials/search-resolution", runtime)
-        self.assertIn("first_search_key = self._resolve_search_credential(", runtime)
+        self.assertRegex(runtime, r"first_search_key\s*=\s*\(\s*self\._resolve_search_credential\(")
         self.assertIn("search_api_key=first_search_key", runtime)
         self.assertIn("search_api_key = self._resolve_search_credential(", runtime)
         self.assertNotIn("os.environ.get(\"DEEPSEEK_SEARCH_API_KEY\")", runtime)

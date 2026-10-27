@@ -1427,12 +1427,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Cross-check every signed return", market_skill)
         self.assertIn("with exactly", strategy_skill)
         self.assertIn("one synchronous output method", strategy_skill)
-        self.assertIn("retry once", strategy_skill)
+        self.assertIn("Do not resubmit the same\nfailed input", strategy_skill)
         self.assertIn("`byq_strategy_version_create` separately", strategy_skill)
         self.assertIn("If no research task exists", strategy_skill)
         self.assertIn("do not reorder", strategy_skill)
         self.assertIn("strategyValidationInputSchema", strategy_mcp)
-        self.assertIn("repair_limit: 1", strategy_mcp)
+        self.assertIn("safeStructuredValidation", strategy_mcp)
+        self.assertIn('next_action: "stop_correction_failed"', strategy_mcp)
         self.assertIn("byq_pool_create", adr)
 
     def test_phase59_market_research_is_persisted_bounded_and_point_in_time(self) -> None:

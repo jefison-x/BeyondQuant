@@ -712,9 +712,6 @@ def test_real_proxy_close_with_deferred_handler_never_reports_success(
         server_thread.join(timeout=3)
         for handler in list(getattr(server, "_threads", ())):
             handler.join(timeout=3)
-        if proxy is not None:
-            for handler in list(getattr(proxy._server, "_threads", ())):
-                handler.join(timeout=3)
         if client_thread is not None:
             assert not client_thread.is_alive()
         assert not server_thread.is_alive()

@@ -555,7 +555,7 @@ def test_acp_lost_authorization_response_unknown_still_fences_close_and_new_root
             json={"schema_version": "byq-runtime-root-close.v1", "boot_id": authority["boot_id"],
                 "sequence": 2, "outcome": "interrupted", "event_sha256": "b" * 64})
         assert close_response.status_code == 409
-        assert close_response.json() == {"detail": "pending or unknown ACP tool ingress prevents root close"}
+        assert close_response.json() == {"detail": "unknown ACP tool ingress prevents root close"}
         admission = store.workspace_agent_admission(
             owner_principal=ctx["x-byq-owner-principal"], workspace_id=ctx["x-byq-workspace-id"],
             root_run_id=uuid4().hex, session_id=ctx["x-byq-session-id"], boot_id=authority["boot_id"])
@@ -960,20 +960,6 @@ def test_acp_domain_claims_allow_1025th_call_after_settled_root_history(caplog):
         assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
             {"id": rejected_audit_id})["count"] == 1
 
-        error_arguments = {**arguments, "idempotency_key": f"unexpected-{uuid4().hex}",
-            "strategy": {"code": "VALID_UNEXPECTED_SYNTHETIC"}}
-        error_observation = {**observation, "mcp_request_id": uuid4().hex,
-            "arguments": error_arguments}
-        error_receipt = store.observe_acp_domain_call(error_observation, trusted_scope=_scope(ctx, root))
-        error_claim = store.claim_domain_call("byq_strategy_validate", error_arguments, **{
-            **claim_kwargs, "trusted_acp_observation_id": error_receipt["mcp_request_id"]})
-        with pytest.raises(RuntimeError, match="synthetic callback error"):
-            store.execute_domain_call(error_claim,
-                lambda _connection: (_ for _ in ()).throw(RuntimeError("synthetic callback error")))
-        error_audit_id = local_validation_callback_exit_audit_id(error_claim["claim_id"])
-        assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
-            {"id": error_audit_id})["count"] == 1
-
         hold_arguments = {**arguments, "idempotency_key": f"proof-hold-{uuid4().hex}",
             "strategy": {"code": "VALID_PROOF_HOLD_SYNTHETIC"}}
         hold_observation = {**observation, "mcp_request_id": uuid4().hex,
@@ -983,6 +969,7 @@ def test_acp_domain_claims_allow_1025th_call_after_settled_root_history(caplog):
             **claim_kwargs, "trusted_acp_observation_id": hold_receipt["mcp_request_id"]})
         def fail_proof(_claim_id, _observation_id):
             raise AgentConflict("private proof persistence detail")
+        original_record_proof = store._record_local_validation_callback_exit
         store._record_local_validation_callback_exit = fail_proof
         held_result = store.execute_domain_call(hold_claim,
             lambda _connection: {"persisted": "real-result"})
@@ -998,12 +985,29 @@ def test_acp_domain_claims_allow_1025th_call_after_settled_root_history(caplog):
         held_claim = store._fetch_one("SELECT status,result_json FROM agent_domain_call_claims WHERE claim_id=:id",
             {"id": hold_claim["claim_id"]})
         assert held_claim == {"status": "succeeded", "result_json": held_result}
+        store._record_local_validation_callback_exit = original_record_proof
 
         changed = {**arguments, "strategy": {"code": "CHANGED_1025TH_INPUT"}}
         with pytest.raises(AgentConflict):
             store.claim_domain_call("byq_strategy_validate", changed, **claim_kwargs)
         assert store._fetch_one("SELECT count(*) AS count FROM agent_domain_call_claims WHERE root_run_id=:root",
-            {"root": root})["count"] == 1025
+            {"root": root})["count"] == 1027
+
+        # An unexpected callback leaves an unknown claim and must be the last
+        # new claim on this Root; later claims are correctly fenced.
+        error_arguments = {**arguments, "idempotency_key": f"unexpected-{uuid4().hex}",
+            "strategy": {"code": "VALID_UNEXPECTED_SYNTHETIC"}}
+        error_observation = {**observation, "mcp_request_id": uuid4().hex,
+            "arguments": error_arguments}
+        error_receipt = store.observe_acp_domain_call(error_observation, trusted_scope=_scope(ctx, root))
+        error_claim = store.claim_domain_call("byq_strategy_validate", error_arguments, **{
+            **claim_kwargs, "trusted_acp_observation_id": error_receipt["mcp_request_id"]})
+        with pytest.raises(RuntimeError, match="synthetic callback error"):
+            store.execute_domain_call(error_claim,
+                lambda _connection: (_ for _ in ()).throw(RuntimeError("synthetic callback error")))
+        error_audit_id = local_validation_callback_exit_audit_id(error_claim["claim_id"])
+        assert store._fetch_one("SELECT count(*) AS count FROM agent_audit WHERE audit_id=:id",
+            {"id": error_audit_id})["count"] == 1
     finally:
         store.close()
         catalog.close()
@@ -1522,12 +1526,12 @@ def test_acp_close_fences_pending_and_unknown_ingress_then_freezes_settled_curso
         _bind(store, ctx, identity)
         ingress = _observe_tool(store, ctx, identity, "byq_feedback_create_draft", {"title": "held write"})
 
-        with pytest.raises(AgentConflict, match="pending or unknown ACP tool ingress"):
+        with pytest.raises(AgentConflict, match="pending ACP tool ingress"):
             store.close_runtime_root(root, boot_id=authority["boot_id"], sequence=2,
                 outcome="interrupted", event_sha256="b" * 64)
         event = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": root,
             "sequence": 2, "outcome": "interrupted"}
-        with pytest.raises(AgentConflict, match="pending or unknown ACP tool ingress"):
+        with pytest.raises(AgentConflict, match="pending ACP tool ingress"):
             store.consume_runtime_lifecycle_event(event,
                 trusted_owner=ctx["x-byq-owner-principal"],
                 trusted_workspace=ctx["x-byq-workspace-id"],
@@ -1539,10 +1543,10 @@ def test_acp_close_fences_pending_and_unknown_ingress_then_freezes_settled_curso
 
         unknown = _settle_tool(store, ctx, identity, ingress, "unknown")
         assert unknown["outcome"] == "unknown"
-        with pytest.raises(AgentConflict, match="pending or unknown ACP tool ingress"):
+        with pytest.raises(AgentConflict, match="unknown ACP tool ingress"):
             store.close_runtime_root(root, boot_id=authority["boot_id"], sequence=2,
                 outcome="interrupted", event_sha256="b" * 64)
-        with pytest.raises(AgentConflict, match="pending or unknown ACP tool ingress"):
+        with pytest.raises(AgentConflict, match="unknown ACP tool ingress"):
             store.consume_runtime_lifecycle_event(event,
                 trusted_owner=ctx["x-byq-owner-principal"],
                 trusted_workspace=ctx["x-byq-workspace-id"],
