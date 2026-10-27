@@ -148,7 +148,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@oxc-project/types",
-      "version": "0.146.0",
+      "version": "0.155.0",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -180,7 +180,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-android-arm-eabi",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -188,7 +188,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-android-arm64",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -196,7 +196,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-darwin-arm64",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -204,7 +204,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-darwin-x64",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -212,7 +212,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-freebsd-x64",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -220,7 +220,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-arm-gnueabihf",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -228,7 +228,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-arm64-gnu",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -236,7 +236,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-arm64-musl",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -244,7 +244,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-ppc64-gnu",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -252,7 +252,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-s390x-gnu",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -260,7 +260,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-x64-gnu",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -268,7 +268,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-linux-x64-musl",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -276,7 +276,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-openharmony-arm64",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -284,7 +284,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-win32-arm64-msvc",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -292,7 +292,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@rolldown/binding-win32-x64-msvc",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": true
@@ -412,7 +412,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/expect",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -420,7 +420,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/mocker",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -428,7 +428,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/pretty-format",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -436,7 +436,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/runner",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -444,7 +444,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/snapshot",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -452,7 +452,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/spy",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -460,7 +460,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/@vitest/utils",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -684,7 +684,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/argparse",
-      "version": "3.0.1",
+      "version": "3.0.4",
       "license": "PSF-2.0",
       "dev": false,
       "optional": false
@@ -740,7 +740,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/chai",
-      "version": "6.2.2",
+      "version": "6.3.0",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -884,7 +884,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/dompurify",
-      "version": "3.4.16",
+      "version": "3.4.17",
       "license": "(MPL-2.0 OR Apache-2.0)",
       "dev": false,
       "optional": false
@@ -1364,7 +1364,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/markdown-it",
-      "version": "15.0.1",
+      "version": "15.0.3",
       "license": "MIT",
       "dev": false,
       "optional": false
@@ -1372,7 +1372,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/markdown-it/node_modules/entities",
-      "version": "8.0.0",
+      "version": "8.1.0",
       "license": "BSD-2-Clause",
       "dev": false,
       "optional": false
@@ -1548,7 +1548,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/picomatch",
-      "version": "4.0.5",
+      "version": "4.0.7",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -1588,7 +1588,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/postcss",
-      "version": "8.5.29",
+      "version": "8.5.32",
       "license": "MIT",
       "dev": false,
       "optional": false
@@ -1620,7 +1620,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/rolldown",
-      "version": "1.2.5",
+      "version": "1.2.15",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -1812,7 +1812,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/tinyrainbow",
-      "version": "3.1.1",
+      "version": "3.2.0",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -1884,7 +1884,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/vite",
-      "version": "8.2.2",
+      "version": "8.3.5",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -1900,7 +1900,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/vitest",
-      "version": "4.1.11",
+      "version": "4.1.12",
       "license": "MIT",
       "dev": true,
       "optional": false
