@@ -742,9 +742,11 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await page.getByRole('button', { name: '进入' }).click();
     await expect(page).toHaveURL(/\/agent$/);
     const identity = await (await page.request.get('/api/product/auth/me')).json();
-    const createdResponse = await page.request.post('/v1/agent/sessions');
-    expect(createdResponse.status()).toBe(201);
-    const conversationId = (await createdResponse.json()).session_id as string;
+    const sessionsResponse = await page.request.get('/v1/agent/sessions');
+    expect(sessionsResponse.status()).toBe(200);
+    const sessions = (await sessionsResponse.json()).sessions as Array<{ session_id: string }>;
+    expect(sessions).toHaveLength(1);
+    const conversationId = sessions[0].session_id;
     expect(conversationId).toMatch(/^conversation_[0-9a-f]{32}$/);
     const optionsPath = `/api/product/agent/conversations/${encodeURIComponent(conversationId)}/execution-options`;
     const initialResponse = await page.request.get(optionsPath);
@@ -847,7 +849,7 @@ for (const viewport of ['desktop','mobile'] as const) {
     await page.goto('/agent?session='+encodeURIComponent(conversation));
     const panel=page.getByRole('region',{name:'研究提交回执待确认'});
     await expect(panel).toContainText('结果仍未确认');
-    await expect(panel).toContainText('不代表研究或计算已完成');
+    await expect(panel).toContainText('不代表研究或计算任务已完成');
     await expect(panel).not.toContainText('已确认创建');
     await page.reload();
     await expect(panel).toContainText('结果仍未确认');
