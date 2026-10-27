@@ -755,6 +755,7 @@ class SignalJobStore(PgStoreMixin):
             bar_count = len(bars) if isinstance(bars, list) else 0
         value.pop("request_hash", None)
         value.pop("submission_hash", None)
+        # A newer schema may retain this private provenance after rollback.
         value.pop("submission_origin", None)
         value.pop("preparation_json", None)
         value["requirement"] = value.pop("requirement_json", None)
