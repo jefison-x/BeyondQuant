@@ -53,6 +53,14 @@ const router = createRouter({
             { path: "feedback", redirect: { name: "agent" } },
           ],
         },
+        {
+          path: "settings/agent-runtime",
+          component: () => import("@/components/layout/SystemSettingsLayout.vue"),
+          meta: { title: "Agent运行参数", kicker: "会话设置", subtitle: "配置本人会话的自动接续" },
+          children: [
+            { path: "", name: "agent-runtime-settings", component: () => import("@/views/AgentRuntimeSettingsView.vue") },
+          ],
+        },
         { path: "system-status", redirect: "/settings/system/overview", meta: { requiresAdmin: true } },
         {
           path: "agent",
@@ -129,7 +137,7 @@ const router = createRouter({
             { path: "paper-trading", redirect: (to) => ({ path: "/paper-trading", query: to.query, hash: to.hash }) },
             { path: "models", name: "user-models", component: () => import("@/views/ModelsView.vue"), meta: { title: "模型配置", kicker: "用户中心", subtitle: "写入保密凭据、模型档案和 Agent 绑定" } },
             { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "智能助手偏好", kicker: "用户中心", subtitle: "个人审批偏好和操作边界" } },
-            { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "研究与审批", kicker: "用户中心", subtitle: "研究记录、策略版本与审批记录" } },
+            { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "审批历史", kicker: "用户中心", subtitle: "已决审批记录与只读领域详情" } },
             { path: "reset", name: "user-workspace-reset", component: () => import("@/views/WorkspaceResetView.vue"), meta: { title: "重置工作区", kicker: "用户中心", subtitle: "重置运行时或清理当前工作区数据" } },
           ],
         },

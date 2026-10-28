@@ -1,0 +1,141 @@
+{
+  "actual_cancel_mode_argument": "NOT_CAPTURED; observed state is compatible with hard cancel",
+  "binding_closed": true,
+  "business_evidence_boundary": "11-table counts equal only; no table-content or causal-inventory assertion",
+  "commands": [
+    {
+      "elapsed_ms": 83,
+      "label": "cancelled-binding-journal",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 2101,
+      "stdout_sha256": "56438fd2c73f73e1f05089a2eb7bb88b976f69b1aaf647bd4146d0fa8efe2933",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 78,
+      "label": "cancelled-conversation-state",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1179,
+      "stdout_sha256": "b8de159ccb5f0ca430e0d69d564ed2206b78af77e3784365c7d460137c628c1d",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 80,
+      "label": "cancelled-signed-cleanup",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1046,
+      "stdout_sha256": "f563b69e8fe21b1366506b04e295008c26f28dce378b52391426102a6e9d3c62",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 15,
+      "label": "containers-after",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 820,
+      "stdout_sha256": "8a177a63f9705696c5fc98ca96a25c062933e1bcb910f8b400a219d640967d78",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 21,
+      "label": "containers-before",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 820,
+      "stdout_sha256": "8a177a63f9705696c5fc98ca96a25c062933e1bcb910f8b400a219d640967d78",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 17,
+      "label": "gateway-log-type",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 10,
+      "stdout_sha256": "395e76cce819dc796654a6e3452873c2ceb236c5943d4ef30e9c6d8e16b6b40a",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 47,
+      "label": "gateway-terminal-ack-log",
+      "returncode": 0,
+      "stderr_bytes": 481,
+      "stderr_sha256": "07ccce7a7d7a9676fe2ecad5fac582e945358aaca72bcb1e7f7e9360bffb34ce",
+      "stdout_bytes": 68429,
+      "stdout_sha256": "c9a6d63b996d0c0fa73b580113f5dc77062cf7441ed04309b76af961c9d11a9b",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 76,
+      "label": "job-inventory-after-hard-cancel",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 270,
+      "stdout_sha256": "1ae8ed7c7d1bc123d325b6b9b3516913eff9097e6ec525b9bd72a5a8d3e57a95",
+      "timeout_seconds": 20
+    }
+  ],
+  "container_identity_unchanged": true,
+  "conversation_id": "conversation_dae4a2d6221547888349dd3d3daaf25e",
+  "conversation_status": "active",
+  "docker_operations": 8,
+  "elapsed_ms": 440,
+  "exact_ack": true,
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "independent_review": "Sol RAW PASS; Root PASS",
+  "job_counts_unchanged": true,
+  "native_close_boundary": "native_session_close_confirmed=false remains; process-group cleanup does not prove native session close",
+  "native_session_close_confirmed": false,
+  "new_jobs_in_diagnosis": 0,
+  "new_models_in_diagnosis": 0,
+  "new_root_run_id": "3e40acd74f4442b1917b485b9ad3d613",
+  "original_scene": "FAIL remains; second input NOT_RUN",
+  "pins": {
+    "exact-ack.json": "7bcade09677eb5b1a938162b3952fa9a57d9144edcc979324a65c4f4b80962be",
+    "provider-raw-summary.json": "eb28edd92c11ec44fda0b30f53421d1942e4d08dd843233c9323a27ef9847d6c",
+    "result.json": "ae36d0db00edd9e608c7a3a521a7e54f8c40f7cf4ab2d3e2a4f9d1eb8b1bec1d",
+    "signed-cleanup-proof.json": "f563b69e8fe21b1366506b04e295008c26f28dce378b52391426102a6e9d3c62",
+    "state.sql": "6e62d155b8699373983714fe2af4cf9bb3cfcd7dfa6d90cd4ce4955ca4c3b036"
+  },
+  "process_exit_confirmed": true,
+  "provider": {
+    "actual_input_tokens": [
+      "unknown"
+    ],
+    "actual_output_tokens": [
+      "unknown"
+    ],
+    "admitted_attempts": 1,
+    "billing_if_usage_absent": "UNKNOWN",
+    "completed_attempts": 1,
+    "completion_reasons": [
+      "provider_outcome_unknown"
+    ],
+    "completion_statuses": [
+      0
+    ],
+    "pending_count": 0,
+    "root_aggregate_only": true,
+    "usage_sources": [
+      "unknown"
+    ]
+  },
+  "qualification": "Original UI FAIL and time overrun preserved; no provider replay",
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/post-hard-cancel-read-v1",
+  "root_authority": "closed",
+  "root_decision": "PASS_READ_SCOPE_ONLY",
+  "root_status": "cancelled",
+  "schema": "byq-root-post-hard-cancel-diagnosis.v1",
+  "signed_process_group_cleanup": true,
+  "status": "PASS_INDEPENDENT_READ_SCOPE_ONLY",
+  "unknown_business_claim_count": 0
+}

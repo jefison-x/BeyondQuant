@@ -1,4 +1,4 @@
-"""BYQ task-scoped human permission ledger; no model dispatch capability."""
+"""BYQ task-scoped continuation ledgers; the v3 producer does not dispatch."""
 from __future__ import annotations
 
 import hashlib
@@ -17,20 +17,25 @@ from packages.contracts.research_executable_action import derive_executable_acti
 from packages.contracts.continuation_request import (
     PERMISSION_SCHEMA_VERSION,
     RESERVATION_SCHEMA_VERSION,
+    RESERVATION_SCHEMA_VERSION_V3,
+    continuation_reservation_v3,
     exceeded_request_limits,
+    exceeded_request_limits_v2,
     profile_binding,
     request_limits,
     validate_limits,
     validate_profile_binding,
+    validate_reservation_v3,
     validate_request_usage,
+    validate_request_usage_v2,
 )
 
 logger = logging.getLogger("byq.research.continuation")
 
-# Grantless data-ready events only advance deterministic task progress and
-# create a zero-token notification. An explicit human grant uses the ordinary
-# task-bound reservation path. Legacy `data_ready` model reservations remain
-# settleable, but never regain dispatch eligibility.
+# The legacy claim path advances grantless data-ready events only through a
+# deterministic zero-token notification. An explicit human grant uses the
+# ordinary task-bound reservation path. The v3 producer is separate and does
+# not connect to that path. Legacy model reservations remain historical facts.
 DATA_READY_EVENT_PREFIX = "ready-v1:"
 DATA_READY_MAX_TURNS = 8
 # A deliberate task-wide needs_attention block (``block_continuation``) records
@@ -38,6 +43,16 @@ DATA_READY_MAX_TURNS = 8
 # event; a NULL key is a legacy pre-scoping row whose event is recovered from
 # the settled ledger.
 TASK_WIDE_BLOCK_EVENT_KEY = '*'
+_V3_LEDGER_ENTRY_SCHEMA_VERSION = 'task-continuation-ledger-entry.v1'
+_V3_LEDGER_ENTRY_FIELDS = frozenset({
+    'schema_version', 'reservation_id', 'event_key', 'signal_job_id',
+    'status', 'created_at', 'reservation',
+})
+_V3_LEDGER_TRANSITION_FIELDS = frozenset({
+    'dispatch_attempts', 'run_id', 'request_usage', 'settlement_sha256',
+    'outcome', 'cancel_requested_at',
+})
+_V3_IDEMPOTENCY_PREFIX = 'task-ready-event:'
 
 
 def _event_key(event: dict) -> str:
@@ -97,6 +112,85 @@ def _is_v2_permission(value: object) -> bool:
 
 def _is_v2_reservation(value: object) -> bool:
     return isinstance(value, dict) and value.get("schema_version") == RESERVATION_SCHEMA_VERSION
+
+
+def _is_v3_ledger_entry(value: object) -> bool:
+    return isinstance(value, dict) and value.get('schema_version') == _V3_LEDGER_ENTRY_SCHEMA_VERSION
+
+
+def _validate_v3_ledger_entry(value: object) -> dict:
+    """Validate the closed Backend storage envelope without widening the carrier."""
+    if (not _is_v3_ledger_entry(value) or not _V3_LEDGER_ENTRY_FIELDS <= set(value)
+            or set(value) - _V3_LEDGER_ENTRY_FIELDS - _V3_LEDGER_TRANSITION_FIELDS):
+        raise ValueError('continuation ledger entry v3 is invalid')
+    reservation = validate_reservation_v3(value.get('reservation'))
+    if reservation.get('schema_version') != RESERVATION_SCHEMA_VERSION_V3:
+        raise ValueError('continuation ledger carrier version is invalid')
+    idempotency_key = reservation.get('idempotency_key')
+    if not isinstance(idempotency_key, str) or not idempotency_key.startswith(_V3_IDEMPOTENCY_PREFIX):
+        raise ValueError('continuation ledger idempotency identity is invalid')
+    digest = idempotency_key.removeprefix(_V3_IDEMPOTENCY_PREFIX)
+    if (re.fullmatch(r'[0-9a-f]{64}', digest) is None
+            or value.get('reservation_id') != 'continuation_' + digest[:32]
+            or value.get('event_key') != DATA_READY_EVENT_PREFIX + digest
+            or value.get('signal_job_id') != reservation.get('signal_job_id')
+            or value.get('event_key') != reservation.get('event_key')):
+        raise ValueError('continuation ledger identity or status is invalid')
+    status = value.get('status')
+    if status not in {'reserved', 'outcome_unknown', 'accepted', 'settled', 'rejected', 'cancelled'}:
+        raise ValueError('continuation ledger status is invalid')
+    attempts = value.get('dispatch_attempts', 0)
+    if type(attempts) is not int or attempts not in {0, 1}:
+        raise ValueError('continuation dispatch count is invalid')
+    run_id = value.get('run_id')
+    usage = value.get('request_usage')
+    settlement = value.get('settlement_sha256')
+    outcome = value.get('outcome')
+    if run_id is not None and (not isinstance(run_id, str) or re.fullmatch(r'[0-9a-f]{32}', run_id) is None):
+        raise ValueError('continuation runtime identity is invalid')
+    if settlement is not None and (not isinstance(settlement, str) or re.fullmatch(r'[0-9a-f]{64}', settlement) is None):
+        raise ValueError('continuation settlement identity is invalid')
+    if outcome not in {None, 'completed', 'needs_attention'}:
+        raise ValueError('continuation outcome is invalid')
+    if status == 'reserved':
+        if attempts != 0 or any(item is not None for item in (run_id, usage, settlement, outcome)):
+            raise ValueError('reserved continuation has transition facts')
+    elif status == 'outcome_unknown':
+        if attempts != 1 or any(item is not None for item in (run_id, usage, settlement, outcome)):
+            raise ValueError('unknown continuation has conflicting transition facts')
+    elif status == 'accepted':
+        if attempts != 1 or run_id is None or any(item is not None for item in (usage, settlement, outcome)):
+            raise ValueError('accepted continuation facts are invalid')
+    elif status == 'settled':
+        if attempts != 1 or run_id is None or usage is None or settlement is None or outcome is None:
+            raise ValueError('settled continuation facts are incomplete')
+        value = {**value, 'request_usage': validate_request_usage_v2(usage)}
+    elif status == 'rejected':
+        if attempts != 1 or any(item is not None for item in (run_id, usage, settlement, outcome)):
+            raise ValueError('rejected continuation facts are invalid')
+    elif status == 'cancelled':
+        if attempts != 0 or any(item is not None for item in (run_id, usage, settlement, outcome)):
+            raise ValueError('cancelled continuation facts are invalid')
+    cancel_requested_at = value.get('cancel_requested_at')
+    if cancel_requested_at is not None:
+        if not isinstance(cancel_requested_at, str):
+            raise ValueError('continuation cancellation time is invalid')
+        try:
+            cancelled = datetime.fromisoformat(cancel_requested_at)
+        except ValueError as exc:
+            raise ValueError('continuation cancellation time is invalid') from exc
+        if cancelled.tzinfo is None:
+            raise ValueError('continuation cancellation time is invalid')
+    created_at = value.get('created_at')
+    if not isinstance(created_at, str):
+        raise ValueError('continuation ledger timestamp is invalid')
+    try:
+        created = datetime.fromisoformat(created_at)
+    except ValueError as exc:
+        raise ValueError('continuation ledger timestamp is invalid') from exc
+    if created.tzinfo is None:
+        raise ValueError('continuation ledger timestamp is invalid')
+    return {**value, 'reservation': reservation}
 
 
 def _approved_execution_artifact(connection, *, owner: str, workspace: str, task_id: str,
@@ -217,6 +311,36 @@ def _notification_receipt(event_key: str, executable: dict, now) -> dict:
     }
 
 
+def _v3_receipt_projection(entry: dict) -> dict:
+    """Return the closed wire receipt, not the internal ledger envelope."""
+    carrier = entry['reservation']
+    result = {
+        'reservation_id': entry['reservation_id'],
+        'idempotency_key': carrier['idempotency_key'],
+        'status': entry['status'],
+    }
+    for field in ('run_id', 'request_usage', 'settlement_sha256', 'outcome'):
+        if field in entry:
+            result[field] = entry[field]
+    return result
+
+
+def _v3_instruction(carrier: dict) -> str:
+    backtest_task_id = task_id_from_signal_job(carrier['signal_job_id'])
+    return (
+        'Continue the original research task using only the exact read-only Product tools. '
+        'Read the original ResearchTask with byq_research_get, then read the exact derived '
+        'BacktestTask with byq_backtest_task_get. Do not create or update domain objects, '
+        'request approval, execute jobs, delegate, browse the web, or access another task. '
+        'Summarize only facts returned by those reads. Exact ResearchTask ID: '
+        + carrier['task_id'] + '. Exact BacktestTask ID: ' + backtest_task_id
+        + '. Exact SignalJob ID: ' + carrier['signal_job_id']
+        + '. Exact validated SignalSnapshot ID: ' + carrier['result_artifact_id']
+        + '. Reservation facts: '
+        + json.dumps(carrier, sort_keys=True, separators=(',', ':'))
+    )
+
+
 class ResearchContinuationMixin:
     """Stored on the original task row, serialized with task transitions.
 
@@ -251,6 +375,70 @@ class ResearchContinuationMixin:
         if task is None or task["conversation_id"] != conversation["conversation_id"]:
             raise ValueError("continuation task binding changed")
         return task, conversation
+
+    @staticmethod
+    def _continuation_permission_revoked(task: dict) -> bool:
+        permission = task.get('continuation_permission')
+        if permission is None:
+            return False
+        if not isinstance(permission, dict) or 'revoked_at' not in permission:
+            raise ValueError('legacy continuation permission is ambiguous')
+        return permission.get('revoked_at') is not None
+
+    @staticmethod
+    def _continuation_revocation_timestamp(task: dict) -> str | None:
+        """Return only an existing, valid revocation time; never invent history."""
+        if not ResearchContinuationMixin._continuation_permission_revoked(task):
+            return None
+        value = task['continuation_permission'].get('revoked_at')
+        try:
+            parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError:
+            parsed = None
+        if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(timezone.utc).isoformat()
+
+    @staticmethod
+    def _cancel_v3_ledger_entry(entry: dict, requested_at: str) -> dict:
+        entry = _validate_v3_ledger_entry(entry)
+        if entry['status'] == 'reserved':
+            if entry.get('dispatch_attempts', 0) != 0:
+                raise ValueError('reserved v3 continuation has an invalid dispatch count')
+            entry['status'] = 'cancelled'
+            entry['cancel_requested_at'] = entry.get('cancel_requested_at') or requested_at
+        elif entry['status'] in {'outcome_unknown', 'accepted'}:
+            entry['cancel_requested_at'] = entry.get('cancel_requested_at') or requested_at
+        return _validate_v3_ledger_entry(entry)
+
+    @staticmethod
+    def _fence_revoked_v3_rows(task: dict, conversation: dict, requested_at: str) -> tuple[list, bool]:
+        """Fence only valid v3 rows bound to this exact task; preserve damaged rows."""
+        raw_rows = task.get('continuation_budget')
+        if not isinstance(raw_rows, list):
+            return raw_rows, False
+        rows = list(raw_rows)
+        changed = False
+        expected_scope = (task['owner_principal'], task['workspace_id'],
+            conversation['conversation_id'], task['task_id'])
+        for index, stored in enumerate(raw_rows):
+            if not _is_v3_ledger_entry(stored):
+                continue
+            try:
+                entry = _validate_v3_ledger_entry(stored)
+                carrier = entry['reservation']
+                scope = (carrier.get('owner_principal'), carrier.get('workspace_id'),
+                    carrier.get('conversation_id'), carrier.get('task_id'))
+                if scope != expected_scope:
+                    continue
+                updated = ResearchContinuationMixin._cancel_v3_ledger_entry(
+                    entry, requested_at)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if updated != stored:
+                rows[index] = updated
+                changed = True
+        return rows, changed
 
     @staticmethod
     def _permission_blocked_reason(task, conversation):
@@ -289,6 +477,355 @@ class ResearchContinuationMixin:
         return None
 
     @staticmethod
+    def _assert_v3_job_origin(connection, task, conversation, job):
+        """Validate the exact human or historically authorized Agent Job origin."""
+        from .signal_producer import _assert_submission_origin_binding, _submission_origin
+
+        raw_origin = job.get('submission_origin')
+        origin = _submission_origin(raw_origin, owner=task['owner_principal'],
+            task=task['task_id'], workspace=task['workspace_id'], allow_authorized_agent=True)
+        if origin is None or origin != raw_origin:
+            raise ValueError('SignalJob origin is unknown or outside the exact Product scope')
+        _assert_submission_origin_binding(connection, origin)
+
+        if origin['kind'] == 'authenticated_human':
+            expected = {
+                'schema_version': 'signal-job-submission-origin.v1',
+                'kind': 'authenticated_human',
+                'user_id': str(job.get('owner_user_id') or ''),
+                'owner_principal': task['owner_principal'],
+                'workspace_id': task['workspace_id'],
+                'task_id': task['task_id'],
+                'conversation_id': conversation['conversation_id'],
+            }
+            if not expected['user_id'] or origin != expected:
+                raise ValueError('SignalJob origin is unknown or outside the exact human Product scope')
+            return
+
+        ResearchContinuationMixin._assert_v3_authorized_agent_origin(
+            connection, task, conversation, job, origin)
+
+    @staticmethod
+    def _assert_v3_authorized_agent_origin(connection, task, conversation, job, origin):
+        """Recheck frozen admission, root, native binding, ingress, and Job facts."""
+        from .agent_research import AgentConflict
+        from .domain_call_admission import DomainCallEvidenceMixin, _acp_binding_fields, acp_binding_sha256
+
+        if (origin['conversation_id'] != conversation['conversation_id']
+                or origin['session_id'] != conversation.get('runtime_session_id')
+                or origin['trace_id'] != conversation.get('trace_id')
+                or job.get('trace_id') != origin['trace_id']
+                or job.get('idempotency_key') != origin['idempotency_key']):
+            raise ValueError('authorized Agent origin does not match the exact Product conversation and Job')
+
+        # Hash preimages are not persisted: request fields cross JSONB storage
+        # and the original submitted command is discarded. Check digest shape
+        # only, then validate the exact linked business facts below.
+        for field in ('request_hash', 'submission_hash'):
+            if not isinstance(job.get(field), str) or re.fullmatch(r'[0-9a-f]{64}', job[field]) is None:
+                raise ValueError(f'authorized Agent Job {field} is unavailable or malformed')
+
+        root = fetch_one(connection, '''SELECT root_run_id, owner_principal, workspace_id,
+                session_id, trace_id, authority_boot_id, status, authority_status,
+                terminal_sequence, terminal_event_sha256, terminal_acp_ingress_sequence,
+                terminal_acp_ingress_sha256, terminal_unknown_claim_count,
+                terminal_unknown_claims_sha256
+            FROM agent_runtime_turns WHERE root_run_id=:root''', {'root': origin['root_run_id']})
+        if (root is None
+                or (root['root_run_id'], root['owner_principal'], root['workspace_id'],
+                    root['session_id'], root['trace_id'], root['authority_boot_id']) != (
+                    origin['root_run_id'], origin['owner_principal'], origin['workspace_id'],
+                    origin['session_id'], origin['trace_id'], origin['runtime_boot_id'])
+                or root['status'] != 'completed' or root['authority_status'] != 'closed'
+                or type(root['terminal_sequence']) is not int or root['terminal_sequence'] < 1
+                or not isinstance(root['terminal_event_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_event_sha256']) is None
+                or type(root['terminal_acp_ingress_sequence']) is not int
+                or root['terminal_acp_ingress_sequence'] < 0
+                or not isinstance(root['terminal_acp_ingress_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_acp_ingress_sha256']) is None
+                or type(root['terminal_unknown_claim_count']) is not int
+                or root['terminal_unknown_claim_count'] != 0
+                or not isinstance(root['terminal_unknown_claims_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_unknown_claims_sha256']) is None):
+            raise ValueError('authorized Agent source root is not the exact normally completed root')
+
+        closure = DomainCallEvidenceMixin()
+        try:
+            closure._require_acp_root_terminal_safe(connection, origin['root_run_id'])
+            current_evidence = closure._acp_terminal_evidence_snapshot(connection, origin['root_run_id'])
+        except AgentConflict as error:
+            raise ValueError('authorized Agent source root still has unresolved ACP liabilities') from error
+        frozen_evidence = {
+            'terminal_acp_ingress_sequence': root['terminal_acp_ingress_sequence'],
+            'terminal_acp_ingress_sha256': root['terminal_acp_ingress_sha256'],
+            'terminal_unknown_claim_count': root['terminal_unknown_claim_count'],
+            'terminal_unknown_claims_sha256': root['terminal_unknown_claims_sha256'],
+        }
+        if current_evidence != frozen_evidence:
+            raise ValueError('authorized Agent source root terminal evidence changed')
+
+        scope = {
+            'owner': origin['owner_principal'], 'workspace': origin['workspace_id'],
+            'actor': origin['actor_principal'], 'session': origin['session_id'],
+            'trace': origin['trace_id'], 'generation': origin['dsh_run_id'],
+        }
+
+        def bound_run(native_agent_session_id, native_parent_session_id, origin_kind, depth,
+                      expected_run_id, expected_parent_run_id):
+            identity = {
+                'root_run_id': origin['root_run_id'],
+                'runtime_boot_id': origin['runtime_boot_id'],
+                'native_root_session_id': origin['native_root_session_id'],
+                'native_agent_session_id': native_agent_session_id,
+                'native_parent_session_id': native_parent_session_id,
+                'origin': origin_kind, 'depth': depth,
+            }
+            registration = fetch_one(connection, '''SELECT * FROM agent_acp_native_agent_registrations
+                WHERE root_run_id=:root AND native_agent_session_id=:native''',
+                {'root': origin['root_run_id'], 'native': native_agent_session_id})
+            expected_registration = {
+                'root_run_id': origin['root_run_id'],
+                'native_agent_session_id': native_agent_session_id,
+                'native_root_session_id': origin['native_root_session_id'],
+                'native_parent_session_id': native_parent_session_id,
+                'owner_principal': origin['owner_principal'],
+                'workspace_id': origin['workspace_id'],
+                'actor_principal': origin['actor_principal'],
+                'session_id': origin['session_id'], 'trace_id': origin['trace_id'],
+                'dsh_run_id': origin['dsh_run_id'], 'runtime_boot_id': origin['runtime_boot_id'],
+                'origin': origin_kind, 'depth': depth, 'agent_run_id': expected_run_id,
+                'parent_run_id': expected_parent_run_id, 'status': 'bound',
+            }
+            if registration is None or any(registration.get(key) != value
+                    for key, value in expected_registration.items()):
+                raise ValueError('authorized Agent native registration does not match its exact AgentRun')
+            binding_fields = _acp_binding_fields(identity, scope,
+                agent_run_id=expected_run_id, parent_run_id=expected_parent_run_id)
+            expected_receipt = {
+                'schema_version': 'byq-acp-agent-bind-receipt.v1',
+                'root_run_id': origin['root_run_id'],
+                'runtime_boot_id': origin['runtime_boot_id'],
+                'native_agent_session_id': native_agent_session_id,
+                'native_parent_session_id': native_parent_session_id,
+                'agent_run_id': expected_run_id, 'parent_run_id': expected_parent_run_id,
+                'origin': origin_kind, 'depth': depth, 'status': 'bound',
+                'binding_sha256': acp_binding_sha256(binding_fields),
+            }
+            if registration.get('receipt_json') != expected_receipt:
+                raise ValueError('authorized Agent native bind receipt does not match its exact registration')
+            run = fetch_one(connection, 'SELECT * FROM agent_runs WHERE run_id=:run',
+                {'run': expected_run_id})
+            expected_run = {
+                'run_id': expected_run_id, 'root_run_id': origin['root_run_id'],
+                'parent_run_id': expected_parent_run_id,
+                'owner_principal': origin['owner_principal'],
+                'workspace_id': origin['workspace_id'], 'actor_principal': origin['actor_principal'],
+                'session_id': origin['session_id'], 'trace_id': origin['trace_id'],
+                'dsh_run_id': origin['dsh_run_id'], 'authority_boot_id': origin['runtime_boot_id'],
+                'authority_status': 'closed',
+            }
+            if expected_run_id == origin['agent_run_id']:
+                expected_run['role_id'] = origin['role_id']
+            if run is None or any(run.get(key) != value for key, value in expected_run.items()):
+                raise ValueError('authorized Agent origin does not match its historically closed AgentRun')
+            return run
+
+        if origin['origin'] == 'root':
+            if (origin['depth'] != 0 or origin['native_agent_session_id'] != origin['native_root_session_id']
+                    or origin['native_parent_session_id'] is not None):
+                raise ValueError('authorized Agent root origin has invalid native lineage')
+            bound_run(origin['native_agent_session_id'], None, 'root', 0,
+                origin['agent_run_id'], None)
+        else:
+            if (origin['depth'] != 1 or origin['native_parent_session_id'] != origin['native_root_session_id']):
+                raise ValueError('authorized Agent child origin has invalid native lineage')
+            # The child binding carries the Backend parent AgentRun ID. Resolve
+            # it from the already verified root native registration.
+            root_registration = fetch_one(connection, '''SELECT agent_run_id FROM agent_acp_native_agent_registrations
+                WHERE root_run_id=:root AND native_agent_session_id=:native''',
+                {'root': origin['root_run_id'], 'native': origin['native_root_session_id']})
+            if root_registration is None:
+                raise ValueError('authorized Agent child lacks its exact native root registration')
+            bound_run(origin['native_root_session_id'], None, 'root', 0,
+                root_registration['agent_run_id'], None)
+            bound_run(origin['native_agent_session_id'], origin['native_parent_session_id'],
+                'subagent', 1, origin['agent_run_id'], root_registration['agent_run_id'])
+
+        ingress = fetch_one(connection, '''SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:request''', {'request': origin['mcp_request_id']})
+        expected_ingress = {
+            'mcp_request_id': origin['mcp_request_id'],
+            'owner_principal': origin['owner_principal'], 'workspace_id': origin['workspace_id'],
+            'actor_principal': origin['actor_principal'], 'session_id': origin['session_id'],
+            'trace_id': origin['trace_id'], 'dsh_run_id': origin['dsh_run_id'],
+            'runtime_boot_id': origin['runtime_boot_id'], 'root_run_id': origin['root_run_id'],
+            'native_root_session_id': origin['native_root_session_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'native_parent_session_id': origin['native_parent_session_id'],
+            'origin': origin['origin'], 'depth': origin['depth'],
+            'agent_run_id': origin['agent_run_id'], 'tool_name': origin['action'],
+            'arguments_sha256': origin['arguments_sha256'],
+        }
+        if ingress is None or any(ingress.get(key) != value for key, value in expected_ingress.items()):
+            raise ValueError('authorized Agent origin does not match the exact persisted tool ingress')
+        if ingress.get('status') != 'settled' or ingress.get('settled_at') is None:
+            raise ValueError('authorized Agent source ingress is not known settled')
+        event = {
+            'sequence': ingress['sequence'], 'owner_principal': origin['owner_principal'],
+            'workspace_id': origin['workspace_id'], 'actor_principal': origin['actor_principal'],
+            'session_id': origin['session_id'], 'trace_id': origin['trace_id'],
+            'dsh_run_id': origin['dsh_run_id'], 'agent_run_id': origin['agent_run_id'],
+            'root_run_id': origin['root_run_id'], 'runtime_boot_id': origin['runtime_boot_id'],
+            'native_root_session_id': origin['native_root_session_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'native_parent_session_id': origin['native_parent_session_id'],
+            'origin': origin['origin'], 'depth': origin['depth'], 'tool_name': origin['action'],
+            'arguments_sha256': origin['arguments_sha256'],
+        }
+        event_sha256 = acp_binding_sha256(event)
+        expected_receipt = {
+            'schema_version': 'byq-acp-tool-ingress-receipt.v1',
+            'mcp_request_id': origin['mcp_request_id'], 'root_run_id': origin['root_run_id'],
+            'runtime_boot_id': origin['runtime_boot_id'],
+            'native_root_session_id': origin['native_root_session_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'native_parent_session_id': origin['native_parent_session_id'],
+            'origin': origin['origin'], 'depth': origin['depth'], 'tool_name': origin['action'],
+            'agent_run_id': origin['agent_run_id'], 'sequence': ingress['sequence'],
+            'event_sha256': event_sha256,
+        }
+        if (event_sha256 != origin['event_sha256'] or ingress.get('event_sha256') != event_sha256
+                or ingress.get('receipt_json') != expected_receipt):
+            raise ValueError('authorized Agent ingress event or receipt digest changed')
+
+        settlement_payload = {
+            'mcp_request_id': origin['mcp_request_id'], 'root_run_id': origin['root_run_id'],
+            'runtime_boot_id': origin['runtime_boot_id'],
+            'native_agent_session_id': origin['native_agent_session_id'],
+            'tool_name': origin['action'], 'sequence': ingress['sequence'],
+            'event_sha256': event_sha256, 'outcome': 'settled',
+        }
+        settlement_sha256 = acp_binding_sha256(settlement_payload)
+        expected_settlement = {
+            'schema_version': 'byq-acp-tool-ingress-settle-receipt.v1',
+            **settlement_payload, 'settlement_sha256': settlement_sha256,
+        }
+        if ingress.get('settlement_json') != expected_settlement:
+            raise ValueError('authorized Agent ingress settlement is not the exact settled transport receipt')
+
+    @staticmethod
+    def _assert_v3_source_binding(connection, task, conversation, job, carrier):
+        """Recheck the exact human-or-Agent Job and validated snapshot behind a carrier."""
+        ResearchContinuationMixin._assert_v3_job_origin(connection, task, conversation, job)
+        if (job.get('job_id') != carrier.get('signal_job_id')
+                or job.get('task_id') != task.get('task_id')
+                or job.get('owner_principal') != task.get('owner_principal')
+                or job.get('workspace_id') != task.get('workspace_id')
+                or job.get('status') != 'completed'
+                or job.get('result_artifact_id') != carrier.get('result_artifact_id')):
+            raise ValueError('exact SignalJob result changed after reservation')
+        artifact = fetch_one(connection, '''SELECT artifact_id, content_sha256, kind, status
+            FROM artifacts WHERE artifact_id=:artifact AND task_id=:task AND owner_principal=:owner
+              AND workspace_id=:workspace FOR SHARE''',
+            {'artifact': carrier['result_artifact_id'], 'task': task['task_id'],
+             'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+        if artifact is None or artifact['kind'] != 'signal_snapshot' or artifact['status'] != 'validated':
+            raise ValueError('exact SignalSnapshot is no longer validated')
+        profile = carrier['execution_profile']
+        current = continuation_reservation_v3(
+            owner_principal=task['owner_principal'], workspace_id=task['workspace_id'],
+            conversation_id=conversation['conversation_id'], task_id=task['task_id'],
+            event_key=carrier['event_key'], signal_job_id=job['job_id'],
+            result_artifact_id=artifact['artifact_id'],
+            result_artifact_content_sha256=artifact['content_sha256'],
+            options=profile['options'], options_revision=profile['options_revision'])
+        if current != carrier:
+            raise ValueError('exact SignalJob source facts changed after reservation')
+
+    @staticmethod
+    def _recheck_v3_source_binding(connection, task, conversation, carrier):
+        """Lock and revalidate the immutable source facts for a v3 receipt."""
+        job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal, j.workspace_id,
+                j.status, j.result_artifact_id, j.submission_origin, u.user_id AS owner_user_id,
+                j.trace_id, j.request_hash, j.submission_hash, j.idempotency_key
+            FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
+            WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
+              AND j.workspace_id=:workspace FOR SHARE OF j, u''',
+            {'job': carrier['signal_job_id'], 'task': task['task_id'],
+             'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+        if job is None:
+            raise ValueError('exact SignalJob source facts are unavailable for receipt')
+        ResearchContinuationMixin._assert_v3_source_binding(
+            connection, task, conversation, job, carrier)
+
+    @staticmethod
+    def _assert_v3_runtime_settlement(connection, *, conversation, row, usage,
+                                      outcome, settlement_sha256):
+        """Accept settlement only for the exact durably closed Runtime root."""
+        from .agent_research import AgentConflict
+        from .domain_call_admission import DomainCallEvidenceMixin
+
+        carrier = row['reservation']
+        run_id = row.get('run_id')
+        if not isinstance(run_id, str) or re.fullmatch(r'[0-9a-f]{32}', run_id) is None:
+            raise ValueError('v3 settlement lacks its exact accepted Runtime root')
+
+        runtime_receipt = {
+            'reservation_id': row['reservation_id'],
+            'idempotency_key': carrier['idempotency_key'],
+            'status': 'settled',
+            'run_id': run_id,
+            'outcome': outcome,
+            'request_usage': usage,
+        }
+        expected_sha256 = hashlib.sha256(json.dumps(
+            runtime_receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        if settlement_sha256 != expected_sha256:
+            raise ValueError('v3 settlement digest does not match the exact Runtime receipt')
+
+        root = fetch_one(connection, '''SELECT root_run_id, owner_principal, workspace_id,
+                session_id, trace_id, status, authority_status, terminal_sequence,
+                terminal_event_sha256, terminal_acp_ingress_sequence,
+                terminal_acp_ingress_sha256, terminal_unknown_claim_count,
+                terminal_unknown_claims_sha256
+            FROM agent_runtime_turns WHERE root_run_id=:root''', {'root': run_id})
+        if (root is None
+                or (root['root_run_id'], root['owner_principal'], root['workspace_id'],
+                    root['session_id'], root['trace_id']) != (
+                    run_id, carrier['owner_principal'], carrier['workspace_id'],
+                    conversation['runtime_session_id'], conversation['trace_id'])
+                or root['authority_status'] != 'closed'
+                or root['status'] not in {'completed', 'failed', 'cancelled', 'interrupted'}
+                or (outcome == 'completed' and root['status'] != 'completed')
+                or type(root['terminal_sequence']) is not int or root['terminal_sequence'] < 1
+                or not isinstance(root['terminal_event_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_event_sha256']) is None
+                or type(root['terminal_acp_ingress_sequence']) is not int
+                or root['terminal_acp_ingress_sequence'] < 0
+                or not isinstance(root['terminal_acp_ingress_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_acp_ingress_sha256']) is None
+                or root['terminal_unknown_claim_count'] != 0
+                or not isinstance(root['terminal_unknown_claims_sha256'], str)
+                or re.fullmatch(r'[0-9a-f]{64}', root['terminal_unknown_claims_sha256']) is None):
+            raise ValueError('v3 settlement lacks the exact closed Runtime root evidence')
+
+        closure = DomainCallEvidenceMixin()
+        try:
+            closure._require_acp_root_terminal_safe(connection, run_id)
+            current_evidence = closure._acp_terminal_evidence_snapshot(connection, run_id)
+        except AgentConflict as error:
+            raise ValueError('v3 settlement Runtime root still has unresolved liabilities') from error
+        frozen_evidence = {
+            'terminal_acp_ingress_sequence': root['terminal_acp_ingress_sequence'],
+            'terminal_acp_ingress_sha256': root['terminal_acp_ingress_sha256'],
+            'terminal_unknown_claim_count': root['terminal_unknown_claim_count'],
+            'terminal_unknown_claims_sha256': root['terminal_unknown_claims_sha256'],
+        }
+        if current_evidence != frozen_evidence:
+            raise ValueError('v3 settlement Runtime root terminal evidence changed')
+
+    @staticmethod
     def _event_blocked_by_needs_attention(task, event_key: str) -> bool:
         """Whether a settled needs_attention block still governs this event.
 
@@ -317,6 +854,8 @@ class ResearchContinuationMixin:
     @staticmethod
     def _continuation_blocked_reason(task, conversation, receipt=None):
         """Single admission gate for current grants and persisted receipts."""
+        if _is_v3_ledger_entry(receipt):
+            return 'legacy_continuation_read_only'
         if receipt is not None and receipt.get('grant_kind') == 'data_ready':
             # This legacy subtype represented an inferred model grant. It is
             # retained only so its exact liability can be reconciled; a later
@@ -401,12 +940,15 @@ class ResearchContinuationMixin:
                 'blocked_event_key': task.get('continuation_blocked_event_key'),
                 'blocked_reason_detail': task.get('continuation_blocked_reason'),
             }
-        reserved = sum(row['token_limit'] for row in rows if row['status'] != 'settled')
-        charged = sum(row['charged_tokens'] for row in rows if row['status'] == 'settled')
+        # A v3 event carrier is not a v1 token-budget receipt. Keep historical
+        # legacy projections from interpreting its shape or accounting fields.
+        legacy_rows = [row for row in rows if not _is_v3_ledger_entry(row)]
+        reserved = sum(row['token_limit'] for row in legacy_rows if row['status'] != 'settled')
+        charged = sum(row['charged_tokens'] for row in legacy_rows if row['status'] == 'settled')
         budget = {'token_limit': ledger['token_limit'], 'reserved_tokens': reserved,
             'charged_tokens': charged, 'available_tokens': ledger['token_limit'] - reserved - charged,
-            'turns_reserved': len(rows), 'turns_remaining': ledger['max_turns'] - len(rows),
-            'unconfirmed_reservations': sum(row['status'] != 'settled' for row in rows),
+            'turns_reserved': len(legacy_rows), 'turns_remaining': ledger['max_turns'] - len(legacy_rows),
+            'unconfirmed_reservations': sum(row['status'] != 'settled' for row in legacy_rows),
             # ADR-0085 P0/§8: the conservative per-call reservation ceiling is
             # NOT model usage. Provider-provable actual input/cache/output usage
             # is only available from the Runtime Adapter's normalized DSH usage
@@ -435,7 +977,8 @@ class ResearchContinuationMixin:
                 "blocked_event_key": task.get("continuation_blocked_event_key"),
                 "blocked_reason_detail": task.get("continuation_blocked_reason")}
 
-    def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict) -> dict:
+    def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict,
+                                       expected_frozen_request: dict | None = None) -> dict:
         from .research import IdempotencyConflict
 
         request = _request_v2(payload)
@@ -466,6 +1009,27 @@ class ResearchContinuationMixin:
                     if artifact['kind'] not in {'strategy_version', 'ml_strategy_version'}:
                         raise ValueError("continuation grant must bind a validated strategy version")
                     confirmed_artifacts.append(artifact)
+                if expected_frozen_request is not None:
+                    expected_fields = {
+                        "idempotency_key", "task_id", "owner_principal", "workspace_id", "conversation_id",
+                        "execution_profile", "request_limits", "confirmed_artifact_ids", "confirmed_artifacts",
+                        "max_turns", "valid_seconds", "turn_timeout_seconds",
+                    }
+                    if not isinstance(expected_frozen_request, dict) or set(expected_frozen_request) != expected_fields:
+                        raise ValueError("frozen continuation request fields are invalid")
+                    actual_frozen_request = {
+                        "idempotency_key": request["idempotency_key"], "task_id": task_id,
+                        "owner_principal": task["owner_principal"], "workspace_id": task["workspace_id"],
+                        "conversation_id": task["conversation_id"],
+                        "execution_profile": request["execution_profile"],
+                        "request_limits": request["request_limits"],
+                        "confirmed_artifact_ids": request["confirmed_artifact_ids"],
+                        "confirmed_artifacts": confirmed_artifacts,
+                        "max_turns": request["max_turns"], "valid_seconds": request["valid_seconds"],
+                        "turn_timeout_seconds": request["turn_timeout_seconds"],
+                    }
+                    if actual_frozen_request != expected_frozen_request:
+                        raise ValueError("continuation grant no longer matches its frozen approval request")
                 now = datetime.now(timezone.utc)
                 ledger = {**request, "schema_version": PERMISSION_SCHEMA_VERSION,
                           "request_sha256": digest, "grant_version": 1,
@@ -485,6 +1049,26 @@ class ResearchContinuationMixin:
             task, conversation = self._continuation_task(connection, task_id, trusted_context, human=True)
             return self._continuation_view(task, conversation)
 
+    def get_continuation_permission_snapshot_readonly(self, task_id: str, *, trusted_context: dict) -> dict:
+        """Read exact continuation fact without taking task/conversation row locks."""
+        owner, workspace = trusted_context.get("owner_principal"), trusted_context.get("workspace_id")
+        if not owner or not workspace or trusted_context.get("actor_principal") != owner:
+            raise ValueError("continuation requires its authenticated human owner")
+        with self._transaction() as connection:
+            task = fetch_one(connection, """SELECT * FROM research_tasks WHERE task_id=:task
+                AND owner_principal=:owner AND workspace_id=:workspace""",
+                {"task": task_id, "owner": owner, "workspace": workspace})
+            if task is None or not task.get("conversation_id"):
+                raise ValueError("continuation task binding not found")
+            conversation = fetch_one(connection, """SELECT * FROM product_conversations
+                WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace""",
+                {"conversation": task["conversation_id"], "owner": owner, "workspace": workspace})
+            if conversation is None:
+                raise ValueError("continuation conversation binding not found")
+            ledger = task.get("continuation_permission")
+            return {"ledger": dict(ledger) if isinstance(ledger, dict) else None,
+                    "view": self._continuation_view(task, conversation)}
+
     def revoke_continuation_permission(self, task_id: str, *, grant_version: int, trusted_context: dict) -> dict:
         _positive(grant_version, "grant version", 2**53 - 1)
         with self._transaction() as connection:
@@ -493,12 +1077,22 @@ class ResearchContinuationMixin:
             if ledger is None or ledger["grant_version"] != grant_version:
                 raise ValueError("exact continuation grant version required")
             if ledger["revoked_at"] is None:
-                ledger = {**ledger, "revoked_at": datetime.now(timezone.utc).isoformat(),
+                revoked_at = datetime.now(timezone.utc).isoformat()
+                ledger = {**ledger, "revoked_at": revoked_at,
                           "revoked_by": trusted_context["actor_principal"]}
                 execute(connection, "UPDATE research_tasks SET continuation_permission = :ledger WHERE task_id = :task",
                         {"ledger": ledger, "task": task_id})
                 task["continuation_permission"] = ledger
-            return self._continuation_view(task, conversation)
+            revoked_at = self._continuation_revocation_timestamp(task)
+            if revoked_at is not None:
+                rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                if changed:
+                    execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+                        {'budget': rows, 'task': task_id})
+                    task['continuation_budget'] = rows
+        # Build the view after commit. Damaged historical budget JSON may make
+        # its legacy projection fail, but it must not roll back the stop intent.
+        return self._continuation_view(task, conversation)
 
     def reserve_continuation_budget(self, task_id: str, *, trusted_context: dict,
             grant_version: int, event_key: str, input_sha256: str, token_limit: int,
@@ -593,6 +1187,471 @@ class ResearchContinuationMixin:
                 {'budget': [*rows, receipt], 'task': task_id})
             return receipt
 
+    def reserve_default_continuation_v3(self, conversation_id: str, *,
+            signal_job_id: str, trusted_context: dict, _preview: bool = False) -> dict:
+        """Persist one default signal-ready carrier from locked BYQ facts.
+
+        This Backend producer is intentionally not wired to the legacy Gateway
+        claim path or to dispatch/settlement. Its event identity and reservation
+        identity come from the contract's stable owner/workspace/conversation/
+        task/Job idempotency key, never the mutable Job updated_at timestamp.
+        """
+        from .research import IdempotencyConflict
+        from packages.contracts.agent_execution_options import (
+            default_agent_execution_options,
+            validate_agent_execution_options,
+        )
+
+        if not isinstance(signal_job_id, str) or re.fullmatch(r'signaljob_[0-9a-f]{32}', signal_job_id) is None:
+            raise ValueError('exact signal producer Job identity required')
+        owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
+        if not owner or not workspace:
+            raise ValueError('continuation requires its authenticated human owner')
+
+        with self._transaction() as connection:
+            # Resolve the task selector without locking a Job first. The shared
+            # task helper then locks conversation before task, matching existing
+            # transition and execution-options update order.
+            candidate = fetch_one(connection, '''SELECT task_id FROM signal_producer_jobs
+                WHERE job_id=:job AND owner_principal=:owner AND workspace_id=:workspace''',
+                {'job': signal_job_id, 'owner': owner, 'workspace': workspace})
+            if candidate is None:
+                raise ValueError('signal producer Job is unavailable in this owner workspace')
+            task, conversation = self._continuation_task(
+                connection, candidate['task_id'], trusted_context, human=False)
+            if conversation['conversation_id'] != conversation_id:
+                raise ValueError('continuation requires the original bound conversation')
+            if self._data_ready_blocked_reason(task, conversation) is not None:
+                raise ValueError('continuation task or conversation is inactive')
+
+            # The row locks are acquired only after the exact conversation and
+            # task locks above. updated_at is intentionally not read into the
+            # stable event identity or source-fact digest.
+            job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal, j.workspace_id,
+                    j.status, j.result_artifact_id, j.submission_origin, u.user_id AS owner_user_id,
+                    j.strategy_version_artifact_id, j.stock_pool_snapshot_id, j.readiness_json,
+                    j.trace_id, j.request_hash, j.submission_hash, j.idempotency_key,
+                    j.attempt_count, j.error_code, j.error_detail
+                FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
+                WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
+                  AND j.workspace_id=:workspace FOR SHARE OF j, u''',
+                {'job': signal_job_id, 'task': task['task_id'], 'owner': task['owner_principal'],
+                 'workspace': task['workspace_id']})
+            if job is not None:
+                self._assert_v3_job_origin(connection, task, conversation, job)
+            if job is None or job['status'] != 'completed' or not isinstance(job['result_artifact_id'], str):
+                raise ValueError('signal producer Job is not an exact completed task result')
+            artifact = fetch_one(connection, '''SELECT artifact_id, content_sha256, kind, status
+                FROM artifacts WHERE artifact_id=:artifact AND task_id=:task AND owner_principal=:owner
+                  AND workspace_id=:workspace FOR SHARE''',
+                {'artifact': job['result_artifact_id'], 'task': task['task_id'],
+                 'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+            if (artifact is None or artifact['kind'] != 'signal_snapshot'
+                    or artifact['status'] != 'validated'):
+                raise ValueError('signal snapshot is not validated for the exact task')
+
+            options_row = fetch_one(connection, '''SELECT revision, options_json
+                FROM product_conversation_execution_options
+                WHERE conversation_id=:conversation AND owner_principal=:owner
+                  AND workspace_id=:workspace FOR SHARE''',
+                {'conversation': conversation['conversation_id'], 'owner': task['owner_principal'],
+                 'workspace': task['workspace_id']})
+            if options_row is None:
+                options, options_revision = default_agent_execution_options(), 0
+            else:
+                options_revision = options_row['revision']
+                if type(options_revision) is not int or options_revision < 1:
+                    raise ValueError('stored execution options revision is invalid')
+                options = validate_agent_execution_options(options_row['options_json'])
+
+            # The contract idempotency key is independent of event_key and
+            # options. A valid placeholder lets the existing canonicalizer
+            # provide its stable digest without duplicating its private schema.
+            carrier_args = {
+                'owner_principal': task['owner_principal'],
+                'workspace_id': task['workspace_id'],
+                'conversation_id': conversation['conversation_id'],
+                'task_id': task['task_id'],
+                'signal_job_id': job['job_id'],
+                'result_artifact_id': artifact['artifact_id'],
+                'result_artifact_content_sha256': artifact['content_sha256'],
+                'options': options,
+                'options_revision': options_revision,
+            }
+            placeholder = continuation_reservation_v3(
+                **carrier_args, event_key=DATA_READY_EVENT_PREFIX + '0' * 64)
+            idempotency_key = placeholder['idempotency_key']
+            if not idempotency_key.startswith(_V3_IDEMPOTENCY_PREFIX):
+                raise ValueError('continuation event idempotency identity is invalid')
+            identity_digest = idempotency_key.removeprefix(_V3_IDEMPOTENCY_PREFIX)
+            if re.fullmatch(r'[0-9a-f]{64}', identity_digest) is None:
+                raise ValueError('continuation event idempotency identity is invalid')
+            event_key = DATA_READY_EVENT_PREFIX + identity_digest
+            reservation = continuation_reservation_v3(**carrier_args, event_key=event_key)
+            if reservation['idempotency_key'] != idempotency_key:
+                raise ValueError('continuation event identity changed during validation')
+            reservation_id = 'continuation_' + identity_digest[:32]
+
+            ledger = task.get('continuation_budget') or []
+            permission = task.get('continuation_permission')
+            revoked = self._continuation_permission_revoked(task)
+            revoked_at = self._continuation_revocation_timestamp(task) if revoked else None
+            if revoked_at is not None:
+                fenced_rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                if changed:
+                    execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget '
+                        'WHERE task_id=:task', {'budget': fenced_rows, 'task': task['task_id']})
+                    task['continuation_budget'] = fenced_rows
+            for row_index, stored in enumerate(ledger):
+                if not _is_v3_ledger_entry(stored):
+                    continue
+                existing = _validate_v3_ledger_entry(stored)
+                prior = existing['reservation']
+                if prior['idempotency_key'] != reservation['idempotency_key']:
+                    continue
+                if prior['source_fact_sha256'] != reservation['source_fact_sha256']:
+                    raise IdempotencyConflict('signal Job source facts conflict with its existing reservation')
+                if revoked:
+                    current_rows = task.get('continuation_budget') or []
+                    if row_index < len(current_rows) and _is_v3_ledger_entry(current_rows[row_index]):
+                        existing = _validate_v3_ledger_entry(current_rows[row_index])
+                return existing
+
+            if permission is not None:
+                if permission.get('revoked_at') is not None:
+                    raise ValueError('explicitly revoked continuation permission blocks a new reservation')
+
+            for stored in ledger:
+                if _is_v3_ledger_entry(stored):
+                    _validate_v3_ledger_entry(stored)
+                    continue
+                if stored.get('status') not in {'settled', 'rejected'}:
+                    raise ValueError('unresolved legacy continuation liability blocks a new reservation')
+                # Only the exact legacy notification envelope can be resolved
+                # against structured Job/Artifact references below. Any other
+                # terminal v1/v2 row lacks a trusted Job identity, regardless
+                # of its grant label, event prefix, instruction, or terminal
+                # status; preserve it until business reconciliation.
+                if stored.get('grant_kind') != 'data_ready_notification':
+                    raise ValueError('legacy continuation receipt identity requires reconciliation')
+                if (stored.get('status') != 'settled' or stored.get('outcome') != 'notified'
+                        or stored.get('instruction') is not None or stored.get('run_id') is not None
+                        or stored.get('grant_version') is not None or type(stored.get('token_limit')) is not int
+                        or stored.get('token_limit') != 0 or type(stored.get('charged_tokens')) is not int
+                        or stored.get('charged_tokens') != 0
+                        or re.fullmatch(r'notification_[0-9a-f]{32}', str(stored.get('reservation_id'))) is None
+                        or re.fullmatch(r'ready-v1:[0-9a-f]{64}', str(stored.get('event_key'))) is None
+                        or re.fullmatch(r'[0-9a-f]{64}', str(stored.get('input_sha256'))) is None
+                        or re.fullmatch(r'[0-9a-f]{64}', str(stored.get('settlement_sha256'))) is None):
+                    raise ValueError('legacy data-ready notification envelope is ambiguous')
+                executable = stored.get('executable')
+                references = executable.get('references') if isinstance(executable, dict) else None
+                if not isinstance(references, dict):
+                    raise ValueError('legacy data-ready notification lineage is ambiguous')
+                referenced_job_id = references.get('signal_producer_job_id')
+                referenced_artifact_id = references.get('signal_snapshot_artifact_id')
+                if referenced_job_id is not None:
+                    if (not isinstance(referenced_job_id, str)
+                            or re.fullmatch(r'signaljob_[0-9a-f]{32}', referenced_job_id) is None):
+                        raise ValueError('legacy data-ready notification lineage is ambiguous')
+                    referenced_job = fetch_one(connection, '''SELECT job_id, result_artifact_id
+                        FROM signal_producer_jobs WHERE job_id=:job AND task_id=:task
+                          AND owner_principal=:owner AND workspace_id=:workspace FOR SHARE''',
+                        {'job': referenced_job_id, 'task': task['task_id'],
+                         'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+                    if (referenced_job is None or (referenced_artifact_id is not None
+                            and referenced_artifact_id != referenced_job['result_artifact_id'])):
+                        raise ValueError('legacy data-ready notification lineage is ambiguous')
+                    if referenced_job_id == signal_job_id:
+                        raise ValueError('signal Job was already consumed by a legacy notification')
+                    continue
+                if (not isinstance(referenced_artifact_id, str)
+                        or re.fullmatch(r'artifact_[0-9a-f]{32}', referenced_artifact_id) is None):
+                    raise ValueError('legacy data-ready notification lineage is ambiguous')
+                lineage = execute(connection, '''SELECT j.job_id FROM signal_producer_jobs j
+                    JOIN artifacts a ON a.artifact_id=j.result_artifact_id
+                    WHERE j.result_artifact_id=:artifact AND j.task_id=:task
+                      AND j.owner_principal=:owner AND j.workspace_id=:workspace
+                      AND j.status='completed' AND a.task_id=j.task_id
+                      AND a.owner_principal=j.owner_principal AND a.workspace_id=j.workspace_id
+                      AND a.kind='signal_snapshot' AND a.status='validated'
+                    ORDER BY j.job_id LIMIT 2 FOR SHARE OF j, a''',
+                    {'artifact': referenced_artifact_id, 'task': task['task_id'],
+                     'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+                if len(lineage) != 1:
+                    raise ValueError('legacy data-ready notification lineage is ambiguous')
+                if lineage[0]['job_id'] == signal_job_id:
+                    raise ValueError('signal Job was already consumed by a legacy notification')
+
+            if self._event_blocked_by_needs_attention(task, event_key):
+                raise ValueError('signal event is blocked by continuation needs_attention')
+            if not options['auto_continue']:
+                raise ValueError('automatic continuation is disabled for this conversation')
+            created_at = datetime.now(timezone.utc).isoformat()
+            entry = {
+                'schema_version': _V3_LEDGER_ENTRY_SCHEMA_VERSION,
+                'reservation_id': reservation_id,
+                'event_key': event_key,
+                'signal_job_id': signal_job_id,
+                'status': 'reserved',
+                'created_at': created_at,
+                'reservation': reservation,
+                'dispatch_attempts': 0,
+            }
+            entry = _validate_v3_ledger_entry(entry)
+            if _preview:
+                return entry
+            execute(connection, '''UPDATE research_tasks SET continuation_budget=:budget
+                WHERE task_id=:task''', {'budget': [*ledger, entry], 'task': task['task_id']})
+            return entry
+
+    def peek_default_continuation_v3(self, conversation_id: str, *, trusted_context: dict) -> dict | None:
+        """Read-only candidate projection for the ordinary default consumer."""
+        from .research import IdempotencyConflict
+
+        owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
+        if not owner or not workspace:
+            return None
+        terminal_v3_intent = None
+        with self._transaction() as connection:
+            tasks = execute(connection, '''SELECT t.*, c.runtime_session_id, c.trace_id AS conversation_trace_id,
+                    c.status AS conversation_status
+                FROM research_tasks t JOIN product_conversations c
+                  ON c.conversation_id=t.conversation_id AND c.owner_principal=t.owner_principal
+                 AND c.workspace_id=t.workspace_id
+                WHERE t.conversation_id=:conversation AND t.owner_principal=:owner
+                  AND t.workspace_id=:workspace
+                ORDER BY t.continuation_checked_at NULLS FIRST, t.created_at, t.task_id''',
+                {'conversation': conversation_id, 'owner': owner, 'workspace': workspace})
+            # An existing v3 reservation always owns reconciliation for its
+            # exact event. Never reinterpret it through a legacy grant/claim.
+            for task in tasks:
+                for stored in task.get('continuation_budget') or []:
+                    if not _is_v3_ledger_entry(stored):
+                        continue
+                    entry = _validate_v3_ledger_entry(stored)
+                    carrier = entry['reservation']
+                    if (carrier['conversation_id'] != conversation_id
+                            or carrier['task_id'] != task['task_id']
+                            or carrier['owner_principal'] != owner
+                            or carrier['workspace_id'] != workspace):
+                        return {'status': 'waiting'}
+                    job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
+                            j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
+                            u.user_id AS owner_user_id, j.trace_id, j.request_hash,
+                            j.submission_hash, j.idempotency_key
+                        FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
+                        WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
+                          AND j.workspace_id=:workspace''',
+                        {'job': carrier['signal_job_id'], 'task': task['task_id'],
+                         'owner': owner, 'workspace': workspace})
+                    try:
+                        if job is None:
+                            return {'status': 'waiting'}
+                        self._assert_v3_source_binding(connection, task, {
+                            'conversation_id': conversation_id,
+                            'runtime_session_id': task['runtime_session_id'],
+                            'trace_id': task['conversation_trace_id'],
+                        }, job, carrier)
+                    except ValueError:
+                        return {'status': 'waiting'}
+                    if entry['status'] in {'settled', 'rejected', 'cancelled'}:
+                        if terminal_v3_intent is None:
+                            terminal_v3_intent = self._v3_intent(task, {
+                                'conversation_id': conversation_id,
+                                'runtime_session_id': task['runtime_session_id'],
+                                'trace_id': task['conversation_trace_id'],
+                                'status': task['conversation_status'],
+                            }, entry)
+                        continue
+                    return self._v3_intent(task, {
+                        'conversation_id': conversation_id,
+                        'runtime_session_id': task['runtime_session_id'],
+                        'trace_id': task['conversation_trace_id'],
+                        'status': task['conversation_status'],
+                    }, entry)
+
+            candidates = execute(connection, '''SELECT j.job_id, t.task_id, c.runtime_session_id,
+                    c.trace_id, c.status AS conversation_status
+                FROM signal_producer_jobs j JOIN research_tasks t ON t.task_id=j.task_id
+                  AND t.owner_principal=j.owner_principal AND t.workspace_id=j.workspace_id
+                JOIN product_conversations c ON c.conversation_id=t.conversation_id
+                  AND c.owner_principal=t.owner_principal AND c.workspace_id=t.workspace_id
+                WHERE c.conversation_id=:conversation AND j.owner_principal=:owner
+                  AND j.workspace_id=:workspace AND j.status='completed'
+                  AND j.result_artifact_id IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM artifacts a WHERE a.artifact_id=j.result_artifact_id
+                    AND a.task_id=j.task_id AND a.owner_principal=j.owner_principal
+                    AND a.workspace_id=j.workspace_id AND a.kind='signal_snapshot' AND a.status='validated')
+                ORDER BY j.finished_at NULLS LAST, j.job_id''',
+                {'conversation': conversation_id, 'owner': owner, 'workspace': workspace})
+        for candidate in candidates:
+            try:
+                entry = self.reserve_default_continuation_v3(conversation_id,
+                    signal_job_id=candidate['job_id'], trusted_context=trusted_context, _preview=True)
+            except (ValueError, IdempotencyConflict):
+                # A completed, validated SignalJob that fails v3 origin,
+                # options, cancellation, blocker, or liability checks is a
+                # closed default-path decision. Do not let an F6 legacy grant
+                # reinterpret the same business event as an old-limits root.
+                return {'status': 'waiting'}
+            with self._transaction() as connection:
+                task = fetch_one(connection, '''SELECT * FROM research_tasks WHERE task_id=:task
+                    AND owner_principal=:owner AND workspace_id=:workspace''',
+                    {'task': candidate['task_id'], 'owner': owner, 'workspace': workspace})
+                if task is None:
+                    return {'status': 'waiting'}
+                if entry['status'] in {'settled', 'rejected', 'cancelled'}:
+                    if terminal_v3_intent is None:
+                        terminal_v3_intent = self._v3_intent(task, {
+                            'conversation_id': conversation_id,
+                            'runtime_session_id': candidate['runtime_session_id'],
+                            'trace_id': candidate['trace_id'],
+                            'status': candidate['conversation_status'],
+                        }, entry)
+                    continue
+                return {
+                    'status': 'eligible',
+                    'reservation_schema_version': RESERVATION_SCHEMA_VERSION_V3,
+                    'signal_job_id': candidate['job_id'], 'task_id': candidate['task_id'],
+                    'conversation_id': conversation_id,
+                    'session_id': candidate['runtime_session_id'],
+                    'trace_id': candidate['trace_id'],
+                }
+        return terminal_v3_intent
+
+    def get_default_continuation_v3_exact(self, conversation_id: str, reservation_id: str,
+            *, trusted_context: dict) -> dict:
+        """Read one exact v3 ledger entry for cancellation reconciliation only."""
+        owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
+        if (not isinstance(conversation_id, str) or not conversation_id
+                or not isinstance(owner, str) or not owner
+                or not isinstance(workspace, str) or not workspace
+                or not isinstance(reservation_id, str)
+                or re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None):
+            raise ValueError('exact v3 continuation identity is required')
+
+        with self._transaction() as connection:
+            matches = execute(connection, '''SELECT t.*, c.runtime_session_id,
+                    c.trace_id AS conversation_trace_id, c.status AS conversation_status
+                FROM research_tasks t JOIN product_conversations c
+                  ON c.conversation_id=t.conversation_id AND c.owner_principal=t.owner_principal
+                 AND c.workspace_id=t.workspace_id
+                WHERE t.conversation_id=:conversation AND t.owner_principal=:owner
+                  AND t.workspace_id=:workspace
+                  AND t.continuation_budget @> CAST(:receipt AS JSONB)''',
+                {'conversation': conversation_id, 'owner': owner, 'workspace': workspace,
+                 'receipt': [{'reservation_id': reservation_id}]})
+            if len(matches) != 1:
+                raise ValueError('exact v3 continuation reservation is unavailable or ambiguous')
+
+            task = matches[0]
+            ledger = task.get('continuation_budget')
+            if not isinstance(ledger, list) or any(not isinstance(row, dict) for row in ledger):
+                raise ValueError('exact v3 continuation ledger is malformed')
+            matching_rows = [row for row in ledger if row.get('reservation_id') == reservation_id]
+            if len(matching_rows) != 1 or not _is_v3_ledger_entry(matching_rows[0]):
+                raise ValueError('exact v3 continuation ledger entry is unavailable or ambiguous')
+            entry = _validate_v3_ledger_entry(matching_rows[0])
+            carrier = entry['reservation']
+            if (task.get('task_id') != carrier.get('task_id')
+                    or task.get('conversation_id') != conversation_id
+                    or task.get('owner_principal') != owner
+                    or task.get('workspace_id') != workspace
+                    or carrier.get('conversation_id') != conversation_id
+                    or carrier.get('owner_principal') != owner
+                    or carrier.get('workspace_id') != workspace):
+                raise ValueError('exact v3 continuation scope changed')
+            conversation = {
+                'conversation_id': conversation_id,
+                'runtime_session_id': task.get('runtime_session_id'),
+                'trace_id': task.get('conversation_trace_id'),
+                'status': task.get('conversation_status'),
+            }
+            if (not isinstance(conversation['runtime_session_id'], str)
+                    or not isinstance(conversation['trace_id'], str)):
+                raise ValueError('exact v3 continuation conversation binding is unavailable')
+            self._recheck_v3_source_binding(connection, task, conversation, carrier)
+            return self._v3_intent(task, conversation, entry)
+
+    def claim_default_continuation_v3(self, conversation_id: str, *, signal_job_id: str,
+            trusted_context: dict) -> dict:
+        """Claim exactly the Job returned by the preceding v3 peek."""
+        entry = self.reserve_default_continuation_v3(conversation_id,
+            signal_job_id=signal_job_id, trusted_context=trusted_context)
+        owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
+        with self._transaction() as connection:
+            task, conversation = self._continuation_task(
+                connection, entry['reservation']['task_id'], trusted_context, human=False)
+            rows = task.get('continuation_budget') or []
+            stored_index = next((index for index, row in enumerate(rows)
+                if _is_v3_ledger_entry(row) and row.get('reservation_id') == entry['reservation_id']), None)
+            if stored_index is None:
+                raise ValueError('exact v3 continuation reservation was not persisted')
+            stored = rows[stored_index]
+            stored = _validate_v3_ledger_entry(stored)
+            if (stored['reservation']['idempotency_key'] != entry['reservation']['idempotency_key']
+                    or task['conversation_id'] != conversation_id
+                    or task['owner_principal'] != owner or task['workspace_id'] != workspace):
+                raise ValueError('exact v3 continuation reservation binding changed')
+            if self._continuation_permission_revoked(task):
+                revoked_at = self._continuation_revocation_timestamp(task)
+                if revoked_at is not None:
+                    rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                    if changed:
+                        execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget '
+                            'WHERE task_id=:task', {'budget': rows, 'task': task['task_id']})
+                        task['continuation_budget'] = rows
+                    current_rows = task.get('continuation_budget') or []
+                    if stored_index < len(current_rows) and _is_v3_ledger_entry(current_rows[stored_index]):
+                        stored = _validate_v3_ledger_entry(current_rows[stored_index])
+            job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
+                    j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
+                    u.user_id AS owner_user_id, j.trace_id, j.request_hash,
+                    j.submission_hash, j.idempotency_key
+                FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
+                WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
+                  AND j.workspace_id=:workspace FOR SHARE OF j, u''',
+                {'job': signal_job_id, 'task': task['task_id'], 'owner': owner, 'workspace': workspace})
+            if job is None:
+                raise ValueError('exact SignalJob is unavailable')
+            self._assert_v3_source_binding(connection, task, conversation, job,
+                stored['reservation'])
+            if (job['status'] != 'completed'
+                    or job['result_artifact_id'] != stored['reservation']['result_artifact_id']):
+                raise ValueError('exact SignalJob result changed before claim')
+            if stored['status'] in {'settled', 'rejected', 'cancelled'}:
+                return {'status': 'waiting'}
+            return self._v3_intent(task, conversation, stored)
+
+    @staticmethod
+    def _v3_intent(task: dict, conversation: dict, entry: dict) -> dict:
+        carrier = entry['reservation']
+        terminal = entry['status'] in {'settled', 'rejected', 'cancelled'}
+        receipt = {**entry, 'idempotency_key': carrier['idempotency_key']}
+        revoked = ResearchContinuationMixin._continuation_permission_revoked(task)
+        if (revoked and not terminal and receipt.get('cancel_requested_at') is None):
+            revoked_at = ResearchContinuationMixin._continuation_revocation_timestamp(task)
+            if revoked_at is not None:
+                receipt['cancel_requested_at'] = revoked_at
+        return {
+            'status': 'waiting' if terminal else 'intent',
+            'task_id': task['task_id'],
+            'conversation_id': task['conversation_id'],
+            'session_id': conversation['runtime_session_id'],
+            'trace_id': conversation['trace_id'],
+            'reservation_schema_version': RESERVATION_SCHEMA_VERSION_V3,
+            'may_dispatch': not terminal and entry['status'] == 'reserved'
+                and not revoked
+                and entry.get('cancel_requested_at') is None
+                and not ResearchContinuationMixin._event_blocked_by_needs_attention(task, entry['event_key'])
+                and task['status'] in {'planned', 'running'}
+                and conversation['status'] == 'active',
+            'receipt': receipt,
+            'reservation': carrier,
+            'instruction': _v3_instruction(carrier),
+        }
+
     def claim_conversation_continuation(self, conversation_id: str, *, trusted_context: dict, admit: bool = True) -> dict:
         """Project durable terminal domain rows into one original-task intent.
 
@@ -615,6 +1674,10 @@ class ResearchContinuationMixin:
                 {'conversation': conversation_id, 'owner': owner, 'workspace': workspace})
             for selected in tasks:
                 task, conversation = self._continuation_task(connection, selected['task_id'], trusted_context, human=False)
+                # A v3 envelope is not a missing v1/v2 instruction. Stop before
+                # checked-at, reconciliation, notification, or history writes.
+                if any(_is_v3_ledger_entry(row) for row in (task.get('continuation_budget') or [])):
+                    return {'status': 'waiting'}
                 execute(connection, 'UPDATE research_tasks SET continuation_checked_at=now() WHERE task_id=:task',
                     {'task': task['task_id']})
                 permission = task.get('continuation_permission')
@@ -754,13 +1817,100 @@ class ResearchContinuationMixin:
             logger.info("continuation blocked: task=%s reason=%s event=%s", task_id, reason, event_key)
             return {'blocked_reason': reason}
 
+    def cancel_default_continuation_v3(self, conversation_id: str, reservation_id: str, *,
+            trusted_context: dict) -> dict:
+        """Fence one exact v3 continuation without erasing uncertain liability."""
+        owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
+        with self._transaction() as connection:
+            matches = execute(connection, '''SELECT task_id FROM research_tasks
+                WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace
+                  AND continuation_budget @> CAST(:receipt AS JSONB)''',
+                {'conversation': conversation_id, 'owner': owner, 'workspace': workspace,
+                 'receipt': [{'reservation_id': reservation_id}]})
+            if len(matches) != 1:
+                raise ValueError('exact v3 continuation reservation is unavailable')
+            task, conversation = self._continuation_task(
+                connection, matches[0]['task_id'], trusted_context, human=False)
+            if conversation['conversation_id'] != conversation_id:
+                raise ValueError('v3 cancellation requires its original conversation')
+            rows = task.get('continuation_budget') or []
+            row_index = next((index for index, item in enumerate(rows)
+                if isinstance(item, dict) and item.get('reservation_id') == reservation_id), None)
+            if row_index is None or not _is_v3_ledger_entry(rows[row_index]):
+                raise ValueError('exact v3 continuation reservation is unavailable')
+            row = _validate_v3_ledger_entry(rows[row_index])
+            carrier = row['reservation']
+            if (carrier['conversation_id'] != conversation_id
+                    or carrier['task_id'] != task['task_id']
+                    or carrier['owner_principal'] != task['owner_principal']
+                    or carrier['workspace_id'] != task['workspace_id']):
+                raise ValueError('v3 cancellation scope changed')
+            if row['status'] == 'reserved':
+                if row.get('dispatch_attempts', 0) != 0:
+                    raise ValueError('reserved v3 continuation has an invalid dispatch count')
+                row = self._cancel_v3_ledger_entry(row, datetime.now(timezone.utc).isoformat())
+            elif row['status'] in {'outcome_unknown', 'accepted'}:
+                row = self._cancel_v3_ledger_entry(row, datetime.now(timezone.utc).isoformat())
+            else:
+                # Terminal outcomes are retained exactly; this is an idempotent
+                # cancel acknowledgement, never a refund or state rewrite.
+                pass
+            rows[row_index] = row
+            execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+                {'budget': rows, 'task': task['task_id']})
+            return {'reservation_id': reservation_id, 'cancel_requested': True,
+                'status': row['status']}
+
     def claim_continuation_dispatch(self, task_id: str, reservation_id: str, *, trusted_context: dict) -> dict:
         with self._transaction() as connection:
             task, conversation = self._continuation_task(connection, task_id, trusted_context, human=False)
             rows = task.get('continuation_budget') or []
-            row = next((r for r in rows if r['reservation_id'] == reservation_id), None)
+            row_index = next((index for index, item in enumerate(rows)
+                if isinstance(item, dict) and item.get('reservation_id') == reservation_id), None)
+            row = rows[row_index] if row_index is not None else None
             now = datetime.now(timezone.utc)
-            if os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or row is None or not _is_v2_reservation(row):
+            if row is not None and _is_v3_ledger_entry(row):
+                row = _validate_v3_ledger_entry(row)
+                carrier = row['reservation']
+                if (carrier['task_id'] != task_id
+                        or carrier['conversation_id'] != conversation['conversation_id']
+                        or carrier['owner_principal'] != task['owner_principal']
+                        or carrier['workspace_id'] != task['workspace_id']):
+                    raise ValueError('v3 continuation dispatch scope changed')
+                if self._continuation_permission_revoked(task):
+                    revoked_at = self._continuation_revocation_timestamp(task)
+                    if revoked_at is not None:
+                        rows, changed = self._fence_revoked_v3_rows(task, conversation, revoked_at)
+                        if changed:
+                            execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget '
+                                'WHERE task_id=:task', {'budget': rows, 'task': task_id})
+                    return {'dispatch': False}
+                if (row['status'] != 'reserved' or row.get('dispatch_attempts', 0) != 0
+                        or row.get('cancel_requested_at') is not None
+                        or self._data_ready_blocked_reason(task, conversation) is not None
+                        or self._event_blocked_by_needs_attention(task, row['event_key'])):
+                    return {'dispatch': False}
+                job = fetch_one(connection, '''SELECT j.job_id, j.task_id, j.owner_principal,
+                        j.workspace_id, j.status, j.result_artifact_id, j.submission_origin,
+                        u.user_id AS owner_user_id, j.trace_id, j.request_hash,
+                        j.submission_hash, j.idempotency_key
+                    FROM signal_producer_jobs j JOIN users u ON u.username=j.owner_principal
+                    WHERE j.job_id=:job AND j.task_id=:task AND j.owner_principal=:owner
+                      AND j.workspace_id=:workspace FOR SHARE OF j, u''',
+                    {'job': carrier['signal_job_id'], 'task': task_id,
+                     'owner': task['owner_principal'], 'workspace': task['workspace_id']})
+                if job is None:
+                    raise ValueError('exact SignalJob is unavailable for dispatch')
+                self._assert_v3_source_binding(connection, task, conversation, job, carrier)
+                # The durable uncertainty is committed before Gateway may cross
+                # the Runtime process boundary. No second attempt can dispatch.
+                row.update(status='outcome_unknown', dispatch_attempts=1)
+                rows[row_index] = row
+                execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+                    {'budget': rows, 'task': task_id})
+                return {'dispatch': True, 'attempt': 1}
+            if (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or row is None
+                    or not _is_v2_reservation(row)):
                 return {'dispatch': False}
             if (self._continuation_blocked_reason(task, conversation, row) is not None
                     or row['status'] != 'reserved'
@@ -780,6 +1930,8 @@ class ResearchContinuationMixin:
     @staticmethod
     def _continuation_intent(task: dict, conversation: dict, receipt: dict,
             executable: dict | None = None) -> dict:
+        if _is_v3_ledger_entry(receipt):
+            raise ValueError('v3 continuation reservations are not legacy intents')
         if _is_v2_reservation(receipt):
             reservation = {
                 'schema_version': RESERVATION_SCHEMA_VERSION,
@@ -812,7 +1964,8 @@ class ResearchContinuationMixin:
     def record_continuation_receipt(self, task_id: str, *, trusted_context: dict,
             reservation_id: str, status: str, run_id: str | None = None,
             charged_tokens: int | None = None, settlement_sha256: str | None = None,
-            outcome: str | None = None, request_usage: dict | None = None) -> dict:
+            outcome: str | None = None, request_usage: dict | None = None,
+            idempotency_key: str | None = None) -> dict:
         """Trusted accounting evidence only; never infer zero usage from errors.
 
         Revocation and expiry do not discard an already reserved liability.
@@ -834,11 +1987,97 @@ class ResearchContinuationMixin:
         if status not in {'accepted', 'settled'} and charged_tokens is not None:
             raise ValueError('unconfirmed receipt cannot return budget')
         with self._transaction() as connection:
-            task, _ = self._continuation_task(connection, task_id, trusted_context, human=False)
+            task, conversation = self._continuation_task(
+                connection, task_id, trusted_context, human=False)
             rows = task.get('continuation_budget') or []
-            row = next((row for row in rows if row['reservation_id'] == reservation_id), None)
+            row_index = next((index for index, item in enumerate(rows)
+                if item.get('reservation_id') == reservation_id), None)
+            row = rows[row_index] if row_index is not None else None
             if row is None:
                 raise ValueError('original continuation reservation required')
+            if _is_v3_ledger_entry(row):
+                from .research import IdempotencyConflict
+                row = _validate_v3_ledger_entry(row)
+                carrier = row['reservation']
+                if (idempotency_key != carrier['idempotency_key']
+                        or carrier['task_id'] != task_id
+                        or carrier['owner_principal'] != task['owner_principal']
+                        or carrier['workspace_id'] != task['workspace_id']
+                        or carrier['conversation_id'] != task['conversation_id']):
+                    raise ValueError('v3 continuation receipt identity does not match its reservation')
+                if charged_tokens is not None:
+                    raise ValueError('v3 continuation receipts do not contain cumulative token charges')
+                if status in {'accepted', 'settled'}:
+                    # Receipt accounting applies to the immutable source that
+                    # was reserved. Do not reapply current auto-continue,
+                    # options revision, cancellation, or grant expiry here.
+                    self._recheck_v3_source_binding(
+                        connection, task, conversation, carrier)
+                if status == 'settled':
+                    if request_usage is None or outcome not in {'completed', 'needs_attention'}:
+                        raise ValueError('v3 terminal receipt requires request usage and outcome')
+                    usage = validate_request_usage_v2(request_usage)
+                    if (usage['execution_profile'] != carrier['execution_profile']
+                            or usage['request_limits'] != carrier['request_limits']):
+                        raise ValueError('v3 request usage does not match its source snapshot')
+                    if (not isinstance(settlement_sha256, str)
+                            or re.fullmatch(r'[0-9a-f]{64}', settlement_sha256) is None):
+                        raise ValueError('trusted unique v3 settlement required')
+                    if row['status'] == 'settled':
+                        if (row.get('request_usage'), row.get('settlement_sha256'),
+                                row.get('outcome')) != (usage, settlement_sha256, outcome):
+                            raise IdempotencyConflict('v3 continuation settlement conflicts')
+                        self._assert_v3_runtime_settlement(connection, conversation=conversation,
+                            row=row, usage=usage, outcome=outcome,
+                            settlement_sha256=settlement_sha256)
+                        return _v3_receipt_projection(row)
+                    if row['status'] not in {'accepted', 'outcome_unknown'} or row.get('run_id') is None:
+                        raise IdempotencyConflict('v3 continuation settlement lacks accepted runtime evidence')
+                    self._assert_v3_runtime_settlement(connection, conversation=conversation,
+                        row=row, usage=usage, outcome=outcome,
+                        settlement_sha256=settlement_sha256)
+                    violations = exceeded_request_limits_v2(usage)
+                    row.update(status='settled', request_usage=usage,
+                        settlement_sha256=settlement_sha256, outcome=outcome)
+                    if outcome == 'needs_attention' or violations:
+                        progress = _needs_attention_progress(task, row['event_key'])
+                        execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event, progress=:progress WHERE task_id=:task",
+                            {'event': row['event_key'], 'task': task_id, 'progress': progress})
+                elif status == 'accepted':
+                    if row['status'] in {'rejected', 'cancelled'}:
+                        raise IdempotencyConflict('terminal v3 continuation cannot be accepted')
+                    if row['status'] == 'settled':
+                        if row.get('run_id') != run_id:
+                            raise IdempotencyConflict('settled v3 continuation receipt conflicts')
+                        return _v3_receipt_projection(row)
+                    if row.get('run_id') not in {None, run_id}:
+                        raise IdempotencyConflict('v3 continuation runtime identity conflicts')
+                    if row['status'] not in {'outcome_unknown', 'accepted'}:
+                        raise IdempotencyConflict('v3 acceptance lacks the durable dispatch fence')
+                    row.update(status='accepted', run_id=run_id)
+                elif status == 'outcome_unknown':
+                    if row['status'] in {'accepted', 'settled'}:
+                        return _v3_receipt_projection(row)
+                    if row['status'] in {'rejected', 'cancelled'}:
+                        raise IdempotencyConflict('terminal v3 continuation cannot become unknown')
+                    if row['status'] == 'reserved':
+                        row.update(status='outcome_unknown', dispatch_attempts=1)
+                    elif row['status'] != 'outcome_unknown':
+                        raise IdempotencyConflict('v3 continuation outcome is not reconcilable')
+                elif status == 'rejected':
+                    if row['status'] == 'rejected':
+                        return _v3_receipt_projection(row)
+                    # Dispatch is durably fenced before crossing the Runtime
+                    # boundary. An absent run_id is not authoritative proof
+                    # that no process started, so preserve the liability.
+                    raise IdempotencyConflict(
+                        'v3 dispatch cannot be rejected without exact no-start evidence')
+                rows[row_index] = row
+                execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+                    {'budget': rows, 'task': task_id})
+                return _v3_receipt_projection(row)
+            if idempotency_key is not None:
+                raise ValueError('legacy continuation receipts cannot contain v3 idempotency keys')
             if _is_v2_reservation(row):
                 if charged_tokens is not None:
                     raise ValueError('v2 continuation receipts do not contain cumulative token charges')

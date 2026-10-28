@@ -8,6 +8,7 @@ filesystem path; ``cwd_leaf`` is resolved below the trusted workspace root.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 from collections.abc import Mapping
@@ -19,8 +20,20 @@ PRODUCT_SCOPE_KEYS = frozenset({
     "workspace_id", "owner_principal", "session_id", "trace_id",
     "root_run_id", "runtime_boot_id", "generation_id", "cwd_leaf",
 })
+PRODUCT_CLEANUP_RECEIPT_SCHEMA = "byq-acp-product-runner-cleanup.v1"
+PRODUCT_CLEANUP_RECEIPT_DIRECTORY = "cleanup-receipts"
+PRODUCT_RUNNER_REPLY_HMAC_PREFIX = b"byq-acp-runner-reply-v1\0"
+PRODUCT_CLEANUP_RECEIPT_KEYS = frozenset({
+    "schema_version", "scope_digest", *PRODUCT_SCOPE_KEYS,
+    "runner_instance_id", "code", "signal", "reason", "cleanup", "mac",
+})
+PRODUCT_CLEANUP_RECEIPT_MAX_BYTES = 4096
+_PRODUCT_RUNNER_REASONS = frozenset({
+    "process_exit", "cancelled", "deadline", "protocol_error", "transport_lost",
+})
 
 _HEX32 = re.compile(r"[0-9a-f]{32}\Z")
+_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _ROOT_CWD = re.compile(r"(?:session|root)-[0-9a-f]{32}\Z")
 _PRINCIPAL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}\Z")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
@@ -41,6 +54,7 @@ PRODUCT_ENV_REQUIRED = frozenset({
 })
 PRODUCT_ENV_OPTIONAL = frozenset({
     "BYQ_NATIVE_ROOT_SESSION_ID", "DEEPSEEK_API_KEY", "OPENCODE_API_KEY",
+    "DEEPSEEK_SEARCH_API_KEY",
     # Non-secret reservation carrier for a background continuation root. It is
     # the trusted task-bound identity the MCP server uses to advertise only the
     # tools that exact reservation may call; never a caller-selected value.
@@ -136,6 +150,8 @@ def validate_product_environment(
         raise ProductSlotContractError("Product ACP signing credential is invalid")
     secrets = [env["BYQ_MCP_ACP_DISCOVERY_TOKEN"], env["BYQ_MCP_ACP_SIGNING_KEY"]]
     secrets.extend(env[key] for key in provider_keys)
+    if "DEEPSEEK_SEARCH_API_KEY" in env:
+        secrets.append(env["DEEPSEEK_SEARCH_API_KEY"])
     if len(set(secrets)) != len(secrets):
         raise ProductSlotContractError("Product ACP credentials must be distinct")
 
@@ -166,3 +182,84 @@ def product_scope_digest(scope: Mapping[str, Any]) -> str:
     """Return SHA-256 over the canonical, fully validated Product root scope."""
     validated = validate_product_scope(scope)
     return hashlib.sha256(canonical_product_json(validated)).hexdigest()
+
+
+def _strict_product_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ProductSlotContractError("Product ACP JSON has duplicate fields")
+        value[key] = item
+    return value
+
+
+def _reject_product_json_constant(_value: str) -> None:
+    raise ProductSlotContractError("Product ACP JSON has an invalid number")
+
+
+def verify_product_cleanup_receipt(
+    raw: object, *, control_key: bytes,
+    expected_scope: Mapping[str, str],
+) -> dict[str, object]:
+    """Verify the exact signed Product Runner cleanup receipt for one scope.
+
+    ``raw`` must be the bounded receipt bytes read by a caller that has already
+    verified the source is a regular file without following symlinks. This
+    framework-neutral function performs no I/O and returns the exact, closed
+    receipt mapping only when its scope and runner MAC validate.
+    """
+
+    if (not isinstance(raw, bytes) or not raw
+            or len(raw) > PRODUCT_CLEANUP_RECEIPT_MAX_BYTES):
+        raise ProductSlotContractError("Product cleanup receipt bytes are invalid")
+    if not isinstance(control_key, bytes) or not 32 <= len(control_key) <= 512:
+        raise ProductSlotContractError("Product cleanup control key is invalid")
+    try:
+        scope = validate_product_scope(expected_scope)
+        value = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_strict_product_object,
+            parse_constant=_reject_product_json_constant,
+        )
+    except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+        raise ProductSlotContractError("Product cleanup receipt is invalid") from exc
+    if not isinstance(value, dict) or set(value) != PRODUCT_CLEANUP_RECEIPT_KEYS:
+        raise ProductSlotContractError("Product cleanup receipt fields are invalid")
+    if raw != canonical_product_json(value):
+        raise ProductSlotContractError("Product cleanup receipt encoding is not canonical")
+    if value.get("schema_version") != PRODUCT_CLEANUP_RECEIPT_SCHEMA:
+        raise ProductSlotContractError("Product cleanup receipt schema is invalid")
+
+    receipt_scope = {key: value[key] for key in PRODUCT_SCOPE_KEYS}
+    try:
+        checked_receipt_scope = validate_product_scope(receipt_scope)
+        digest = product_scope_digest(checked_receipt_scope)
+    except (TypeError, ValueError) as exc:
+        raise ProductSlotContractError("Product cleanup scope is invalid") from exc
+    if checked_receipt_scope != scope or value.get("scope_digest") != digest:
+        raise ProductSlotContractError("Product cleanup scope does not match")
+
+    instance_id = value.get("runner_instance_id")
+    code = value.get("code")
+    child_signal = value.get("signal")
+    reason = value.get("reason")
+    cleanup = value.get("cleanup")
+    mac = value.get("mac")
+    if (not isinstance(instance_id, str) or _HEX64.fullmatch(instance_id) is None
+            or (code is not None and (type(code) is not int or code < 0))
+            or (child_signal is not None
+                and (type(child_signal) is not int or child_signal <= 0))
+            or (code is None) == (child_signal is None)
+            or not isinstance(reason, str) or reason not in _PRODUCT_RUNNER_REASONS
+            or cleanup != "proven"
+            or not isinstance(mac, str) or _HEX64.fullmatch(mac) is None):
+        raise ProductSlotContractError("Product cleanup receipt proof fields are invalid")
+
+    unsigned = {key: item for key, item in value.items() if key != "mac"}
+    expected_mac = hmac.new(
+        control_key,
+        PRODUCT_RUNNER_REPLY_HMAC_PREFIX + canonical_product_json(unsigned),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected_mac, mac):
+        raise ProductSlotContractError("Product cleanup receipt authentication failed")
+    return dict(value)

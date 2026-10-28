@@ -1,0 +1,34 @@
+{
+  "source_commit": "ee6bc94e29b67b44faeeb6e14827843d74e4213f",
+  "result": "PASS_LIMITED_OFFLINE_INVENTORY_ENTRY",
+  "Tester": "/root/two_user_offline_tester",
+  "independent_Sol": "/root/manual_result_reviewer",
+  "Root": "PASS_LIMITED_OFFLINE_INVENTORY_ENTRY",
+  "methods_passed": 4,
+  "exit_code": 0,
+  "elapsed_ms": 66,
+  "command": [
+    "python3",
+    "-B",
+    ".ci-artifacts/latest-root-closure-20261013/source/test_inventory_reader.py",
+    "-v"
+  ],
+  "source_sha256": {
+    "inventory_reader.py": "4e0c9e459ab26454ecb445b051de2c4fd5356f83c297123b6f05d3b93049a1d6",
+    "test_inventory_reader.py": "67eaa0309d4a96dbb318f3090f8df8a3758727496f5e5dc1c30e4ad5006b2a19"
+  },
+  "contract": [
+    "Seven required safe fields; full inventory never references optional Health or Env.",
+    "Persist argv/raw stdout/stderr/result before every success gate; timeout/nonzero/stderr stops before parsing.",
+    "Unique valid IDs; exact seven-column rows; no skipped rows; ps/inspect ID sets must match.",
+    "Partial rc1 output remains diagnostic, never successful inventory."
+  ],
+  "v3_entry_plan_sha256": "ad6f7e783914454452b5b65ccde70792e100fdcca44626eac2f703f5b66e7cc4",
+  "model_calls": 0,
+  "jobs": 0,
+  "docker_calls": 0,
+  "production_mutations": 0,
+  "preserved_failure": "ROOT-LATEST-ROOT-READ-PREFLIGHT-FAIL-STOP.json",
+  "live_read": "NOT_RUN_PENDING_EXECUTION",
+  "limits": "Synthetic subprocess results only; not real Docker rendering, Product acceptance, actual ACK or global lease-free."
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-affected-offline-v2",
+  "status": "FAIL_STOP",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "source_sha256": {
+    "capture": "7e64733917f670b1dc4a62a0ad8c9feeb823bf646db91ba460e6b1de6d281071",
+    "capture_test": "7aaff5355f8289fb28bc898e48e3efa9fa13a9f89983e85a2529e2e7cf024a10",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "returncode": 1,
+  "elapsed_ms": 316,
+  "timed_out": false,
+  "method_results": {
+    "PASS": 17,
+    "FAIL": 1,
+    "NOT_RUN": 0
+  },
+  "matrix_subcases": {
+    "planned": 24,
+    "PASS": 1,
+    "FAIL": 1,
+    "NOT_RUN": 22,
+    "failed": "reader_uid_wrong"
+  },
+  "failure": "Specific shared-reader Stop is reduced to internal_Stop at the outer collector boundary. Root requests independent review of all shared-helper Stop paths before repair.",
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/foreground-full-entry-offline-v2",
+  "stderr_bytes": 5781,
+  "stderr_sha256": "45758a68a3a4c21aa8cbc1cfd0cdbfa440861c35a02e8ec334f2def331df4d8d",
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture"
+  ],
+  "limits": {
+    "total_seconds": 60,
+    "real_models": 0,
+    "real_docker": 0,
+    "real_http": 0,
+    "real_db": 0,
+    "new_jobs": 0
+  },
+  "root_decision": "Batch stopped; no rerun or live escalation. Preserve partial positives and original V1 failure. Audit the complete exception boundary before a new independently reviewed admission.",
+  "live": "NOT_RUN_NOT_ADMITTED"
+}

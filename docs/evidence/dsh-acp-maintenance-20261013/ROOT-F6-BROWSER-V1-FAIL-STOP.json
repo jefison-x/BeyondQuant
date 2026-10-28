@@ -1,0 +1,43 @@
+{
+  "schema": "byq-maintenance-root-gate.v1",
+  "status": "FAIL_F6_FUNCTIONAL_STOPPED",
+  "source_commit_at_batch": "408cf5f38d5c0cb021ea088c6b3a5e6d2eac3ea8",
+  "frontend_app_source": "8eb3ad3841a6c5430512e3f51ec65a9d6015e94d",
+  "scope": "First real browser foreground task/draft/version request of the planned background continuation batch",
+  "limits": {"planned_roots": 3, "provider_attempt_ceiling": 48, "jobs_ceiling": 1, "overall_seconds": 540},
+  "actual": {
+    "user_inputs": 1,
+    "provider_admitted": 9,
+    "provider_completed": 9,
+    "provider_completed_status_each": 200,
+    "predispatch_rejected_candidates": 1,
+    "rejection_reason": "total_tool_payload_limit",
+    "admitted_tool_payload_bytes": 959204,
+    "next_candidate_tool_payload_bytes": 118477,
+    "cumulative_limit_bytes": 1048576,
+    "candidate_combined_bytes": 1077681,
+    "backend_conversation": "active",
+    "root_status_authority": "failed/closed",
+    "terminal_unknown_claim_count": 0,
+    "research_task": "one planned task persisted with exact original idempotency key, CID and trace",
+    "artifacts": "one validated strategy_draft and one validated strategy_version persisted with exact original task/keys/trace",
+    "signal_jobs_total_at_read_sample": 0,
+    "fg1_final_answer": "missing",
+    "fg2": "NOT_RUN",
+    "worker": "NOT_RUN",
+    "background": "NOT_RUN"
+  },
+  "observer_failure": "Playwright button selector did not match a native-AX button that is actually details/summary; original failure preserved and disappearance attribution corrected in separate receipt",
+  "additional_ui_findings": "Successful new session stayed on ?new URL; receipt refresh returned 200 with no visible completion feedback. Separately repaired and reviewed; not counted as F6 PASS.",
+  "independent_sol": {
+    "f6_functional": "FAIL scoped first foreground flow; later phases NOT_RUN",
+    "budget_guard": "PASS: accepted policy blocked before dispatch; not attempt-count, concurrency or provider-quota attribution",
+    "business_reconciliation": "PASS scoped persisted identities; no automatic replay",
+    "clean_break_architecture": "PASS scoped boundaries"
+  },
+  "root": "FAIL_STOP functional gate; preserve known partial business outcome",
+  "policy": "ADR-0105/0106 explicitly count tool catalog and historical tool payload at each request. No deduplication, cap increase, provider switch, privilege change or old-root retry performed.",
+  "private_evidence": ".ci-artifacts/background-continuation-20261014/browser-live-v1/",
+  "production": "NOT_RUN",
+  "overall": "NOT_READY"
+}

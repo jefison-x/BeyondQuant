@@ -191,7 +191,11 @@ def test_terminal_close_requires_exact_adapter_evidence_then_acknowledges(monkey
             "boot_id": BOOT_ID, "root_run_id": value["root_run_id"], "sequence": 4,
             "outcome": "completed", "receipt": receipt}
 
-    def backend(method, path, payload=None):
+    def backend(method, path, payload=None, *, scope=None):
+        if method == "GET":
+            assert path == "/internal/runtime-authority/sessions/session-one/roots"
+            assert scope is session
+            return {"schema_version": "byq-business-root-status.v1", "roots": []}
         calls.append(("close", method, path, payload))
         assert payload == {"schema_version": "byq-runtime-root-close.v1", "boot_id": BOOT_ID,
             "sequence": 4, "outcome": "completed", "event_sha256": receipt["event_sha256"]}
@@ -227,7 +231,9 @@ def test_terminal_close_rejects_mismatched_adapter_evidence_without_backend_writ
         "boot_id": BOOT_ID, "root_run_id": value["root_run_id"], "sequence": 5,
         "outcome": "completed", "receipt": lifecycle_receipt(value),
     })
-    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_a, **_k: calls.append("close"))
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda method, *_a, **_k:
+        {"schema_version": "byq-business-root-status.v1", "roots": []} if method == "GET"
+        else calls.append("close"))
     monkeypatch.setattr(main, "_adapter_post", lambda *_a, **_k: calls.append("ack"))
 
     with pytest.raises(ValueError, match="terminal evidence"):

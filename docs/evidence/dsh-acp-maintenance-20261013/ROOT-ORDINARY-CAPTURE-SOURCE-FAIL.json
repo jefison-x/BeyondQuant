@@ -1,0 +1,24 @@
+{
+  "base_commit": "9cfd33cc6a5e5c57474e6ba622ddf77369f1a0af",
+  "capture_source_sha256": "fb0cefab3087120e2b36b2c4713c094b39969b8a2a077469ad2d6f7a5fc9d614",
+  "observer_source_sha256": "fe4fb3915ab2bf396e2d8a44155423065ecfe343c15f87bf2238a3d2619c09be",
+  "independent_sol_source_review": "FAIL",
+  "Root": "FAIL_REAL_CAPTURE_ADMISSION",
+  "defects": [
+    "Duplicate exclusive raw-file write causes deterministic preflight failure",
+    "Independent action timeouts do not enforce the entire browser batch deadline",
+    "Partial output, reentry and first failure preservation are inconsistent",
+    "Conversation Workspace and new-conversation scope require exact binding",
+    "Selecting only expected root IDs hides additional roots in the same session",
+    "Job inventory regex does not cover the promised exact Artifact and Job inventory",
+    "Final resource identity must be checked after the observer",
+    "Timeout partial output and filtered ACK failure evidence require preservation",
+    "Persisted conversation must be fetched after answer delivery is confirmed"
+  ],
+  "normal_login_boundary": "Authorized durable login creates auth_sessions records; no claim of zero database writes",
+  "response": "Stop test execution, fix the complete entry contract, then validate the full entry with transport substitutes and independent review",
+  "offline_entry_tests": "NOT_RUN; deterministic source blockers discovered first",
+  "new_candidate_browser_prompts": 0,
+  "real_candidate_ack": "NOT_RUN",
+  "production_actions_performed": 0
+}

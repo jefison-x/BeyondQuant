@@ -1,0 +1,137 @@
+{
+  "binding_closed": false,
+  "business_evidence_boundary": "11-table counts equal only; no unchanged table-content assertion",
+  "cleanup_exit_fields": {
+    "code": 0,
+    "reason": "cancelled",
+    "signal": null
+  },
+  "cleanup_reason_boundary": "Receipt reason cancelled is process cleanup reason, not proof of user cancel; Backend root completed retained separately",
+  "commands": [
+    {
+      "elapsed_ms": 94,
+      "label": "adapter-binding-a4bfb1af80964dc6a05ac725d162b9bf",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 2084,
+      "stdout_sha256": "e3eca06650b113f191b754f93f9aae6b64aba5c914061a7bbb06cd4bcfac5e18",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 19,
+      "label": "containers-after",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 820,
+      "stdout_sha256": "8a177a63f9705696c5fc98ca96a25c062933e1bcb910f8b400a219d640967d78",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 19,
+      "label": "containers-before",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 820,
+      "stdout_sha256": "8a177a63f9705696c5fc98ca96a25c062933e1bcb910f8b400a219d640967d78",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 19,
+      "label": "gateway-log-type",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 10,
+      "stdout_sha256": "395e76cce819dc796654a6e3452873c2ceb236c5943d4ef30e9c6d8e16b6b40a",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 77,
+      "label": "gateway-terminal-ack-log",
+      "returncode": 0,
+      "stderr_bytes": 480,
+      "stderr_sha256": "26bf699b54d0a9dc5c504a89c7871fec8fc37427a834e10142c0e55d3fefa786",
+      "stdout_bytes": 41975,
+      "stdout_sha256": "560798b6d4822e6e315adb0a1026decd90ec6a26259457b111948c18f0fc791e",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 85,
+      "label": "job-inventory-after-new-session",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 270,
+      "stdout_sha256": "1ae8ed7c7d1bc123d325b6b9b3516913eff9097e6ec525b9bd72a5a8d3e57a95",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 52,
+      "label": "new-conversation-state",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1178,
+      "stdout_sha256": "b0d78fc6bc624ccc93766da1f08ba0cb47237768ced5c4345af1983b67256a92",
+      "timeout_seconds": 20
+    },
+    {
+      "elapsed_ms": 93,
+      "label": "new-signed-cleanup",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1046,
+      "stdout_sha256": "e30f4c9ef3dcd4eaaf15e1066db37522f097153510df13b20f84ffcf830fa0d7",
+      "timeout_seconds": 20
+    }
+  ],
+  "container_identity_unchanged": true,
+  "continuation_boundary": "New conversation, not resumed old conversation or original subagent; binding.closed=false retained; native close confirmation scoped to this binding",
+  "conversation_id": "conversation_76cf0ccd09814d6292760ad0a67e5f51",
+  "docker_operations": 8,
+  "elapsed_ms": 476,
+  "exact_ack": true,
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "independent_review": "Sol RAW PASS; Root PASS",
+  "job_counts_unchanged": true,
+  "native_session_close_confirmed": true,
+  "new_jobs_in_supplement": 0,
+  "new_models_in_supplement": 0,
+  "new_root_run_id": "a4bfb1af80964dc6a05ac725d162b9bf",
+  "original_ui_batch": "TIME_LIMIT_EXCEEDED remains",
+  "pins": {
+    "exact-ack.json": "06ab1b40bfbd260b82ad515082d42835f9b1e6da8f0ad80f84be754dab2fb3f3",
+    "provider-aggregate.json": "a109414c4f8c47efa059a423eb1b8c2911eac2586a6009cbbea3fa22fb8876d1",
+    "result.json": "e2478a265d69be4f3ce8cde28bf40048e102c2a02b86920b45f11f97c3202c22",
+    "signed-cleanup-proof.json": "e30f4c9ef3dcd4eaaf15e1066db37522f097153510df13b20f84ffcf830fa0d7",
+    "state.sql": "67267e1dd843e771602a51efc1192e6390e41e1e14e7b17e39a59939cf220f74"
+  },
+  "process_exit_confirmed": true,
+  "provider": {
+    "actual_cache_read_tokens": 24576,
+    "actual_input_tokens": 27172,
+    "actual_output_tokens": 126,
+    "attribution": "root_aggregate_only_child_unknown",
+    "declared_output_tokens": 8192,
+    "input_bytes": 90782,
+    "max_concurrent": 1,
+    "observed_elapsed_ms": 5900,
+    "provider_attempts": 1,
+    "provider_calls": 1,
+    "root_run_id": "a4bfb1af80964dc6a05ac725d162b9bf",
+    "schema_version": "byq-provider-aggregate.v1",
+    "tool_payload_bytes": 85489
+  },
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/post-hard-new-session-read-v1",
+  "root_authority": "closed",
+  "root_decision": "PASS_READ_SCOPE_ONLY",
+  "root_status": "completed",
+  "schema": "byq-root-hard-new-conversation-read.v1",
+  "signed_process_group_cleanup": true,
+  "status": "PASS_INDEPENDENT_READ_SCOPE_ONLY",
+  "unknown_business_claim_count": 0
+}

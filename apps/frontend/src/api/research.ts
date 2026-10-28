@@ -19,7 +19,7 @@ export function getResearchReceipts(conversationId: string): Promise<{
 }
 
 export class ResearchRequestError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
 
 async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -32,8 +32,12 @@ async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new ResearchRequestError(body.error?.message ?? "research request failed", response.status);
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: { code?: unknown; message?: unknown };
+    };
+    const code = typeof body.error?.code === "string" ? body.error.code : undefined;
+    const message = typeof body.error?.message === "string" ? body.error.message : "research request failed";
+    throw new ResearchRequestError(message, response.status, code);
   }
   return (await response.json()) as T;
 }
@@ -161,15 +165,6 @@ export function getContinuationPermission(taskId: string): Promise<ContinuationP
   return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission`);
 }
 
-export function confirmContinuationPermission(taskId: string, payload: {
-  idempotency_key: string; confirmed_artifact_ids: string[];
-  execution_profile_id: 'task-ready-read.v1';
-}): Promise<ContinuationPermissionView> {
-  return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission`, {
-    method: 'POST', headers: { 'x-byq-continuation-confirmation': 'v1' }, body: JSON.stringify(payload),
-  });
-}
-
 export function revokeContinuationPermission(taskId: string, grantVersion: number): Promise<ContinuationPermissionView> {
   return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission/revoke`, {
     method: 'POST', headers: { 'x-byq-continuation-confirmation': 'v1' },
@@ -214,6 +209,134 @@ export function listApprovals(options: { status?: string; limit?: number; offset
   params.set("limit", String(options.limit ?? 50));
   params.set("offset", String(options.offset ?? 0));
   return getJson(`/approvals?${params.toString()}`);
+}
+
+export type ProductApprovalRequestType = "continuation_consent" | "strategy_version" | "ml_strategy_version";
+export type ProductApprovalRequestStatus = "pending" | "decision_recorded" | "approved" | "rejected" | "outcome_unknown" | "needs_attention";
+
+export interface ProductApprovalRequestBase {
+  request_id: string;
+  request_type: ProductApprovalRequestType;
+  status: ProductApprovalRequestStatus;
+  owner_principal: string;
+  workspace_id: string;
+  task_id: string;
+  resource_artifact_id: string | null;
+  content_sha256: string;
+  request_key: string;
+  created_at: string;
+  updated_at: string;
+  decision?: "approved" | "rejected";
+  decision_key?: string;
+  decision_by?: string;
+  decision_at?: string;
+  rationale?: string;
+  domain_artifact_id?: string | null;
+  permission?: Record<string, unknown> | null;
+  materialization_error_code?: string | null;
+  observed_state?: "confirmed" | "missing" | "draft" | "mismatch" | "unavailable";
+}
+
+export interface ContinuationConsentProductApprovalRequest extends ProductApprovalRequestBase {
+  request_type: "continuation_consent";
+  conversation_id: string;
+  confirmed_artifacts: Array<{ artifact_id: string; content_sha256: string; kind: "strategy_version" | "ml_strategy_version" }>;
+  execution_profile_id: "task-ready-read.v1";
+  request_limits: ContinuationRequestLimits;
+}
+
+export interface StrategyVersionProductApprovalRequest extends ProductApprovalRequestBase {
+  request_type: "strategy_version";
+  strategy_version_artifact_id: string;
+}
+
+export interface MLStrategyVersionProductApprovalRequest extends ProductApprovalRequestBase {
+  request_type: "ml_strategy_version";
+  ml_strategy_artifact_id: string;
+}
+
+export type ProductApprovalRequest = ContinuationConsentProductApprovalRequest
+  | StrategyVersionProductApprovalRequest
+  | MLStrategyVersionProductApprovalRequest;
+
+export type ProductApprovalRequestPayload =
+  | { schema_version: "byq-product-approval-request.v1"; request_type: "continuation_consent";
+      request_key: string; task_id: string; confirmed_artifact_ids: string[];
+      execution_profile_id: "task-ready-read.v1" }
+  | { schema_version: "byq-product-approval-request.v1"; request_type: "strategy_version";
+      request_key: string; task_id: string; strategy_version_artifact_id: string }
+  | { schema_version: "byq-product-approval-request.v1"; request_type: "ml_strategy_version";
+      request_key: string; task_id: string; ml_strategy_artifact_id: string };
+
+export type NewProductApprovalRequest =
+  | { schema_version: "byq-product-approval-request.v1"; request_type: "continuation_consent";
+      task_id: string; confirmed_artifact_ids: string[]; execution_profile_id: "task-ready-read.v1" }
+  | { schema_version: "byq-product-approval-request.v1"; request_type: "strategy_version";
+      task_id: string; strategy_version_artifact_id: string }
+  | { schema_version: "byq-product-approval-request.v1"; request_type: "ml_strategy_version";
+      task_id: string; ml_strategy_artifact_id: string };
+
+export interface ProductApprovalRequestEnvelope {
+  schema_version: "byq-product-approval-request.v1";
+  request: ProductApprovalRequest;
+}
+
+export interface ProductApprovalRequestList {
+  schema_version: "byq-product-approval-request-list.v1";
+  requests: ProductApprovalRequest[];
+  total: number;
+  pending_count: number;
+  attention_count: number;
+  limit: number;
+  offset: number;
+}
+
+export function listProductApprovalRequests(options: {
+  status?: "pending" | "unresolved" | "approved" | "rejected" | "all";
+  limit?: number;
+  offset?: number;
+} = {}): Promise<ProductApprovalRequestList> {
+  const params = new URLSearchParams();
+  if (options.status) params.set("status", options.status);
+  params.set("limit", String(options.limit ?? 50));
+  params.set("offset", String(options.offset ?? 0));
+  return getJson(`/research/approval-requests?${params.toString()}`);
+}
+
+export function createProductApprovalRequest(payload: ProductApprovalRequestPayload): Promise<ProductApprovalRequestEnvelope> {
+  return getJson("/research/approval-requests", {
+    method: "POST",
+    headers: { "x-byq-product-approval-confirmation": "v1" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getProductApprovalRequest(requestId: string): Promise<ProductApprovalRequestEnvelope> {
+  return getJson(`/research/approval-requests/${encodeURIComponent(requestId)}`);
+}
+
+export function getProductApprovalRequestByKey(requestKey: string): Promise<ProductApprovalRequestEnvelope> {
+  return getJson(`/research/approval-requests/by-key/${encodeURIComponent(requestKey)}`);
+}
+
+export function reconcileProductApprovalRequest(requestId: string): Promise<ProductApprovalRequestEnvelope> {
+  return getJson(`/research/approval-requests/${encodeURIComponent(requestId)}/reconcile`, {
+    method: "POST",
+    headers: { "x-byq-product-approval-confirmation": "v1" },
+  });
+}
+
+export function decideProductApprovalRequest(requestId: string, payload: {
+  schema_version: "byq-product-approval-decision.v1";
+  decision_key: string;
+  decision: "approved" | "rejected";
+  rationale: string;
+}): Promise<ProductApprovalRequestEnvelope> {
+  return getJson(`/research/approval-requests/${encodeURIComponent(requestId)}/decision`, {
+    method: "POST",
+    headers: { "x-byq-product-approval-confirmation": "v1" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export function decideApproval(

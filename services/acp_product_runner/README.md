@@ -14,6 +14,35 @@ requirement. It owns no Backend authority or business decisions. The Adapter
 remains responsible for user authorization, idempotency, unknown outcomes, and
 the exact terminal ACK before it submits the next root.
 
+The runner exclusively locks its private state volume for its lifetime and
+persists signed runner-instance and per-START scope records before launching a
+DSH process. These local records retain which instance accepted a scope; they
+do not prove that any earlier container or PID namespace stopped. The records
+explicitly retain `operator_qualified: false` and empty deployment/Backend
+binding references. The separate immutable Engineering prebind chain described
+below supplies qualification without rewriting those original records.
+Existing legacy `.used` tombstones are never upgraded into
+scope-ownership records. The lifetime lock is local exclusion only: it does
+not detect state-volume clones or rollback and must not release a Backend
+fence.
+
+For the trusted Adapter, startup atomically publishes `instance.json` in the
+private control directory before creating/listening on the control socket. The
+descriptor is a byte-identical copy of the signed instance record retained in
+the state volume, with mode `0640` and the control GID; the original state
+record is not rewritten or widened. Startup first removes its stale ready
+sentinel, so a prior workspace-only `ready` file cannot establish the current
+instance. Normal close removes only this process's descriptor inode and leaves
+the retained state record intact.
+
+Before the first scope tombstone/ownership write, START durably creates a
+Product-MACed per-instance `started` marker under the admission lock. Later
+normal roots validate and reuse that same marker. Its meaning is only that the
+instance may have accepted execution; it is not evidence of process death,
+cleanup, or absence of business effects. Engineering prebind must
+refuse any instance with this marker. The retained marker is
+`instances/<runner_instance_id>.started.json` in the private state volume.
+
 ## Fixed identity and storage
 
 At startup the container requires:
@@ -21,6 +50,89 @@ At startup the container requires:
 - `BYQ_ACP_PRODUCT_WORKSPACE_ID`: the one workspace configured for this slot.
 - `BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET`: independent URL-safe base64 secret,
   at least 32 decoded bytes.
+- Optional `BYQ_ACP_PRODUCT_REQUIRE_PREBIND=1` opts a newly born runner into
+  prebind-required mode. The runner writes a separate signed birth-mode record;
+  it does not rewrite or qualify the original immutable instance record.
+  Unset/`0` keeps the existing baseline. A previously started or legacy runner
+  cannot be upgraded by a later environment change.
+- Optional `BYQ_ACP_PRODUCT_REQUIRE_SUCCESSOR_TOMBSTONE=1` requires
+  `BYQ_ACP_PRODUCT_REQUIRE_PREBIND=1`. PID 1 writes its new signed instance,
+  birth record, and current control descriptor, then waits before creating the
+  control socket or ready marker. The wait holds the state-volume lifetime
+  lock but never the admission lock; Engineering can still use container exec
+  to install the exact tombstone for this successor instance. A new instance
+  cannot reuse a prior instance's candidate.
+
+For an opted-in instance, Engineering may invoke the private container-exec
+entry point `python3 /opt/byq/acp_product_runner/install_prebind.py install
+<prepared-receipt-path>` with a root-owned mode-0600 prepared receipt. It
+serializes with START admission, verifies the current signed instance and
+birth-mode records, refuses any instance with a started marker, then writes an
+immutable signed `installed_nonactive` readback. That record explicitly does
+not authorize START. After Backend has issued the exact active receipt,
+Engineering may invoke `python3
+/opt/byq/acp_product_runner/install_prebind.py activate
+<backend-active-receipt-path>` with that root-owned mode-0600 receipt. Under
+the same admission lock this verifies the current instance, birth-mode,
+nonactive install and Backend receipt, refuses any instance with a started
+marker, then installs an immutable Product-MACed activation record. Exact
+retries revalidate and fsync the same record; changed receipts or existing
+different activation records are refused.
+
+For a qualified successor, after installing and activating its own prebind,
+Engineering can invoke `python3
+/opt/byq/acp_product_runner/install_prebind.py successor
+<successor-candidate-path>`. The root-owned mode-0600 candidate has the closed
+`byq-acp-product-runner-successor-candidate.v1` shape: `operation_id`, the
+exact old `runner_instance_id` and full eight-field scope, the old active
+`old_prestart_binding`, the opaque digest
+`engineering_native_fence_evidence_sha256`, and exact successor instance ID,
+boot ID, state generation, signed-instance digest, and active-receipt digest.
+The installer verifies the old signed instance/birth/install/activation chain,
+started marker, full signed scope-ownership record, exact consumed `.used`
+marker, and old preSTART binding. It verifies the successor descriptor,
+birth/install/activation chain and candidate identity under the admission lock.
+The successor preSTART binding is derived from its own active instance and
+contains no fabricated new root.
+
+The installer writes one immutable signed
+`instances/<successor_instance_id>.successor-tombstone.json` record. Its
+canonical signed bytes are hashed exactly as stored for the later Backend
+join. Exact retries accept only identical bytes and complete file and parent
+directory fsync. PID 1 independently reads and validates that record and both
+local anchor chains, confirms its own descriptor and lifetime lock, and fsyncs
+the exact tombstone inode and parent before opening the socket or publishing
+ready. The tombstone records the Engineering evidence digest as a reference;
+the runner does not verify Docker state or claim that the old container or PID
+namespace stopped. The final Backend process-fence proof and ACK are produced
+later and are not inputs to this installer, avoiding a circular dependency.
+The Product MAC protects record integrity only; the private Engineering
+container-exec and candidate handling remain the authority boundary. This
+operation does not restore an old child, release a Backend fence, or let a
+consumed old scope run again.
+
+The private installer treats a path as absent only when `lstat` reports
+`ENOENT`. Permission, I/O, symlink-loop, and other lookup errors stop the
+operation; uncertainty about a started marker or immutable record never grants
+absence.
+
+An opted-in START is admitted only when its signed `operator_binding` matches
+the current local activation and Backend receipt while the admission lock is
+held. The runner rechecks the exact activation inode and fsyncs it and its
+private parent before writing the durable started marker, legacy scope
+tombstone, scope ownership record, or dispatching a child. A missing or
+mismatched activation is a signed prelaunch rejection; the scope remains
+unconsumed. Reused state-generation identity is likewise re-read through a
+no-follow descriptor and fsynced with the private state directory before the
+runner publishes a new ready state.
+Legacy runners retain their existing path and reject an unexpected binding.
+The original signed scope ownership record continues to bind the full scope
+to this exact runner instance; its existing `operator_qualified: false` fields
+are not rewritten. The separate immutable instance activation and Backend
+active receipt provide the qualification references for later Runtime
+preSTART binding. Neither an active receipt nor local activation proves old
+process death, terminal cleanup, or absence of business effects. No Product
+API, MCP, or adapter operation can run either installer command.
 
 The daemon derives its session root as
 `/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/<workspace_id>`. The session

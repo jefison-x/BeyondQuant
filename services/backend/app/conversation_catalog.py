@@ -6,10 +6,16 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+from psycopg.types.json import Jsonb
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import PgStoreMixin
+from packages.contracts.agent_execution_options import (
+    SCHEMA_VERSION as EXECUTION_OPTIONS_SCHEMA_VERSION,
+    default_agent_execution_options,
+    validate_execution_options_update,
+)
 
 
 _PRINCIPAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
@@ -112,6 +118,20 @@ class ConversationCatalogStore(PgStoreMixin):
         """
         CREATE INDEX IF NOT EXISTS product_conversation_messages_replay
             ON product_conversation_messages(owner_principal, conversation_id, sequence)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS product_conversation_execution_options (
+            conversation_id TEXT PRIMARY KEY REFERENCES product_conversations(conversation_id) ON DELETE CASCADE,
+            owner_principal TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            revision BIGINT NOT NULL CHECK (revision > 0),
+            options_json JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS product_conversation_execution_options_scope
+            ON product_conversation_execution_options(owner_principal, workspace_id, conversation_id)
         """,
     ]
 
@@ -226,6 +246,123 @@ class ConversationCatalogStore(PgStoreMixin):
             raise ConversationNotFound("conversation not found")
         return self._public(row)
 
+    def get_execution_options(
+        self, owner: object, workspace_id: object, conversation_id: object,
+    ) -> dict[str, object]:
+        """Read the current exact conversation options without writing defaults."""
+        owner = _owner(owner)
+        workspace_id = _identifier(workspace_id, "workspace_id")
+        conversation_id = _identifier(conversation_id, "conversation_id")
+        row = self._fetch_one(
+            """SELECT c.conversation_id, c.owner_principal, c.workspace_id,
+                      o.revision, o.options_json, o.updated_at
+               FROM product_conversations c
+               JOIN users u ON u.username=c.owner_principal
+               JOIN workspaces w ON w.workspace_id=c.workspace_id
+               JOIN workspace_memberships m ON m.workspace_id=w.workspace_id
+                 AND m.user_id=u.user_id
+               LEFT JOIN product_conversation_execution_options o
+                 ON o.conversation_id=c.conversation_id
+                AND o.owner_principal=c.owner_principal AND o.workspace_id=c.workspace_id
+               WHERE c.conversation_id=:conversation AND c.owner_principal=:owner
+                 AND c.workspace_id=:workspace AND u.status='active'
+                 AND w.status='active' AND m.status='active' AND m.role='owner'""",
+            {"conversation": conversation_id, "owner": owner, "workspace": workspace_id},
+        )
+        if row is None:
+            raise ConversationNotFound("conversation not found")
+        return self._execution_options_projection(row)
+
+    def update_execution_options(
+        self, owner: object, workspace_id: object, conversation_id: object, payload: object,
+    ) -> dict[str, object]:
+        """Atomically replace exact-scope options only at the expected revision."""
+        owner = _owner(owner)
+        workspace_id = _identifier(workspace_id, "workspace_id")
+        conversation_id = _identifier(conversation_id, "conversation_id")
+        expected_revision, options = validate_execution_options_update(payload)
+        now = _now()
+        try:
+            with self._transaction() as connection:
+                # Lock the conversation itself so concurrent initial inserts and CAS
+                # updates serialize even when no options row exists yet.
+                conversation = connection.execute(text("""SELECT c.conversation_id,
+                        c.owner_principal, c.workspace_id, c.status
+                    FROM product_conversations c
+                    JOIN users u ON u.username=c.owner_principal
+                    JOIN workspaces w ON w.workspace_id=c.workspace_id
+                    JOIN workspace_memberships m ON m.workspace_id=w.workspace_id
+                        AND m.user_id=u.user_id
+                    WHERE c.conversation_id=:conversation AND c.owner_principal=:owner
+                      AND c.workspace_id=:workspace AND u.status='active'
+                      AND w.status='active' AND m.status='active' AND m.role='owner'
+                    FOR UPDATE OF c, w, m, u"""),
+                    {"conversation": conversation_id, "owner": owner,
+                     "workspace": workspace_id}).mappings().first()
+                if conversation is None:
+                    raise ConversationNotFound("conversation not found")
+                if conversation["status"] != "active":
+                    raise ConversationConflict("archived conversation options are read-only")
+                current = connection.execute(text("""SELECT revision FROM
+                    product_conversation_execution_options
+                    WHERE conversation_id=:conversation AND owner_principal=:owner
+                      AND workspace_id=:workspace FOR UPDATE"""),
+                    {"conversation": conversation_id, "owner": owner,
+                     "workspace": workspace_id}).mappings().first()
+                revision = 0 if current is None else int(current["revision"])
+                if revision != expected_revision:
+                    raise ConversationConflict("execution options revision is stale")
+                new_revision = revision + 1
+                if current is None:
+                    connection.execute(text("""INSERT INTO product_conversation_execution_options
+                        (conversation_id, owner_principal, workspace_id, revision, options_json, updated_at)
+                        VALUES (:conversation, :owner, :workspace, :revision, :options, :now)"""),
+                        {"conversation": conversation_id, "owner": owner, "workspace": workspace_id,
+                         "revision": new_revision, "options": Jsonb(options), "now": now})
+                else:
+                    updated = connection.execute(text("""UPDATE product_conversation_execution_options
+                        SET revision=:new_revision, options_json=:options, updated_at=:now
+                        WHERE conversation_id=:conversation AND owner_principal=:owner
+                          AND workspace_id=:workspace AND revision=:expected
+                        RETURNING revision"""),
+                        {"new_revision": new_revision, "options": Jsonb(options), "now": now,
+                         "conversation": conversation_id, "owner": owner, "workspace": workspace_id,
+                         "expected": expected_revision}).first()
+                    if updated is None:
+                        raise ConversationConflict("execution options revision is stale")
+                return {
+                    "schema_version": EXECUTION_OPTIONS_SCHEMA_VERSION,
+                    "conversation_id": conversation_id,
+                    "owner_principal": owner,
+                    "workspace_id": workspace_id,
+                    "revision": new_revision,
+                    "options": options,
+                    "updated_at": now,
+                }
+        except SQLAlchemyError as exc:
+            raise ConversationPersistenceError("execution options could not be updated") from exc
+
+    @staticmethod
+    def _execution_options_projection(row: dict[str, object]) -> dict[str, object]:
+        from packages.contracts.agent_execution_options import validate_agent_execution_options
+
+        options_value = row.get("options_json")
+        try:
+            options = (default_agent_execution_options() if options_value is None
+                       else validate_agent_execution_options(options_value))
+        except ValueError as exc:
+            raise ConversationPersistenceError("stored execution options are invalid") from exc
+        updated_at = row.get("updated_at")
+        return {
+            "schema_version": EXECUTION_OPTIONS_SCHEMA_VERSION,
+            "conversation_id": str(row["conversation_id"]),
+            "owner_principal": str(row["owner_principal"]),
+            "workspace_id": str(row["workspace_id"]),
+            "revision": 0 if row.get("revision") is None else int(row["revision"]),
+            "options": options,
+            "updated_at": updated_at,
+        }
+
     def list(self, owner: object, *, status: object = "active", search: object = "", limit: object = 20, offset: object = 0) -> dict[str, object]:
         owner = _owner(owner)
         if status not in _STATUSES:
@@ -249,7 +386,13 @@ class ConversationCatalogStore(PgStoreMixin):
     def append_user_message(self, owner: object, conversation_id: object, content: object) -> dict[str, object]:
         owner = _owner(owner)
         conversation_id = _identifier(conversation_id, "conversation_id")
-        content = _text(content, field="content", maximum=12_000)
+        if not isinstance(content, str):
+            raise ValueError("content must be a string")
+        content = content.strip()
+        if not content:
+            raise ValueError("content must not be empty")
+        if len(content) > 12_000:
+            raise ValueError("content exceeds 12000 characters")
         now = _now()
         with self._transaction() as connection:
             row = connection.execute(
@@ -262,7 +405,8 @@ class ConversationCatalogStore(PgStoreMixin):
                 raise ConversationConflict("archived conversation cannot receive messages")
             sequence = int(row["message_count"]) + 1
             title = deterministic_title(content) if sequence == 1 else str(row["title"])
-            preview = content if len(content) <= 120 else f"{content[:119]}…"
+            preview_content = _text(content, field="content", maximum=12_000)
+            preview = preview_content if len(preview_content) <= 120 else f"{preview_content[:119]}…"
             message_id = f"message_{uuid.uuid4().hex}"
             connection.execute(
                 text(

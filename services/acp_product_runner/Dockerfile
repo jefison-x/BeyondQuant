@@ -104,12 +104,21 @@ COPY plugins/dsh-byq/runtime/package.json \
 COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
 COPY services/acp_judgment_runner/server.py /opt/byq/acp_judgment_runner/server.py
 COPY services/acp_product_runner/server.py /opt/byq/acp_product_runner/server.py
+COPY services/acp_product_runner/install_prebind.py /opt/byq/acp_product_runner/install_prebind.py
+COPY packages/contracts/acp_product_prebind.py \
+    /opt/byq/acp_product_runner/packages/contracts/acp_product_prebind.py
 COPY packages/contracts/acp_product_slot.py \
     /opt/byq/acp_product_runner/packages/contracts/acp_product_slot.py
+COPY packages/contracts/acp_product_instance.py \
+    /opt/byq/acp_product_runner/packages/contracts/acp_product_instance.py
 # ADR-0106: the runner validates the ordinary Product overlay with the exact
 # product-turn.v1 limits, so the closed contract module must ship with it.
 COPY packages/contracts/product_turn_request.py \
     /opt/byq/acp_product_runner/packages/contracts/product_turn_request.py
+COPY packages/contracts/agent_execution_options.py \
+    /opt/byq/acp_product_runner/packages/contracts/agent_execution_options.py
+COPY packages/contracts/continuation_request.py \
+    /opt/byq/acp_product_runner/packages/contracts/continuation_request.py
 
 RUN test -x /usr/local/bin/node \
     && test -f /opt/dsh-runtime/apps/cli/lib/bin.js \

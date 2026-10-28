@@ -1,0 +1,27 @@
+{
+  "schema": "byq-maintenance-root-gate.v1",
+  "status": "PASS_SOURCE_AND_FOCUSED_OFFLINE_ONLY",
+  "schema_slice": {
+    "commit": "12e04afab60d56fbe74f692b168df819dbdec1ca",
+    "capture_sha256": "f22ac20c17a1b8d567237a094a16973d667e6738a834b87adf9e23dc8b388d77",
+    "test_sha256": "4f95c1b6ffeeac7b196c9c8676b1f2f8332e87e3842839eaca42a6fff5eb9091",
+    "fix": "Remove nonexistent product_conversations.workspace_id references; select exact current owner personal Workspace from joined workspaces table; preserve all identity/status/time/message-count gates",
+    "contract": "Actual Product DDL column validation; current Workspace projection does not alone prove historical conversation Workspace; exact agent_runtime_turns and binding checks remain required",
+    "tests": "13 passed, rc0, tool merged original output, 1.254s",
+    "raw": ".ci-artifacts/background-continuation-20261014/observer-workspace-schema-fix-v1/"
+  },
+  "background_journal_slice": {
+    "commit": "1a2e1dd6c63c725a8e6e1c9bf6f0b247e02759ea",
+    "helper_sha256": "7b5169edac70f991c7470b1604697ed623969b4ef8ec386304cb5c691c0a6d6f",
+    "test_sha256": "139a189dfce044553040dc36bb5ef0b66a567602c1523e37724098d3b75e99c3",
+    "fix": "One keyword-only strict continuation reservation identity in existing pure provider-journal validator; default ordinary behavior and all budget/settlement checks preserved",
+    "contract": "Existing ordinary and continuation numeric limits match; profile/Root/ledger/binding attribution must be independently checked by caller",
+    "first_test": "FAIL_PIN: only frozen helper source SHA was outdated after authorized change; original 25-test output retained",
+    "repair": "Update exactly reviewed helper SHA pin; independent Sol verified no other gate bypass",
+    "focused_tests": "25 passed, rc0, 4.526s, separate original stdout/stderr; includes wrong identities, invalid reservation, unsettled and concurrent rejection",
+    "raw": ".ci-artifacts/background-continuation-20261014/provider-journal-continuation-v1/"
+  },
+  "independent_sol": {"functional": "PASS source only", "tests": "PASS scoped offline", "clean_break_architecture": "PASS"},
+  "root": "PASS scoped offline gates",
+  "limits": {"docker": 0, "database": 0, "model": 0, "job": 0, "live_f6": "NOT_RUN", "production": "NOT_RUN"}
+}

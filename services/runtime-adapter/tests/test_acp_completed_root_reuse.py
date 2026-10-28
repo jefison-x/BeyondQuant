@@ -7,7 +7,9 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import quote
 
+import httpx
 import pytest
 
 from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
@@ -116,10 +118,28 @@ def acp_adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapt
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_MCP_ACP_DISCOVERY_TOKEN", "test-discovery-token")
     monkeypatch.setenv("BYQ_MCP_ACP_SIGNING_KEY", "test-signing-key-0123456789abcdef")  # gitleaks:allow — fixed synthetic test key
+    monkeypatch.setenv("BYQ_RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority-token")
     (tmp_path / "composition.yml").write_text("[]\n", encoding="utf-8")
     runtime = RuntimeAdapter(compatibility)
     runtime.require_current_backend_authority = lambda: 7
     compatibility.runtime = runtime
+    def backend_get(url, *, headers, timeout):
+        record = runtime._get("reuse-session")
+        assert url.endswith(f"/internal/runtime-authority/sessions/{quote(record.session_id, safe='')}/roots")
+        assert headers == {
+            "Authorization": "Bearer synthetic-runtime-authority-token",
+            "X-BYQ-Owner-Principal": record.owner_principal,
+            "X-BYQ-Workspace-ID": record.workspace_id,
+            "X-BYQ-Trace-ID": record.trace_id,
+        }
+        assert timeout == 2.0
+        return httpx.Response(200, json={
+            "schema_version": "byq-business-root-status.v1",
+            "roots": [{"root_run_id": record.process_root_id,
+                       "local_validation_pre_ack": None,
+                       "local_validation": None}],
+        }, request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx, "get", backend_get)
     try:
         yield runtime
     finally:
@@ -304,6 +324,16 @@ def test_idle_release_preserves_settled_public_session_without_native_resume(acp
         assert recovered["status"] == SessionStatus.IDLE
         assert recovered["resumed_from_run_id"] is None
         assert not compat.resumed
+        boundary = recovered["recovery_boundary"]
+        assert boundary["state"] == "pending"
+        with pytest.raises(SessionConflict, match="recovery trace boundary is not acknowledged"):
+            restarted.submit_prompt("reuse-session", "next user input")
+        restarted.recover_acp_session(
+            "reuse-session", receipt, boundary["next_sequence"],
+            trace_tail=boundary["next_sequence"],
+            boundary_ack_sha256=boundary["event_sha256"],
+        )
+        assert restarted._read_acp_binding("reuse-session")["recovery_boundary"]["state"] == "acknowledged"
 
         restarted.submit_prompt(
             "reuse-session", "next user input",
@@ -422,7 +452,7 @@ def test_closed_before_ack_recovery_rejects_unconfirmed_prior_process_exit(acp_a
         with pytest.raises(SessionConflict, match="prior process exit is confirmed"):
             restarted.recovery_binding("reuse-session")
         with pytest.raises(SessionConflict, match="no confirmed prior process exit"):
-            restarted.recover_acp_session("reuse-session", receipt, record.sequence)
+            restarted.recover_acp_session("reuse-session", receipt, binding["sequence"])
         assert "reuse-session" not in restarted._sessions
         assert not compat.resumed
     finally:
@@ -443,7 +473,7 @@ def test_unsettled_transfer_recovery_blocks_without_old_process_exit_proof(acp_a
         with pytest.raises(SessionConflict, match="prior process exit is confirmed"):
             restarted.recovery_binding("reuse-session")
         with pytest.raises(SessionConflict, match="no confirmed prior process exit"):
-            restarted.recover_acp_session("reuse-session", transfer, record.sequence)
+            restarted.recover_acp_session("reuse-session", transfer, binding["sequence"])
         assert "reuse-session" not in restarted._sessions
         assert not compat.resumed
     finally:

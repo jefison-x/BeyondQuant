@@ -58,7 +58,7 @@ def _chunk(message_id: str, text: str, sequence: int) -> AcpNotification:
     )
 
 
-def _run(notifications, result=None, *, content="prompt"):
+def _run_captured(notifications, result=None, *, content="prompt"):
     transport = _FakeTransport(notifications, result or {"stopReason": "end_turn"})
     harness = AcpHarness(
         provider="deepseek-official", model="deepseek-v4-flash",
@@ -70,6 +70,11 @@ def _run(notifications, result=None, *, content="prompt"):
     captured: list = []
     finish = compatibility.run_prepared_prompt(
         compatibility.prepare_prompt(harness, SESSION), content, captured.append)
+    return finish, captured, transport
+
+
+def _run(notifications, result=None, *, content="prompt"):
+    finish, captured, _ = _run_captured(notifications, result, content=content)
     messages = [event.params["text"] for event in captured
                 if isinstance(event, AcpNotification)
                 and event.method == "byq/assistant_message"]
@@ -97,3 +102,35 @@ def test_tool_use_turn_delivers_intermediate_and_final_messages_separately():
         "I'll gather the bounded read-only context.",
         '{"proposal":null,"durable_evidence":{"kind":"none"}}',
     ]
+
+
+def test_multi_chunk_utf8_message_over_old_text_limit_preserves_notifications_and_result():
+    old_limit = 8 * 1024 * 1024
+    first_chunk = "a" * (old_limit - 1)
+    last_chunk = "界"
+    message = first_chunk + last_chunk
+    assert len(message) == old_limit
+    assert len(message.encode("utf-8")) == old_limit + 2
+
+    usage_update = AcpNotification(
+        method="session/update",
+        params={"sessionId": SESSION, "update": {
+            "sessionUpdate": "usage_update", "used": 10, "size": 20}},
+        event_sequence=3,
+    )
+    finish, captured, transport = _run_captured([
+        _chunk("large-message", first_chunk, 1),
+        _chunk("large-message", last_chunk, 2),
+        usage_update,
+    ], result={"stopReason": "end_turn"})
+
+    messages = [event.params["text"] for event in captured
+                if isinstance(event, AcpNotification)
+                and event.method == "byq/assistant_message"]
+    assert finish == "completed"
+    assert messages == [message]
+    assert usage_update in captured
+    assert transport.notified == []
+    assert captured[0].method == "byq/turn/start"
+    assert captured[-1].method == "byq/turn/end"
+    assert captured[-1].params["stopReason"] == "end_turn"

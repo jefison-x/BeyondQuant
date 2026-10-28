@@ -8,9 +8,11 @@ description: Answer how to use, find, distinguish, or prepare current BeyondQuan
 First distinguish an explanation/navigation request from a request to act.
 
 - For “在哪里、怎么用、有什么区别、下一步是什么”, answer from this skill and,
-  when the exact current capability or route is needed, call `byq_product_help_query`
-  at most once. This read is Product metadata: do not start a domain AgentRun, request
-  authorization, create an audit record, or create ResearchTask/Artifact state for it.
+  when an exact current capability or route remains unclear, call
+  `byq_product_help_query` for that missing detail. Use another read only for a
+  still-unresolved specific Product fact. This is Product metadata: do not start a
+  domain AgentRun, request authorization, create an audit record, or create
+  ResearchTask/Artifact state for it.
 - For “帮我创建、训练、运行、取消、修改”, use this guide only to identify the
   correct Product capability and prerequisites, then follow the relevant BYQ role and
   domain contract. Product help never authorizes that later action.

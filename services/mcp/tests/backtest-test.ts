@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 
 import {
-  fetchBudgetedByqBacktestAnalysis,
   fetchByqBacktestAnalysis,
   fetchByqBacktestCancel,
   fetchByqBacktestGet,
@@ -114,57 +113,6 @@ const analysis = await fetchByqBacktestAnalysis(
 );
 assert.equal(analysis.isError, false);
 assert.doesNotMatch(analysis.content[0].text, /object_reference|object_id/);
-
-let boundedBackendCalls = 0;
-const lastAllowed = await fetchBudgetedByqBacktestAnalysis(
-  "http://backend:8000",
-  jobId,
-  { section: "daily_returns", limit: 100, offset: 200 },
-  { allowed: true, limit: 6, remaining: 0 },
-  async () => {
-    boundedBackendCalls += 1;
-    return new Response(JSON.stringify({ job_id:jobId, analysis: {
-      schema_version: "backtest-analysis.v1",
-      section: "daily_returns",
-      page: { total: 241, limit: 100, offset: 200, has_more: false, rows: [] },
-    } }), { status: 200 });
-  },
-);
-assert.equal(lastAllowed.isError, false);
-assert.equal(boundedBackendCalls, 1);
-assert.deepEqual(JSON.parse(lastAllowed.content[0].text).analysis_page_budget, {
-  status: "exhausted",
-  call_limit: 6,
-  remaining_calls: 0,
-  backend_accessed: true,
-  must_answer_from_collected_evidence: true,
-});
-
-const exhausted = await fetchBudgetedByqBacktestAnalysis(
-  "http://backend:8000",
-  jobId,
-  { section: "equity_curve", limit: 100, offset: 0 },
-  { allowed: false, limit: 6, remaining: 0 },
-  async () => {
-    boundedBackendCalls += 1;
-    throw new Error("budget exhaustion must not access Backend");
-  },
-);
-assert.equal(exhausted.isError, false);
-assert.equal(boundedBackendCalls, 1);
-assert.deepEqual(JSON.parse(exhausted.content[0].text), {
-  service: "beyondquant-mcp",
-  status: "bounded",
-  analysis_page_budget: {
-    status: "exhausted",
-    call_limit: 6,
-    remaining_calls: 0,
-    backend_accessed: false,
-    must_answer_from_collected_evidence: true,
-    code: "analysis_page_budget_exceeded",
-    retryable: false,
-  },
-});
 
 const run = await fetchByqBacktestRun("http://backend:8000", jobId, async (url, init) => {
   assert.equal(url, `http://backend:8000/v1/research/backtests/${jobId}/run`);
@@ -313,22 +261,37 @@ for (const [detail, expected] of [
   assert.match(JSON.parse(invalid.content[0].text).backend.validation.message, expected);
 }
 const { safeRequestValidation } = await import('../src/request-validation.js');
+const repairLimitOf = (hint: ReturnType<typeof safeRequestValidation>) =>
+  hint && 'repair_limit' in hint ? hint.repair_limit : undefined;
 assert.equal(safeRequestValidation({detail: 'password=secret-fixture /home/private'}), undefined);
 assert.equal(safeRequestValidation({detail: 'constructor'}), undefined);
 assert.match(safeRequestValidation({detail: 'input_snapshot.sources must be a non-empty list'})!.message, /request_fingerprint/);
+const supportedFieldHint = safeRequestValidation({detail: 'task_id must be a valid exact task ID'});
+assert.match(supportedFieldHint!.message, /do not resubmit the same failed input/);
+assert.match(supportedFieldHint!.message, /Reconcile unknown outcomes/);
+assert.doesNotMatch(supportedFieldHint!.message, /if still rejected/i);
 
 const scaleBlocker = safeRequestValidation({detail: 'market data requirement exceeds 50000 symbol-session cells'});
-assert.equal(scaleBlocker?.repair_limit, 0);
+assert.equal(repairLimitOf(scaleBlocker), 0);
 assert.match(scaleBlocker!.message, /50000 symbol-session cells/);
 assert.match(scaleBlocker!.message, /bounded readiness partition/);
 assert.match(scaleBlocker!.message, /report/i);
 assert.match(scaleBlocker!.message, /do not resubmit/i);
 
+const zeroRepairBlockers = new Set([
+  'market data requirement exceeds 50000 symbol-session cells',
+  'stock pool snapshot has no members',
+  'stock-pool snapshot has no members',
+  'stock pool contains symbols absent from the frozen security master',
+  'execution_profile_unsupported: generate_target_weights is not supported',
+]);
 for (const [detail, expected] of [
+  ['security master must be synchronized before backtest data preparation', /data blocker/],
   ['start_date must not be after end_date', /start_date.*end_date/],
   ['order_quantity must be aligned to execution.lot_size', /lot_size/],
   ['stock pool must be active for signal production', /active/],
   ['stock pool snapshot has no members', /no members/],
+  ['stock-pool snapshot has no members', /no members/],
   ['stock pool contains symbols absent from the frozen security master', /security master/],
   ['execution_profile_unsupported: generate_target_weights is not supported', /target weights/],
 ] as const) {
@@ -336,6 +299,7 @@ for (const [detail, expected] of [
   assert.ok(hint, `expected a closed hint for: ${detail}`);
   assert.equal(typeof hint!.message, 'string');
   assert.ok(hint!.message.length > 0);
+  assert.equal(repairLimitOf(hint), zeroRepairBlockers.has(detail) ? 0 : undefined);
   assert.match(hint!.message, expected);
 }
 assert.equal(safeRequestValidation({detail: 'market data requirement exceeds 50000 symbol-session cells token=secret-fixture'}), undefined);

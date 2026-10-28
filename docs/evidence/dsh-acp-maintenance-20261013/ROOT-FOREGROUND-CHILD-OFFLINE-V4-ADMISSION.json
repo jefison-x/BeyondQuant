@@ -1,0 +1,35 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-native-exit-contract-offline-v4",
+  "status": "ADMITTED_ONCE_OFFLINE_ONLY",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "source_sha256": {
+    "capture": "0c0f33c84cd8b124aee6fff4ffe13f681afc587387075e7368738c847c0dfbfe",
+    "capture_test": "9e27663c8ad012195f471977c76e63e16e26d295d8528ee882613c307663999f",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "independent_reviewer": "Sol TEST SOURCE PASS after full native reader exit, wrapper, host guard and 24-case audit",
+  "root_decision": "One five-method affected batch, fail-fast, 60-second total limit. Real calls remain zero; no retry or escalation on failure. Preserve all V1-V3 failures.",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_frozen_capture_source_matches_reviewed_pin",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests"
+  ],
+  "test_methods": 5,
+  "matrix_subcases": 24,
+  "limits": {
+    "total_seconds": 60,
+    "real_models": 0,
+    "real_docker": 0,
+    "real_http": 0,
+    "real_db": 0,
+    "new_jobs": 0
+  },
+  "reuse": "Unchanged source/algorithm evidence retains original scope. V3 matrix actual 1 PASS/1 FAIL/22 NOT_RUN retained until new execution; no live admission.",
+  "live": "NOT_ADMITTED"
+}

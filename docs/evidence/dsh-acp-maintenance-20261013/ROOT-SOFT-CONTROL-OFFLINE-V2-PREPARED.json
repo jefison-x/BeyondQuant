@@ -1,0 +1,15 @@
+{
+  "fixture_audit_sha256": "6b9e78d03f51d4a108c06b26080a5fed3faa1517711b18f08385ea10d3cf1f66",
+  "head": "63be22f6466879fceaa178585665185578e3d76c",
+  "independent_review": "Sol SOURCE PASS only; execution NOT_ADMITTED",
+  "minimal_fix": "Full explicit Cookie kwargs including secureFalse/restDict/rfc2109False; fresh independent synthetic-cases path; no controller change or added cases",
+  "plan_sha256": "778c754bdff7dcf6047ce2c3d7d97bfc259c025214d122a74e8dcacdf9ecac6d",
+  "real_models_jobs": "NOT_RUN",
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-control-offline-v2",
+  "schema": "byq-root-soft-control-offline-prepared.v1",
+  "static_scope": "AST/signature and fixture input serialization audit only; Cookie not instantiated in repair",
+  "status": "SOURCE_PASS_PREPARATION_ONLY",
+  "stop_rule": "No further tests or real-model expansion in this batch; preserve original failures while fixing fixture contract",
+  "test_execution": "NOT_RUN",
+  "test_sha256": "76bd7237c41fd51059665917636ed516b269e0369071f7acacfd186d73073ee3"
+}

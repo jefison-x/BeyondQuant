@@ -52,6 +52,22 @@ def _credential_payload(
     }
 
 
+def _search_credential_payload(
+    secret: str = "search-secret-1234",
+    *,
+    idempotency_key: str = "search-create-1",
+    provider: str = "deepseek",
+) -> dict[str, object]:
+    return {
+        "purpose": "web_search_api_key",
+        "provider": provider,
+        "scope": "user",
+        "label": "DeepSeek 搜索",
+        "secret": secret,
+        "idempotency_key": idempotency_key,
+    }
+
+
 def test_cipher_authenticates_aad_and_tamper() -> None:
     cipher = CredentialCipher.for_test({"old": KEY_OLD}, "old")
     envelope = cipher.encrypt("sk-test-value", aad=b"record-a")
@@ -125,6 +141,67 @@ def test_credential_crud_is_masked_owner_scoped_and_audited() -> None:
         "revoked", "secret_replaced", "created",
     ]
     store.close()
+
+
+def test_search_credential_is_owner_scoped_unique_and_not_a_model_key() -> None:
+    store = _store()
+    try:
+        first = store.create_credential(
+            "alice", _search_credential_payload(), actor="alice",
+        )
+        assert first["purpose"] == "web_search_api_key"
+        assert first["provider"] == "deepseek"
+        assert store.resolve_search("alice")["api_key"] == "search-secret-1234"
+        assert store.resolve_search("bob") is None
+
+        with pytest.raises(CredentialConflict):
+            store.create_credential(
+                "alice", _search_credential_payload(
+                    "other-search-secret-5678", idempotency_key="search-create-2",  # gitleaks:allow -- fixed synthetic test key
+                ), actor="alice",
+            )
+        with pytest.raises(ValueError, match="deepseek"):
+            store.create_credential(
+                "alice", _search_credential_payload(provider="opencode-go"), actor="alice",
+            )
+        with pytest.raises(CredentialNotFound):
+            store.create_profile("alice", {
+                "credential_id": first["credential_id"],
+                "key_name": "search-is-not-model",
+                "display_name": "Search cannot be a model",
+                "provider": "deepseek",
+                "model": "deepseek-v4-flash",
+            })
+
+        disabled = store.update_credential(
+            first["credential_id"], "alice",
+            {"status": "disabled", "expected_version": 1, "request_id": "disable-search"},
+            actor="alice",
+        )
+        assert disabled["status"] == "disabled"
+        assert store.resolve_search("alice") is None
+        with pytest.raises(CredentialConflict):
+            store.create_credential(
+                "alice", _search_credential_payload(
+                    "replacement-search-secret-5678", idempotency_key="search-create-3",  # gitleaks:allow -- fixed synthetic test key
+                ), actor="alice",
+            )
+        revoked = store.revoke_credential(
+            first["credential_id"], "alice", actor="alice",
+            expected_version=2, request_id="revoke-search",
+        )
+        assert revoked["status"] == "revoked"
+        assert store.resolve_search("alice") is None
+        replacement = store.create_credential(
+            "alice", _search_credential_payload(
+                "replacement-search-secret-5678", idempotency_key="search-create-4",  # gitleaks:allow -- fixed synthetic test key
+            ), actor="alice",
+        )
+        assert replacement["credential_id"] != first["credential_id"]
+        assert store.resolve_search("alice")["api_key"] == "replacement-search-secret-5678"
+        assert store.resolve_search("bob") is None
+    finally:
+        store.close()
 
 
 def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
@@ -346,6 +423,13 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     denied = client.post("/internal/credentials/model-resolution", json=payload)
     assert denied.status_code == 403
     assert "sk-http-secret" not in denied.text
+    missing_model = client.post(
+        "/internal/credentials/model-resolution",
+        headers={"x-byq-credential-resolver-token": "resolver-test-only"},
+        json={**payload, "owner_principal": "unbound-model-owner"},
+    )
+    assert missing_model.status_code == 404
+    assert missing_model.json() == {"detail": "personal model binding not found"}
     resolved = client.post(
         "/internal/credentials/model-resolution",
         headers={"x-byq-credential-resolver-token": "resolver-test-only"},
@@ -357,6 +441,87 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     assert resolved.json()["resolution"]["profile_version"] == 1
     assert resolved.json()["resolution"]["credential_version"] == 1
     assert resolved.json()["resolution"]["binding_version"] == 1
+
+    search_resolution_payload = {
+        "owner_principal": "alice",
+        "session_id": "session-search-resolve",
+        "trace_id": "trace-search-resolve",
+    }
+    missing_search = client.post(
+        "/internal/credentials/search-resolution",
+        headers={"x-byq-credential-resolver-token": "resolver-test-only"},
+        json=search_resolution_payload,
+    )
+    assert missing_search.status_code == 404
+    assert missing_search.json() == {
+        "detail": {"code": "search_credential_not_configured"},
+    }
+
+    search = client.post(
+        "/v1/users/model-credentials",
+        headers=context,
+        json={
+            "purpose": "web_search_api_key",
+            "provider": "deepseek",
+            "label": "独立搜索",
+            "secret": "private-search-secret-5678",
+            "idempotency_key": "http-search-create-1",
+        },
+    )
+    assert search.status_code == 201
+    assert "private-search-secret" not in search.text
+    search_credential = search.json()["credential"]
+    assert search_credential["purpose"] == "web_search_api_key"
+
+    denied_search = client.post(
+        "/internal/credentials/search-resolution", json=search_resolution_payload,
+    )
+    assert denied_search.status_code == 403
+    resolved_search = client.post(
+        "/internal/credentials/search-resolution",
+        headers={"x-byq-credential-resolver-token": "resolver-test-only"},
+        json=search_resolution_payload,
+    )
+    assert resolved_search.status_code == 200
+    resolution = resolved_search.json()["resolution"]
+    assert resolution["purpose"] == "web_search_api_key"
+    assert resolution["provider"] == "deepseek"
+    assert resolution["credential_id"] == search_credential["credential_id"]
+    assert resolution["owner_principal"] == "alice"
+    assert resolution["session_id"] == "session-search-resolve"
+    assert resolution["trace_id"] == "trace-search-resolve"
+    assert resolution["api_key"] == "private-search-secret-5678"
+    assert "private-search-secret" not in search.text
+
+    store.update_credential(
+        search_credential["credential_id"], "alice",
+        {"status": "disabled", "expected_version": 1, "request_id": "disable-http-search"},
+        actor="alice",
+    )
+    disabled_search = client.post(
+        "/internal/credentials/search-resolution",
+        headers={"x-byq-credential-resolver-token": "resolver-test-only"},
+        json=search_resolution_payload,
+    )
+    assert disabled_search.status_code == 404
+    assert disabled_search.json() == {
+        "detail": {"code": "search_credential_not_configured"},
+    }
+
+    unknown_purpose = client.post(
+        "/v1/users/model-credentials",
+        headers=context,
+        json={**_search_credential_payload(idempotency_key="invalid-purpose"),
+              "purpose": "engineering_api_key"},
+    )
+    assert unknown_purpose.status_code == 422
+    mismatched_search_provider = client.post(
+        "/v1/users/model-credentials",
+        headers=context,
+        json={**_search_credential_payload(idempotency_key="invalid-search-provider"),
+              "provider": "opencode-go"},
+    )
+    assert mismatched_search_provider.status_code == 422
 
     other_headers = trusted_agent_context("bob")
     hidden = client.get("/v1/users/model-credentials", headers=other_headers)

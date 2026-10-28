@@ -1,0 +1,54 @@
+{
+  "authorization_boundary": "No production operation, privilege expansion, unknown outcome replay, or original child resume",
+  "background_completion": "NOT_RUN; current isolated 11-table inventory empty, no existing Job eligible for completion continuation evidence",
+  "before_real": [
+    "Read and reuse existing soft-cancel surrogate admission/results, retain failed receipts; verify exact API/root ownership and IDLE contract",
+    "Complete all review, identity, selectors and frozen read commands before starting live deadline",
+    "Use native browser tool only; start clock immediately before first send, check remaining total time before each send/cancel/observation; each tool timeout no larger than remaining time",
+    "Capture observation/time immediately at reply, with no review or supplementary audit inside live time window",
+    "Any same-class error or time expiry stops batch, no replay; independently label later reads"
+  ],
+  "confirmed_time_fact": "New request provider span5900ms; UI observation captured160600ms after plan start. This difference does not identify each UI/control delay or prove service timeout.",
+  "current_problems": [
+    "Wrong UI mode chosen for soft cancellation",
+    "Two browser batches exceeded admitted total time; no between-action deadline checks were enforced",
+    "Existing native child mapping and AgentLoop observer failures remain stopped"
+  ],
+  "full_candidate_qualification": "NOT_READY",
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "jobs_this_plan": 0,
+  "models_this_plan": 0,
+  "next_scope": "Existing mode=soft Gateway/Product API cancel of one explicitly scoped active root; then actual idle/discard settlement and browser same-conversation new input. No change to UI hard-cancel policy.",
+  "proposed_limits": {
+    "max_new_inputs": 2,
+    "max_new_jobs": 0,
+    "max_provider_attempts": 16,
+    "max_seconds": 180
+  },
+  "schema": "byq-root-continuation-next-slice.v1",
+  "soft_contract_audit": {
+    "api": "POST /v1/agent/sessions/{conversation_id}/cancel with explicit JSON mode=soft; omitted mode defaults hard",
+    "references": [
+      "services/gateway/app/main.py:975",
+      "services/gateway/app/main.py:2759",
+      "services/runtime-adapter/app/runtime.py:1640",
+      "services/runtime-adapter/app/runtime.py:1504",
+      "services/runtime-adapter/tests/test_process_cleanup.py:1462",
+      "services/gateway/tests/test_product_agent.py:105"
+    ],
+    "required_gate": "Small explicit soft-cancel capture entry and full surrogate path must be independently reviewed and executed before a new live batch; use existing native/helper interfaces, no generic framework",
+    "root_target": "Route cancels current active run, has no root argument; fix unique root and identity before call, compare discarded event run_id afterward",
+    "scope": "Necessary Luna readonly source fallback; independent Sol source confirmation PASS; real admission HOLD / NOT_RUN",
+    "settlement": "CANCELLING response alone insufficient; wait for actual IDLE and same-root session.result.discarded",
+    "surrogate_evidence": "Existing test source covers soft behavior; no complete live-capture entry or passed end-to-end capture receipt located in this audit. Source presence is not a new test PASS.",
+    "surrogate_required_cases": [
+      "Unique started Root and exact identity",
+      "Root already completed before cancel or active Root drift",
+      "CANCELLING does not permit next input",
+      "Discard settlement bound to same Root",
+      "Actual IDLE permits same CID new input",
+      "First failure forbids further input"
+    ]
+  },
+  "status": "PREPARATION_ONLY_REAL_TEST_NOT_RUN"
+}

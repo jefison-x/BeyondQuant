@@ -101,11 +101,15 @@ for (const reason of ["domain_validation_failed", "unchanged_failed_input", "cor
     schema_version: "domain-call-admission.v1", state: reason === "domain_validation_failed" ? "correctable_failure" : "blocked",
     reason, ...(reason === "domain_validation_failed" ? { validation: {
       schema_version: "factor-validation-problem.v1", field: "factor.name", code: "unsupported_value",
-      allowed_values: ["private-value"], message: "secret" } } : {}),
+      allowed_values: ["private-value"], message: "secret", repair_limit: 999 } } : {}),
   } }, { status: reason === "domain_validation_failed" ? 422 : 409 }));
   const body = JSON.parse(translated.content[0].text);
   assert.equal(translated.isError, true);
   assert.equal(body.backend.admission.stop, reason !== "domain_validation_failed");
   assert.doesNotMatch(translated.content[0].text, /private-value|secret/);
-  if (reason === "domain_validation_failed") assert.deepEqual(body.backend.validation.allowed_values, ["daily_return", "momentum"]);
+  if (reason === "domain_validation_failed") {
+    assert.deepEqual(body.backend.validation.allowed_values, ["daily_return", "momentum"]);
+    assert.equal(body.backend.validation.repair_limit, undefined);
+    assert.equal(body.backend.validation.next_action, undefined);
+  }
 }

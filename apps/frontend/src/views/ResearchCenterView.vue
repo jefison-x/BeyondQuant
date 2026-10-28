@@ -1,231 +1,384 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { createTask, getApproval, getResearchEntity, listApprovals, listArtifacts, listTasks, ResearchRequestError } from "@/api/research";
-import { beginTaskSubmission, finishTaskSubmission, readTaskSubmission, type TaskSubmission } from "@/api/taskSubmission";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  getApproval,
+  getContinuationPermission,
+  listApprovals,
+  listProductApprovalRequests,
+  type ProductApprovalRequest,
+} from "@/api/research";
+import { getStrategyVersionApproval } from "@/api/quant";
 import { useAuthStore } from "@/stores/auth";
-import { formatChinaTime } from "@/time";
-import { researchProgress } from "@/researchProgress";
-import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
-import TaskHandoffPanel from "@/components/TaskHandoffPanel.vue";
-import ContinuationPermissionPanel from "@/components/ContinuationPermissionPanel.vue";
-import { useFilteredPagination } from "@/composables/useFilteredPagination";
+import EntityPagination from "@/components/ui/EntityPagination.vue";
 
-const tab = ref<"tasks" | "research" | "approval" | "assets" | "inbox">("tasks");
-const entityType = ref<"tasks" | "experiments" | "artifacts">("artifacts");
-const entityId = ref("");
+type HistoryTab = "agent-history" | "product-history" | "approval-record";
+type ApprovalSource = "agent" | "strategy" | "continuation";
+
+const tab = ref<HistoryTab>("agent-history");
 const approvalId = ref("");
-const result = ref<Record<string, unknown> | null>(null);
+const approvalSource = ref<ApprovalSource>("agent");
+const result = ref<unknown>(null);
+const resultSource = ref("");
 const error = ref("");
-const busy = ref(false);
-const artifacts = ref<Array<Record<string, unknown>>>([]);
+const historyBusy = ref(false);
+const approvalBusy = ref(false);
 const approvals = ref<Array<Record<string, unknown>>>([]);
-const tasks = ref<Array<Record<string, unknown>>>([]);
-const taskTitle = ref("");
-const taskObjective = ref("");
-const continuationTask = ref("");
-const handoffTask = ref("");
+const productRequests = ref<ProductApprovalRequest[]>([]);
+const agentHistoryStatus = ref<"approved" | "rejected">("approved");
+const productHistoryStatus = ref<"approved" | "rejected">("approved");
+const agentHistoryPage = ref(1);
+const productHistoryPage = ref(1);
+const agentHistoryTotal = ref(0);
+const productHistoryTotal = ref(0);
+const HISTORY_PAGE_SIZE = 20;
+
 const auth = useAuthStore();
-const pendingSubmission = ref<TaskSubmission | null>(null);
-function submissionScope(): string {
-  if (!auth.user?.workspace?.workspace_id) throw new Error("请先登录并选择工作区");
-  return JSON.stringify([auth.user.subject, auth.user.workspace.workspace_id]);
-}
-const taskPages = useFilteredPagination(computed(() => tasks.value), (row) => `${row.title ?? ""} ${row.objective ?? ""} ${row.status ?? ""}`, 20);
-const artifactPages = useFilteredPagination(computed(() => artifacts.value), (row) => `${row.kind ?? ""} ${row.artifact_id ?? ""} ${row.status ?? ""}`, 20);
-const approvalPages = useFilteredPagination(computed(() => approvals.value), (row) => `${row.approval_id ?? ""} ${row.action ?? ""} ${row.status ?? ""}`, 20);
+const authScope = computed(() => [
+  auth.user?.subject ?? "",
+  auth.user?.workspace?.workspace_id ?? "",
+].join("\u0000"));
+let scopeGeneration = 0;
+let inboxGeneration = 0;
+let agentHistoryGeneration = 0;
+let productHistoryGeneration = 0;
+let approvalGeneration = 0;
 
-async function loadTasks() {
-  busy.value = true;
-  error.value = "";
-  try {
-    tasks.value = (await listTasks()).tasks;
-  } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载失败";
-  } finally {
-    busy.value = false;
-  }
+function requestIsCurrent(scope: string, epoch: number) {
+  return scope === authScope.value && epoch === scopeGeneration;
 }
 
-async function submitTask() {
-  if (busy.value) return;
-  if (!taskTitle.value.trim() || !taskObjective.value.trim()) {
-    error.value = "请填写任务名称和研究目标";
-    return;
-  }
-  busy.value = true;
-  error.value = "";
-  try {
-    const scope = submissionScope();
-    const pending = beginTaskSubmission(scope, taskTitle.value.trim(), taskObjective.value.trim());
-    pendingSubmission.value = pending;
-    const task = await createTask(pending.title, pending.objective, pending.key);
-    if (typeof task.task_id !== "string" || !task.task_id) throw new Error("提交结果尚未确认，请核对本次提交。");
-    finishTaskSubmission(scope, pending.key);
-    pendingSubmission.value = null;
-    taskTitle.value = "";
-    taskObjective.value = "";
-    await loadTasks();
-  } catch (exc) {
-    if (exc instanceof ResearchRequestError && [400, 422].includes(exc.status) && pendingSubmission.value) {
-      finishTaskSubmission(submissionScope(), pendingSubmission.value.key);
-      pendingSubmission.value = null;
-    }
-    error.value = exc instanceof Error ? exc.message : "创建失败";
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function loadAssets() {
-  busy.value = true;
-  error.value = "";
-  try {
-    artifacts.value = (await listArtifacts()).artifacts;
-  } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载失败";
-  } finally {
-    busy.value = false;
-  }
+function clearHistory() {
+  approvals.value = [];
+  productRequests.value = [];
+  agentHistoryPage.value = 1;
+  productHistoryPage.value = 1;
+  agentHistoryTotal.value = 0;
+  productHistoryTotal.value = 0;
 }
 
 async function loadInbox() {
-  busy.value = true;
+  const request = ++inboxGeneration;
+  const scope = authScope.value;
+  const epoch = scopeGeneration;
+  const owner = auth.user?.subject ?? "";
+  const workspaceId = auth.user?.workspace?.workspace_id ?? "";
+  const agentStatus = agentHistoryStatus.value;
+  const agentPage = agentHistoryPage.value;
+  const productStatus = productHistoryStatus.value;
+  const productPage = productHistoryPage.value;
+  const isCurrent = () => request === inboxGeneration && requestIsCurrent(scope, epoch)
+    && agentStatus === agentHistoryStatus.value && agentPage === agentHistoryPage.value
+    && productStatus === productHistoryStatus.value && productPage === productHistoryPage.value;
+  if (!owner || !workspaceId) {
+    clearHistory();
+    historyBusy.value = false;
+    return;
+  }
+  historyBusy.value = true;
   error.value = "";
   try {
-    approvals.value = (await listApprovals()).approvals;
+    const [agent, product] = await Promise.all([
+      listApprovals({
+        status: agentStatus,
+        limit: HISTORY_PAGE_SIZE,
+        offset: (agentPage - 1) * HISTORY_PAGE_SIZE,
+      }),
+      listProductApprovalRequests({
+        status: productStatus,
+        limit: HISTORY_PAGE_SIZE,
+        offset: (productPage - 1) * HISTORY_PAGE_SIZE,
+      }),
+    ]);
+    if (!isCurrent()) return;
+    if ((agent.approvals ?? []).some(item => item.status !== agentStatus)
+        || (product.requests ?? []).some(item => item.status !== productStatus)) {
+      throw new Error("审批历史返回了与已决状态筛选不符的记录；未将待核对事项显示为历史结果。");
+    }
+    if ((product.requests ?? []).some(item =>
+      item.owner_principal !== owner || item.workspace_id !== workspaceId)) {
+      throw new Error("业务审批历史返回了其他身份或工作区的记录；已拒绝显示。");
+    }
+    approvals.value = agent.approvals ?? [];
+    agentHistoryTotal.value = agent.total ?? 0;
+    productRequests.value = product.requests ?? [];
+    productHistoryTotal.value = product.total ?? 0;
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载失败";
+    if (isCurrent()) {
+      error.value = exc instanceof Error ? exc.message : "读取审批历史失败";
+    }
   } finally {
-    busy.value = false;
+    if (isCurrent()) historyBusy.value = false;
   }
 }
 
-async function loadEntity() {
-  busy.value = true;
+async function loadAgentHistory() {
+  const request = ++agentHistoryGeneration;
+  const scope = authScope.value;
+  const epoch = scopeGeneration;
+  const status = agentHistoryStatus.value;
+  const requestedPage = agentHistoryPage.value;
+  const requestedTab = tab.value;
+  if (!auth.user?.subject || !auth.user.workspace?.workspace_id) return;
+  historyBusy.value = true;
   error.value = "";
   try {
-    result.value = await getResearchEntity(entityType.value, entityId.value);
+    const response = await listApprovals({
+      status,
+      limit: HISTORY_PAGE_SIZE,
+      offset: (requestedPage - 1) * HISTORY_PAGE_SIZE,
+    });
+    if (request !== agentHistoryGeneration || !requestIsCurrent(scope, epoch)
+        || status !== agentHistoryStatus.value || requestedPage !== agentHistoryPage.value) return;
+    if ((response.approvals ?? []).some(item => item.status !== status)) {
+      throw new Error("Agent 审批历史返回了与已决状态筛选不符的记录。");
+    }
+    approvals.value = response.approvals ?? [];
+    agentHistoryTotal.value = response.total ?? 0;
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载失败";
+    if (request === agentHistoryGeneration && requestIsCurrent(scope, epoch)
+        && requestedTab === tab.value) {
+      error.value = exc instanceof Error ? exc.message : "读取 Agent 审批历史失败";
+    }
   } finally {
-    busy.value = false;
+    if (request === agentHistoryGeneration && requestIsCurrent(scope, epoch)) historyBusy.value = false;
+  }
+}
+
+async function loadProductHistory() {
+  const request = ++productHistoryGeneration;
+  const scope = authScope.value;
+  const epoch = scopeGeneration;
+  const owner = auth.user?.subject ?? "";
+  const workspaceId = auth.user?.workspace?.workspace_id ?? "";
+  const status = productHistoryStatus.value;
+  const requestedPage = productHistoryPage.value;
+  const requestedTab = tab.value;
+  if (!owner || !workspaceId) return;
+  historyBusy.value = true;
+  error.value = "";
+  try {
+    const response = await listProductApprovalRequests({
+      status,
+      limit: HISTORY_PAGE_SIZE,
+      offset: (requestedPage - 1) * HISTORY_PAGE_SIZE,
+    });
+    if (request !== productHistoryGeneration || !requestIsCurrent(scope, epoch)
+        || status !== productHistoryStatus.value || requestedPage !== productHistoryPage.value) return;
+    if ((response.requests ?? []).some(item =>
+      item.owner_principal !== owner || item.workspace_id !== workspaceId)) {
+      throw new Error("业务审批历史返回了其他身份或工作区的记录；已拒绝显示。");
+    }
+    if ((response.requests ?? []).some(item => item.status !== status)) {
+      throw new Error("业务审批历史返回了与已决状态筛选不符的记录；未将待核对事项显示为历史结果。");
+    }
+    productRequests.value = response.requests ?? [];
+    productHistoryTotal.value = response.total ?? 0;
+  } catch (exc) {
+    if (request === productHistoryGeneration && requestIsCurrent(scope, epoch)
+        && requestedTab === tab.value) {
+      error.value = exc instanceof Error ? exc.message : "读取业务审批历史失败";
+    }
+  } finally {
+    if (request === productHistoryGeneration && requestIsCurrent(scope, epoch)) historyBusy.value = false;
   }
 }
 
 async function loadApproval() {
-  busy.value = true;
+  if (!approvalId.value.trim()) {
+    error.value = "请输入准确的审批 ID、策略版本 Artifact ID 或续接 Task ID。";
+    return;
+  }
+  const request = ++approvalGeneration;
+  const scope = authScope.value;
+  const epoch = scopeGeneration;
+  const requestedId = approvalId.value.trim();
+  const source = approvalSource.value;
+  const token = auth.token;
+  const requestedTab = tab.value;
+  if (!auth.user?.subject || !auth.user.workspace?.workspace_id) return;
+  approvalBusy.value = true;
   error.value = "";
+  result.value = null;
+  resultSource.value = "";
   try {
-    result.value = await getApproval(approvalId.value);
+    let response: unknown;
+    let responseLabel = "";
+    if (source === "agent") {
+      response = await getApproval(requestedId);
+      responseLabel = "AgentApproval 精确只读 Product API";
+    } else if (source === "strategy") {
+      response = await getStrategyVersionApproval(requestedId, token);
+      responseLabel = "策略版本领域审批精确只读 Product API";
+    } else {
+      const permission = await getContinuationPermission(requestedId);
+      responseLabel = "任务续接许可精确只读 Product API";
+      if (permission.task_id !== requestedId) {
+        throw new Error("续接许可回包的 Task ID 不匹配；已拒绝显示。");
+      }
+      response = permission;
+    }
+    if (request !== approvalGeneration || !requestIsCurrent(scope, epoch)
+        || requestedId !== approvalId.value.trim() || source !== approvalSource.value
+        || requestedTab !== tab.value) return;
+    result.value = response;
+    resultSource.value = responseLabel;
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载失败";
+    if (request === approvalGeneration && requestIsCurrent(scope, epoch)
+        && requestedId === approvalId.value.trim() && source === approvalSource.value
+        && requestedTab === tab.value) {
+      error.value = exc instanceof Error ? exc.message : "读取审批历史详情失败";
+    }
   } finally {
-    busy.value = false;
+    if (request === approvalGeneration && requestIsCurrent(scope, epoch)) approvalBusy.value = false;
   }
 }
 
-onMounted(async () => {
-  try {
-    pendingSubmission.value = readTaskSubmission(submissionScope());
-    if (pendingSubmission.value) {
-      taskTitle.value = pendingSubmission.value.title;
-      taskObjective.value = pendingSubmission.value.objective;
-    }
-  } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "读取上次提交失败";
-    return;
+function handleHistoryTabChange(value: string | number) {
+  if (value !== "approval-record") {
+    approvalGeneration += 1;
+    approvalBusy.value = false;
+    result.value = null;
+    resultSource.value = "";
   }
-  await Promise.allSettled([loadTasks(), loadAssets(), loadInbox()]);
+}
+
+function handleAgentHistoryStatusChange(value: unknown) {
+  if (value !== "approved" && value !== "rejected") return;
+  agentHistoryStatus.value = value;
+  agentHistoryPage.value = 1;
+  void loadAgentHistory();
+}
+
+function handleProductHistoryStatusChange(value: unknown) {
+  if (value !== "approved" && value !== "rejected") return;
+  productHistoryStatus.value = value;
+  productHistoryPage.value = 1;
+  void loadProductHistory();
+}
+
+async function changeAgentHistoryPage(page: number) {
+  agentHistoryPage.value = page;
+  await loadAgentHistory();
+}
+
+async function changeProductHistoryPage(page: number) {
+  productHistoryPage.value = page;
+  await loadProductHistory();
+}
+
+watch(authScope, () => {
+  scopeGeneration += 1;
+  inboxGeneration += 1;
+  agentHistoryGeneration += 1;
+  productHistoryGeneration += 1;
+  approvalGeneration += 1;
+  clearHistory();
+  approvalId.value = "";
+  result.value = null;
+  resultSource.value = "";
+  historyBusy.value = false;
+  approvalBusy.value = false;
+  error.value = "";
+  if (auth.user?.subject && auth.user.workspace?.workspace_id) void loadInbox();
+}, { flush: "sync" });
+
+onMounted(() => {
+  void loadInbox();
+});
+
+onUnmounted(() => {
+  scopeGeneration += 1;
+  inboxGeneration += 1;
+  agentHistoryGeneration += 1;
+  productHistoryGeneration += 1;
+  approvalGeneration += 1;
 });
 </script>
 
 <template>
-  <section class="research-page">
+  <section class="research-history" aria-label="审批历史">
     <el-card shadow="never" class="top-band">
-      <el-tabs v-model="tab">
-        <el-tab-pane label="研究任务" name="tasks" lazy>
-          <div class="quant-panel">
-            <el-input v-model="taskTitle" :disabled="!!pendingSubmission || busy" placeholder="任务名称" maxlength="200" style="width: 240px" />
-            <el-input v-model="taskObjective" :disabled="!!pendingSubmission || busy" placeholder="研究目标" maxlength="4000" style="width: 420px" />
-            <el-button type="primary" :loading="busy" @click="submitTask">{{ pendingSubmission ? "核对本次提交" : "创建任务" }}</el-button>
-          </div>
-          <ListFilterPagination v-model:query="taskPages.query.value" v-model:page="taskPages.page.value" :page-size="taskPages.pageSize.value" :total="taskPages.total.value" placeholder="筛选任务名称、目标或状态" label="研究任务分页">
-          <el-table :data="taskPages.pageItems.value" v-loading="busy" :empty-text="pendingSubmission ? '提交结果尚未确认，请核对本次提交' : '暂无研究任务'">
-            <el-table-column prop="title" label="任务名称" min-width="180" />
-            <el-table-column prop="objective" label="研究目标" min-width="300" show-overflow-tooltip />
-            <el-table-column label="任务记录" width="120"><template #default="{ row }">{{ row.status === "running" ? "未完成" : row.status }}</template></el-table-column>
-            <el-table-column label="研究阶段与下一步" min-width="280">
-              <template #default="{ row }">
-                <div>{{ researchProgress(row.progress).stage }}</div>
-                <div>下一步：{{ researchProgress(row.progress).next }}</div>
-                <div v-if="researchProgress(row.progress).blocker">阻塞：{{ researchProgress(row.progress).blocker }}</div>
-                <div v-if="researchProgress(row.progress).evidence">完成证据：{{ researchProgress(row.progress).evidence }} 项</div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="task_id" label="Task ID" min-width="260" show-overflow-tooltip />
-            <el-table-column label="任务交接" width="130"><template #default="{ row }"><el-button link @click="handoffTask = row.task_id">查看交接</el-button></template></el-table-column>
-            <el-table-column label="后台续接" width="130">
-              <template #default="{ row }"><el-button v-if="row.conversation_id" link @click="continuationTask = row.task_id">查看许可</el-button><span v-else>需关联原研究对话</span></template>
-            </el-table-column>
-          </el-table>
-          </ListFilterPagination>
-          <TaskHandoffPanel v-if="handoffTask" :task-id="handoffTask" />
-          <ContinuationPermissionPanel v-if="continuationTask" :task-id="continuationTask" :artifacts="artifacts" />
-          <el-empty v-if="!tasks.length && !busy && !pendingSubmission" description="暂无研究任务，请先创建一个任务" />
-        </el-tab-pane>
-
-        <el-tab-pane label="研究资产" name="assets" lazy>
-          <ListFilterPagination v-model:query="artifactPages.query.value" v-model:page="artifactPages.page.value" :page-size="artifactPages.pageSize.value" :total="artifactPages.total.value" placeholder="筛选资产类型、编号或状态" label="研究资产分页">
-          <el-table :data="artifactPages.pageItems.value" v-loading="busy">
-            <el-table-column label="类型" width="150">
-              <template #default="{ row }">
-                <el-tag effect="light">{{ row.kind }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="artifact_id" label="Artifact ID" min-width="260" show-overflow-tooltip />
-            <el-table-column prop="status" label="状态" width="120" />
-            <el-table-column label="创建时间" min-width="190">
-              <template #default="{ row }">{{ formatChinaTime(row.created_at) }}</template>
-            </el-table-column>
-          </el-table>
-          </ListFilterPagination>
-          <el-empty v-if="!artifacts.length && !busy" description="暂无研究资产" />
-        </el-tab-pane>
-
-        <el-tab-pane label="审批收件箱" name="inbox" lazy>
-          <ListFilterPagination v-model:query="approvalPages.query.value" v-model:page="approvalPages.page.value" :page-size="approvalPages.pageSize.value" :total="approvalPages.total.value" placeholder="筛选审批编号、动作或状态" label="审批记录分页">
-          <el-table :data="approvalPages.pageItems.value" v-loading="busy">
-            <el-table-column prop="approval_id" label="Approval ID" min-width="260" show-overflow-tooltip />
-            <el-table-column prop="action" label="动作" width="180" />
-            <el-table-column prop="status" label="状态" width="120" />
-          </el-table>
-          </ListFilterPagination>
-          <el-empty v-if="!approvals.length && !busy" description="暂无待处理审批" />
-        </el-tab-pane>
-
-        <el-tab-pane label="实体查询" name="research" lazy>
-          <div class="quant-panel">
-            <el-select v-model="entityType" style="width: 180px">
-              <el-option label="Task" value="tasks" />
-              <el-option label="Experiment" value="experiments" />
-              <el-option label="Artifact" value="artifacts" />
+      <h2>审批历史</h2>
+      <p>只读查看已决定的审批记录与相关领域事实。新的申请、决定和许可撤销由审批中心处理。</p>
+      <el-tabs v-model="tab" @tab-change="handleHistoryTabChange">
+        <el-tab-pane label="Agent 审批历史" name="agent-history">
+          <div class="history-toolbar">
+            <el-select v-model="agentHistoryStatus" aria-label="Agent 审批历史状态" style="width: 160px" @change="handleAgentHistoryStatusChange">
+              <el-option label="已批准" value="approved" />
+              <el-option label="已拒绝" value="rejected" />
             </el-select>
-            <el-input v-model="entityId" placeholder="Entity ID" style="width: 320px" />
-            <el-button type="primary" :loading="busy" @click="loadEntity">查看</el-button>
+            <el-button :loading="historyBusy" @click="loadAgentHistory">刷新</el-button>
           </div>
-          <pre v-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
+          <el-table :data="approvals" v-loading="historyBusy" empty-text="暂无此类终态记录">
+            <el-table-column prop="approval_id" label="Approval ID" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="action" label="动作" min-width="160" />
+            <el-table-column prop="status" label="状态" width="120" />
+            <el-table-column prop="decision_by" label="决定人" min-width="140" />
+          </el-table>
+          <EntityPagination
+            :page="agentHistoryPage"
+            :page-size="HISTORY_PAGE_SIZE"
+            :total="agentHistoryTotal"
+            label="Agent 审批历史分页"
+            @update:page="changeAgentHistoryPage"
+          />
         </el-tab-pane>
 
-        <el-tab-pane label="审批查询" name="approval" lazy>
-          <div class="quant-panel">
-            <el-input v-model="approvalId" placeholder="Approval ID" style="width: 320px" />
-            <el-button type="primary" :loading="busy" @click="loadApproval">查看</el-button>
+        <el-tab-pane label="BYQ 业务审批历史" name="product-history">
+          <div class="history-toolbar">
+            <el-select v-model="productHistoryStatus" aria-label="BYQ 业务审批历史状态" style="width: 160px" @change="handleProductHistoryStatusChange">
+              <el-option label="已批准" value="approved" />
+              <el-option label="已拒绝" value="rejected" />
+            </el-select>
+            <el-button :loading="historyBusy" @click="loadProductHistory">刷新</el-button>
           </div>
-          <pre v-if="result" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
+          <p>只显示已批准或已拒绝的业务审批记录。待审批及待核对事项请在右上角铃铛处理。</p>
+          <el-table :data="productRequests" v-loading="historyBusy" empty-text="暂无此类终态申请">
+            <el-table-column prop="request_id" label="Request ID" min-width="230" show-overflow-tooltip />
+            <el-table-column prop="request_type" label="申请类型" min-width="180" />
+            <el-table-column prop="task_id" label="Task ID" min-width="220" show-overflow-tooltip />
+            <el-table-column label="单一资源 Artifact" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.resource_artifact_id ?? "多资产绑定" }}</template>
+            </el-table-column>
+            <el-table-column prop="content_sha256" label="内容 SHA-256" min-width="250" show-overflow-tooltip />
+            <el-table-column prop="decision" label="决定" width="110" />
+            <el-table-column prop="decision_by" label="决定人" min-width="140" />
+            <el-table-column prop="status" label="状态" width="110" />
+          </el-table>
+          <EntityPagination
+            :page="productHistoryPage"
+            :page-size="HISTORY_PAGE_SIZE"
+            :total="productHistoryTotal"
+            label="BYQ 业务审批历史分页"
+            @update:page="changeProductHistoryPage"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="精确历史详情" name="approval-record">
+          <p>按已知 ID 精确读取现有审批或许可记录；此处不扫描任务、资产或全量领域对象。</p>
+          <div class="history-toolbar">
+            <el-select v-model="approvalSource" aria-label="精确历史详情来源" style="width: 240px">
+              <el-option label="AgentApproval ID" value="agent" />
+              <el-option label="策略版本 Artifact ID" value="strategy" />
+              <el-option label="续接许可 Task ID" value="continuation" />
+            </el-select>
+            <el-input
+              v-model="approvalId"
+              :placeholder="approvalSource === 'agent' ? '精确 Approval ID' : approvalSource === 'strategy' ? '精确 strategy_version Artifact ID' : '精确 Task ID'"
+              style="width: min(420px, 100%)"
+            />
+            <el-button type="primary" :loading="approvalBusy" @click="loadApproval">读取历史详情</el-button>
+          </div>
+          <p v-if="resultSource" role="status">来源：{{ resultSource }}。这是单条精确读取，不是全量历史扫描。</p>
+          <pre v-if="result !== null" class="quant-result">{{ JSON.stringify(result, null, 2) }}</pre>
         </el-tab-pane>
       </el-tabs>
-
-      <p v-if="error" class="page-error">{{ error }}</p>
+      <p v-if="error" class="page-error" role="alert">{{ error }}</p>
     </el-card>
   </section>
 </template>
+
+<style scoped>
+.history-toolbar { display: flex; align-items: center; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+.quant-result { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>

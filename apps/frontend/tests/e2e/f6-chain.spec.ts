@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
-import { F6_BROWSER_LOGIN_PATH, f6AuthResponse, f6BrowserRoute, f6BrowserWriteAllowed, f6TaskRecordColumn, f6TaskRecordLabel, readF6Snapshot } from './f6-browser-observer';
+import { F6_BROWSER_LOGIN_PATH, f6AuthResponse, f6BrowserRoute, f6BrowserWriteAllowed, f6TaskRecordLabel, readF6Snapshot } from './f6-browser-observer';
 
 type F6Evidence = {
   status: string;
@@ -132,17 +132,13 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         artifact_id: ids.signal_snapshot_artifact_id, task_id: ids.task_id,
         kind: 'signal_snapshot', status: 'validated',
       });
-      expect(snapshot.permission).toMatchObject({ schema_version: 'task-continuation-permission.v2', task_id: ids.task_id });
-      expect(snapshot.permission.permission).toMatchObject({ grant_version: 1 });
-      expect(snapshot.permission.permission.revoked_at).toBeTruthy();
-      expect(snapshot.permission.request_state).toMatchObject({ requests_reserved: 1, requests_remaining: 0, unconfirmed_requests: 0 });
-      expect(snapshot.permission.request_state.request_identity).toMatchObject({
-        status: 'settled', dispatch_attempts: 1, run_id: ids.background_runtime_root_id,
+      expect(snapshot.executionOptions).toMatchObject({
+        schema_version: 'agent-execution-options.v1', conversation_id: ids.conversation_id,
+        owner_principal: 'f6-chain-user', workspace_id: ids.workspace_id,
+        revision: 1, options: { auto_continue: false },
       });
-      expect(snapshot.permission.request_state.request_usage.actual_usage).toEqual({
-        input_tokens: 'unknown', cache_read_tokens: 'unknown', output_tokens: 'unknown',
-        provider_attempts: 'unknown', usage_source: 'unknown', completeness: 'unknown',
-      });
+      expect(Object.entries(snapshot.executionOptions.options).filter(([key]) => key !== 'auto_continue')
+        .every(([, value]) => value === null)).toBe(true);
       expect(snapshot.conversation.conversation).toMatchObject({
         session_id: ids.conversation_id, trace_id: ids.trace_id,
       });
@@ -151,26 +147,15 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         && message.content.includes(ids.backtest_task_id) && message.content.includes(ids.signal_snapshot_artifact_id)
         && message.content.includes('No domain writes were made.'))).toBe(true);
       authorityConfirmed = true;
-      observerStage = 'task_record';
-      await page.goto('/user/research');
-      const taskRow = page.getByRole('row').filter({ hasText: ids.task_id });
-      await expect(taskRow).toHaveCount(1);
-      await expect(taskRow).toBeVisible();
-      const recordColumn = f6TaskRecordColumn(await page.getByRole('columnheader').allTextContents());
-      await expect(taskRow.getByRole('cell').nth(recordColumn)).toHaveText(f6TaskRecordLabel(snapshot.task.status));
-      observerStage = 'permission_panel';
-      await taskRow.getByRole('button', { name: '查看许可' }).click();
-      const panel = page.getByRole('region', { name: '任务后台续接许可' });
-      await expect(panel).toContainText('task-ready-read.v1');
-      await expect(panel).toContainText('已预留请求：1；剩余请求：0；未确认请求：0');
-      const usageRecord = panel.getByLabel('实际用量记录');
-      await expect(usageRecord).toHaveCount(1);
-      await expect(usageRecord).toContainText('实际用量：输入 未知 token，缓存读取 未知 token');
-      await expect(usageRecord).toContainText('输出 未知 token；模型尝试 未知 次');
-      await expect(usageRecord).toContainText('完整性：未知');
-      await expect(panel).toContainText('许可已撤销，不会启动新的后台请求。');
-      await expect(panel.getByRole('button', { name: '撤销后台续接许可' })).toHaveCount(0);
-      await panel.screenshot({ path: info.outputPath(`f6-settlement-${viewport.width}.png`) });
+      observerStage = 'execution_options_ui';
+      await page.goto(`/settings/agent-runtime?conversation_id=${encodeURIComponent(ids.conversation_id)}`);
+      const settings = page.getByRole('dialog', { name: /系统设置/ }).locator('.runtime-settings');
+      await expect(settings).toContainText(ids.conversation_id);
+      await expect(settings.getByRole('switch', { name: '允许自动接续' })).not.toBeChecked();
+      await expect(settings).toContainText('已关闭');
+      await page.reload();
+      await expect(settings.getByRole('switch', { name: '允许自动接续' })).not.toBeChecked();
+      await settings.screenshot({ path: info.outputPath(`f6-settlement-${viewport.width}.png`) });
 
       observerStage = 'safety';
       expect(foreign).toEqual([]);
@@ -216,10 +201,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
             job_identity_matches: observed.job?.job_id === ids.signal_job_id,
             job_completed: observed.job?.status === 'completed',
             artifact_identity_matches: observed.artifact?.artifact_id === ids.signal_snapshot_artifact_id,
-            request_root_matches: observed.permission?.request_state?.request_identity?.run_id === ids.background_runtime_root_id,
-            request_settled: observed.permission?.request_state?.request_identity?.status === 'settled',
-            no_unconfirmed_requests: observed.permission?.request_state?.unconfirmed_requests === 0,
-            permission_revoked: !!observed.permission?.permission?.revoked_at,
+            execution_options_identity_matches: observed.executionOptions?.conversation_id === ids.conversation_id
+              && observed.executionOptions?.owner_principal === 'f6-chain-user',
+            future_auto_continue_disabled: observed.executionOptions?.options?.auto_continue === false,
             answer_persisted: Array.isArray(observed.conversation?.messages)
               && observed.conversation.messages.some((message: { role: string; content: string }) =>
                 message.role === 'assistant' && typeof message.content === 'string'

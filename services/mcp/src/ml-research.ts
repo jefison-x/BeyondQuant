@@ -32,10 +32,10 @@ function safeValidation(payload: Record<string, unknown>) {
   if (value.schema_version !== "ml-validation-problem.v1" || typeof value.field !== "string"
       || value.field.split(".").length > 6 || !value.field.split(".").every(part => VALIDATION_FIELDS.has(part))
       || typeof value.code !== "string" || !VALIDATION_CODES.has(value.code)) return undefined;
-  return { schema_version: "ml-validation-problem.v1", field: value.field, code: value.code, repair_limit: 1,
+  return { schema_version: "ml-validation-problem.v1", field: value.field, code: value.code,
     next_action: envelope.schema_version === "domain-call-admission.v1" && envelope.reason === "correction_failed"
       ? "Stop: the correction failed; do not submit another repair in this root."
-      : "Read byq_ml_capabilities for qualified types, ranges and allowed values; correct once with a distinct request identity. Stop if the same error recurs without progress." };
+      : "Read byq_ml_capabilities for qualified types, ranges and allowed values; correct supported inputs using those constraints and current authoritative facts. Do not resubmit the same failed input. If no supported correction exists or a business blocker applies, report it. Reconcile unknown outcomes against the original request before any retry." };
 }
 
 async function requestMl(

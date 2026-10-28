@@ -1,0 +1,14 @@
+{
+  "Root": "PASS scoped evidence reuse",
+  "reviewer": "independent Sol candidate_source_reviewer",
+  "scope": "historical keyless rc2 root/child/generic tool count mechanics; no new test",
+  "prior_OC_claim_correction": "No existing rc2 process proof was incorrect. Relevant accepted evidence and child raw are present in older isolated worktree.",
+  "DSH_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "guard_sha256": "892e42d6dcb982a6bcdfd6fc3d183b912a5909cae7dd3e4dd672de91236ee50a",
+  "root": "16 MCP admitted,17thblocked historical PASS",
+  "child": "Actual1rootdelegate+15childtools shared16; requested child16blocked and17notexecuted; old raw independently rechecked",
+  "generic": "Historical rc2 list_mcp_resources16/17 record; raw/source no longer located",
+  "current_profile": "one-shot foreground; old probe explicitly run_in_background:false; tool filters/spawn/depth unchanged",
+  "NOT_RUN": "No new process execution. Old probe close attempted but exceptions swallowed, no close/exit receipt; no current signed Product claim granted.",
+  "root_new_probe_decision": "Do not repeat unchanged count mechanism; retain current lifecycle/signed receipt gates separately"
+}

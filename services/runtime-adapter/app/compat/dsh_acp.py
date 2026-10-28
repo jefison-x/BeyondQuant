@@ -18,22 +18,37 @@ import signal
 import stat
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlsplit
 
 from packages.contracts.domain_call_admission import ACTIONS, parse_observed_arguments
+from packages.contracts.product_turn_request import (
+    OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID,
+    OFFICIAL_PRODUCT_TURN_PROVIDER,
+    OFFICIAL_PRODUCT_TURN_MODEL,
+    product_turn_execution_limits,
+    product_turn_execution_output_cap,
+    validate_ordinary_product_execution_profile,
+    validate_product_turn_execution_profile,
+)
+from packages.contracts.continuation_request import (
+    validate_task_ready_javascript_values_v2,
+)
 
 from .types import RuntimeObservation, RuntimeToolResult
 from ..research_judgment_acp_provider_overlay import private_provider_overlay
 from ..research_judgment_acp_provider_routes import valid_local_provider_token
 
+if TYPE_CHECKING:
+    from ..acp_product_slot_client import ProductSlotPrebindRetirement
+
 
 _ACP_PROTOCOL_VERSION = 1
 _MAX_FRAME_BYTES = 16 * 1024 * 1024
 _MAX_TOOL_RESULT_BYTES = 1024 * 1024
-_MAX_TEXT_BYTES = 8 * 1024 * 1024
 _REQUEST_TIMEOUT_SECONDS = 60.0
 _MODEL_CONFIG_ID = "model"
 _ROOT_BINDING_MARKER = ".byq-acp-root-binding.json"
@@ -125,15 +140,84 @@ def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -
     import base64 as _base64
 
     home = _verify_private_product_home(home)
-    if re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+    if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
         raise AcpTransportError("ACP continuation guard root identity is invalid")
     try:
         raw = _base64.b64decode(guard_b64.encode("ascii"), validate=True)
         value = json.loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError, Exception) as exc:  # noqa: BLE001
         raise AcpTransportError("ACP continuation guard is invalid") from exc
-    if not isinstance(value, list) or len(value) not in {2, 5}:
+    if not isinstance(value, list) or len(value) not in {2, 3, 5}:
         raise AcpTransportError("ACP continuation guard is invalid")
+    if len(value) == 3:
+        # The official Messages route is an independent closed ordinary
+        # profile: one local DeepSeek provider, disabled OpenCode provider,
+        # and the same scoped ordinary-options tool guard.
+        import ipaddress as _ipaddress
+        route, disabled, insert = value
+        config = route.get("config") if isinstance(route, dict) else None
+        models = config.get("models") if isinstance(config, dict) else None
+        first_model = models[0] if isinstance(models, list) and len(models) == 1 else None
+        base_url = config.get("baseURL") if isinstance(config, dict) else None
+        matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", base_url) \
+            if isinstance(base_url, str) else None
+        local = False
+        if matched is not None:
+            try:
+                address = _ipaddress.ip_address(matched[1])
+                local = (isinstance(address, _ipaddress.IPv4Address)
+                         and any(address in network for network in (
+                             _ipaddress.ip_network("127.0.0.0/8"),
+                             _ipaddress.ip_network("10.0.0.0/8"),
+                             _ipaddress.ip_network("172.16.0.0/12"),
+                             _ipaddress.ip_network("192.168.0.0/16"))))
+            except ValueError:
+                local = False
+        if (not isinstance(route, dict) or set(route) != {"id", "config"}
+                or route.get("id") != "llm-deepseek"
+                or not isinstance(config, dict)
+                or set(config) != {"apiKeyEnv", "baseURL", "retryPolicy", "models"}
+                or config.get("apiKeyEnv") != "DEEPSEEK_API_KEY"
+                or config.get("retryPolicy") != {"mode": "normal", "maxRetries": 0}
+                or not isinstance(disabled, dict)
+                or disabled != {"id": "llm-pi-ai", "disabled": True}
+                or matched is None or not local or int(matched[2]) > 65535
+                or not isinstance(first_model, dict)
+                or first_model.get("id") != OFFICIAL_PRODUCT_TURN_MODEL):
+            raise AcpTransportError("ACP official ordinary provider overlay is invalid")
+        entry = (insert.get("insert") if isinstance(insert, dict)
+                 and set(insert) == {"insert"} else None)
+        guard = (entry[0].get("config") if isinstance(entry, list) and len(entry) == 1
+                 and isinstance(entry[0], dict)
+                 and set(entry[0]) == {"id", "name", "config"} else None)
+        profile = guard.get("executionProfile") if isinstance(guard, dict) else None
+        try:
+            execution_profile = validate_ordinary_product_execution_profile(profile)
+            expected_limits = product_turn_execution_limits(execution_profile["options"])
+        except (TypeError, ValueError):
+            raise AcpTransportError("ACP official ordinary profile is invalid") from None
+        if (execution_profile["profile_id"] != OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID
+                or execution_profile["root_run_id"] != root_run_id
+                or not isinstance(guard, dict)
+                or set(guard) != {"guardMode", "executionProfile", "requestLimits"}
+                or entry[0].get("id") != "byq-continuation-budget"
+                or entry[0].get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
+                or guard.get("guardMode") != "ordinary-options"
+                or guard.get("requestLimits") != expected_limits):
+            raise AcpTransportError("ACP official ordinary guard is invalid")
+        output_limit = product_turn_execution_output_cap(execution_profile["options"])
+        expected_model = {"id": OFFICIAL_PRODUCT_TURN_MODEL}
+        if output_limit is not None:
+            expected_model["maxTokens"] = output_limit
+        if models != [expected_model]:
+            raise AcpTransportError("ACP official ordinary output parameter is invalid")
+        entry[0]["config"] = {
+            **guard, "journalPath": str(home / f"product-turn-tool-guard-{root_run_id}.jsonl"),
+        }
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=True).encode("utf-8")
+        _create_guard_patch_exclusive(home, payload)
+        return hashlib.sha256(payload).hexdigest()
     if len(value) == 2:
         # ADR-0106 ordinary Product overlay: the single closed Go chat route plus
         # the count-only tool guard. The exact shape must match the trusted
@@ -191,9 +275,34 @@ def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -
                 or entry[0].get("id") != "byq-continuation-budget"
                 or entry[0].get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
                 or not isinstance(guard_config, dict)
+                or not isinstance(guard_config.get("requestLimits"), dict)):
+            raise AcpTransportError("ACP product-turn guard is invalid")
+        if guard_config.get("guardMode") == "ordinary-options":
+            try:
+                execution_profile = validate_product_turn_execution_profile(profile)
+                expected_limits = product_turn_execution_limits(execution_profile["options"])
+            except (TypeError, ValueError):
+                raise AcpTransportError("ACP ordinary execution profile is invalid") from None
+            if (set(guard_config) != {"guardMode", "executionProfile", "requestLimits"}
+                    or guard_config["requestLimits"] != expected_limits):
+                raise AcpTransportError("ACP ordinary execution limits are invalid")
+            output_limit = product_turn_execution_output_cap(execution_profile["options"])
+            expected_model = {"id": "deepseek-v4.1-flash"}
+            if output_limit is not None:
+                expected_model["maxTokens"] = output_limit
+            if models != [expected_model]:
+                raise AcpTransportError("ACP ordinary output parameter does not match options")
+            entry[0]["config"] = {
+                **guard_config,
+                "journalPath": str(home / f"product-turn-tool-guard-{root_run_id}.jsonl"),
+            }
+            payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                 ensure_ascii=True).encode("utf-8")
+            _create_guard_patch_exclusive(home, payload)
+            return hashlib.sha256(payload).hexdigest()
+        if (guard_config.get("guardMode") != "count-only"
                 or set(guard_config) != {"guardMode", "deadlineEpochMs",
                                          "executionProfile", "requestLimits"}
-                or guard_config.get("guardMode") != "count-only"
                 or type(guard_config.get("deadlineEpochMs")) is not int
                 or guard_config["deadlineEpochMs"] <= 0
                 or not isinstance(profile, dict)
@@ -201,12 +310,20 @@ def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -
                 or profile.get("profile_id") != "product-turn.v1"
                 or profile.get("profile_version") != 1
                 or not isinstance(profile.get("profile_sha256"), str)
-                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None
-                or not isinstance(guard_config.get("requestLimits"), dict)):
+                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None):
             raise AcpTransportError("ACP product-turn guard is invalid")
         entry[0]["config"] = {**guard_config,
                               "journalPath": str(
                                   home / f"product-turn-tool-guard-{root_run_id}.jsonl")}
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=True).encode("utf-8")
+        _create_guard_patch_exclusive(home, payload)
+        return hashlib.sha256(payload).hexdigest()
+    task_ready_config = _task_ready_guard_config(value)
+    if task_ready_config is not None:
+        _validate_task_ready_overlay(value, root_run_id=root_run_id)
+        task_ready_config['journalPath'] = str(
+            home / f"continuation-tool-guard-{root_run_id}.jsonl")
         payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
                              ensure_ascii=True).encode("utf-8")
         _create_guard_patch_exclusive(home, payload)
@@ -230,6 +347,162 @@ def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -
                          ensure_ascii=True).encode("utf-8")
     _create_guard_patch_exclusive(home, payload)
     return hashlib.sha256(payload).hexdigest()
+
+
+def _task_ready_guard_config(value: object) -> dict | None:
+    if not isinstance(value, list) or len(value) != 5:
+        return None
+    insert = value[4]
+    entries = insert.get('insert') if isinstance(insert, dict) else None
+    entry = entries[0] if isinstance(entries, list) and len(entries) == 1 else None
+    config = entry.get('config') if isinstance(entry, dict) else None
+    return config if isinstance(config, dict) and config.get('guardMode') == 'task-ready-options' else None
+
+
+def _validate_task_ready_overlay(value: object, *, root_run_id: str) -> dict:
+    """Validate the closed unactivated task-ready overlay and return its profile."""
+    import ipaddress as _ipaddress
+
+    if not isinstance(value, list) or len(value) != 5:
+        raise AcpTransportError("ACP task-ready guard is invalid")
+    first, second, default_provider, route, insert = value
+    if (not isinstance(first, dict) or set(first) != {"id", "disabled"}
+            or first.get("id") != "web-search-deepseek"
+            or type(first.get("disabled")) is not bool or first["disabled"] is not True
+            or not isinstance(second, dict) or set(second) != {"id", "disabled"}
+            or second.get("id") != "tool-web"
+            or type(second.get("disabled")) is not bool or second["disabled"] is not True
+            or not isinstance(default_provider, dict)
+            or set(default_provider) != {"id", "config"}
+            or default_provider.get("id") != "llm-deepseek"
+            or not isinstance(default_provider.get("config"), dict)):
+        raise AcpTransportError("ACP task-ready guard is invalid")
+    if (not isinstance(route, dict) or set(route) != {"id", "config"}
+            or route.get("id") != "llm-pi-ai"):
+        raise AcpTransportError("ACP task-ready route is invalid")
+    route_config = route.get("config")
+    providers = route_config.get("providers") if isinstance(route_config, dict) else None
+    if not isinstance(route_config, dict) or set(route_config) != {"providers"}:
+        raise AcpTransportError("ACP task-ready route is invalid")
+    chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+    headers = chat.get("headers") if isinstance(chat, dict) else None
+    retry_policy = chat.get("retryPolicy") if isinstance(chat, dict) else None
+    models = chat.get("models") if isinstance(chat, dict) else None
+    base_url = chat.get("baseURL") if isinstance(chat, dict) else None
+    matched = (re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", base_url)
+               if isinstance(base_url, str) else None)
+    local = False
+    if matched is not None:
+        try:
+            address = _ipaddress.ip_address(matched[1])
+            local = (isinstance(address, _ipaddress.IPv4Address)
+                     and any(address in network for network in (
+                         _ipaddress.ip_network("127.0.0.0/8"),
+                         _ipaddress.ip_network("10.0.0.0/8"),
+                         _ipaddress.ip_network("172.16.0.0/12"),
+                         _ipaddress.ip_network("192.168.0.0/16"))))
+        except ValueError:
+            local = False
+    if (not isinstance(providers, dict) or set(providers) != {"opencode-go-chat"}
+            or not isinstance(chat, dict)
+            or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
+            or chat.get("api") != "openai-completions"
+            or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+            or not isinstance(retry_policy, dict)
+            or set(retry_policy) != {"mode", "maxRetries"}
+            or retry_policy.get("mode") != "normal"
+            or type(retry_policy.get("maxRetries")) is not int
+            or retry_policy["maxRetries"] != 0
+            or not isinstance(headers, dict) or set(headers) != {"x-opencode-session"}
+            or not isinstance(headers.get("x-opencode-session"), str)
+            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                            headers["x-opencode-session"]) is None
+            or not isinstance(models, list) or len(models) != 1
+            or not isinstance(models[0], dict)
+            or models[0].get("id") != "deepseek-v4.1-flash"
+            or matched is None or not local or int(matched[2]) > 65535):
+        raise AcpTransportError("ACP task-ready route is invalid")
+    if (not isinstance(insert, dict) or set(insert) != {"insert"}
+            or not isinstance(insert["insert"], list) or len(insert["insert"]) != 1):
+        raise AcpTransportError("ACP task-ready guard is invalid")
+    entry = insert["insert"][0]
+    config = entry.get("config") if isinstance(entry, dict) else None
+    if (not isinstance(entry, dict) or set(entry) != {"id", "name", "config"}
+            or entry.get("id") != "byq-continuation-budget"
+            or entry.get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
+            or not isinstance(config, dict)
+            or set(config) != {"guardMode", "rootRunId", "idempotencyKey",
+                               "sourceFactSha256", "executionProfile", "requestLimits"}
+            or config.get("guardMode") != "task-ready-options"
+            or not isinstance(root_run_id, str)
+            or config.get("rootRunId") != root_run_id
+            or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None
+            or not isinstance(config.get("idempotencyKey"), str)
+            or re.fullmatch(r"task-ready-event:[0-9a-f]{64}",
+                            config["idempotencyKey"]) is None
+            or not isinstance(config.get("sourceFactSha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", config["sourceFactSha256"]) is None):
+        raise AcpTransportError("ACP task-ready guard is invalid")
+    try:
+        profile, _limits = validate_task_ready_javascript_values_v2(
+            config["executionProfile"], config["requestLimits"])
+    except (TypeError, ValueError):
+        raise AcpTransportError("ACP task-ready profile or limits are invalid") from None
+    # The pure carrier checker establishes only structure and self-digests.
+    # Backend still has to recheck live source facts and business authority.
+    cap_values = [profile["options"][field] for field in (
+        "max_output_tokens_per_call", "max_output_tokens_total",
+    ) if profile["options"][field] is not None]
+    output_cap = min(cap_values) if cap_values else None
+    expected_default = {} if output_cap is None else {"maxTokens": output_cap}
+    default_config = default_provider["config"]
+    if (set(default_config) != set(expected_default)
+            or (output_cap is not None and
+                (type(default_config.get("maxTokens")) is not int
+                 or default_config["maxTokens"] != output_cap))):
+        raise AcpTransportError("ACP task-ready registered provider output cap is invalid")
+    expected_model = {"id": "deepseek-v4.1-flash"}
+    if output_cap is not None:
+        expected_model["maxTokens"] = output_cap
+    if (models != [expected_model]
+            or (output_cap is not None
+                and type(models[0].get("maxTokens")) is not int)):
+        raise AcpTransportError("ACP task-ready model output cap is invalid")
+    return profile
+
+
+def _reject_task_ready_guard_constant(_value: str) -> None:
+    raise ValueError("non-finite continuation guard number")
+
+
+def _parse_task_ready_guard_float(value: str) -> float:
+    import math as _math
+
+    parsed = float(value)
+    if not _math.isfinite(parsed):
+        raise ValueError("non-finite continuation guard number")
+    return parsed
+
+
+def _task_ready_profile_from_guard_b64(guard_b64: str, *, root_run_id: str) -> dict | None:
+    import base64 as _base64
+
+    max_encoded = ((16 * 1024 + 2) // 3) * 4
+    if (not isinstance(guard_b64, str) or not guard_b64
+            or len(guard_b64) > max_encoded):
+        raise AcpTransportError("ACP continuation guard is invalid")
+    try:
+        raw = _base64.b64decode(guard_b64.encode("ascii"), validate=True)
+        if len(raw) > 16 * 1024:
+            raise ValueError("continuation guard exceeds its bound")
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                           parse_constant=_reject_task_ready_guard_constant,
+                           parse_float=_parse_task_ready_guard_float)
+    except (UnicodeError, ValueError, TypeError, OverflowError, RecursionError) as exc:
+        raise AcpTransportError("ACP continuation guard is invalid") from exc
+    if _task_ready_guard_config(value) is None:
+        return None
+    return _validate_task_ready_overlay(value, root_run_id=root_run_id)
 
 
 def _verify_private_product_home(home: Path) -> Path:
@@ -319,9 +592,9 @@ def _read_private_guard_patch(
         finally:
             os.close(fd)
         value = json.loads(raw.decode("utf-8"))
-        if not isinstance(value, list) or len(value) not in {2, 5}:
+        if not isinstance(value, list) or len(value) not in {2, 3, 5}:
             raise ValueError
-        guard = value[1] if len(value) == 2 else value[4]
+        guard = value[1] if len(value) == 2 else value[2] if len(value) == 3 else value[4]
         insert = guard.get("insert") if isinstance(guard, dict) else None
         entry = insert[0] if isinstance(insert, list) and len(insert) == 1 else None
         config = entry.get("config") if isinstance(entry, dict) else None
@@ -931,7 +1204,18 @@ class AcpHarness:
     # Restricted continuation guard overlay (base64) applied by the trusted
     # Product runner as an additional patch; never a model/browser value.
     continuation_guard_b64: str | None = field(default=None, repr=False)
+    product_execution_profile: dict[str, object] | None = field(default=None, repr=False)
+    task_ready_execution_profile: dict[str, object] | None = field(default=None, repr=False)
     prepared_guard_sha256: str | None = field(default=None, repr=False)
+    # Root-scoped callbacks used only by the qualified Product START path.
+    # They stay in the Runtime/transport boundary and are never serialized.
+    product_start_prepare: Callable[..., Any] | None = field(default=None, repr=False)
+    product_start_prelaunch_reject: (
+        Callable[..., "ProductSlotPrebindRetirement"] | None
+    ) = field(default=None, repr=False)
+    product_start_retirement_receipt: (
+        "ProductSlotPrebindRetirement | None"
+    ) = field(default=None, repr=False)
     process: _AcpProcess | None = field(default=None, repr=False)
     slot_scope: dict[str, str] | None = field(default=None, repr=False)
     native_session_ids: set[str] = field(default_factory=set, repr=False)
@@ -948,7 +1232,6 @@ class AcpPreparedPrompt:
 class _MessageAssembly:
     message_id: str
     text: list[str] = field(default_factory=list)
-    size: int = 0
     sequence: int = 0
 
 
@@ -985,6 +1268,22 @@ class DshAcpCompatibility:
                 # The live transport keeps its own scope for cleanup receipts.
                 harness.slot_scope = None
 
+    def verify_local_validation_cleanup(self, scope: dict[str, str]) -> tuple[dict[str, object], str]:
+        if self.product_slots is None:
+            raise AcpTransportError("local validation Product slot is unavailable")
+        return self.product_slots.verify_local_validation_cleanup(scope)
+
+    def release_local_validation_ack(
+        self, scope: dict[str, str], *, cleanup_receipt_sha256: str,
+        persist_observation: Callable[[], None],
+    ) -> bool:
+        if self.product_slots is None:
+            raise AcpTransportError("local validation Product slot is unavailable")
+        return self.product_slots.release_local_validation_ack(
+            scope, cleanup_receipt_sha256=cleanup_receipt_sha256,
+            persist_observation=persist_observation,
+        )
+
     def runtime_command(self, runtime_root: Path, node: str) -> tuple[str, ...]:
         """Resolve only a fixed installation-owned launcher, without shell parsing."""
         root = runtime_root.expanduser().resolve()
@@ -1007,6 +1306,7 @@ class DshAcpCompatibility:
         provider_proxy_base_url: str | None = None,
         provider_local_token: str | None = None,
         continuation_guard_b64: str | None = None,
+        product_execution_profile: dict[str, object] | None = None,
     ) -> AcpHarness:
         patch = composition.expanduser().resolve()
         requested_home = session_root.expanduser()
@@ -1026,11 +1326,45 @@ class DshAcpCompatibility:
             raise FileNotFoundError("candidate DSH ACP launcher is unavailable")
         if max_tokens is not None and (type(max_tokens) is not int or max_tokens <= 0):
             raise ValueError("candidate DSH ACP output limit is invalid")
+        if product_execution_profile is not None:
+            try:
+                product_execution_profile = validate_ordinary_product_execution_profile(
+                    product_execution_profile)
+            except (TypeError, ValueError):
+                raise ValueError("ordinary Product execution profile is invalid") from None
+            if product_execution_profile.get("profile_id") == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID:
+                identity = {
+                    "owner_principal": environment.get("BYQ_OWNER_PRINCIPAL"),
+                    "session_id": environment.get("BYQ_SESSION_ID"),
+                    "trace_id": environment.get("BYQ_TRACE_ID"),
+                    "root_run_id": environment.get("BYQ_ROOT_RUN_ID"),
+                    "runtime_boot_id": environment.get("BYQ_RUNTIME_BOOT_ID"),
+                    "runtime_generation": environment.get("BYQ_DSH_RUN_ID"),
+                }
+                if (any(product_execution_profile.get(key) != value
+                        for key, value in identity.items())
+                        or provider != OFFICIAL_PRODUCT_TURN_PROVIDER
+                        or model != OFFICIAL_PRODUCT_TURN_MODEL):
+                    raise ValueError("official ordinary profile does not match this root")
         if not isinstance(environment, dict) or any(
             not isinstance(key, str) or not isinstance(value, str)
             for key, value in environment.items()
         ):
             raise ValueError("candidate DSH ACP environment is invalid")
+        task_ready_execution_profile = None
+        if continuation_guard_b64 is not None:
+            task_ready_execution_profile = _task_ready_profile_from_guard_b64(
+                continuation_guard_b64,
+                root_run_id=environment.get("BYQ_ROOT_RUN_ID", ""),
+            )
+            if (task_ready_execution_profile is not None
+                    and (provider != task_ready_execution_profile["provider"]
+                         or model != task_ready_execution_profile["model"])):
+                raise AcpTransportError("ACP task-ready provider/model differs from its profile")
+            if task_ready_execution_profile is not None and self.product_slots is None:
+                raise AcpTransportError("ACP task-ready execution requires the Product slot")
+        if task_ready_execution_profile is not None and product_execution_profile is not None:
+            raise AcpTransportError("ACP execution profiles cannot be combined")
         self._validate_runtime_identity(environment)
         self._validate_judgment_process_environment(
             environment, provider, provider_local_token)
@@ -1069,6 +1403,8 @@ class DshAcpCompatibility:
             provider_proxy_base_url=provider_proxy_base_url,
             provider_local_token=provider_local_token,
             continuation_guard_b64=continuation_guard_b64,
+            product_execution_profile=product_execution_profile,
+            task_ready_execution_profile=task_ready_execution_profile,
             prepared_guard_sha256=(prepared_guard_sha256
                                    if self.product_slots is not None else None),
         )
@@ -1120,6 +1456,9 @@ class DshAcpCompatibility:
                 selected_key = "OPENCODE_API_KEY"
             if selected_key is not None and selected_key in harness.environment:
                 environment[selected_key] = harness.environment[selected_key]
+            search_key = harness.environment.get("DEEPSEEK_SEARCH_API_KEY")
+            if harness.provider == "opencode-go-chat" and isinstance(search_key, str) and search_key:
+                environment["DEEPSEEK_SEARCH_API_KEY"] = search_key
             if harness.environment.get(_ACP_IDENTITY_MODE_ENV) == _ACP_JUDGMENT_ROOT_MODE:
                 for key in _ACP_JUDGMENT_PROCESS_ENV:
                     if key in harness.environment:
@@ -1145,9 +1484,35 @@ class DshAcpCompatibility:
                 if harness.composition != Path("/opt/byq/profiles/byq-product.patch.yml"):
                     raise AcpTransportError("ACP slot requires its fixed Product composition")
                 from .acp_slot_transport import SlotAcpProcess
+                ordinary_execution = harness.product_execution_profile is not None
+                task_ready_execution = harness.task_ready_execution_profile is not None
+                if ordinary_execution and task_ready_execution:
+                    raise AcpTransportError("ACP execution profiles cannot be combined")
+                start_deadline_at_ms: int | None = (
+                    None if ordinary_execution or task_ready_execution
+                    else int(time.time() * 1000) + 3_600_000
+                )
+                if task_ready_execution:
+                    runtime_seconds = harness.task_ready_execution_profile[
+                        "options"]["max_runtime_seconds"]
+                    if runtime_seconds is not None:
+                        start_deadline_at_ms = int(time.time() * 1000) + runtime_seconds * 1000
+                elif ordinary_execution:
+                    profile = validate_ordinary_product_execution_profile(
+                        harness.product_execution_profile)
+                    runtime_seconds = profile["options"]["max_runtime_seconds"]
+                    start_deadline_at_ms = (
+                        None if runtime_seconds is None
+                        else int(time.time() * 1000) + runtime_seconds * 1000
+                    )
                 transport = SlotAcpProcess(tuple(command), harness.session_root,
                     environment, registry=self.product_slots,
-                    guard_b64=harness.continuation_guard_b64)
+                    guard_b64=harness.continuation_guard_b64,
+                    deadline_at_ms=start_deadline_at_ms,
+                    ordinary_execution=ordinary_execution,
+                    task_ready_execution=task_ready_execution,
+                    prepare_start=harness.product_start_prepare,
+                    prelaunch_reject=harness.product_start_prelaunch_reject)
                 # Keep the root identity available if START succeeds but ACP
                 # initialization later fails and requires cleanup/ACK recovery.
                 harness.slot_scope = dict(transport.scope)
@@ -1159,6 +1524,12 @@ class DshAcpCompatibility:
             try:
                 transport.start()
             except Exception as error:
+                from ..acp_product_slot_client import (
+                    ProductSlotPrebindNoStart,
+                    ProductSlotRejected,
+                )
+                if isinstance(error, (ProductSlotPrebindNoStart, ProductSlotRejected)):
+                    harness.product_start_retirement_receipt = error.retirement_receipt
                 # A known busy group did not acquire a remote process. Keep
                 # the untouched prepared session retryable without dispatch.
                 if self.product_slots is not None and transport.process is None:
@@ -1291,12 +1662,7 @@ class DshAcpCompatibility:
                     block = update.get("content")
                     text = block.get("text") if isinstance(block, dict) and block.get("type") == "text" else None
                     if isinstance(text, str) and text:
-                        encoded_size = len(text.encode("utf-8"))
-                        if assembly.size + encoded_size > _MAX_TEXT_BYTES:
-                            self.cancel_session(session.harness, session_id)
-                            raise AcpTransportError("official DSH ACP assistant output exceeded the Adapter bound")
                         assembly.text.append(text)
-                        assembly.size += encoded_size
                     continue
                 if assembly is not None:
                     flush_message(assembly)

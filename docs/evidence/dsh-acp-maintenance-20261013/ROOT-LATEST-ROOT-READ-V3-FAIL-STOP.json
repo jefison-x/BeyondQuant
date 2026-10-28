@@ -1,0 +1,27 @@
+{
+  "source_commit": "ee6bc94e29b67b44faeeb6e14827843d74e4213f",
+  "result": "FAIL_OBSERVER_STOP",
+  "Root": "FAIL_OBSERVER_STOP",
+  "failure_stage": "Local wrapper comparison after successful initial inventory",
+  "reason": "Wrapper incorrectly joined a repository-relative baseline_file to the nested plan directory; FileNotFoundError before Health or any data-read step.",
+  "responsibility": "Root admitted a textual plan/helper contracts without the complete executable entry. Tester used an unreviewed temporary wrapper with wrong path base.",
+  "six_data_reads": "NOT_RUN",
+  "docker_exec": 0,
+  "model_calls": 0,
+  "jobs": 0,
+  "production_mutations": 0,
+  "bounded_pass_evidence": {
+    "inventory_before_count": 27,
+    "inventory_after_count": 27,
+    "before_and_after_match_previous_baseline": true,
+    "id_image_start_project_service_running_unchanged": true,
+    "full_seven_field_records_before_after_unchanged": true,
+    "seven_source_sha256_unchanged": true
+  },
+  "action": "No retry. Keep live reads paused. One fixed small six-step executable entry resolves every repository-relative evidence path against the repository root, prevalidates all paths and hashes before any collection, and is exercised end-to-end with subprocess substitutes before independent review/Root admission.",
+  "private_evidence": "latest-root-closure-20261013/live-v3",
+  "prior_failures_preserved": [
+    "ROOT-LATEST-ROOT-READER-SOURCE-FAIL.json",
+    "ROOT-LATEST-ROOT-READ-PREFLIGHT-FAIL-STOP.json"
+  ]
+}

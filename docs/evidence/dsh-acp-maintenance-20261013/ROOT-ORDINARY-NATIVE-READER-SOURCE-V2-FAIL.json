@@ -1,0 +1,20 @@
+{
+  "result": "FAIL_SOURCE_STOP",
+  "scope": "Second static native reader review before tests",
+  "base_commit": "d9a7f853",
+  "reviewed_source_sha256": {
+    "capture": "ac2504814c47fa494782d7833774f494fec9b4bb852c814d396a48cc1375c94f",
+    "observer": "9d40e86224fb9fdd08054db30f5b92c62452164e31e1309212a59fbf4ed12902",
+    "observer_tests": "490a632b5d73f3223a47ee147c9a1a7d069cf32819e80c90d3306ec28e859812"
+  },
+  "independent_sol": "FAIL",
+  "findings": [
+    "Observer test AST helper points at observer.py instead of capture.py; fixture initialization would fail.",
+    "Preflight source command runner ID is not joined to baseline requested Runner ID."
+  ],
+  "tests": "NOT_RUN",
+  "batch_model_calls": 0,
+  "batch_job_calls": 0,
+  "prior_live_batch": "FAIL_STOP, immutable",
+  "release_readiness": "NOT_READY"
+}

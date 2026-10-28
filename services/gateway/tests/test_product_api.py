@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 import httpx
@@ -101,6 +103,134 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     )
     assert healthy.status_code == 200
     assert healthy.json()["status"] == "ok"
+
+
+def test_execution_options_get_uses_exact_backend_scope_without_human_only_gate(monkeypatch):
+    calls = []
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "alice")
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
+        "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
+    })
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, payload, headers))
+        return {"schema_version": "agent-execution-options.v1", "revision": 0, "options": {}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    response = client.get("/api/product/agent/conversations/conversation_exact/execution-options",
+                          headers={"Authorization": "Bearer product-test-token"})
+    assert response.status_code == 200
+    assert response.json()["revision"] == 0
+    assert calls == [("GET", "/v1/product/conversations/conversation_exact/execution-options", None,
+                      {"x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact"})]
+
+
+def test_execution_options_put_requires_durable_human_cookie_and_same_site(monkeypatch):
+    calls = []
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
+        "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
+        "x-byq-actor-principal": "alice",
+    })
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, payload, headers))
+        return {"schema_version": "agent-execution-options.v1", "revision": 1, "options": {}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    path = "/api/product/agent/conversations/conversation_exact/execution-options"
+    payload = {"schema_version": "agent-execution-options.v1", "expected_revision": 0,
+               "options": {"auto_continue": False}}
+    denied = client.put(path, json=payload)
+    assert denied.status_code == 401
+    assert calls == []
+
+    client.cookies.set(product_api.SESSION_COOKIE, "opaque-test-session")
+    cross_site = client.put(path, json=payload, headers={"sec-fetch-site": "cross-site"})
+    assert cross_site.status_code == 403
+    assert calls == []
+
+    changed = client.put(path, json=payload, headers={"sec-fetch-site": "same-origin"})
+    assert changed.status_code == 200
+    assert calls == [("PUT", "/v1/product/conversations/conversation_exact/execution-options", payload,
+                      {"x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
+                       "x-byq-actor-principal": "alice", "x-byq-product-human-actor": "true"})]
+
+
+def test_typed_approval_writes_require_browser_confirmation_and_reject_cross_site(monkeypatch):
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {"x-byq-owner-principal": "human"})
+    missing_cookie = SimpleNamespace(cookies={}, headers={"x-byq-product-approval-confirmation": "v1"})
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._product_approval_request_headers(missing_cookie)
+    assert caught.value.status_code == 401
+
+    cookie = {user_session.SESSION_COOKIE: "session"}
+    missing_confirmation = SimpleNamespace(cookies=cookie, headers={})
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._product_approval_request_headers(missing_confirmation)
+    assert caught.value.status_code == 403
+
+    cross_site = SimpleNamespace(cookies=cookie, headers={
+        "x-byq-product-approval-confirmation": "v1", "sec-fetch-site": "Cross-Site"})
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._product_approval_request_headers(cross_site)
+    assert caught.value.status_code == 403
+
+    accepted = SimpleNamespace(cookies=cookie, headers={"x-byq-product-approval-confirmation": "v1"})
+    assert product_api._product_approval_request_headers(accepted) == {"x-byq-owner-principal": "human"}
+
+
+def test_product_approval_reconcile_is_explicit_post_and_forwards_confirmation(monkeypatch):
+    request_id = "approval_request_" + "a" * 32
+    request = SimpleNamespace(
+        cookies={user_session.SESSION_COOKIE: "browser-session"},
+        headers={"x-byq-product-approval-confirmation": "v1"},
+    )
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
+        "x-byq-owner-principal": "human", "x-byq-workspace-id": "workspace-exact"})
+    calls = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, payload, headers))
+        return {"schema_version": "byq-product-approval-request.v1", "request": {
+            "request_id": request_id, "status": "needs_attention"}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = product_api.product_approval_request_reconcile(request_id, request)
+    assert response["request"]["status"] == "needs_attention"
+    assert calls == [("POST", f"/v1/product/research/approval-requests/{request_id}/reconcile", None,
+                     {"x-byq-owner-principal": "human", "x-byq-workspace-id": "workspace-exact"})]
+
+
+def test_approval_request_exact_get_route_precedes_generic_research(monkeypatch) -> None:
+    request_id = "approval_request_" + "a" * 32
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    trusted = {"x-byq-owner-principal": "product-user", "x-byq-workspace-id": "workspace-exact"}
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: trusted)
+    calls = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, headers))
+        return {"schema_version": "byq-product-approval-request.v1", "request": {"request_id": request_id}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    path = f"/api/product/research/approval-requests/{request_id}"
+    denied = client.get(path)
+    assert denied.status_code == 401
+    assert calls == []
+
+    headers = {"Authorization": "Bearer product-test-token"}
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["request"]["request_id"] == request_id
+    assert calls == [("GET", f"/v1/product/research/approval-requests/{request_id}", trusted)]
+    unsupported = client.get("/api/product/research/unsupported/id", headers=headers)
+    assert unsupported.status_code == 404
+    assert calls == [("GET", f"/v1/product/research/approval-requests/{request_id}", trusted)]
 
 
 def test_product_artifact_reference_passes_the_bounded_backend_projection(monkeypatch) -> None:
@@ -539,6 +669,11 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
         "runtime": {"status": "ready", "sdk": "deepseek-harness-sdk==0.1.1rc1"},
         "sessions": {"active": 1, "active_prompts": 0, "status_counts": {"idle": 1}},
         "usage": {"total_tokens": 125, "model_calls": 1},
+        "product_slot_leases": {
+            "configured": 2, "held": 0, "awaiting_backend_ack": 0,
+            "awaiting_cleanup": 0, "scope": "adapter_process_lifetime",
+            "source": "live_product_slot_registry",
+        },
         "raw_dsh_events": False,
     }))
     client = TestClient(main.app)
@@ -547,6 +682,7 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     body = response.json()
     assert body["services"]["runtime_adapter"] == "ready"
     assert body["runtime"]["usage"]["total_tokens"] == 125
+    assert body["runtime"]["product_slot_leases"]["held"] == 0
     assert body["cache"]["redis"] == "not_used"
     assert "api_key" not in response.text.lower()
 
@@ -556,6 +692,20 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     denied = client.get("/api/product/operations/status")
     assert denied.status_code == 403
     assert denied.json()["error"]["code"] == "product_forbidden"
+
+
+def test_plugin_projection_omits_aggregate_product_slot_counts() -> None:
+    projection = product_api._decorate_plugin_center(
+        {"plugins": [{"id": "test-plugin"}], "policy": {}},
+        {
+            "runtime": {"status": "ready", "enabled_plugin_ids": [],
+                        "model_credentials": "missing"},
+            "product_slot_leases": {"configured": 2, "held": 1},
+        },
+    )
+    assert "product_slot_leases" not in projection
+    assert "product_slot_leases" not in projection["runtime"]
+    assert "product_slot_leases" not in json.dumps(projection)
 
 
 def test_operations_status_without_browser_session_returns_401(monkeypatch) -> None:
@@ -762,10 +912,21 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
             return FakeResponse({
                 "credentials": [{
                     "credential_id": "cred_0123456789abcdef0123456789abcdef",
+                    "purpose": "model_api_key",
                     "provider": "deepseek",
+                    "scope": "user",
                     "status": "active",
                     "configured": True,
                     "masked": "sk-…abcd",
+                }, {
+                    "credential_id": "cred_1123456789abcdef0123456789abcdef",
+                    "purpose": "web_search_api_key",
+                    "provider": "deepseek",
+                    "scope": "user",
+                    "status": "active",
+                    "configured": True,
+                    "masked": "sk-…wxyz",
+                    "version": 1,
                 }],
                 "encryption": {"configured": True, "status": "ready"},
             })
@@ -788,8 +949,102 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     assert response.json()["providers"][1]["provider"] == "opencode-go"
     assert response.json()["agents"][0]["name"] == "小巴 Product Agent"
     assert response.json()["credential_items"][0]["masked"] == "sk-…abcd"
+    assert len(response.json()["credential_items"]) == 1
+    assert response.json()["credential_items"][0]["purpose"] == "model_api_key"
+    assert response.json()["configured"] is True
+    assert response.json()["search_credential"] == {
+        "configured": True,
+        "status": "active",
+        "masked": "sk-…wxyz",
+        "version": 1,
+        "credential_id": "cred_1123456789abcdef0123456789abcdef",
+        "provider": "deepseek",
+    }
     assert "token" not in response.text.lower()
     assert "secret" not in response.text.lower()
+
+
+def test_product_search_credential_does_not_configure_models(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    def backend(method: str, path: str, *args, **kwargs):
+        if path == "/v1/users/model-catalog":
+            return {"providers": [], "models": [], "agents": []}
+        if path == "/v1/users/model-credentials":
+            return {"credentials": [{
+                "credential_id": "cred_1123456789abcdef0123456789abcdef",
+                "purpose": "web_search_api_key", "provider": "deepseek", "scope": "user",
+                "status": "active", "configured": True, "masked": "sk-…wxyz", "version": 1,
+            }], "encryption": {}}
+        if path == "/v1/users/model-profiles":
+            return {"profiles": []}
+        if path == "/v1/users/model-bindings":
+            return {"bindings": []}
+        if path.startswith("/v1/users/model-credential-audit"):
+            return {"events": []}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get(
+        "/api/product/settings/models",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["configured"] is False
+    assert response.json()["credential_items"] == []
+    assert response.json()["search_credential"]["configured"] is True
+
+
+def test_product_credential_receipt_forwards_purpose(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    seen = []
+
+    def backend(method: str, path: str, *args, **kwargs):
+        seen.append((method, path))
+        return {"state": "not_found"}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get(
+        "/api/product/settings/models/credentials/receipts",
+        params={"operation": "create", "request_id": "search-create-1",
+                "purpose": "web_search_api_key"},
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert seen == [(
+        "GET",
+        "/v1/users/model-credentials/receipts?operation=create&request_id=search-create-1&purpose=web_search_api_key",
+    )]
+
+
+def test_search_credential_unknown_create_is_not_retried(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    calls = []
+
+    def timeout(method: str, url: str, **kwargs):
+        calls.append((method, str(url), kwargs.get("json")))
+        raise httpx.ReadTimeout("private search key must stay redacted")
+
+    monkeypatch.setattr(product_api.httpx, "request", timeout)
+    secret = "private-search-key-not-in-response"
+    response = TestClient(main.app).post(
+        "/api/product/settings/models/credentials",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"purpose": "web_search_api_key", "provider": "deepseek",
+              "label": "search", "secret": secret,
+              "idempotency_key": "search-unknown-create-1"},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "operation_outcome_unknown"
+    assert len(calls) == 1
+    assert calls[0][0] == "POST"
+    assert str(calls[0][1]).endswith("/v1/users/model-credentials")
+    assert calls[0][2]["purpose"] == "web_search_api_key"
+    assert secret not in response.text
+    assert "private search key" not in response.text
 
 
 def test_product_model_credential_models_forward_owner_context(monkeypatch) -> None:

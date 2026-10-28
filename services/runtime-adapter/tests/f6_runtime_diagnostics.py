@@ -22,7 +22,7 @@ ENUMS = {
     "terminal_exception_kind": {"JsonRpcError", "TransportError", "ProtocolError", "RuntimeError", "ValueError", "OSError", "TimeoutError", "KeyError", "TypeError", "none", "unknown"},
     "request_outcome": {"completed", "needs_attention", "unknown"},
     "guard_blocked": {"BYQ_CONTINUATION_TOOL_UNQUALIFIED", "BYQ_CONTINUATION_TOOL_LIMIT", "BYQ_CONTINUATION_TOOL_STORAGE_FAILED", "BYQ_CONTINUATION_CANCELLED", "BYQ_CONTINUATION_DEADLINE_EXCEEDED", "none", "unknown"},
-    "gate_reason": {"within_request_budget", "deadline_exceeded", "provider_outcome_unknown", "provider_redirect_blocked", "output_tokens_exceeded", "concurrency_limit", "provider_call_limit", "attempt_limit", "input_bytes_limit", "total_input_bytes_limit", "output_tokens_limit", "total_output_tokens_limit", "tool_payload_limit", "total_tool_payload_limit", "model_route_unqualified", "budget_invalid", "cancelled", "none", "unknown"},
+    "gate_reason": {"within_request_budget", "deadline_exceeded", "provider_outcome_unknown", "provider_redirect_blocked", "output_tokens_exceeded", "concurrency_limit", "queue_limit", "provider_call_limit", "attempt_limit", "input_bytes_limit", "total_input_bytes_limit", "output_tokens_limit", "total_output_tokens_limit", "tool_payload_limit", "total_tool_payload_limit", "model_route_unqualified", "budget_invalid", "cancelled", "client_disconnected", "storage_failed", "none", "unknown"},
     "usage_completeness": {"known", "partial", "unknown"},
 }
 BOOLS = {"active_run", "process_closed", "process_closing", "proxy_closed", "guard_observed", "usage_observed"}
@@ -71,8 +71,12 @@ def terminal_projection(adapter, record, run_id, native_finish, *, phase="backgr
     admission = usage.get("admission_usage", {})
     actual = usage.get("actual_usage", {})
     violations = usage.get("limit_violations")
+    # Diagnostics only (never business settlement): surface the last closed
+    # per-request refusal. `aborted` covers a fail-closed client disconnect,
+    # which is a real gate reason worth observing even though it is not a
+    # business block (has_blocked_request excludes it).
     blocked = next((row for row in reversed(gate_rows)
-        if row.get("phase") == "rejected" or row.get("forwarded") is False), None)
+        if row.get("phase") in {"rejected", "aborted"} or row.get("forwarded") is False), None)
     reason = blocked.get("reason") if blocked is not None else (
         gate_rows[-1].get("reason") if gate_rows else "none")
     row = {

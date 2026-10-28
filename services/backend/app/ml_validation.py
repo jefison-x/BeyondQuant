@@ -13,5 +13,4 @@ class MLValidationError(ValueError):
         self.code = code if code in _CODES else "unsupported_value"
 
     def public_problem(self) -> dict[str, object]:
-        return {"schema_version": "ml-validation-problem.v1", "field": self.field, "code": self.code,
-                "repair_limit": 1, "next_action": "read_capabilities_then_correct_once"}
+        return {"schema_version": "ml-validation-problem.v1", "field": self.field, "code": self.code}

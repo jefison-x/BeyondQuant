@@ -141,8 +141,8 @@ def test_runtime_authority_identity_fields_fail_closed_before_database_access():
             raise AssertionError("invalid event digest was accepted")
 
 
-def test_runtime_roots_projection_filters_in_storage_and_fails_closed_over_limit(monkeypatch):
-    from app.agent_research import AgentPersistenceError, AgentResearchStore
+def test_runtime_roots_projection_filters_in_storage_without_truncating_history(monkeypatch):
+    from app.agent_research import AgentResearchStore
 
     store = object.__new__(AgentResearchStore)
     captured = {}
@@ -150,29 +150,28 @@ def test_runtime_roots_projection_filters_in_storage_and_fails_closed_over_limit
     def fetch(sql, params):
         captured["sql"] = sql
         captured["params"] = params
-        return [{"root_run_id": "a" * 32, "status": "active", "authority_status": "active",
-                 "terminal_sequence": None, "terminal_event_sha256": None,
+        return [{"root_run_id": f"{index + 1:032x}", "status": "running", "authority_status": "active",
+                 "terminal_sequence": None,
+                 "terminal_event_sha256": None,
                  "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
-                 "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None}]
+                 "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None}
+                for index in range(501)]
 
     monkeypatch.setattr(store, "_execute", fetch)
+    # Active Roots have no protected terminal audit; this test checks query scope and cardinality.
+    monkeypatch.setattr(store, "_fetch_one", lambda _sql, _params: None)
     result = store.runtime_roots_for_scope(owner_principal="owner", workspace_id="workspace_1",
                                            session_id="session_1", trace_id="trace_1")
     assert captured["params"] == {"owner": "owner", "workspace": "workspace_1", "session": "session_1",
-                                   "trace": "trace_1", "limit": 501}
+                                   "trace": "trace_1"}
     assert "WHERE owner_principal=:owner AND workspace_id=:workspace" in captured["sql"]
     assert "AND session_id=:session AND trace_id=:trace" in captured["sql"]
     assert "ORDER BY created_at, root_run_id" in captured["sql"]
+    assert "LIMIT" not in captured["sql"].upper()
     assert result["schema_version"] == "byq-business-root-status.v1"
-    assert result["roots"] == [{"root_run_id": "a" * 32, "status": "active", "authority_status": "active",
-                                "terminal_sequence": None, "terminal_event_sha256": None,
-                                "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
-                                "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None}]
-
-    monkeypatch.setattr(store, "_execute", lambda _sql, _params: [{}] * 501)
-    with pytest.raises(AgentPersistenceError, match="bounded result"):
-        store.runtime_roots_for_scope(owner_principal="owner", workspace_id="workspace_1",
-                                      session_id="session_1", trace_id="trace_1")
+    assert len(result["roots"]) == 501
+    assert result["roots"][0]["root_run_id"] == f"{1:032x}"
+    assert result["roots"][-1]["root_run_id"] == f"{501:032x}"
 
 
 @pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="requires isolated PostgreSQL")
@@ -251,13 +250,15 @@ def test_runtime_roots_endpoint_is_bearer_protected_and_exactly_scoped(monkeypat
                 {"root_run_id": active_root, "status": "active", "authority_status": "active",
                  "terminal_sequence": None, "terminal_event_sha256": None,
                  "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
-                 "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None},
+                 "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None,
+                 "operator_process_fence": None},
                 {"root_run_id": terminal_root, "status": "completed", "authority_status": "closed",
                  "terminal_sequence": 9, "terminal_event_sha256": "c" * 64,
                  "terminal_acp_ingress_sequence": terminal_facts["terminal_acp_ingress_sequence"],
                  "terminal_acp_ingress_sha256": terminal_facts["terminal_acp_ingress_sha256"],
                  "terminal_unknown_claim_count": terminal_facts["terminal_unknown_claim_count"],
-                 "terminal_unknown_claims_sha256": terminal_facts["terminal_unknown_claims_sha256"]},
+                 "terminal_unknown_claims_sha256": terminal_facts["terminal_unknown_claims_sha256"],
+                 "operator_process_fence": None},
             ],
         }
         wrong_trace = {**headers, "x-byq-trace-id": "other-roots-trace"}

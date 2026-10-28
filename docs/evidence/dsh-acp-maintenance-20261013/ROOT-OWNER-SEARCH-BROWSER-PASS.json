@@ -1,0 +1,24 @@
+{
+  "status": "ROOT_PASS_SCOPED_REAL_BROWSER_SEARCH_ACTIVITY_AND_CONTINUITY",
+  "utc": "2026-10-15T00:56:48.924957+00:00",
+  "source_head": "0be2f56c68382562c64f8624c8327779dd081390",
+  "independent_sol_sha256": "f8f6825763562b923f10493c2616336fd6bd8ba81490bb78560fa43c88da9e6c",
+  "basis": "Native CUA two user submissions plus reload; exact persisted rows, normalized search activity, terminal authority closure, model proxy journal and independent Sol saved-evidence review.",
+  "passed": [
+    "User saved owner-scoped search credential through UI; reload remained masked and enabled.",
+    "Search activity completed and browser showed source URLs.",
+    "Original conversation retained history and exact remembered marker on ordinary next turn, with 8 -> 10 -> 12 messages.",
+    "Both new roots completed, authority closed, unknown claims zero."
+  ],
+  "not_qualified": [
+    "Native web-search provider HTTP status, raw response, request count and usage were not captured; search activity completion and browser links do not establish those native provider details.",
+    "The assistant reported eight sources with no summary; only three visible source links and normalized activity were observed. This does not qualify a meaningful numeric weather answer.",
+    "The browser was operated by Root through native CUA; its screenshot remains in the parent task, not as a standalone file reviewed here.",
+    "No global Job-count comparison was made. Evidence supports no intentional Job, zero root MCP ingress/domain claims and no delegated AgentRuns for these two roots.",
+    "Cross-user isolation, revoke/rotate while in flight, F6, delegation, background, cancel/crash, official SDK positive search limits, system environment model-key migration, CI and production remain unqualified."
+  ],
+  "production": "NOT_TOUCHED",
+  "phase_advanced": false,
+  "retention": "Keep existing test environment, page, identity and volumes.",
+  "private_evidence": ".ci-artifacts/execution-options-20261014/search-credential-20261015/real-search-v1"
+}

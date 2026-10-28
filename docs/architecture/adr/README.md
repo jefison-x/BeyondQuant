@@ -34,6 +34,14 @@ single-image topology (source adoption, 2026-10-11); the registry-digest,
 live-boot, BuildKit, F6, Full CI, publication and deployment gates remain open,
 and acceptance does not authorize publication or deployment.
 
+[ADR-0111](ADR-0111-automatic-continuation-execution-parameters.md) is **Accepted**
+by the maintainer on 2026-10-14: Product conversations support automatic
+continuation by default; optional user execution parameters replace separate
+continuation permits and forced BYQ quotas. Omitted/null limits are disabled.
+Its named amendments preserve business authorization, cancellation, identity,
+idempotency, unknown-result reconciliation and terminal receipts. Implementation,
+per-path real qualification and deployment remain separate gates.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的
@@ -207,3 +215,14 @@ and Workspace identity. Unresolved or unknown external responsibility blocks
 reset until reconciled; minimal retired-key replay protection remains separate.
 Implementation and real E acceptance are recorded in the Phase17 evidence;
 acceptance does not authorize resetting existing production data.
+
+[ADR-0112](ADR-0112-acp-audit-validation-negative-receipt.md) is **Accepted**:
+an exact private negative receipt for pre-write ACP audit validation. It is
+separate from ADR-0109's authorize-only receipt and does not rewrite old unknown
+rows. Implementation and qualification remain separate evidence gates.
+
+[ADR-0113](ADR-0113-historical-audit-unknown-reconciliation.md) is **Accepted**:
+Engineering-only acknowledgement of historical ordinary audit-append uncertainty,
+preserving original unknown observations and requiring exact signed runner cleanup,
+trusted reconciliation storage and terminal ACK. It does not enable ADR-0104 or
+authorize recovery operations before implementation review and exact preflight.

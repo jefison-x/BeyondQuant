@@ -1,0 +1,38 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-complete-entry-offline-v1",
+  "status": "FAIL_STOP",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "source_sha256": {
+    "capture": "2f0c3b4b95dacfe176b26f6c65adac6c51d5a4c5e393d208566cf744116b7e15",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31",
+    "capture_test": "573d33f65c121635ca3415dce4b33db8ae8959d3e634fe6cc0f0f07fab79da0e"
+  },
+  "argv": ["python3", "-m", "unittest", "-v", "-f", "scripts.evidence.test_acp_child_scope_read", "scripts.evidence.test_acp_foreground_child_capture"],
+  "limits": {"executions": 1, "timeout_seconds": 60},
+  "result": {
+    "returncode": 1,
+    "elapsed_ms": 190,
+    "timed_out": false,
+    "planned_methods": 29,
+    "started_methods": 23,
+    "passed_methods": 22,
+    "failed_methods": 1,
+    "not_run_methods": 6,
+    "scope_methods_passed": 16,
+    "capture_methods_passed": 6,
+    "failed_method": "test_provider_journal_rejects_elapsed_window_over_three_minutes",
+    "expected_stop": "provider_journal_limits_or_settlement_invalid",
+    "actual_stop": "provider_journal_usage_invalid",
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 6156,
+    "stderr_sha256": "53f5fb2dc69088b8e76c3953bc37c5f54f4361020fdfa2d6c86da6c415c85152",
+    "source_and_test_unchanged": true
+  },
+  "root_decision": "STOP this test batch and all new model inputs; review the complete negative-fixture contract and guard priority before authorizing any repair execution. Development and diagnosis continue.",
+  "not_qualified": ["complete three-stage entry", "live child", "actual daemon MAC", "actual native child close ACK", "production"],
+  "execution": {"reruns": 0, "real_database_queries": 0, "real_docker_calls": 0, "real_http_calls": 0, "model_requests": 0, "new_jobs": 0, "production_operations": 0},
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/foreground-full-entry-offline-v1/"
+}

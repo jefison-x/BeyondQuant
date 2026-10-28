@@ -10,7 +10,7 @@ const sections = [
   { path: "/user/assets", label: "资产管理", description: "资产清单与安全迁移" },
   { path: "/user/models", label: "模型配置", description: "凭据、档案与绑定" },
   { path: "/user/agent-policy", label: "智能助手偏好", description: "个人审批与操作边界" },
-  { path: "/user/research", label: "研究与审批", description: "研究谱系与审批历史" },
+  { path: "/user/research", label: "审批历史", description: "已决审批记录与只读领域详情" },
   { path: "/user/reset", label: "重置工作区", description: "清理运行时或工作区数据" },
 ];
 const activePath = computed(() => route.path);

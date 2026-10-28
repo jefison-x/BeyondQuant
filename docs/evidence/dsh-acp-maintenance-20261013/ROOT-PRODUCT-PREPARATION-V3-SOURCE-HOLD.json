@@ -1,0 +1,28 @@
+{
+  "status": "FAIL_SOURCE_NOT_EXECUTED",
+  "live_admission": "HOLD",
+  "source_head_at_review": "a39bbe87a476f01b2f258ef33eb9ef6fea383bf5",
+  "evidence_directory": ".ci-artifacts/background-continuation-20261014/business-product-prepared-v3",
+  "collector_sha256": "a677dbe68cfa344eb8eb136152ab23965330c04511e68e2034eb0378dcb0eea4",
+  "offline_test_sha256": "9c166e671f10630db344fbefdc9cb0b60030dad778579592c2ab834930de81f4",
+  "original_offline_result": "rc0 with source-inaccurate substituted responses; does not establish the real contract",
+  "confirmed_source_defects": [
+    "No explicit read-only mode; default execution would attempt a permission POST.",
+    "Approval authorization is inside artifact.content; substituted responses placed it at the top level.",
+    "Grant POST omitted the required human-confirmation header.",
+    "A 404 was incorrectly accepted as absence; the normal absent response is 200 with permission null.",
+    "Workspace and conversation were not checked against the exact admitted scope.",
+    "Owner-wide lists can miss the exact object through pagination and collect unrelated content.",
+    "STOP results did not reliably produce a nonzero exit code.",
+    "Login request hash unnecessarily incorporated a password and must not be persisted."
+  ],
+  "required_correction": "One source-aligned revision with explicit read-only default and explicit grant mode, exact GETs and scope, fixed response wrappers, confirmation header, no replay of unknown POST outcomes, no password hash, and complete substituted-entry tests before independent review.",
+  "http_calls": 0,
+  "product_writes": 0,
+  "models": 0,
+  "jobs": 0,
+  "independent_sol_review": "SOURCE_HOLD",
+  "root_acceptance": "HOLD",
+  "original_failure_evidence": "PRESERVED",
+  "overall_maintenance": "NOT_READY"
+}

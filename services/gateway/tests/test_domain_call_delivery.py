@@ -53,6 +53,42 @@ def test_private_delivery_restarts_with_same_receipt_without_public_trace(tmp_pa
     assert "terminal_events" not in state and "durable_terminal_ack_migrated" not in state
 
 
+def test_private_delivery_advances_exact_cursor_from_1024_and_survives_restart(tmp_path):
+    now, sends, reads = [1000.], [], []
+    event = evidence(1025)
+
+    def source(ctx, cursor):
+        reads.append(cursor)
+        return page([event] if cursor == 1024 else [])
+
+    def send(ctx, value):
+        sends.append(value)
+        return {"receipt": call_evidence_receipt(value)}
+
+    delivery = setup(tmp_path, source, send, now)
+    delivery.register(SimpleNamespace(session_id="session-one", trace_id="trace-one",
+        conversation_id="conversation-one", workspace_id="workspace-one",
+        principal=SimpleNamespace(subject="alice")))
+    ledger = tmp_path / "session-one.domain-calls.json"
+    state = json.loads(ledger.read_text())
+    state["cursor"] = 1024
+    delivery._save(ledger, state)
+
+    delivery.run_once()
+    assert sends == [event]
+    state = json.loads(ledger.read_text())
+    assert state["cursor"] == 1025 and state["pending"] == {}
+    assert state["last_receipt"] == call_evidence_receipt(event)
+    assert reads == [1024]
+
+    now[0] += 2
+    restarted = setup(tmp_path, source, send, now)
+    restarted.run_once()
+    assert sends == [event]
+    assert reads == [1024, 1025]
+    assert TraceStore(tmp_path).read("session-one") == []
+
+
 @pytest.mark.parametrize("invalid", [page([evidence(2)]), page([{**evidence(), "raw_arguments": "secret"}]),
     {"schema_version": "domain-call-page.v1", "events": [], "more": True, "idle": False}])
 def test_invalid_private_page_is_never_delivered_and_read_budget_survives_restart(tmp_path, invalid):

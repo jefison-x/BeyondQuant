@@ -1,49 +1,48 @@
 import { expect, test } from '@playwright/test';
-import { selectContinuationStrategy } from './continuation-permission-controls';
 
-// Offline UI contract samples only. All HTTP API responses are intercepted;
-// this does not qualify durable Product grants, identity or live F6 execution.
-const taskId = 'task_' + '1'.repeat(32);
-const artifactId = 'artifact_' + '2'.repeat(32);
-const profile = { profile_id: 'task-ready-read.v1', profile_version: 1, profile_sha256: 'a'.repeat(64) };
-const limits = { max_provider_calls: 16, max_attempts: 16, max_concurrent: 1,
-  max_input_bytes: 262144, max_total_input_bytes: 4194304, max_output_tokens: 8192,
-  max_total_output_tokens: 131072, max_tool_payload_bytes: 65536,
-  max_total_tool_payload_bytes: 1048576, max_tool_calls: 16, deadline_ms: 180000 };
-
+// Offline UI contract samples only. All HTTP responses are intercepted;
+// this does not qualify live F6 execution or durable Product state.
 for (const width of [1440, 390]) {
-  test(`offline F6 permission controls and fixed profile at ${width}px`, async ({ page }) => {
+  test(`offline F6 automatic continuation settings at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     let authenticated = false;
     const user = { subject: 'offline-controls-user', role: 'user',
       workspace: { workspace_id: 'workspace_' + '5'.repeat(32), display_name: 'Offline fixture' } };
-    let permission: Record<string, unknown> | null = null;
+    const conversationId = 'session-1';
+    const options = {
+      auto_continue: true,
+      max_provider_calls: null, max_provider_attempts: null, max_tool_calls: null,
+      max_concurrent_provider_calls: null, max_input_bytes_per_call: null,
+      max_input_bytes_total: null, max_output_tokens_per_call: null,
+      max_output_tokens_total: null, max_tool_payload_bytes_per_call: null,
+      max_tool_payload_bytes_total: null, max_continuations: null,
+      max_runtime_seconds: null, max_no_progress_seconds: null,
+      max_child_runtime_seconds: null, max_child_no_progress_seconds: null,
+    };
+    let revision = 0;
+    let currentOptions = options;
     const mutations: Array<Record<string, unknown>> = [];
+    let permissionRequests = 0;
     await page.route(/^https?:\/\/[^/]+\/(?:api|v1)\//, async route => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
       let status = 200;
-      let body: unknown = { conversations: [], sessions: [], artifacts: [], approvals: [] };
+      let body: unknown = { conversations: [], sessions: [], approvals: [], requests: [], total: 0 };
       if (path === '/api/auth/login') { authenticated = true; body = { user, session_id: 'offline-session' }; }
       else if (path === '/api/auth/me') { status = authenticated ? 200 : 401; body = authenticated ? user : { error: { message: 'unauthenticated' } }; }
-      else if ((path.endsWith('/preferences') || path.endsWith('/appearance'))) body = { preferences: { schema_version: 'ui-preferences.v1', color_mode: 'light', accent_theme: 'emerald', version: 0, updated_at: null } };
-      else if (path === '/api/product/research/tasks') body = { tasks: [{ task_id: taskId, owner_principal: user.subject, workspace_id: user.workspace.workspace_id, conversation_id: 'conversation_' + '3'.repeat(32), trace_id: 'byq-trace-' + '4'.repeat(32), title: 'Offline permission controls', status: 'planned', objective: 'No backend or model execution' }] };
-      else if (path === '/api/product/research/artifacts') body = { artifacts: [{ artifact_id: artifactId, task_id: taskId, owner_principal: user.subject, workspace_id: user.workspace.workspace_id, kind: 'strategy_version', status: 'validated' }] };
-      else if (path.endsWith('/continuation-permission')) {
-        if (request.method() === 'POST') {
+      else if (path === '/v1/agent/sessions') body = { sessions: [{ session_id: conversationId, trace_id: 'trace-1', title: 'F6 会话' }], total: 1, limit: 50, offset: 0 };
+      else if (path === `/api/product/agent/conversations/${conversationId}/execution-options`) {
+        if (request.method() === 'PUT') {
           const sent = request.postDataJSON();
           mutations.push(sent);
-          permission = { schema_version: 'task-continuation-permission.v2', grant_version: 1,
-            confirmation_id: sent.idempotency_key, execution_profile: profile, request_limits: limits,
-            confirmed_artifact_ids: sent.confirmed_artifact_ids, max_turns: 1,
-            turn_timeout_seconds: 86400, expires_at: '2099-01-01T00:00:00Z', revoked_at: null };
-          status = 201;
+          if (sent.expected_revision !== revision) status = 409;
+          else { revision += 1; currentOptions = sent.options; }
         }
-        body = { schema_version: 'task-continuation-permission.v2', task_id: taskId, permission,
-          available_profile: { execution_profile: profile, request_limits: limits },
-          request_state: { requests_reserved: 0, requests_remaining: 1, unconfirmed_requests: 0, request_usage: null, request_identity: null },
-          can_start: false, blocked_reason: permission ? 'waiting_for_event' : 'permission_missing' };
+        body = { schema_version: 'agent-execution-options.v1', conversation_id: conversationId,
+          owner_principal: user.subject, workspace_id: user.workspace.workspace_id,
+          revision, options: currentOptions, updated_at: null };
       }
+      else if (path.endsWith('/continuation-permission')) { permissionRequests += 1; status = 404; }
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     });
     await page.goto('/login');
@@ -51,17 +50,23 @@ for (const width of [1440, 390]) {
     await page.getByLabel('密码').fill('offline-password');
     await page.getByRole('button', { name: '进入' }).click();
     await expect(page).toHaveURL(/\/agent$/);
-    await page.goto('/user/research');
-    await page.getByRole('button', { name: '查看许可', exact: true }).click();
-    const panel = page.getByRole('region', { name: '任务后台续接许可' });
-    await expect(panel.getByRole('status')).toContainText('尚未授权');
-    await expect(panel.getByRole('spinbutton')).toHaveCount(0);
-    await selectContinuationStrategy(page, panel);
+    await page.goto(`/settings/agent-runtime?conversation_id=${conversationId}`);
+    const settings = page.getByRole('dialog', { name: /系统设置/ });
+    await expect(settings.locator('.runtime-settings').getByRole('heading', { name: 'Agent运行参数' })).toBeVisible();
+    await expect(settings.getByText('自动接续默认开启', { exact: false })).toBeVisible();
+    const autoContinue = settings.getByRole('switch', { name: '允许自动接续' });
+    await expect(autoContinue).toBeChecked();
+    await settings.locator('.setting-value .el-switch').click();
+    await expect(autoContinue).not.toBeChecked();
+    await settings.getByRole('button', { name: '保存参数' }).click();
+    await expect(settings.getByText('会话参数已保存')).toBeVisible();
+    expect(mutations).toEqual([{ schema_version: 'agent-execution-options.v1',
+      expected_revision: 0, options: { ...options, auto_continue: false } }]);
+    expect(permissionRequests).toBe(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await panel.getByRole('button', { name: '保存单次请求许可' }).click();
-    await expect(panel.getByText('请求档案：task-ready-read.v1 v1', { exact: false })).toBeVisible();
-    await expect(panel.getByRole('button', { name: '保存单次请求许可' })).toHaveCount(0);
-    expect(mutations).toHaveLength(1);
-    expect(mutations[0]).toEqual({ idempotency_key: expect.any(String), confirmed_artifact_ids: [artifactId], execution_profile_id: 'task-ready-read.v1' });
+    await page.goto('/user/research');
+    await expect(page.locator('.research-history').getByRole('heading', { name: '审批历史' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '保存单次请求许可' })).toHaveCount(0);
+    expect(permissionRequests).toBe(0);
   });
 }

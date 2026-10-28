@@ -1,0 +1,37 @@
+{
+  "time_utc": "2026-10-12T22:35:46.805164+00:00",
+  "scope": "DSH/ACP maintenance only, no Product Phase",
+  "user_direction": "continue until push/deployment readiness; substitute collectors first, repeated same-class error stops affected batch",
+  "base": "ad5f7df1ad18e54dd0d9860d424241297187eef8",
+  "runtime_application_closure": "a4e0a874812bd5105bda613a0eccf6c74bb4998f",
+  "candidate_head_before_uncommitted_assembly": "a2a7b1d2",
+  "historical_source_transfer": {
+    "status": "PASS_SOURCE_BYTES_ONLY",
+    "paths": 22,
+    "patch_sha256": "57f6e26c744447bd339ee8213a6381ad19fb4b6dd831c1035b071faa774062f5",
+    "independent_sol": "all22 paths/gitdiff andtargetSHA verified",
+    "original14path_subset": "INCOMPLETE_PRESERVED_NOT_USED"
+  },
+  "mcp_combination": {
+    "source_entry": "FAIL_UNTRUSTED_CONTINUATION_NOTE_PASSTHROUGH",
+    "tests": "NOT_RUN",
+    "repair": "pending targeted sanitization and hostile HTTP/MCP fixture",
+    "oc_preparation": "STOP_NATIVE_EXTERNAL_DIRECTORY_REJECTION",
+    "oc_session": "ses_ecdc73a77ffe895F0bIPS252cB",
+    "fallback": "explained necessary Luna source preparation only"
+  },
+  "signed_cleanup_collector": {
+    "source_entry": "FAIL_EXACT_SLOT_AND_RAW_FIRST_CONTRACT",
+    "tests": "NOT_RUN",
+    "real_read": "NOT_RUN",
+    "oc_session": "ses_ecdc82dc8ffe71RM35Now4hIlf",
+    "repair": "pending full fixed producer/context/raw-byte/signature contract"
+  },
+  "dependencies": "fixed lock MCP offline install21 packages, no scripts or network",
+  "product_inputs": 0,
+  "provider_requests": 0,
+  "jobs": 0,
+  "production_operations": 0,
+  "product_phase_advance": false,
+  "readiness": "NOT_READY_FOR_PUSH_OR_DEPLOYMENT"
+}

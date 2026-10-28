@@ -39,6 +39,13 @@ describe("workflow projections", () => {
     expect(workflowWaiting([wait, event(3, "session.started", {})], "session-1")).toBeNull();
     expect(workflowWaiting([event(2, "session.waiting", { elapsed_seconds: -1, last_activity_seconds: 20 })], "session-1")).toBeNull();
   });
+  it("keeps the current run's waiting state when an older run settles late", () => {
+    expect(workflowWaiting([
+      event(1, "session.started", { run_id: "run-current" }),
+      event(2, "session.waiting", { run_id: "run-current", elapsed_seconds: 60, last_activity_seconds: 20 }),
+      event(3, "session.result.discarded", { run_id: "run-old" }),
+    ], "session-1")).toEqual({ elapsed: 60, quiet: 20 });
+  });
   it("replays every historical outcome after later success without raw errors or duplicates", () => {
     const failure = event(2, "session.failed", { code: "runtime-subagent-timeout", error: "private-secret" });
     const events = [
@@ -58,6 +65,18 @@ describe("workflow projections", () => {
     for (const code of ["unknown-private-secret", "constructor", "__proto__"]) {
       expect(workflowOutcomes([event(2, "session.failed", { code })], "session-1")[0].message).toContain("本轮运行未能完成");
     }
+  });
+
+  it("permits an explicit new instruction after a known budget exhaustion without a blind retry", () => {
+    const events = [event(1, "session.started", {}),
+      event(2, "session.failed", { code: "budget-exhausted", retryable: false })];
+    const message = workflowOutcomes(events, "session-1")[0].message;
+    expect(message).toContain("预算");
+    expect(message).toContain("明确重述");
+    expect(message).not.toContain("直接重试");
+    expect(workflowRunState(events)).toEqual(expect.objectContaining({
+      running: false, failed: true, retryable: false, failureCode: "budget-exhausted",
+    }));
   });
 
   it("folds cards by stable identity and highest revision", () => {
@@ -106,6 +125,17 @@ describe("workflow projections", () => {
     ]);
     expect(activities[0].payload.state).toBe("failed");
   });
+  it("does not close a current activity for a late terminal event from an older run", () => {
+    const activities = workflowActivities([
+      event(1, "session.started", { run_id: "run-current" }),
+      event(2, "agent.activity", {
+        schema_version: "workflow-activity.v1", activity_id: "current-activity",
+        phase: "understand", state: "started", label: "理解请求",
+      }),
+      event(3, "session.failed", { run_id: "run-old", code: "model-run-failed" }),
+    ]);
+    expect(activities[0].payload.state).toBe("started");
+  });
 
   it("derives a replay-safe running state from lifecycle events", () => {
     expect(workflowRunState([event(3, "session.started", {})])).toEqual(expect.objectContaining({
@@ -136,5 +166,14 @@ describe("workflow projections", () => {
       event(3, "session.started", {}), event(7, "session.failed", { code: "model-run-failed", retryable: true }),
       event(8, "session.ready", { status: "ready" }), event(9, "session.started", {}),
     ])).toEqual(expect.objectContaining({ running: true, failed: false, retryable: false }));
+  });
+
+  it("does not let an old run's late discarded result settle the current run after replay", () => {
+    expect(workflowRunState([
+      event(1, "session.started", { run_id: "run-old" }),
+      event(2, "session.cancelled", { mode: "soft", run_id: "run-old" }),
+      event(3, "session.started", { run_id: "run-current" }),
+      event(4, "session.result.discarded", { reason: "soft-cancelled", run_id: "run-old" }),
+    ])).toEqual(expect.objectContaining({ running: true, answerStarted: false, failed: false }));
   });
 });

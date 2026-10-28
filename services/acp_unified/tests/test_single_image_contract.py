@@ -10,14 +10,20 @@ It reads the candidate compose overlay and asserts the static declarations that
 overlay makes. It does **not** compare the overlay field-for-field against the
 accepted three-image topology (``compose.dsh-acp-rc2-candidate.yml`` /
 ``compose.yml``) and does not re-assert those accepted contracts, which live in
-``tests/architecture/``. It is Docker-free, keyless, and reads no env/secret
-file. Run directly::
+``tests/architecture/``. It also imports the Product Runner module from the
+Dockerfile-derived isolated filesystem layout, without running the server's
+entrypoint. It is Docker-free, keyless, and reads no env/secret file. Run
+directly::
 
     python3 services/acp_unified/tests/test_single_image_contract.py
 """
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -165,6 +171,57 @@ class AcpSingleImageCandidateOverlayContract(unittest.TestCase):
         self.assertNotIn("639ed015397290b3745d163aafe02ffee4aa3f84", self.dockerfile)
         self.assertIn('"$BYQ_DSH_BUILD_SOURCE_COMMIT"', self.dockerfile)
         self.assertIn('"$BYQ_DSH_BUILD_PNPM_LOCK_SHA256  pnpm-lock.yaml"', self.dockerfile)
+
+    def test_task_ready_contract_is_baked_into_product_runner_import_root(self) -> None:
+        runner_root = "/opt/byq/acp_product_runner"
+        helper_root = "/opt/byq/acp_judgment_runner"
+        layout_parent = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, layout_parent, ignore_errors=True)
+        staged_runner = layout_parent / runner_root.lstrip("/")
+
+        # Reproduce only single-source COPY rows for the Product runner and the
+        # shared framing helper it loads from its sibling path. This is a small,
+        # target-specific layout check, not a general Dockerfile parser; /app is
+        # never staged.
+        copied = 0
+        for line in self.dockerfile.splitlines():
+            fields = line.strip().split()
+            if (len(fields) != 3 or fields[0] != "COPY"
+                    or not any(fields[2].startswith(root + "/")
+                               for root in (runner_root, helper_root))):
+                continue
+            source = ROOT / fields[1]
+            destination = layout_parent / fields[2].lstrip("/")
+            self.assertTrue(source.is_file(), fields[1])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
+            copied += 1
+
+        self.assertGreater(copied, 0)
+        self.assertTrue((layout_parent / helper_root.lstrip("/") / "server.py").is_file())
+        self.assertIn(
+            f"exec /usr/bin/python3 {runner_root}/server.py",
+            self.entrypoint,
+        )
+        # Match the product process's script-directory import root while
+        # isolating it from the repository, /app, user site, and environment.
+        import_code = (
+            "import runpy,sys; "
+            "runner=sys.argv[1]; "
+            "sys.path=[runner]+[entry for entry in sys.path if entry]; "
+            "runpy.run_path(runner+'/server.py', "
+            "run_name='byq_product_runner_import_probe')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-E", "-s", "-S", "-c", import_code, str(staged_runner)],
+            cwd=layout_parent,
+            env={},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_image_defaults_to_the_unprivileged_byq_identity(self) -> None:
         user_lines = [

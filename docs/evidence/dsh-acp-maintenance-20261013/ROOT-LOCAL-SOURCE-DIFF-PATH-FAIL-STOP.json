@@ -1,0 +1,19 @@
+{
+  "docker_calls_before_failure": 0,
+  "failure": {
+    "cause": "Root guessed facade basename for bundle reader; actual filename was declared in CONTRACT.md. No script execution or Docker/model/Job occurred.",
+    "prevention": "Inventory actual filenames, verify existing literal CONTRACT executable and SHA, freeze complete argv/cwd/outdir before next admitted run.",
+    "status": "FAIL_STOP_LOCAL_SOURCE_DIFF",
+    "tool_chunk": "97c2cf"
+  },
+  "followup": "Whole actual argv/cwd/source hash/output freshness independently Sol PASS; one new bounded source-read PASS, original local failure retained.",
+  "head": "b333b8de7607a418a92588ee5d26f33223614b41",
+  "new_jobs": 0,
+  "new_models": 0,
+  "pins": {
+    ".ci-artifacts/delegated-child-20261013/profile-boot-bundle-source-v1/prepared-command.json": "b27f62517f876039f0d0ac073eb4fa4bcc0cc7e0bc09e3b4ffaba64b9f73138e"
+  },
+  "schema": "byq-root-local-source-diff-stop.v1",
+  "status": "FAIL_STOP_LOCAL_PREVIEW",
+  "stopped": "New source acquisition paused; only inventory/CONTRACT/frozen argv review before new separately admitted read."
+}

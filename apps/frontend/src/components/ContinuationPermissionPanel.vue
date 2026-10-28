@@ -1,31 +1,52 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { confirmContinuationPermission, getContinuationPermission, revokeContinuationPermission,
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
+import { getContinuationPermission, getResearchEntity, revokeContinuationPermission,
   type ContinuationAvailableProfile, type ContinuationExecutionProfileBinding,
   type ContinuationPermissionView, type ContinuationRequestLimits,
   type ContinuationRequestUsage } from '@/api/research';
+import { submitProductApprovalRequestOnce } from '@/api/approvalRequestSubmissions';
+import { useAuthStore } from '@/stores/auth';
 import { formatChinaTime } from '@/time';
-import { createRequestId } from '@/utils/requestId';
 
 const PROFILE_ID = 'task-ready-read.v1' as const;
 const PROFILE_VERSION = 1;
 const PROFILE_SCHEMA = 'task-continuation-permission.v2' as const;
 const props = defineProps<{ taskId: string; artifacts: Array<Record<string, unknown>> }>();
+const auth = useAuthStore();
 const view = ref<ContinuationPermissionView | null>(null);
+const lastRequestStatus = ref('');
 const busy = ref(false);
 const error = ref('');
 type UnknownMutation =
-  | { kind: 'grant'; taskId: string; confirmationId: string; confirmedArtifactIds: string[]; profile: ContinuationAvailableProfile }
-  | { kind: 'revoke'; taskId: string; grantVersion: number };
+  | { kind: 'revoke'; taskId: string; grantVersion: number; scopeKey: string };
 const pendingByTask = new Map<string, UnknownMutation>();
 const pendingUnknown = ref<UnknownMutation | null>(null);
 const mutationNeedsRefresh = computed(() => pendingUnknown.value !== null);
 const selected = ref<string[]>([]);
 const confirmed = ref(false);
+const exactArtifactId = ref('');
+const exactArtifacts = ref<Array<Record<string, unknown>>>([]);
+const artifactLookupLoading = ref(false);
+const artifactLookupError = ref('');
 let generation = 0;
-let key = createRequestId();
+let artifactLookupGeneration = 0;
 
-const eligible = computed(() => props.artifacts.filter(a => a.task_id === props.taskId
+function scopedTaskKey(taskId = props.taskId) {
+  return `${auth.user?.subject ?? ''}\u0000${auth.user?.workspace?.workspace_id ?? ''}\u0000${taskId}`;
+}
+
+const allArtifacts = computed(() => {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const artifact of [...props.artifacts, ...exactArtifacts.value]) {
+    const id = typeof artifact.artifact_id === 'string' ? artifact.artifact_id : '';
+    if (id) byId.set(id, artifact);
+  }
+  return [...byId.values()];
+});
+const eligible = computed(() => allArtifacts.value.filter(a => a.task_id === props.taskId
+  && a.owner_principal === auth.user?.subject
+  && a.workspace_id === auth.user?.workspace?.workspace_id
   && a.status === 'validated' && ['strategy_version', 'ml_strategy_version'].includes(String(a.kind))));
 const eligibleIds = computed(() => new Set(eligible.value.map(a => String(a.artifact_id)).filter(Boolean)));
 const reasons: Record<string, string> = {
@@ -74,13 +95,6 @@ function isAvailableProfile(value: unknown): value is ContinuationAvailableProfi
   return isObject(value) && isProfileBinding(value.execution_profile) && isRequestLimits(value.request_limits);
 }
 
-function sameProfile(a: ContinuationAvailableProfile, b: ContinuationAvailableProfile): boolean {
-  return a.execution_profile.profile_id === b.execution_profile.profile_id
-    && a.execution_profile.profile_version === b.execution_profile.profile_version
-    && a.execution_profile.profile_sha256 === b.execution_profile.profile_sha256
-    && limitKeys.every(name => a.request_limits[name] === b.request_limits[name]);
-}
-
 const availableProfile = computed<ContinuationAvailableProfile | null>(() => {
   const current = view.value;
   if (!current || current.schema_version !== PROFILE_SCHEMA || !isAvailableProfile(current.available_profile)) return null;
@@ -125,56 +139,41 @@ function usageCompleteness(value: ContinuationRequestUsage['actual_usage']['comp
   return value === 'known' ? '完整' : value === 'partial' ? '部分' : '未知';
 }
 
-function sameIds(actual: unknown, expected: string[]): boolean {
-  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
-  const sortedActual = [...actual].sort();
-  const sortedExpected = [...expected].sort();
-  return sortedActual.every((item, index) => item === sortedExpected[index]);
-}
-
 function rememberUnknown(mutation: UnknownMutation) {
-  pendingByTask.set(mutation.taskId, mutation);
-  if (mutation.taskId === props.taskId) pendingUnknown.value = mutation;
+  pendingByTask.set(mutation.scopeKey, mutation);
+  if (mutation.scopeKey === scopedTaskKey()) pendingUnknown.value = mutation;
 }
 
 function clearUnknown(taskId: string) {
-  pendingByTask.delete(taskId);
+  pendingByTask.delete(scopedTaskKey(taskId));
   if (taskId === props.taskId) pendingUnknown.value = null;
 }
 
 function readonlyConfirmsMutation(result: ContinuationPermissionView, pending: UnknownMutation): boolean {
-  if (result.task_id !== pending.taskId || !result.permission) return false;
-  if (pending.kind === 'revoke') {
-    return result.permission.grant_version === pending.grantVersion && result.permission.revoked_at !== null;
-  }
-  if (result.schema_version !== PROFILE_SCHEMA || !result.permission
-      || result.permission.confirmation_id !== pending.confirmationId
-      || !sameIds(result.permission.confirmed_artifact_ids, pending.confirmedArtifactIds)
-      || !isProfileBinding(result.permission.execution_profile) || !isRequestLimits(result.permission.request_limits)) {
-    return false;
-  }
-  return sameProfile(pending.profile, { execution_profile: result.permission.execution_profile,
-    request_limits: result.permission.request_limits });
+  if (result.task_id !== pending.taskId || pending.scopeKey !== scopedTaskKey(result.task_id) || !result.permission) return false;
+  return result.permission.grant_version === pending.grantVersion && result.permission.revoked_at !== null;
 }
 
 async function act(operation: () => Promise<ContinuationPermissionView>, mutating = false) {
   if (busy.value) return;
   const current = generation;
+  const targetTaskId = props.taskId;
+  const targetScope = scopedTaskKey(targetTaskId);
   busy.value = true;
   error.value = '';
   try {
     const result = await operation();
-    if (current === generation) {
-      if (result.task_id !== props.taskId) throw new Error('许可返回的任务身份不一致，请刷新核对。');
+    if (current === generation && targetScope === scopedTaskKey(targetTaskId)) {
+      if (result.task_id !== targetTaskId) throw new Error('许可返回的任务身份不一致，请刷新核对。');
       view.value = result;
-      if (mutating) clearUnknown(props.taskId);
+      if (mutating) clearUnknown(targetTaskId);
     }
   } catch (exc) {
-    if (current === generation) {
+    if (current === generation && targetScope === scopedTaskKey(targetTaskId)) {
       error.value = exc instanceof Error ? exc.message : '操作结果未确认，请刷新核对。';
     }
   } finally {
-    if (current === generation) busy.value = false;
+    if (current === generation && targetScope === scopedTaskKey(targetTaskId)) busy.value = false;
   }
 }
 
@@ -199,35 +198,61 @@ function submit() {
     return;
   }
   const selectedIds = [...selected.value];
-  const requestedProfile = availableProfile.value;
   const payload = {
-    idempotency_key: key,
+    schema_version: 'byq-product-approval-request.v1' as const,
+    request_type: 'continuation_consent' as const,
+    task_id: props.taskId,
     confirmed_artifact_ids: selectedIds,
     execution_profile_id: PROFILE_ID,
   };
-  rememberUnknown({ kind: 'grant', taskId: props.taskId, confirmationId: key,
-    confirmedArtifactIds: selectedIds, profile: requestedProfile });
-  return act(async () => {
-    const result = await confirmContinuationPermission(props.taskId, payload);
-    if (result.schema_version !== PROFILE_SCHEMA || !result.permission
-        || result.permission.confirmation_id !== key
-        || !isProfileBinding(result.permission.execution_profile) || !isRequestLimits(result.permission.request_limits)
-        || !sameProfile(requestedProfile, { execution_profile: result.permission.execution_profile,
-          request_limits: result.permission.request_limits })
-        || !sameIds(result.permission.confirmed_artifact_ids, selectedIds)) {
-      throw new Error('授权结果与已确认的请求档案或策略资产不一致；请刷新状态并核对。');
+  const current = generation;
+  const targetTaskId = props.taskId;
+  const targetScope = scopedTaskKey(targetTaskId);
+  busy.value = true;
+  error.value = '';
+  lastRequestStatus.value = '';
+  const scope = {
+    ownerPrincipal: auth.user?.subject ?? '',
+    workspaceId: auth.user?.workspace?.workspace_id ?? '',
+  };
+  return submitProductApprovalRequestOnce(scope, payload).then(outcome => {
+    if (current !== generation || targetScope !== scopedTaskKey(targetTaskId)) return;
+    if (outcome.request.request_type !== 'continuation_consent' || outcome.request.task_id !== targetTaskId
+        || outcome.request.owner_principal !== scope.ownerPrincipal
+        || outcome.request.workspace_id !== scope.workspaceId) {
+      throw new Error('审批申请返回的任务或类型不一致；请人工核对。');
     }
-    return result;
-  }, true);
+    lastRequestStatus.value = outcome.request.status;
+    window.dispatchEvent(new Event('byq:approvals-changed'));
+  }).catch(exc => {
+    if (current === generation && targetScope === scopedTaskKey(targetTaskId)) error.value = exc instanceof Error ? exc.message : '审批申请结果尚未确认；请刷新核对。';
+  }).finally(() => {
+    if (current === generation && targetScope === scopedTaskKey(targetTaskId)) busy.value = false;
+  });
 }
 
-function revoke() {
+async function revoke() {
   const permission = view.value?.permission;
   if (permission && permission.revoked_at === null) {
     const version = permission.grant_version;
-    rememberUnknown({ kind: 'revoke', taskId: props.taskId, grantVersion: version });
+    const targetTaskId = props.taskId;
+    const targetScope = scopedTaskKey(targetTaskId);
+    const targetGeneration = generation;
+    try {
+      await ElMessageBox.confirm(
+        '撤销后不会允许新的后台请求；已提交的请求状态仍需单独核对。',
+        '撤销后台续接许可',
+        { type: 'warning', confirmButtonText: '确认撤销', cancelButtonText: '返回' },
+      );
+    } catch {
+      return;
+    }
+    if (targetGeneration !== generation || targetScope !== scopedTaskKey(targetTaskId)
+        || props.taskId !== targetTaskId || view.value?.permission?.grant_version !== version
+        || view.value.permission.revoked_at !== null) return;
+    rememberUnknown({ kind: 'revoke', taskId: targetTaskId, grantVersion: version, scopeKey: targetScope });
     return act(async () => {
-      const result = await revokeContinuationPermission(props.taskId, version);
+      const result = await revokeContinuationPermission(targetTaskId, version);
       if (!result.permission || result.permission.grant_version !== version || result.permission.revoked_at === null) {
         throw new Error('撤销结果尚未确认；请刷新状态核对。');
       }
@@ -236,26 +261,71 @@ function revoke() {
   }
 }
 
-watch(() => props.taskId, () => {
+async function lookupExactArtifact() {
+  const id = exactArtifactId.value.trim();
+  const owner = auth.user?.subject ?? '';
+  const workspaceId = auth.user?.workspace?.workspace_id ?? '';
+  if (!id || !owner || !workspaceId) {
+    artifactLookupError.value = '请先登录并输入完整 Artifact ID。';
+    return;
+  }
+  const requestGeneration = ++artifactLookupGeneration;
+  const scopeGeneration = generation;
+  const scopeKey = scopedTaskKey();
+  artifactLookupLoading.value = true;
+  artifactLookupError.value = '';
+  try {
+    const artifact = await getResearchEntity('artifacts', id);
+    if (requestGeneration !== artifactLookupGeneration || scopeGeneration !== generation || scopeKey !== scopedTaskKey()) return;
+    if (artifact.artifact_id !== id || artifact.task_id !== props.taskId
+        || artifact.owner_principal !== owner || artifact.workspace_id !== workspaceId
+        || artifact.status !== 'validated'
+        || !['strategy_version', 'ml_strategy_version'].includes(String(artifact.kind))) {
+      throw new Error('精确 Artifact 与当前用户、工作区、任务或可用策略版本不匹配。');
+    }
+    exactArtifacts.value = [...exactArtifacts.value.filter(item => item.artifact_id !== id), artifact];
+  } catch (exc) {
+    if (requestGeneration === artifactLookupGeneration && scopeGeneration === generation && scopeKey === scopedTaskKey()) {
+      artifactLookupError.value = exc instanceof Error ? exc.message : '精确读取 Artifact 失败。';
+    }
+  } finally {
+    if (requestGeneration === artifactLookupGeneration && scopeGeneration === generation && scopeKey === scopedTaskKey()) {
+      artifactLookupLoading.value = false;
+    }
+  }
+}
+
+watch(() => [props.taskId, auth.user?.subject ?? '', auth.user?.workspace?.workspace_id ?? ''], () => {
   generation++;
+  artifactLookupGeneration++;
   view.value = null;
+  lastRequestStatus.value = '';
   busy.value = false;
   error.value = '';
-  pendingUnknown.value = pendingByTask.get(props.taskId) ?? null;
+  pendingUnknown.value = pendingByTask.get(scopedTaskKey()) ?? null;
   selected.value = [];
   confirmed.value = false;
-  key = createRequestId();
+  exactArtifactId.value = '';
+  exactArtifacts.value = [];
+  artifactLookupLoading.value = false;
+  artifactLookupError.value = '';
   void refresh();
-}, { immediate: true });
+}, { immediate: true, flush: 'sync' });
+
+onBeforeUnmount(() => {
+  generation++;
+  artifactLookupGeneration++;
+});
 </script>
 
 <template>
   <section aria-label="任务后台续接许可" class="continuation-panel" v-loading="busy">
     <h3>后台续接许可</h3>
     <p class="task-identity">任务：{{ taskId }}</p>
-    <p>后台仅可按同一任务的有效交接继续一次只读研究请求。新请求使用独立的资源上限；业务权限仍逐项校验。</p>
+    <p>申请只进入人工审批；批准本身不会创建 Job。匹配的任务完成事件可能按批准的执行档案和资源预算自动启动一次后台续接。</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="mutationNeedsRefresh" title="授权操作结果尚未核对。本页面不会自动重发，请先刷新许可状态。" type="warning" :closable="false" />
+    <el-alert v-if="lastRequestStatus" :title="lastRequestStatus === 'pending' ? '续接申请已进入待审批队列；当前没有创建许可或启动请求。' : '申请结果需要在审批中心核对；不会自动重发。'" type="info" :closable="false" />
     <p v-if="view" role="status">{{ status }}</p>
 
     <template v-if="view?.schema_version === PROFILE_SCHEMA && view.permission">
@@ -292,7 +362,7 @@ watch(() => props.taskId, () => {
 
     <template v-else-if="view?.schema_version === PROFILE_SCHEMA && !view.permission">
       <el-form v-if="canCreate" label-position="top" @submit.prevent="submit">
-        <p>系统为此许可提供的请求上限如下。每个许可只允许一个后台请求；仅可选择本任务已验证的策略版本。</p>
+        <p>系统提供的请求上限如下。申请仅针对本任务已验证的策略版本；人工批准本身不会创建 Job，匹配的任务完成事件可能按批准的执行档案和资源预算自动启动一次后台续接。</p>
         <p>请求档案：{{ availableProfile?.execution_profile.profile_id }} v{{ availableProfile?.execution_profile.profile_version }}；指纹 {{ availableProfile?.execution_profile.profile_sha256 }}</p>
         <ul class="request-limits" aria-label="可信单次请求资源上限">
           <li>模型请求次数：{{ availableProfile?.request_limits.max_provider_calls }}；尝试次数：{{ availableProfile?.request_limits.max_attempts }}；并发：{{ availableProfile?.request_limits.max_concurrent }}</li>
@@ -303,15 +373,21 @@ watch(() => props.taskId, () => {
         </ul>
         <p>限额来自 Backend 当前可信档案。它们是安全上限，不是预计或实际 token 用量、账单金额或业务权限。</p>
         <el-form-item label="确认本任务的策略版本">
+          <p v-if="props.artifacts.length >= 200" role="note">策略版本列表最多返回 200 项；若目标版本未列出，可输入完整 Artifact ID 精确读取。</p>
           <el-select v-model="selected" multiple :multiple-limit="16" :disabled="busy || mutationNeedsRefresh" :fit-input-width="true"
             popper-class="continuation-assets" placeholder="选择已验证策略版本" style="width: 100%">
             <el-option v-for="asset in eligible" :key="String(asset.artifact_id)" :value="String(asset.artifact_id)"
               :label="`${asset.kind} · ${asset.artifact_id}`" />
           </el-select>
           <p v-if="!eligible.length">当前没有本任务已验证的策略版本，请先在原研究对话中准备。</p>
+          <div class="exact-artifact-lookup">
+            <el-input v-model="exactArtifactId" aria-label="精确 Artifact ID" placeholder="完整 Artifact ID" />
+            <el-button :loading="artifactLookupLoading" :disabled="busy" @click="lookupExactArtifact">精确读取 Artifact</el-button>
+          </div>
+          <el-alert v-if="artifactLookupError" :title="artifactLookupError" type="error" :closable="false" />
         </el-form-item>
-        <el-checkbox v-model="confirmed" :disabled="busy || mutationNeedsRefresh">我确认任务、所选策略版本和系统显示的请求档案，并允许该许可按有效交接执行一次只读研究请求。</el-checkbox>
-        <div><el-button native-type="submit" type="primary" :disabled="!canSubmit">保存单次请求许可</el-button></div>
+        <el-checkbox v-model="confirmed" :disabled="busy || mutationNeedsRefresh">我申请为本任务的所选策略版本创建后台续接许可；批准本身不创建 Job，匹配的任务完成事件可能按批准档案和资源预算自动启动一次请求。</el-checkbox>
+        <div><el-button native-type="submit" type="primary" :disabled="!canSubmit">提交续接许可申请</el-button></div>
       </el-form>
       <p v-else-if="!availableProfile">Backend 尚未提供可核对的可信请求档案。当前不能创建许可。</p>
       <p v-else>当前许可已有请求或未确认结果，不能创建第二个后台请求。请刷新状态核对。</p>
@@ -328,6 +404,7 @@ watch(() => props.taskId, () => {
 .task-identity { overflow-wrap: anywhere; }
 .continuation-panel .el-button { margin-top: 12px; }
 .continuation-panel .el-checkbox { max-width: 100%; height: auto; align-items: flex-start; }
+.exact-artifact-lookup { display: flex; gap: 8px; margin: 8px 0; }
 .continuation-panel :deep(.el-checkbox__label) { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
 .continuation-panel :deep(.el-checkbox__input) { margin-top: 4px; }
 </style>

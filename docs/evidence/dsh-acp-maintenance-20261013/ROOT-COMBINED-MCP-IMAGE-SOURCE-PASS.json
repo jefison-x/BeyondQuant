@@ -1,0 +1,18 @@
+{
+  "Root": "PASS",
+  "Sol": "PASS soft_real_reviewer",
+  "scope": "isolated MCP build and source readback only",
+  "head": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "image_id": "sha256:08dcc976ea506971cdafb6e860961690b3e90b56ceb6d184834c98184f80774c",
+  "context_sha256": "a8bfae3e3f64da77620d088f72b40033f6b425838a267ec5ef7d36b7da9bd09d",
+  "source_sha256": {
+    "src/research.ts": "57571ad2a9dcf729b05f3e0ac8c032d254d27112540cb2f8c304d4e869272c64",
+    "src/backtest.ts": "1e64f4ec069d369523ddaf937b89261f67341f98b7fa5c065db9586bad320058",
+    "src/server.ts": "22970a1b2ee35d2683c0afce9991bf09e0ea88197d59565d1d83959886faa6f7",
+    "package.json": "9a4f33e13a39eb97fe02d9c41104906f37c92d824ebf0404d36a5df983ecd194",
+    "package-lock.json": "ce162b5f4df1dd257a8d40aed3b9be59e7c03c46d5ae3f2aa2cacf514357212d"
+  },
+  "node": "v24.21.0",
+  "Functional_Product": "NOT_RUN",
+  "production_deployment": "NOT_RUN"
+}

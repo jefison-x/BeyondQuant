@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from packages.contracts.domain_call_admission import call_evidence_receipt
-from app.compat.types import RuntimeObservation
+from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence
+from app.compat.types import RuntimeObservation, RuntimeToolResult
 from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
 from .test_process_cleanup import adapter, FakeHarness, wait_for_status
-from .runtime_test_support import NotificationDTO as Notification, installed_sdk_version
+from .runtime_test_support import NotificationDTO as Notification
 
 
 @pytest.fixture
@@ -99,10 +99,12 @@ def test_root_mode_rejects_mismatched_profile(root_adapter, monkeypatch, tmp_pat
         RuntimeAdapter(root_adapter._compatibility)
 
 
-def test_domain_observation_is_private_in_memory_and_exactly_root_scoped(root_adapter, monkeypatch):
-    if installed_sdk_version() != "0.1.5rc1":
-        pytest.skip("domain observations are qualified on the pinned 0.1.5 carrier")
+def test_fake_legacy_callback_evidence_is_private_and_exactly_root_scoped(root_adapter, monkeypatch):
     runtime = root_adapter
+    # This exercises RuntimeAdapter's legacy callback/evidence contract with
+    # the local structural test double. It does not qualify a DSH SDK carrier.
+    assert runtime._compatibility.family == "test-runtime-observation.v1"
+    assert runtime._root_scoped and not runtime._acp
     context = {"session_id": "private-calls", "trace_id": "private-trace", "owner": "alice", "workspace_id": "workspace_alice"}
     runtime.create_session(context["session_id"], context["trace_id"], context["owner"], context["workspace_id"])
     root = runtime.submit_prompt(context["session_id"], "synthetic private call")
@@ -223,6 +225,228 @@ def test_unproven_call_stops_only_its_owned_root(root_adapter, monkeypatch):
     gates[bob.harness].set()
     wait_for_status(runtime, "bob", SessionStatus.IDLE)
     assert not any(event["payload"].get("code") == "domain-call-reference-unproven" for event in bob.history)
+
+
+@pytest.mark.parametrize("acp_callback", [False, True], ids=["legacy-session-cursor", "acp-no-second-cursor"])
+def test_session_evidence_sequence_1025_on_next_root(root_adapter, acp_callback):
+    runtime = root_adapter
+    session_id = "session-evidence-1025-" + str(acp_callback)
+    runtime.create_session(session_id, "evidence-trace", "alice", "workspace_alice")
+
+    FakeHarness.allow_run.clear()
+    FakeHarness.run_started.clear()
+    first_root = runtime.submit_prompt(session_id, "close first synthetic root")
+    assert FakeHarness.run_started.wait(1)
+    record = runtime._get(session_id)
+    first_run = record.active_run
+    assert first_run is not None and first_run.run_id == first_root
+    first_generation = record.runtime_generation
+    history = []
+    # These are contract-valid in-memory retained rows, not model calls or
+    # claims that a Backend Job was created. Keep one task/action/input hash
+    # and vary only the replay identity and event receipt fields.
+    for sequence in range(1, 1025):
+        arguments = {
+            "task_id": "retained-history-task",
+            "agent_run_id": "retained-history-agent",
+            "idempotency_key": f"retained-history-{sequence}",
+            "strategy": {"code": "VALID_SYNTHETIC_HISTORY"},
+        }
+        evidence = {
+            "schema_version": "domain-call-observed.v1",
+            "sequence": sequence,
+            "root_run_id": first_root,
+            "generation": first_generation,
+            "call_id": f"retained-history-call-{sequence}",
+            **request_evidence("byq_strategy_validate", arguments, trace_id=record.trace_id),
+        }
+        receipt = call_evidence_receipt(evidence)
+        assert receipt["sequence"] == sequence and receipt["root_run_id"] == first_root
+        if history:
+            assert evidence["input_sha256"] == history[0]["input_sha256"]
+        history.append(evidence)
+    record.domain_call_evidence.extend(history)
+    record.domain_call_sequence = record.domain_call_drained_sequence = 1024
+    first_run.domain_calls.update(event["call_id"] for event in history)
+    assert len(record.domain_call_evidence) == len(first_run.domain_calls) == 1024
+
+    FakeHarness.allow_run.set()
+    wait_for_status(runtime, session_id, SessionStatus.IDLE)
+    record = runtime._get(session_id)
+    assert record.domain_call_sequence == record.domain_call_drained_sequence == 1024
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[first_root])
+
+    FakeHarness.allow_run.clear()
+    FakeHarness.run_started.clear()
+    next_root = runtime.submit_prompt(session_id, "start next synthetic root", conversation_context=[])
+    assert next_root != first_root
+    assert FakeHarness.run_started.wait(1)
+    record = runtime._get(session_id)
+    run = record.active_run
+    assert run is not None and run.run_id == next_root
+    # The first root's 1024 already-drained rows remain session-wide; do not
+    # manufacture a second Adapter cursor or mutate the retained prefix.
+    assert len(record.domain_call_evidence) == 1024
+    assert record.domain_call_sequence == record.domain_call_drained_sequence == 1024
+    arguments = {"task_id": "private-task", "agent_run_id": "private-agent",
+        "idempotency_key": "sequence-1025", "strategy": {"code": "VALID_SYNTHETIC"}}
+    notice = RuntimeObservation(kind="tool.call", session_id=record.runtime_session_id,
+        root_session=True, runtime_activity=True, event_sequence=1, call_id="sequence-1025-call",
+        tool_name="mcp__byq__byq_strategy_validate", domain_arguments=arguments)
+
+    # This callback-only switch exercises the existing ACP branch that leaves
+    # evidence sequence ownership to Backend. FakeCompatibility is not ACP
+    # process or profile qualification; its retained history prefix remains
+    # internally consistent while the callback creates no Adapter cursor row.
+    previous_acp_mode = runtime._acp
+    try:
+        runtime._acp = acp_callback
+        runtime._on_notification(record, notice, source_run=run,
+            source_runtime_session_id=record.runtime_session_id)
+    finally:
+        runtime._acp = previous_acp_mode
+    evidence_context = {"session_id": record.session_id, "trace_id": record.trace_id,
+        "owner": record.owner_principal, "workspace_id": record.workspace_id}
+    if acp_callback:
+        assert record.domain_call_sequence == 1024
+        assert record.domain_call_drained_sequence == 1024
+        assert len(record.domain_call_evidence) == 1024
+        assert run.domain_stop_code is None and "sequence-1025-call" in run.domain_calls
+    else:
+        assert record.domain_call_sequence == 1025
+        assert record.domain_call_drained_sequence == 1024
+        assert record.domain_call_evidence[-1]["sequence"] == 1025
+        assert record.domain_call_evidence[-1]["root_run_id"] == next_root
+        assert run.domain_stop_code is None and "sequence-1025-call" in run.domain_calls
+    FakeHarness.allow_run.set()
+    wait_for_status(runtime, session_id, SessionStatus.IDLE)
+    if not acp_callback:
+        assert record.domain_call_sequence == 1025 and record.domain_call_drained_sequence == 1024
+        page = runtime.domain_call_evidence(evidence_context, after_sequence=1024)
+        assert page == {"schema_version": "domain-call-page.v1",
+            "events": [record.domain_call_evidence[-1]], "more": False, "idle": True}
+        row_receipt = call_evidence_receipt(page["events"][0])
+        assert runtime.acknowledge_domain_call_evidence(evidence_context, row_receipt) == {"receipt": row_receipt}
+        assert record.domain_call_drained_sequence == record.domain_call_sequence == 1025
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[next_root])
+    runtime.release_session(session_id)
+    final_sequence = 1024 if acp_callback else 1025
+    assert runtime.domain_call_evidence(evidence_context, after_sequence=final_sequence) == {
+        "schema_version": "domain-call-page.v1", "events": [], "more": False, "idle": True,
+    }
+
+
+@pytest.mark.parametrize("acp_callback", [False, True], ids=["legacy-cursor", "acp-backend-cursor"])
+def test_per_root_domain_call_1025th_call_is_not_rejected_by_retention_count(
+    root_adapter, acp_callback, monkeypatch,
+):
+    runtime = root_adapter
+    session_id = "per-root-domain-call-count-" + str(acp_callback)
+    runtime.create_session(session_id, "per-root-domain-call-limit-trace", "alice", "workspace_alice")
+    FakeHarness.allow_run.clear()
+    FakeHarness.run_started.clear()
+    root = runtime.submit_prompt(session_id, "exercise per-root call count boundary")
+    assert FakeHarness.run_started.wait(1)
+    record = runtime._get(session_id)
+    run = record.active_run
+    assert run is not None and run.run_id == root
+
+    history = []
+    for sequence in range(1, 1025):
+        arguments = {"task_id": "retained-history-task", "agent_run_id": "retained-history-agent",
+            "idempotency_key": f"retained-history-{sequence}",
+            "strategy": {"code": "VALID_SYNTHETIC_HISTORY"}}
+        event = {"schema_version": "domain-call-observed.v1", "sequence": sequence,
+            "root_run_id": root, "generation": record.runtime_generation,
+            "call_id": f"retained-call-{sequence}",
+            **request_evidence("byq_strategy_validate", arguments, trace_id=record.trace_id)}
+        history.append(event)
+    record.domain_call_evidence.extend(history)
+    record.domain_call_sequence = record.domain_call_drained_sequence = 1024
+    run.domain_calls.update(event["call_id"] for event in history)
+    assert len(run.domain_calls) == len(record.domain_call_evidence) == 1024
+
+    arguments = {"task_id": "private-task", "agent_run_id": "private-agent",
+        "idempotency_key": "beyond-per-root-count", "strategy": {"code": "VALID_SYNTHETIC"}}
+    notice = RuntimeObservation(kind="tool.call", session_id=record.runtime_session_id,
+        root_session=True, runtime_activity=True, event_sequence=1, call_id="new-call",
+        tool_name="mcp__byq__byq_strategy_validate", domain_arguments=arguments)
+
+    # This toggles only the local notification branch for a synthetic callback;
+    # it is not a claim of ACP process/profile qualification.
+    previous_acp_mode = runtime._acp
+    try:
+        runtime._acp = acp_callback
+        runtime._on_notification(record, notice, source_run=run,
+            source_runtime_session_id=record.runtime_session_id)
+        assert run.domain_stop_code is None and not run.domain_stop_dispatched
+        assert len(run.domain_calls) == 1025 and "new-call" in run.domain_calls
+        if acp_callback:
+            assert record.domain_call_sequence == record.domain_call_drained_sequence == 1024
+            assert len(record.domain_call_evidence) == 1024
+        else:
+            assert record.domain_call_sequence == 1025
+            assert record.domain_call_drained_sequence == 1024
+            assert len(record.domain_call_evidence) == 1025
+
+        # Replayed notification sequence is ignored and cannot append another cursor row.
+        runtime._on_notification(record, notice, source_run=run,
+            source_runtime_session_id=record.runtime_session_id)
+        assert run.domain_stop_code is None and len(run.domain_calls) == 1025
+        assert record.domain_call_sequence == (1024 if acp_callback else 1025)
+        assert len(record.domain_call_evidence) == (1024 if acp_callback else 1025)
+
+        blocked_result = {"service": "beyondquant-mcp", "status": "error",
+            "backend": {"admission": {"schema_version": "domain-call-admission.v1",
+                "state": "unknown", "stop": True}}}
+        unrelated_result = RuntimeObservation(kind="tool.result", session_id=record.runtime_session_id,
+            root_session=True, runtime_activity=True, event_sequence=2,
+            call_id="unrelated-call", tool_failed=True, tool_result=blocked_result,
+            completed_call_ids=("unrelated-call",),
+            tool_results=(RuntimeToolResult("unrelated-call", True, blocked_result),))
+        guard_dispatches = []
+        guard_dispatched = threading.Event()
+
+        def record_guard_dispatch(actual_record, actual_run, *, now):
+            if threading.current_thread().name == "byq-domain-stop":
+                guard_dispatches.append((actual_record, actual_run, now))
+                guard_dispatched.set()
+
+        # Observe dispatch from this callback unit only. FakeHarness finalization
+        # verifies the existing stop code; this is not process-cleanup qualification.
+        monkeypatch.setattr(runtime, "_enforce_run_guards", record_guard_dispatch)
+        runtime._on_notification(record, unrelated_result, source_run=run,
+            source_runtime_session_id=record.runtime_session_id)
+        assert run.domain_stop_code is None and not run.domain_stop_dispatched
+        assert guard_dispatches == []
+
+        linked_result = RuntimeObservation(kind="tool.result", session_id=record.runtime_session_id,
+            root_session=True, runtime_activity=True, event_sequence=3,
+            call_id="new-call", tool_failed=True, tool_result=blocked_result,
+            completed_call_ids=("new-call",),
+            tool_results=(RuntimeToolResult("new-call", True, blocked_result),))
+        runtime._on_notification(record, linked_result, source_run=run,
+            source_runtime_session_id=record.runtime_session_id)
+        assert run.domain_stop_code == "domain-correction-stopped"
+        assert run.domain_stop_dispatched
+        assert guard_dispatched.wait(1)
+        assert len(guard_dispatches) == 1 and guard_dispatches[0][:2] == (record, run)
+    finally:
+        runtime._acp = previous_acp_mode
+        FakeHarness.allow_run.set()
+
+    wait_for_status(runtime, session_id, SessionStatus.FAILED)
+    assert any(event["kind"] == "session.failed"
+        and event["payload"].get("code") == "domain-correction-stopped"
+        for event in record.history)
+    if not acp_callback:
+        evidence_context = {"session_id": record.session_id, "trace_id": record.trace_id,
+            "owner": record.owner_principal, "workspace_id": record.workspace_id}
+        page = runtime.domain_call_evidence(evidence_context, after_sequence=1024)
+        assert [event["call_id"] for event in page["events"]] == ["new-call"]
+        runtime.acknowledge_domain_call_evidence(evidence_context, call_evidence_receipt(page["events"][0]))
+        assert record.domain_call_drained_sequence == record.domain_call_sequence == 1025
+    runtime.acknowledge_terminal(session_id, record.terminal_receipts[root])
 
 
 @pytest.mark.parametrize("change", [

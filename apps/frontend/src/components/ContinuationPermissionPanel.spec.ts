@@ -1,10 +1,16 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { beforeEach, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { useAuthStore } from '@/stores/auth';
 import ContinuationPermissionPanel from './ContinuationPermissionPanel.vue';
 
-const { read, confirm, revoke } = vi.hoisted(() => ({ read: vi.fn(), confirm: vi.fn(), revoke: vi.fn() }));
-vi.mock('@/api/research', () => ({ getContinuationPermission: read,
-  confirmContinuationPermission: confirm, revokeContinuationPermission: revoke }));
+const { read, getEntity, revoke, submitRequest, confirmRevoke } = vi.hoisted(() => ({
+  read: vi.fn(), getEntity: vi.fn(), revoke: vi.fn(), submitRequest: vi.fn(), confirmRevoke: vi.fn(),
+}));
+vi.mock('@/api/research', () => ({ getContinuationPermission: read, getResearchEntity: getEntity,
+  revokeContinuationPermission: revoke }));
+vi.mock('@/api/approvalRequestSubmissions', () => ({ submitProductApprovalRequestOnce: submitRequest }));
+vi.mock('element-plus', () => ({ ElMessageBox: { confirm: (...args: unknown[]) => confirmRevoke(...args) } }));
 
 const binding = { profile_id: 'task-ready-read.v1', profile_version: 1, profile_sha256: 'a'.repeat(64) };
 const limits = {
@@ -14,8 +20,15 @@ const limits = {
   max_tool_payload_bytes: 65536, max_total_tool_payload_bytes: 1048576,
   max_tool_calls: 16, deadline_ms: 180000,
 };
+const TASK_ONE = `task_${'1'.repeat(32)}`;
+const TASK_TWO = `task_${'2'.repeat(32)}`;
+const ARTIFACT_STRATEGY = `artifact_${'a'.repeat(32)}`;
+const ARTIFACT_ML_STRATEGY = `artifact_${'b'.repeat(32)}`;
+const ARTIFACT_CODE = `artifact_${'c'.repeat(32)}`;
+const ARTIFACT_OTHER_TASK = `artifact_${'d'.repeat(32)}`;
+const ARTIFACT_OTHER_SCOPE = `artifact_${'e'.repeat(32)}`;
 const missingV2 = {
-  schema_version: 'task-continuation-permission.v2', task_id: 'task-one', can_start: false,
+  schema_version: 'task-continuation-permission.v2', task_id: TASK_ONE, can_start: false,
   blocked_reason: 'permission_missing',
   available_profile: { execution_profile: binding, request_limits: limits },
   permission: null,
@@ -26,11 +39,11 @@ const activeV2 = {
   permission: { schema_version: 'task-continuation-permission.v2', grant_version: 1,
     confirmation_id: 'confirm-key',
     execution_profile: binding, request_limits: limits, max_turns: 1, turn_timeout_seconds: 86400,
-    confirmed_artifact_ids: ['artifact-strategy'], expires_at: '2026-10-02T00:00:00Z', revoked_at: null },
+    confirmed_artifact_ids: [ARTIFACT_STRATEGY], expires_at: '2026-10-02T00:00:00Z', revoked_at: null },
   request_state: { requests_reserved: 0, requests_remaining: 1, unconfirmed_requests: 0, request_usage: null },
 };
 const legacy = {
-  schema_version: 'task-continuation-permission.v1', task_id: 'task-one', can_start: false,
+  schema_version: 'task-continuation-permission.v1', task_id: TASK_ONE, can_start: false,
   blocked_reason: 'legacy_continuation_read_only',
   permission: { grant_version: 4, token_limit: 1000, max_turns: 8,
     expires_at: '2026-09-11T00:00:00Z', revoked_at: null },
@@ -50,19 +63,27 @@ const global = { renderStubDefaultSlot: true, directives: { loading: () => {} },
 } };
 
 const strategyArtifacts = [
-  { artifact_id: 'artifact-strategy', task_id: 'task-one', kind: 'strategy_version', status: 'validated' },
-  { artifact_id: 'artifact-ml-strategy', task_id: 'task-one', kind: 'ml_strategy_version', status: 'validated' },
-  { artifact_id: 'artifact-code', task_id: 'task-one', kind: 'strategy_code', status: 'validated' },
-  { artifact_id: 'artifact-other-task', task_id: 'task-two', kind: 'strategy_version', status: 'validated' },
+  { artifact_id: ARTIFACT_STRATEGY, task_id: TASK_ONE, owner_principal: 'alice', workspace_id: 'workspace-alice', kind: 'strategy_version', status: 'validated' },
+  { artifact_id: ARTIFACT_ML_STRATEGY, task_id: TASK_ONE, owner_principal: 'alice', workspace_id: 'workspace-alice', kind: 'ml_strategy_version', status: 'validated' },
+  { artifact_id: ARTIFACT_CODE, task_id: TASK_ONE, owner_principal: 'alice', workspace_id: 'workspace-alice', kind: 'strategy_code', status: 'validated' },
+  { artifact_id: ARTIFACT_OTHER_TASK, task_id: TASK_TWO, owner_principal: 'alice', workspace_id: 'workspace-alice', kind: 'strategy_version', status: 'validated' },
+  { artifact_id: ARTIFACT_OTHER_SCOPE, task_id: TASK_ONE, owner_principal: 'bob', workspace_id: 'workspace-bob', kind: 'strategy_version', status: 'validated' },
 ];
 
-beforeEach(() => { vi.resetAllMocks(); read.mockResolvedValue(missingV2); });
+beforeEach(() => {
+  vi.resetAllMocks();
+  setActivePinia(createPinia());
+  useAuthStore().setUser({ subject: 'alice', workspace: { workspace_id: 'workspace-alice' } } as any);
+  read.mockResolvedValue(missingV2);
+  getEntity.mockReset();
+  confirmRevoke.mockResolvedValue('confirmed');
+});
 
 it('loads the trusted profile without creating a grant or inventing limits', async () => {
-  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: 'task-one', artifacts: [] } });
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
   await flushPromises();
   expect(read).toHaveBeenCalledOnce();
-  expect(confirm).not.toHaveBeenCalled();
+  expect(submitRequest).not.toHaveBeenCalled();
   expect(wrapper.text()).toContain('task-ready-read.v1 v1');
   expect(wrapper.text()).toContain('模型请求次数：16');
   expect(wrapper.text()).toContain('总输入：4194304 字节');
@@ -76,95 +97,89 @@ it('loads the trusted profile without creating a grant or inventing limits', asy
 it('does not show an authorization form when Backend has not supplied trusted limits', async () => {
   read.mockResolvedValue({ ...missingV2, available_profile: null });
   const wrapper = shallowMount(ContinuationPermissionPanel, {
-    global, props: { taskId: 'task-one', artifacts: strategyArtifacts },
+    global, props: { taskId: TASK_ONE, artifacts: strategyArtifacts },
   });
   await flushPromises();
   expect(wrapper.text()).toContain('尚未提供可核对的可信请求档案');
   expect(wrapper.find('form').exists()).toBe(false);
-  expect(confirm).not.toHaveBeenCalled();
+  expect(submitRequest).not.toHaveBeenCalled();
   wrapper.unmount();
 });
 
-it('submits only the selected validated strategy version and the closed profile payload', async () => {
-  confirm.mockImplementation(async (_taskId, payload) => ({
-    ...activeV2, permission: { ...activeV2.permission, confirmation_id: payload.idempotency_key },
-  }));
+it('creates only a typed pending request for the selected validated strategy version', async () => {
+  submitRequest.mockResolvedValue({ reconciled: false, request: {
+    request_id: `approval_request_${'1'.repeat(32)}`,
+    request_type: 'continuation_consent', status: 'pending',
+    owner_principal: 'alice', workspace_id: 'workspace-alice', task_id: TASK_ONE,
+    resource_artifact_id: null, content_sha256: 'e'.repeat(64), request_key: '00000000-0000-4000-8000-000000000006',
+    created_at: '2026-10-14T00:00:00Z', updated_at: '2026-10-14T00:00:00Z',
+    conversation_id: `conversation_${'1'.repeat(32)}`,
+    confirmed_artifacts: [{ artifact_id: ARTIFACT_STRATEGY, content_sha256: 'a'.repeat(64), kind: 'strategy_version' }],
+    execution_profile_id: 'task-ready-read.v1', request_limits: limits,
+  } });
   const wrapper = shallowMount(ContinuationPermissionPanel, {
-    global, props: { taskId: 'task-one', artifacts: strategyArtifacts },
+    global, props: { taskId: TASK_ONE, artifacts: strategyArtifacts },
   });
   await flushPromises();
-  wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', ['artifact-code', 'artifact-other-task']);
+  wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', [ARTIFACT_CODE, ARTIFACT_OTHER_TASK, ARTIFACT_OTHER_SCOPE]);
   wrapper.findComponent({ name: 'ElCheckbox' }).vm.$emit('update:modelValue', true);
   await flushPromises();
   expect(wrapper.find('form button[type="submit"]').attributes('disabled')).toBeDefined();
-  expect(confirm).not.toHaveBeenCalled();
-  wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', ['artifact-strategy']);
+  expect(submitRequest).not.toHaveBeenCalled();
+  wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', [ARTIFACT_STRATEGY]);
   await flushPromises();
   await wrapper.find('form').trigger('submit');
   await flushPromises();
-  expect(confirm).toHaveBeenCalledOnce();
-  const [taskId, payload] = confirm.mock.calls[0];
-  expect(taskId).toBe('task-one');
+  expect(submitRequest).toHaveBeenCalledOnce();
+  const [scope, payload] = submitRequest.mock.calls[0];
+  expect(scope).toEqual({ ownerPrincipal: 'alice', workspaceId: 'workspace-alice' });
   expect(payload).toMatchObject({
-    confirmed_artifact_ids: ['artifact-strategy'],
+    schema_version: 'byq-product-approval-request.v1',
+    request_type: 'continuation_consent',
+    task_id: TASK_ONE,
+    confirmed_artifact_ids: [ARTIFACT_STRATEGY],
     execution_profile_id: 'task-ready-read.v1',
   });
-  expect(payload.idempotency_key).toEqual(expect.any(String));
+  expect(payload).not.toHaveProperty('request_key');
   expect(payload).not.toHaveProperty('token_limit');
   expect(payload).not.toHaveProperty('max_turns');
-  expect(payload.confirmed_artifact_ids).not.toContain('artifact-code');
-  expect(payload.confirmed_artifact_ids).not.toContain('artifact-other-task');
-  expect(wrapper.text()).toContain('许可到期');
+  expect(payload.confirmed_artifact_ids).not.toContain(ARTIFACT_CODE);
+  expect(payload.confirmed_artifact_ids).not.toContain(ARTIFACT_OTHER_TASK);
+  expect(payload.confirmed_artifact_ids).not.toContain(ARTIFACT_OTHER_SCOPE);
+  expect(wrapper.text()).toContain('当前没有创建许可或启动请求');
   wrapper.unmount();
 });
 
-it('keeps an unknown grant locked after GET null and reconciles a later exact commit', async () => {
-  confirm.mockRejectedValueOnce(new Error('connection closed'));
-  read.mockResolvedValueOnce(missingV2).mockResolvedValueOnce(missingV2);
+it('reports an unknown request without creating a grant or starting continuation', async () => {
+  submitRequest.mockRejectedValueOnce(new Error('申请提交结果尚未确认；原申请键已保留'));
   const wrapper = shallowMount(ContinuationPermissionPanel, {
-    global, props: { taskId: 'task-one', artifacts: strategyArtifacts },
+    global, props: { taskId: TASK_ONE, artifacts: strategyArtifacts },
   });
   await flushPromises();
-  wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', ['artifact-strategy']);
+  wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', [ARTIFACT_STRATEGY]);
   wrapper.findComponent({ name: 'ElCheckbox' }).vm.$emit('update:modelValue', true);
   await flushPromises();
   await wrapper.find('form').trigger('submit');
   await flushPromises();
-  expect(confirm).toHaveBeenCalledOnce();
-  expect(wrapper.text()).toContain('不会自动重发');
-  expect(wrapper.find('form button[type="submit"]').attributes('disabled')).toBeDefined();
-  await wrapper.find('[data-test="refresh-permission"]').trigger('click');
-  await flushPromises();
-  expect(read).toHaveBeenCalledTimes(2);
-  expect(wrapper.text()).toContain('不会自动重发');
-  expect(wrapper.find('form button[type="submit"]').attributes('disabled')).toBeDefined();
-  await wrapper.find('form').trigger('submit');
-  await flushPromises();
-  expect(confirm).toHaveBeenCalledOnce();
-
-  const confirmationId = confirm.mock.calls[0][1].idempotency_key;
-  read.mockResolvedValueOnce({ ...activeV2, permission: { ...activeV2.permission, confirmation_id: confirmationId } });
-  await wrapper.find('[data-test="refresh-permission"]').trigger('click');
-  await flushPromises();
-  expect(read).toHaveBeenCalledTimes(3);
-  expect(wrapper.find('form').exists()).toBe(false);
-  expect(wrapper.text()).toContain('请求档案：task-ready-read.v1');
-  expect(confirm).toHaveBeenCalledOnce();
+  expect(submitRequest).toHaveBeenCalledOnce();
+  expect(wrapper.text()).toContain('原申请键已保留');
+  expect(wrapper.text()).not.toContain('已创建许可');
   wrapper.unmount();
 });
 
 it('keeps unknown revoke locked until readonly state confirms the exact version is revoked', async () => {
   read.mockResolvedValueOnce(legacy).mockResolvedValueOnce(legacy);
   revoke.mockRejectedValueOnce(new Error('connection closed'));
-  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: 'task-one', artifacts: [] } });
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
   await flushPromises();
   expect(wrapper.text()).toContain('旧版许可与预算记录仅供查看');
   expect(wrapper.text()).toContain('历史预算记录：可用 400；预留 600；记账 0 token');
   expect(wrapper.find('form').exists()).toBe(false);
-  expect(confirm).not.toHaveBeenCalled();
+  expect(confirmRevoke).not.toHaveBeenCalled();
   await wrapper.findAll('button').find(button => button.text().includes('撤销旧版许可'))!.trigger('click');
   await flushPromises();
-  expect(revoke).toHaveBeenCalledWith('task-one', 4);
+  expect(confirmRevoke).toHaveBeenCalledOnce();
+  expect(revoke).toHaveBeenCalledWith(TASK_ONE, 4);
   expect(wrapper.text()).toContain('不会自动重发');
   await wrapper.find('[data-test="refresh-permission"]').trigger('click');
   await flushPromises();
@@ -192,7 +207,7 @@ it('shows unknown actual usage without substituting the request ceiling', async 
         actual_usage: { input_tokens: 'unknown', cache_read_tokens: 'unknown', output_tokens: 'unknown',
           provider_attempts: 'unknown', usage_source: 'unknown', completeness: 'unknown' }, limit_violations: [] } },
   });
-  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: 'task-one', artifacts: [] } });
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
   await flushPromises();
   expect(wrapper.text()).toContain('实际用量：输入 未知 token，缓存读取 未知 token');
   expect(wrapper.text()).toContain('输出 未知 token；模型尝试 未知 次');
@@ -204,13 +219,86 @@ it('shows unknown actual usage without substituting the request ceiling', async 
 it('late read for a previously selected task cannot overwrite the current task', async () => {
   let resolveOld: (value: unknown) => void = () => {};
   read.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
-  read.mockResolvedValueOnce({ ...missingV2, task_id: 'task-two', blocked_reason: 'permission_expired' });
-  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: 'task-one', artifacts: [] } });
-  await wrapper.setProps({ taskId: 'task-two' });
+  read.mockResolvedValueOnce({ ...missingV2, task_id: TASK_TWO, blocked_reason: 'permission_expired' });
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  await wrapper.setProps({ taskId: TASK_TWO });
   await flushPromises();
   resolveOld(missingV2);
   await flushPromises();
   expect(wrapper.text()).toContain('许可已到期');
   expect(wrapper.text()).not.toContain('尚未授权后台续接');
+  wrapper.unmount();
+});
+
+it('late permission read from a previous user and workspace cannot overwrite the current scope', async () => {
+  let resolveOld: (value: unknown) => void = () => {};
+  read.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+  read.mockResolvedValueOnce(missingV2);
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  useAuthStore().setUser({ subject: 'bob', workspace: { workspace_id: 'workspace-bob' } } as any);
+  await flushPromises();
+  resolveOld({ ...missingV2, blocked_reason: 'permission_expired' });
+  await flushPromises();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(wrapper.text()).toContain('尚未授权后台续接');
+  expect(wrapper.text()).not.toContain('许可已到期');
+  wrapper.unmount();
+});
+
+it('does not send a revoke after its confirmation outlives the selected user scope', async () => {
+  read.mockResolvedValue({ ...activeV2 });
+  let resolveConfirmation: (value: string) => void = () => undefined;
+  confirmRevoke.mockReturnValueOnce(new Promise(resolve => { resolveConfirmation = resolve; }));
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  await flushPromises();
+  const vm = wrapper.vm as unknown as { revoke: () => Promise<void> };
+  const revokeAction = vm.revoke();
+  await flushPromises();
+  expect(confirmRevoke).toHaveBeenCalledOnce();
+
+  read.mockResolvedValueOnce({ ...missingV2 });
+  useAuthStore().setUser({ subject: 'bob', workspace: { workspace_id: 'workspace-bob' } } as any);
+  await flushPromises();
+  resolveConfirmation('confirmed');
+  await revokeAction;
+
+  expect(revoke).not.toHaveBeenCalled();
+  expect(wrapper.text()).toContain('尚未授权后台续接');
+  wrapper.unmount();
+});
+
+it('loads a validated strategy Artifact omitted from the 200-item list by exact Product GET', async () => {
+  const cappedArtifacts = Array.from({ length: 200 }, (_, index) => ({
+    artifact_id: `artifact_${String(index).padStart(32, '0')}`,
+    task_id: TASK_TWO, owner_principal: 'alice', workspace_id: 'workspace-alice',
+    kind: 'strategy_version', status: 'validated',
+  }));
+  const exactArtifact = {
+    artifact_id: `artifact_${'e'.repeat(32)}`, task_id: TASK_ONE,
+    owner_principal: 'alice', workspace_id: 'workspace-alice',
+    kind: 'strategy_version', status: 'validated', content_sha256: 'f'.repeat(64),
+  };
+  const wrongWorkspaceArtifact = {
+    ...exactArtifact,
+    artifact_id: `artifact_${'f'.repeat(32)}`,
+    workspace_id: 'workspace-bob',
+  };
+  getEntity.mockResolvedValueOnce(exactArtifact).mockResolvedValueOnce(wrongWorkspaceArtifact);
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: cappedArtifacts } });
+  await flushPromises();
+  expect(wrapper.text()).toContain('策略版本列表最多返回 200 项');
+  const vm = wrapper.vm as unknown as {
+    exactArtifactId: string;
+    lookupExactArtifact: () => Promise<void>;
+    eligible: Array<Record<string, unknown>>;
+  };
+  vm.exactArtifactId = exactArtifact.artifact_id;
+  await vm.lookupExactArtifact();
+  expect(getEntity).toHaveBeenCalledWith('artifacts', exactArtifact.artifact_id);
+  expect(vm.eligible).toContainEqual(exactArtifact);
+  vm.exactArtifactId = wrongWorkspaceArtifact.artifact_id;
+  await vm.lookupExactArtifact();
+  expect(vm.eligible).not.toContainEqual(wrongWorkspaceArtifact);
+  expect(wrapper.text()).toContain('与当前用户、工作区、任务或可用策略版本不匹配');
   wrapper.unmount();
 });

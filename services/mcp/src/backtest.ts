@@ -1,6 +1,4 @@
 import { safeRequestValidation } from "./request-validation.js";
-import type { PageBudgetDecision } from "./page-budget.js";
-
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
@@ -12,14 +10,6 @@ export type BacktestRequest = Record<string, unknown>;
 export type ByqBacktestResult = {
   content: Array<{ type: "text"; text: string }>;
   isError: boolean;
-};
-
-export type BacktestAnalysisBudget = {
-  status: "available" | "exhausted";
-  call_limit: number;
-  remaining_calls: number;
-  backend_accessed: boolean;
-  must_answer_from_collected_evidence: boolean;
 };
 
 function result(payload: unknown, isError: boolean): ByqBacktestResult {
@@ -147,56 +137,6 @@ export function fetchByqBacktestAnalysis(
   );
 }
 
-function analysisBudgetPayload(
-  decision: PageBudgetDecision,
-  backendAccessed: boolean,
-): BacktestAnalysisBudget {
-  return {
-    status: decision.remaining > 0 ? "available" : "exhausted",
-    call_limit: decision.limit,
-    remaining_calls: decision.remaining,
-    backend_accessed: backendAccessed,
-    must_answer_from_collected_evidence: decision.remaining === 0,
-  };
-}
-
-export async function fetchBudgetedByqBacktestAnalysis(
-  backendUrl: string,
-  jobId: string,
-  options: { section: string; limit: number; offset: number },
-  decision: PageBudgetDecision,
-  fetcher: Fetcher = fetch,
-): Promise<ByqBacktestResult> {
-  if (!decision.allowed) {
-    return result({
-      service: "beyondquant-mcp",
-      status: "bounded",
-      analysis_page_budget: {
-        ...analysisBudgetPayload(decision, false),
-        code: "analysis_page_budget_exceeded",
-        retryable: false,
-      },
-    }, false);
-  }
-
-  const fetched = await fetchByqBacktestAnalysis(
-    backendUrl, jobId, options, fetcher,
-  );
-  if (fetched.isError) return fetched;
-  const text = fetched.content[0]?.text;
-  if (typeof text !== "string") return fetched;
-  try {
-    const payload = JSON.parse(text) as unknown;
-    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return fetched;
-    return result({
-      ...(payload as Record<string, unknown>),
-      analysis_page_budget: analysisBudgetPayload(decision, true),
-    }, false);
-  } catch {
-    return fetched;
-  }
-}
-
 export function fetchByqSignalSnapshotGet(
   backendUrl: string,
   artifactId: string,
@@ -247,17 +187,72 @@ export function fetchByqBacktestTaskCreate(
   );
 }
 
-export function fetchByqBacktestTaskGet(
+const BACKTEST_EXECUTION_NOTE =
+  "Business next_action/actions describe task readiness. This query grants no execution permission; follow the current trusted Root instruction and obtain required authorization before any allowed action.";
+
+// Fixed bounded explanations selected only from a legal projected phase or from
+// the validated approval_required blocker code. A Map is an own-entry lookup, so
+// hostile keys such as __proto__, constructor or toString are never treated as
+// facts. Arbitrary blocker messages or error detail are never copied into
+// executable wording.
+const BACKTEST_PHASE_NOTES = new Map<string, string>([
+  ["prepared", "Task is prepared. Business next_action describes readiness; this query grants no execution permission."],
+  ["waiting_for_data", "Task is waiting for existing market-input preparation; this query does not start or resume that work."],
+  ["producing_signals", "Task is producing signals from existing inputs; this query does not advance or resume that work."],
+  ["ready_to_execute", "Business state is ready for an allowed execution action, but this query grants no execution permission."],
+  ["queued", "Task is queued for execution; this query does not grant or perform execution."],
+  ["running", "Task is running. Report its current state; this query does not grant or perform execution."],
+  ["completed", "This reports a confirmed business result; it does not assert completion of the broader ResearchTask."],
+  ["failed", "Task reports failure. Review the existing business result; this query does not resubmit or retry work."],
+  ["cancelled", "Task is cancelled. A new task requires its own separate authorization, not this query."],
+]);
+
+function backtestContinuationNote(task: Record<string, unknown>): string {
+  const blockers = Array.isArray(task.blockers) ? task.blockers : [];
+  if (blockers.some(entry => entry !== null && typeof entry === "object"
+    && (entry as Record<string, unknown>).code === "approval_required")) {
+    return "An approval is required before execution. Request that human approval outside this query; this query does not grant it.";
+  }
+  const phase = typeof task.phase === "string" ? task.phase : undefined;
+  const note = phase === undefined ? undefined : BACKTEST_PHASE_NOTES.get(phase);
+  return typeof note === "string" ? note
+    : "This query alone is insufficient to determine a safe next step.";
+}
+
+// Notes attach only to a successful exact backtest_task_id GET whose parsed
+// task identity matches the requested id. The success test uses the real
+// response path and parsed identity, never the spread top-level status.
+function withBacktestTaskNotes(response: ByqBacktestResult, taskId: string): ByqBacktestResult {
+  if (response.isError) return response;
+  const text = response.content[0]?.text;
+  if (typeof text !== "string") return response;
+  let payload: unknown;
+  try { payload = JSON.parse(text); } catch { return response; }
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return response;
+  const record = payload as Record<string, unknown>;
+  const task = record.task;
+  if (task === null || typeof task !== "object" || Array.isArray(task)) return response;
+  const taskRecord = task as Record<string, unknown>;
+  if (taskRecord.backtest_task_id !== taskId) return response;
+  return result({
+    ...record,
+    execution_note: BACKTEST_EXECUTION_NOTE,
+    continuation_note: backtestContinuationNote(taskRecord),
+  }, false);
+}
+
+export async function fetchByqBacktestTaskGet(
   backendUrl: string,
   taskId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqBacktestResult> {
-  return requestBacktest(
+  const response = await requestBacktest(
     backendUrl,
     `/v1/research/backtest-tasks/${encodeURIComponent(taskId)}`,
     { method: "GET" },
     fetcher,
   );
+  return withBacktestTaskNotes(response, taskId);
 }
 
 export function fetchByqBacktestTaskExecute(
@@ -352,6 +347,6 @@ export async function fetchByqBacktestTaskLookup(
       backtest_task_id: receipt.backtest_task_id, signal_producer_job_id: receipt.signal_producer_job_id,
       signal_status: receipt.signal_status,
     }, next_action: "Read the recovered backtest_task_id for current state; confirmation grants no execution permission." }
-    : { retryable: false, next_action: "Preserve the original task and key. This lookup only recovers an execution whose response was not observed; if the approved create was never submitted, execute it once with this exact original key. Do not infer absence from a list." }),
+    : { retryable: false, next_action: "Preserve the original task and key. Query this identity within the task budget; do not repeat submission or infer absence from a list." }),
   }, false);
 }

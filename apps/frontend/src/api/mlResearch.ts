@@ -53,7 +53,6 @@ export const setMLStudyLifecycle = (id: string, status: "active" | "archived") =
   headers: { "x-idempotency-key": createRequestId() },
 });
 export const createMLStrategy = (payload: Record<string, unknown>) => post<any>("/strategies/versions", payload);
-export const approveMLStrategy = (payload: Record<string, unknown>) => post<any>("/strategies/approvals", payload);
 export const createMLTraining = (payload: Record<string, unknown>, idempotencyKey?: string) => request<{ training_run: MLRun }>(
   "/training-runs",
   {

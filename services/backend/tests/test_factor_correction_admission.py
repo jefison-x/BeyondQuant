@@ -8,7 +8,7 @@ from tests.test_domain_call_evidence import observed, pytestmark
 from tests.test_factor_research import factor_payload
 
 
-def test_factor_requires_proof_and_persists_one_correction(observed, monkeypatch):
+def test_factor_requires_proof_and_allows_new_valid_input_after_correction(observed, monkeypatch):
     store, evidence, scope, ctx = observed
     monkeypatch.setattr(main, 'agent_store', store)
     client = TestClient(main.app)
@@ -26,6 +26,7 @@ def test_factor_requires_proof_and_persists_one_correction(observed, monkeypatch
     assert store._fetch_one('SELECT count(*) AS n FROM factor_jobs')['n'] == 0
     failure = post(payload, 2)
     assert failure.status_code == 422, failure.text
+    assert failure.json()['detail']['reason'] == 'domain_validation_failed'
     assert failure.json()['detail']['validation']['field'] == 'factor.lookback'
     assert store._fetch_one('SELECT count(*) AS n FROM artifacts')['n'] == 0
     unchanged = post({**payload, 'idempotency_key':'new-key'}, 3)
@@ -42,11 +43,12 @@ def test_factor_requires_proof_and_persists_one_correction(observed, monkeypatch
     try:
         replay = post(repaired, 5)
         assert replay.status_code == 201 and replay.json() == result.json()
-        exhausted = post({**repaired, 'idempotency_key':'third',
-                          'factor':{'name':'momentum','version':'1','lookback':2}}, 6)
-        assert exhausted.status_code == 409
-        assert exhausted.json()['detail']['reason'] == 'correction_budget_exhausted'
-        assert store._fetch_one('SELECT count(*) AS n FROM factor_jobs')['n'] == 1
+        third = post({**repaired, 'idempotency_key':'third',
+                      'factor':{'name':'momentum','version':'1','lookback':1}}, 6)
+        assert third.status_code == 201, third.text
+        assert third.json()['job']['status'] == 'QUEUED'
+        assert third.json()['job']['task_id'] == evidence['task_id']
+        assert store._fetch_one('SELECT count(*) AS n FROM factor_jobs')['n'] == 2
     finally:
         reopened.close()
 

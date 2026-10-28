@@ -183,14 +183,3 @@ export function createStrategyVersion(payload: Record<string, unknown>, token: s
     body: JSON.stringify(payload),
   });
 }
-
-export function approveStrategyVersion(
-  payload: Record<string, unknown>,
-  token: string,
-): Promise<Record<string, unknown>> {
-  return request(`/strategies/approvals`, token, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}

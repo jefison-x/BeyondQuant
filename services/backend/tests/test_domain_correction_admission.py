@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import json
 
 import pytest
 
@@ -40,22 +41,96 @@ def test_missing_proof_and_late_delivery_do_not_execute(observed):
     assert store.claim_domain_call("byq_strategy_validate", payload, **ctx)["state"] == "claimed"
 
 
-def test_failed_input_new_key_never_runs_and_one_repair_survives_restart(observed):
-    store = observed[0]
+def test_failed_inputs_are_blocked_but_legacy_repair_marker_does_not_limit_new_inputs(observed):
+    store, evidence, _, _ = observed
     first = claim(observed)
     failure = store.execute_domain_call(first, invalid)
     assert failure["state"] == "correctable_failure"
+    assert failure["reason"] == "domain_validation_failed"
     assert claim(observed, sequence=3) == failure
     assert claim(observed, key="changed-key", sequence=4) == {"state": "blocked", "reason": "unchanged_failed_input"}
+
+    # Simulate an old bucket whose boolean records a historical correction.
+    # It is preserved as data, but no longer acts as an execution quota.
+    from app.db import execute
+    with store._transaction() as connection:
+        execute(connection, """UPDATE agent_domain_correction_buckets SET repair_used=TRUE
+            WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", {
+                "root": evidence["root_run_id"], "task_id": evidence["task_id"],
+                "action": evidence["action"],
+            })
     repair = claim(observed, key="repair", script="changed", sequence=5)
     assert store.execute_domain_call(repair, lambda conn: {"validated": True})["state"] == "succeeded"
+    assert store._fetch_one("SELECT repair_used FROM agent_domain_correction_buckets")["repair_used"] is True
+
     reopened = AgentResearchStore()
     try:
         payload, context = request(observed, "third", "third input", sequence=6)
-        assert reopened.claim_domain_call("byq_strategy_validate", payload, **context) == {
-            "state": "blocked", "reason": "correction_budget_exhausted"}
+        third = reopened.claim_domain_call("byq_strategy_validate", payload, **context)
+        assert third["state"] == "claimed"
+        assert reopened.execute_domain_call(third, lambda conn: {"validated": True})["state"] == "succeeded"
+        assert reopened._fetch_one("SELECT repair_used FROM agent_domain_correction_buckets")["repair_used"] is True
     finally:
         reopened.close()
+
+
+def test_legacy_bucket_hash_blocks_when_failure_claim_is_absent(observed):
+    store, evidence, _, _ = observed
+    store.execute_domain_call(claim(observed), invalid)
+    # Model a bucket-only legacy shape in the isolated test DB; this does not
+    # claim that a particular deployment had this history.
+    from app.db import execute
+    with store._transaction() as connection:
+        execute(connection, """DELETE FROM agent_domain_call_claims
+            WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", {
+                "root": evidence["root_run_id"], "task_id": evidence["task_id"],
+                "action": evidence["action"],
+            })
+    assert store._fetch_one("""SELECT count(*) AS n FROM agent_domain_call_claims
+        WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", {
+            "root": evidence["root_run_id"], "task_id": evidence["task_id"],
+            "action": evidence["action"],
+        })["n"] == 0
+    assert claim(observed, "legacy-retry", "bad", sequence=3) == {
+        "state": "blocked", "reason": "unchanged_failed_input"}
+
+
+def test_legacy_closed_correction_result_replays_without_rewrite(observed):
+    store = observed[0]
+    payload, context = request(observed, "legacy-closed", "bad", sequence=2)
+    first = store.claim_domain_call("byq_strategy_validate", payload, **context)
+    store.execute_domain_call(first, invalid)
+    legacy_result = {"state": "correctable_failure", "reason": "correction_failed"}
+    from app.db import execute
+    with store._transaction() as connection:
+        execute(connection, """UPDATE agent_domain_call_claims
+            SET result_json=CAST(:result AS jsonb)
+            WHERE root_run_id=:root AND task_id=:task_id AND action=:action
+              AND idempotency_key=:idempotency_key""", {
+                "result": json.dumps(legacy_result),
+                "root": context["trusted_root"], "task_id": payload["task_id"],
+                "action": "byq_strategy_validate", "idempotency_key": payload["idempotency_key"],
+            })
+        execute(connection, """UPDATE agent_domain_correction_buckets SET repair_used=TRUE
+            WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", {
+                "root": context["trusted_root"], "task_id": payload["task_id"],
+                "action": "byq_strategy_validate",
+            })
+
+    replay = store.claim_domain_call("byq_strategy_validate", payload, **context)
+    assert replay == legacy_result
+    executed = []
+    assert store.execute_domain_call(replay, lambda connection: executed.append(True)) == legacy_result
+    assert executed == []
+    assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims")["n"] == 1
+    assert store._fetch_one("SELECT repair_used FROM agent_domain_correction_buckets")["repair_used"] is True
+    persisted = store._fetch_one("""SELECT result_json FROM agent_domain_call_claims
+        WHERE root_run_id=:root AND task_id=:task_id AND action=:action
+          AND idempotency_key=:idempotency_key""", {
+            "root": context["trusted_root"], "task_id": payload["task_id"],
+            "action": "byq_strategy_validate", "idempotency_key": payload["idempotency_key"],
+        })
+    assert persisted["result_json"] == legacy_result
 
 
 @pytest.mark.parametrize("action,path", [
@@ -155,13 +230,26 @@ def test_cancel_waits_for_inflight_atomic_domain_commit(observed, monkeypatch, a
         terminal_store.close()
 
 
-def test_second_failure_cannot_reset_budget_and_same_key_changed_input_conflicts(observed):
+def test_distinct_failed_inputs_remain_blocked_without_lifetime_quota(observed):
     store = observed[0]
     store.execute_domain_call(claim(observed), invalid)
     store.execute_domain_call(claim(observed, "repair", "changed", sequence=3), invalid)
-    assert claim(observed, "third", "third", sequence=4)["reason"] == "correction_budget_exhausted"
+    first_hash = store._fetch_one("""SELECT input_sha256 FROM agent_domain_call_claims
+        WHERE idempotency_key='call'""")['input_sha256']
+    second_hash = store._fetch_one("""SELECT input_sha256 FROM agent_domain_call_claims
+        WHERE idempotency_key='repair'""")['input_sha256']
+    assert first_hash != second_hash
+    assert store._fetch_one("SELECT failed_input_sha256 FROM agent_domain_correction_buckets")[
+        "failed_input_sha256"] == first_hash
+    third = claim(observed, "third", "third", sequence=4)
+    assert third["state"] == "claimed"
+    assert store.execute_domain_call(third, lambda conn: {"validated": True})["state"] == "succeeded"
+    assert claim(observed, "first-again", "bad", sequence=5) == {
+        "state": "blocked", "reason": "unchanged_failed_input"}
+    assert claim(observed, "second-again", "changed", sequence=6) == {
+        "state": "blocked", "reason": "unchanged_failed_input"}
     with pytest.raises(AgentConflict):
-        claim(observed, "repair", "different again", sequence=5)
+        claim(observed, "repair", "different again", sequence=7)
 
 
 @pytest.mark.parametrize("crash", [False, True])
@@ -177,7 +265,7 @@ def test_claim_or_execution_crash_keeps_unknown_and_never_refunds(observed, cras
     assert claim(observed, "new-key", "new input", sequence=4)["reason"] == "prior_call_outcome_unknown"
 
 
-def test_normal_successes_do_not_debit_repair(observed):
+def test_normal_successes_leave_legacy_bucket_markers_unchanged(observed):
     store = observed[0]
     for sequence in (2, 3, 4):
         value = claim(observed, str(sequence), str(sequence), sequence=sequence)
@@ -186,20 +274,24 @@ def test_normal_successes_do_not_debit_repair(observed):
     assert row["failed_input_sha256"] is None and row["repair_used"] is False
 
 
-def test_concurrent_repairs_only_claim_one_changed_input(observed):
+def test_concurrent_distinct_inputs_serialize_while_one_is_unresolved(observed):
     store = observed[0]
     store.execute_domain_call(claim(observed), invalid)
     requests = [request(observed, f"repair-{n}", f"changed-{n}", sequence=n + 3) for n in range(2)]
-    def take(value):
-        local = AgentResearchStore()
-        try:
+    locals_ = []
+    try:
+        for _ in requests:
+            locals_.append(AgentResearchStore())
+        def take(pair):
+            local, value = pair
             return local.claim_domain_call("byq_strategy_validate", value[0], **value[1])
-        finally:
+        with ThreadPoolExecutor(2) as executor:
+            results = list(executor.map(take, zip(locals_, requests)))
+    finally:
+        for local in locals_:
             local.close()
-    with ThreadPoolExecutor(2) as executor:
-        results = list(executor.map(take, requests))
     assert sorted(result["state"] for result in results) == ["blocked", "claimed"]
-    assert store._fetch_one("SELECT repair_used FROM agent_domain_correction_buckets")["repair_used"] is True
+    assert store._fetch_one("SELECT repair_used FROM agent_domain_correction_buckets")["repair_used"] is False
 
 
 def test_artifact_and_success_receipt_commit_or_rollback_together(observed):
@@ -273,7 +365,7 @@ def test_real_domain_api_requires_proof_and_replays_atomic_success(observed, act
     assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 1
 
 
-def test_schema_rejection_debits_without_artifact_or_domain_validation(observed, monkeypatch):
+def test_schema_rejection_records_closed_failure_without_artifact_or_validation(observed, monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
     store, evidence, scope, ctx = observed
@@ -285,6 +377,7 @@ def test_schema_rejection_debits_without_artifact_or_domain_validation(observed,
         headers={**ctx, "x-byq-root-run-id": evidence["root_run_id"]})
     assert reply.status_code == 422, reply.text
     assert reply.json()["detail"]["state"] == "correctable_failure"
+    assert reply.json()["detail"]["reason"] == "domain_validation_failed"
     assert calls == []
     assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 0
     assert store._fetch_one("SELECT failed_input_sha256 FROM agent_domain_correction_buckets")["failed_input_sha256"]

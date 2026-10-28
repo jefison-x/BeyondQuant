@@ -1,0 +1,51 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-unified-stop-boundary-offline-v3",
+  "status": "FAIL_STOP",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "source_sha256": {
+    "capture": "0c0f33c84cd8b124aee6fff4ffe13f681afc587387075e7368738c847c0dfbfe",
+    "capture_test": "3e166317b4983e6142799559747b774bb631068471b5154052c9431da3aa281f",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "returncode": 1,
+  "elapsed_ms": 307,
+  "timed_out": false,
+  "method_results": {
+    "PASS": 4,
+    "FAIL": 1,
+    "NOT_RUN": 0
+  },
+  "matrix_subcases": {
+    "planned": 24,
+    "PASS": 1,
+    "FAIL": 1,
+    "NOT_RUN": 22,
+    "failed": "reader_uid_wrong"
+  },
+  "failure": "Specific Stop reason is now preserved. Prior independent review incorrectly expected native UID/GID failures to exit 2; actual receipt exits 1. Root stops test batch and requests full inline-reader/fake-wrapper exit-boundary audit.",
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/foreground-full-entry-offline-v3",
+  "source_snapshot": ".ci-artifacts/delegated-child-20261013/foreground-full-entry-offline-v3/source-snapshot",
+  "stderr_bytes": 2525,
+  "stderr_sha256": "0de4f1b15b70fc95b01c2dc78ddfcdb253e143fa9aaca699952984e2f36862f3",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_frozen_capture_source_matches_reviewed_pin",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests"
+  ],
+  "limits": {
+    "total_seconds": 60,
+    "real_models": 0,
+    "real_docker": 0,
+    "real_http": 0,
+    "real_db": 0,
+    "new_jobs": 0
+  },
+  "root_decision": "No rerun, new test scope or live escalation. Preserve failure receipts. Review all actual exit paths and fixture expectations before any next admission.",
+  "live": "NOT_RUN_NOT_ADMITTED"
+}

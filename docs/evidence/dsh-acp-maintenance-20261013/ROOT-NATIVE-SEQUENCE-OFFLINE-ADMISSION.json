@@ -1,0 +1,38 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "native-zero-based-sequence-complete-entry-offline",
+  "status": "ADMITTED_ONCE_OFFLINE_ONLY",
+  "source_head_at_working_base": "d8851314246bb5b7d0a6390f5e41767ee8119c39",
+  "source_sha256": {
+    "capture": "d13a2f459ec5ec9ea38662bbe49fe154d99e8aabf8ccb64cec91c9f2bc7498d1",
+    "capture_test": "aa8038a2c628ec6bfcc64abc3f256e52894a52876c53ee23548e5a965a7ba18a",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "native_reader_sha256": "bdbb671b8bbae65641ab04faa9094b5bec711264b48a80b4c961c7a0f938ac8e",
+  "independent_reviewer": "Sol SOURCE/TEST PASS",
+  "root_decision": "One affected eight-method batch; 29 matrix scenes, fail-fast, 60-second total. Unaffected 12 capture methods and scope16 retain original evidence. No old live batch reentry.",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_frozen_capture_source_matches_reviewed_pin",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_native_source_extractor_uses_return_literal_and_keeps_distinct_identities",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_native_projection_sequence_bounds_and_zero_ordering",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests"
+  ],
+  "limits": {
+    "total_seconds": 60,
+    "methods": 8,
+    "matrix_subcases": 29,
+    "real_docker": 0,
+    "http": 0,
+    "db": 0,
+    "models": 0,
+    "jobs": 0
+  },
+  "existing_file_read": "NOT_ADMITTED",
+  "real_model": "NOT_ADMITTED"
+}

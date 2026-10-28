@@ -1,0 +1,32 @@
+{
+  "decision": "ROOT_PASS_SOURCE_ATTRIBUTION_ONLY",
+  "source_sha": "33152f654d8190892f6c08ab45c1667638e48e59",
+  "production_acp_digest": "ghcr.io/jefison-x/beyondquant/acp-unified@sha256:150b4802b41b955be1613d524691d26bf04d13e9b862c6970699116ea3d8b440",
+  "release_run": 38107905822,
+  "deployment_classification": "STARTED_HEALTHY_NOT_YET_BUSINESS_ACCEPTED",
+  "main_application_source_unchanged": true,
+  "subsequent_changed_paths": [
+    "AGENTS.md",
+    "docs/clean-break/development-agent-mode.md"
+  ],
+  "evidence": [
+    {
+      "path": "/home/jefison/projects/.byq-releases/acp-single-image-adoption-20261011/operator/attempts/prod-38107905822-r3/DEPLOY-RECEIPT.json",
+      "sha256": "59418c42f2a0877a12ca7f2a29c9c3c15bdf559892609e711bbae4b983db34d8"
+    },
+    {
+      "path": "/home/jefison/projects/.byq-releases/acp-single-image-adoption-20261011/ROOT-RELEASE-ADMISSION-PASS.json",
+      "sha256": "e2655e6c1dfb274e9c1100b459ea01fa6fe61982312f880bd2824b6d98b65fd5"
+    },
+    {
+      "path": "/home/jefison/projects/.byq-releases/acp-single-image-adoption-20261011/release-38107905822/manifest/manifest.json",
+      "sha256": "506963fc9cb4d8de96a2811a83c17f75fbe31da348acd625431a15b1bbd40fba"
+    },
+    {
+      "path": "/home/jefison/projects/.byq-releases/acp-single-image-adoption-20261011/ROOT-RELEASE-FULL-QUALIFICATION-PASS.json",
+      "sha256": "2a015c835d095de336c126de7ab3a8b057e9295e248446e0c9ca6acaf2e6c437"
+    }
+  ],
+  "new_tests": "NOT_RUN",
+  "production_business_qualification": "NOT_CLAIMED"
+}

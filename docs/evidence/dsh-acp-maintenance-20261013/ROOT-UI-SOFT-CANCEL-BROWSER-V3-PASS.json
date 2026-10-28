@@ -1,0 +1,44 @@
+{
+  "schema": "byq-maintenance-root-gate.v1",
+  "status": "PASS_UI_SAME_CONVERSATION_AND_TERMINAL_RECEIPTS",
+  "source_commit": "a0818970855cebab428e8f467cc1400272efc351",
+  "frontend_image_id": "sha256:378852e7a1e901456e9d320ed63152046e10054d4ac456c430f1780fd9d641ea",
+  "scope": "Gateway/Product browser stop-current-turn followed by explicit new input in the same conversation, unique persisted answer after reload, two exact terminal ACKs and closed Backend authorities.",
+  "browser": {
+    "root_inputs": 2,
+    "cancel_clicks": 1,
+    "same_conversation": true,
+    "exact_reply_count_after_reload": 1,
+    "elapsed_ms": 102036,
+    "limit_ms": 180000,
+    "cancelled_result_discarded": true
+  },
+  "backend": {
+    "conversation_status": "active",
+    "v3_user_messages": 2,
+    "exact_assistant_messages": 1,
+    "old_root": "cancelled/closed",
+    "new_root": "completed/closed",
+    "unknown_claim_count_each": 0,
+    "specified_11_job_task_artifact_tables": "all zero at read sample; no before/delta assertion"
+  },
+  "terminal_ack": "PASS: two exact root/session/trace/sequence/digest/outcome matches",
+  "readonly_followup": {"docker_calls": 2, "model_calls": 0, "jobs_created_by_readonly_followup": 0, "command_rc_each": 0},
+  "private_raw_evidence": ".ci-artifacts/ui-soft-cancel-20261014/browser-live-v3/",
+  "independent_sol": "PASS scoped browser, persisted states and exact ACK observations",
+  "root": "PASS scoped gate",
+  "retained_failures": {
+    "original_hard_cancel": "FAIL: stop-current-turn ended conversation; API soft evidence did not fix this UI gate",
+    "browser_v1": "FAIL_STOP: isolated workspace-binding configuration caused create 503; no model",
+    "browser_v2": "FAIL_STOP: first reply completed before actual stop click; not cancellation evidence",
+    "sql_initial_draft": "SOURCE_HOLD before execution: conversation table has no workspace_id; corrected and independently reviewed before one read"
+  },
+  "limitations": {
+    "settlement_wait_text": "non-blocking residual observed on V3; separately fixed by V4 source/offline gate",
+    "provider_attempts": "NOT_MEASURED",
+    "billing": "UNKNOWN",
+    "production": "NOT_RUN",
+    "full_ci_push_merge_deploy": "NOT_RUN",
+    "overall_qualification": "NOT_READY"
+  }
+}

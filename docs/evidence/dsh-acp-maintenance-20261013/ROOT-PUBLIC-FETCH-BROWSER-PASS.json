@@ -1,0 +1,71 @@
+{
+  "schema_version": "byq-root-real-public-fetch-pass.v1",
+  "status": "ROOT_PASS_SCOPED_REAL_BROWSER_FETCH_CONTINUATION",
+  "utc": "2026-10-15T03:33:38.498403+00:00",
+  "source_commit": "0a372d181524caa77d209d7b2b2c5ea1940cefb3",
+  "image_id": "sha256:68c3a1eb1f99877134a53e5b15f6d1057213520aa4fe9aef1cefceef1e8d440f",
+  "installed_services": [
+    "runtime-adapter-f6",
+    "acp-product-runner"
+  ],
+  "other_services_unchanged": 12,
+  "browser": {
+    "conversation_id": "conversation_66e526b46b82497d8625156add0a3492",
+    "browser_id": "2",
+    "tab_id": "1",
+    "port": 32790,
+    "retained": true
+  },
+  "observations": {
+    "user_inputs": 2,
+    "projected_fetch_activity_pairs": 1,
+    "underlying_fetch_call_count": "UNKNOWN",
+    "new_business_jobs": 0,
+    "messages": [
+      19,
+      21,
+      23
+    ],
+    "history_prefix_unchanged": true,
+    "both_roots_completed_closed_unknown0_exact_ack": true,
+    "reload_retained_both_answers": true,
+    "elapsed_seconds": 246.864937,
+    "observation_seconds": 300,
+    "model_proxy_completions_200": 3,
+    "model_usage": {
+      "input_tokens": 113080,
+      "output_tokens": 485,
+      "cache_read_tokens": 30336,
+      "cache_added_to_input": false
+    }
+  },
+  "roots": [
+    "d10017dc0e2e4688b075b7be4bfaefc3",
+    "76d0d75739824c35a3ef1f57dfcbe861"
+  ],
+  "qualification_scope": [
+    "Official public fetch availability through real browser/Gateway/Product conversation",
+    "Projected public-page read activity and visible source-linked page detail",
+    "Answer persistence, ordinary next turn, stable ordered history and exact Root closure/ACK"
+  ],
+  "limits": [
+    "Native fetched HTTP status/body/hash/target redirect and independent weather accuracy not qualified",
+    "Assistant answer exceeded requested one-sentence style; displayed AX abbreviates source host; neither proves a transport failure",
+    "Model proxy usage observed; separate budget settlement and cost not qualified by this batch",
+    "Active-proxy/redirect/rebinding/IPv6 SSRF, other URLs, background continuation, production and release NOT_RUN"
+  ],
+  "receipts": {
+    "SOL-TESTER-ADDENDUM.json": "0a7119187c6adf3b33217b415ff92657f0749ec61eaa199356993cb7de8150f9",
+    "PLAN.json": "ef2b165fe5832234368e116043f4ebd31e49e7b37032e34041c207554cda8a8b",
+    "INDEPENDENT-RESULT.json": "6f1cae17e1e3f6369d29bdd91740a81c2919253efd29f6d2f9a64f812cd1d8fc",
+    "SOL-FINAL.json": "aa5f4edb6268664cc79beecf664c8a3a4b25ee8432aa93e2a77d4c54d93215d6",
+    "ROOT-SAVED-EVIDENCE-CHECK.json": "7efda412fbbda7521ed6afecf0ecd22bfe351eb52bd9a30c13a557437db39560",
+    "BROWSER-TIMING-PROVENANCE.json": "f8a5818024d4d86645ea8ad44aa3e1e775e5ee157b1f80475b5acbde33b07de6",
+    "ORIGINAL-BROWSER-TOOL-RECEIPTS.jsonl": "e81a2bf38e94e108c1a773e08be280956ae4407a452c3c3982743830518044ac",
+    "FINAL-BROWSER.jpg": "29d8c5a88a013592ed709ab6a3acf84e52e1ceb28a5acad955d59c95b6cbae26"
+  },
+  "earlier_failures_and_holds_preserved": true,
+  "production": "NOT_TOUCHED",
+  "product_phase_advanced": false,
+  "next": "Minimal vertical default SignalJob continuation consumer using existing Backend/Gateway/Adapter, after audit."
+}

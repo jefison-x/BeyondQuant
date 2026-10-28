@@ -1,13 +1,14 @@
 {
   "schema_version": "byq-dsh-composition-identity.v1",
   "profile": "byq-product-acp-0.2.0-rc.2",
-  "composition_hash": "sha256:39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1",
+  "composition_hash": "sha256:6be60ade113893fa65f60cc8cea410e6a617d10393478908b3fe0f57309d0467",
   "enabled_plugin_ids": [
     "acp",
     "mcp-byq-discovery",
     "byq-acp-mcp-identity",
     "trusted-time-context",
     "delegate-market-research",
+    "web-fetch-http",
     "delegate-factor-research",
     "delegate-strategy-research",
     "delegate-backtest-analysis",

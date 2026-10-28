@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
+import hmac
 import logging
 import os
 import asyncio
@@ -27,7 +29,9 @@ from packages.contracts.conversation_rehydration import (
 from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import matches_credential_rejection
 from packages.contracts.continuation_request import (
-    RESERVATION_SCHEMA_VERSION, validate_profile_binding, validate_limits, validate_request_usage,
+    RESERVATION_SCHEMA_VERSION, RESERVATION_SCHEMA_VERSION_V3,
+    validate_profile_binding, validate_limits, validate_request_usage, validate_request_usage_v2,
+    validate_reservation_v3,
 )
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
@@ -46,9 +50,25 @@ from .session_containment import (
 )
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
-from .task_continuation import TaskContinuationDelivery
+from .task_continuation import CancelModeConflict, TaskContinuationDelivery
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.domain_call_admission import call_evidence_receipt
+from packages.contracts.acp_operator_process_fence import (
+    OperatorProcessFenceContractError, digest as _operator_fence_digest,
+    validate_operator_observation_record,
+    validate_process_fence_handoff, validate_process_fence_handoff_observation,
+    validate_process_fence_handoff_confirmation, validate_process_fence_handoff_request,
+    validate_fence_close_receipt,
+)
+from packages.contracts.acp_operator_process_fence import (
+    OperatorProcessFenceContractError,
+    validate_local_validation_final_receipt,
+    validate_local_validation_handoff,
+    validate_local_validation_handoff_observation,
+    LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA,
+    validate_local_validation_release_observation,
+    validate_local_validation_backend_confirmation,
+)
 
 
 SERVICE = "byq-gateway"
@@ -61,6 +81,7 @@ TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
 # respond, then confirms process exit before returning the exact receipt.
 # Keep this internal request alive through the Adapter's bounded attempt.
 TRACE_TERMINAL_ACK_TIMEOUT_SECONDS = 75.0
+_OPERATOR_SUPERSEDED_LIFECYCLE = object()
 
 
 @asynccontextmanager
@@ -402,6 +423,8 @@ def _delete_workspace_runtime_sidecars(session_id: str) -> None:
     continuation = continuation_root / f"{session_id}.continuation.json"
     paths.append((continuation, continuation_root / f"{session_id}.continuation.lock"))
     paths.append((continuation.with_suffix(".receipt-backoff.json"), continuation_root / f"{session_id}.continuation.lock"))
+    paths.append((continuation_root / f"{session_id}.continuation-cancel.json",
+                  continuation_root / f"{session_id}.continuation.lock"))
 
     for sidecar, lock_path in paths:
         if not sidecar.exists():
@@ -585,7 +608,18 @@ def _consume_task_continuation(context):
     except HTTPException:
         return
     with chat_admission():
-        _consume_admitted_task_continuation(context)
+        _consume_admitted_task_continuation(context, allow_legacy=True)
+
+
+def _consume_default_task_continuation(context, *, allow_dispatch=True):
+    """Process only default v3 task-ready intents while F6 remains disabled."""
+    try:
+        require_runtime_authority()
+    except HTTPException:
+        return
+    with chat_admission():
+        _consume_admitted_task_continuation(
+            context, allow_legacy=False, allow_dispatch=allow_dispatch)
 
 
 def _attach_continuation_observer(context):
@@ -604,14 +638,368 @@ def _attach_continuation_observer(context):
     return _restore_product_session(context['conversation_id'], principal, context['workspace_id'])
 
 
-def _consume_admitted_task_continuation(context):
+def _has_v3_continuation_intent(intent: object) -> bool:
+    if not isinstance(intent, dict):
+        return False
+    if intent.get('reservation_schema_version') == RESERVATION_SCHEMA_VERSION_V3:
+        return True
+    reservation = intent.get('reservation')
+    receipt = intent.get('receipt')
+    if isinstance(reservation, dict) and reservation.get('schema_version') == RESERVATION_SCHEMA_VERSION_V3:
+        return True
+    return (isinstance(receipt, dict)
+        and isinstance(receipt.get('reservation'), dict)
+        and receipt['reservation'].get('schema_version') == RESERVATION_SCHEMA_VERSION_V3)
+
+
+def _validate_v3_continuation_intent(intent: object, context: dict) -> tuple[dict, dict, str, str]:
+    if not isinstance(intent, dict) or intent.get('status') not in {'intent', 'waiting'}:
+        raise ValueError('invalid v3 continuation intent status')
+    if (intent.get('conversation_id'), intent.get('session_id'), intent.get('trace_id')) != (
+            context['conversation_id'], context['session_id'], context['trace_id']):
+        raise ValueError('v3 continuation original session identity mismatch')
+    task_id = intent.get('task_id')
+    if not isinstance(task_id, str) or re.fullmatch(r'task_[0-9a-f]{32}', task_id) is None:
+        raise ValueError('v3 continuation task identity is invalid')
+    receipt, carrier = intent.get('receipt'), intent.get('reservation')
+    if not isinstance(receipt, dict):
+        raise ValueError('v3 continuation receipt is missing')
+    carrier = validate_reservation_v3(carrier)
+    if (carrier.get('owner_principal'), carrier.get('workspace_id'), carrier.get('conversation_id'),
+            carrier.get('task_id')) != (
+            context['owner'], context['workspace_id'], context['conversation_id'], task_id):
+        raise ValueError('v3 continuation carrier identity mismatch')
+    reservation_id = receipt.get('reservation_id')
+    if not isinstance(reservation_id, str) or re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None:
+        raise ValueError('v3 continuation receipt reservation identity is invalid')
+    if (receipt.get('schema_version') != 'task-continuation-ledger-entry.v1'
+            or receipt.get('reservation') != carrier
+            or receipt.get('event_key') != carrier.get('event_key')
+            or receipt.get('signal_job_id') != carrier.get('signal_job_id')):
+        raise ValueError('v3 continuation ledger receipt does not match its carrier')
+    event_match = re.fullmatch(r'task-ready-event:([0-9a-f]{64})', carrier['idempotency_key'])
+    if event_match is None:
+        raise ValueError('v3 continuation event digest is invalid')
+    event_digest = event_match.group(1)
+    if (carrier.get('event_key') != 'ready-v1:' + event_digest
+            or receipt.get('event_key') != 'ready-v1:' + event_digest
+            or reservation_id != 'continuation_' + event_digest[:32]):
+        raise ValueError('v3 continuation event and reservation identities conflict')
+    status = receipt.get('status')
+    if status not in {'reserved', 'outcome_unknown', 'accepted', 'settled', 'rejected', 'cancelled'}:
+        raise ValueError('v3 continuation ledger status is invalid')
+    instruction = intent.get('instruction')
+    if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 32768:
+        raise ValueError('v3 continuation instruction is invalid')
+    return receipt, carrier, reservation_id, instruction
+
+
+def _v3_backend_receipt(backend, task: str, reservation_id: str, idempotency_key: str,
+        status: str, *, runtime_boot_id: str | None = None, **fields):
+    payload = {
+        'reservation_id': reservation_id,
+        'idempotency_key': idempotency_key,
+        'status': status,
+        **fields,
+    }
+    return backend('receipt', payload, task=task, runtime_boot_id=runtime_boot_id)
+
+
+def _ensure_v3_cancel_marker(context: dict, reservation_id: str) -> str:
+    """Persist one exact Backend stop intent without replacing another cancel."""
+    pending = task_continuation_delivery.pending_cancel(context)
+    if pending is None:
+        task_continuation_delivery.request_cancel(context, reservation_id, 'soft')
+        mode = 'soft'
+    else:
+        if pending[0] != reservation_id:
+            raise ValueError('another exact continuation cancellation is pending')
+        mode = pending[1]
+    session = product_sessions.find_owned(
+        context['conversation_id'], Principal(subject=context['owner']),
+    )
+    if session is not None:
+        _validate_v3_product_session(session, context)
+        if session.continuation_reservation != reservation_id:
+            if not product_sessions.hold_v3_continuation(session, reservation_id):
+                raise ValueError('Backend cancellation conflicts with the current session hold')
+        is_v3, held_id = product_sessions.begin_v3_cancel(session)
+        if not is_v3 or held_id != reservation_id:
+            raise ValueError('Backend cancellation no longer matches the held reservation')
+    return mode
+
+
+def _consume_v3_task_continuation(
+    context: dict, intent: dict, *, backend, allow_dispatch: bool = True,
+) -> None:
+    """Consume or reconcile one exact default task-ready reservation."""
+    if intent.get('status') == 'eligible':
+        if (intent.get('reservation_schema_version') != RESERVATION_SCHEMA_VERSION_V3
+                or (intent.get('conversation_id'), intent.get('session_id'), intent.get('trace_id')) != (
+                    context['conversation_id'], context['session_id'], context['trace_id'])
+                or not isinstance(intent.get('task_id'), str)
+                or re.fullmatch(r'task_[0-9a-f]{32}', intent['task_id']) is None
+                or not isinstance(intent.get('signal_job_id'), str)
+                or re.fullmatch(r'signaljob_[0-9a-f]{32}', intent['signal_job_id']) is None):
+            raise ValueError('v3 continuation candidate identity is invalid')
+        if not allow_dispatch:
+            return
+        session = _attach_continuation_observer(context)
+        if session is None:
+            return
+        _validate_v3_product_session(session, context)
+        boot_id = _require_session_runtime_authority(session)
+        qualification = _continuation_adapter_get(
+            f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
+        if qualification.get('task_ready_qualified') is not True:
+            return
+        intent = backend('claim', {
+            'reservation_schema_version': RESERVATION_SCHEMA_VERSION_V3,
+            'signal_job_id': intent['signal_job_id'],
+        }, runtime_boot_id=boot_id)
+    else:
+        boot_id = None
+        session = None
+
+    if not _has_v3_continuation_intent(intent):
+        raise ValueError('v3 continuation response lost its version discriminator')
+    receipt, carrier, reservation_id, instruction = _validate_v3_continuation_intent(intent, context)
+    cancellation_pending = (receipt.get('cancel_requested_at') is not None
+        and receipt.get('status') in {'reserved', 'outcome_unknown', 'accepted'})
+    if cancellation_pending:
+        _ensure_v3_cancel_marker(context, reservation_id)
+    task_id = intent['task_id']
+    if session is None:
+        session = _attach_continuation_observer(context)
+    if session is not None:
+        _validate_v3_product_session(session, context)
+        boot_id = _require_session_runtime_authority(session)
+        if not product_sessions.hold_v3_continuation(session, reservation_id):
+            return
+
+    if (session is not None and receipt.get('status') == 'cancelled'
+            and type(receipt.get('dispatch_attempts')) is int
+            and receipt.get('dispatch_attempts') == 0
+            and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled'):
+        if task_continuation_delivery.pending_cancel(context) is None:
+            product_sessions.finish_continuation(session, reservation_id)
+            generation = product_sessions.idle_release_generation(session)
+            if generation is not None:
+                _schedule_idle_release(session, generation)
+        return
+
+    def mark(status, **fields):
+        return _v3_backend_receipt(backend, task_id, reservation_id, carrier['idempotency_key'],
+            status, runtime_boot_id=boot_id, **fields)
+
+    # Runtime's exact durable receipt is authoritative about whether this key
+    # was accepted or settled. A missing budget record is outcome_unknown and
+    # intentionally has no event idempotency key to echo.
+    adapter_receipt = _continuation_adapter_get(
+        f'/internal/runtime/sessions/{context["session_id"]}/continuation-receipt/{reservation_id}')
+    adapter_status = adapter_receipt.get('status')
+    if adapter_receipt.get('reservation_id') != reservation_id:
+        raise ValueError('v3 Adapter receipt reservation identity mismatch')
+    if (adapter_status == 'outcome_unknown'
+            and set(adapter_receipt) == {'reservation_id', 'status'}):
+        # This is the Adapter's explicit missing-record shape. It proves
+        # neither absence of a prior process write nor settlement.
+        if session is None:
+            return
+        identity_content = json.dumps(
+            {'content': instruction, 'reservation': carrier}, sort_keys=True, separators=(',', ':'))
+        reconciled = _continuation_adapter_get(
+            f'/internal/runtime/sessions/{session.session_id}/prompts/reconcile',
+            params={
+                'idempotency_key': reservation_id,
+                'content_sha256': hashlib.sha256(identity_content.encode()).hexdigest(),
+            })
+        if reconciled.get('state') == 'accepted':
+            run_id = reconciled.get('run_id')
+            if not _valid_prompt_run_id(run_id):
+                raise ValueError('v3 reconciled prompt run identity is invalid')
+            mark('accepted', run_id=run_id)
+            return
+        if reconciled.get('state') != 'outcome_unknown':
+            return
+        if receipt.get('status') == 'settled':
+            # The Adapter no longer has a per-reservation receipt, but the
+            # Backend has an immutable, fully settled ledger entry. That is
+            # sufficient to retire this exact Gateway retention lease; it is
+            # never permission to replay the old prompt.
+            if reconciled != {
+                    'schema_version': 'prompt-receipt.v1', 'state': 'outcome_unknown'}:
+                return
+            _validate_v3_backend_settled_receipt(receipt, carrier, reservation_id)
+            if receipt.get('cancel_requested_at') is not None:
+                return
+            if product_sessions.finish_v3_settled_missing_runtime(session, reservation_id):
+                generation = product_sessions.idle_release_generation(session)
+                if generation is not None:
+                    _schedule_idle_release(session, generation)
+            return
+        if (not allow_dispatch or cancellation_pending
+                or receipt.get('status') != 'reserved' or intent.get('may_dispatch') is not True):
+            return
+        qualification = _continuation_adapter_get(
+            f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
+        if qualification.get('task_ready_qualified') is not True:
+            return
+        if (session is not None
+                and product_sessions.v3_cancel_blocks_dispatch(session, reservation_id)):
+            return
+        payload = {
+            'content': instruction,
+            'require_model_key': True,
+            'idempotency_key': reservation_id,
+            'continuation_budget': carrier,
+            **_runtime_conversation_payload(session),
+        }
+        dispatch = backend('dispatch', {'reservation_id': reservation_id}, task=task_id,
+            runtime_boot_id=boot_id)
+        if dispatch.get('dispatch') is not True or session is None:
+            return
+        require_runtime_authority()
+        _require_session_runtime_authority(session)
+        try:
+            accepted = _adapter_post(
+                f'/internal/runtime/sessions/{session.session_id}/prompt', payload=payload, timeout=5.0)
+        except Exception:
+            # Backend already recorded the one-shot uncertainty before the
+            # process boundary. Never retry or clear the exact Gateway lease.
+            return
+        if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
+            return
+        mark('accepted', run_id=accepted['run_id'])
+        return
+
+    if adapter_status not in {'outcome_unknown', 'accepted', 'settled'}:
+        raise ValueError('v3 Adapter receipt status is invalid')
+    if adapter_status in {'accepted', 'settled'}:
+        if adapter_receipt.get('idempotency_key') != carrier['idempotency_key']:
+            raise ValueError('v3 Adapter receipt event identity mismatch')
+        run_id = adapter_receipt.get('run_id')
+        if not _valid_prompt_run_id(run_id):
+            raise ValueError('v3 Adapter receipt run identity is invalid')
+        if receipt.get('status') in {'cancelled', 'rejected'}:
+            raise ValueError('terminal Backend v3 cancellation conflicts with Adapter acceptance')
+        if receipt.get('status') not in {'accepted', 'settled'} or receipt.get('run_id') != run_id:
+            marked = mark('accepted', run_id=run_id)
+            if (not isinstance(marked, dict) or marked.get('reservation_id') != reservation_id
+                    or marked.get('idempotency_key') != carrier['idempotency_key']
+                    or marked.get('status') not in {'accepted', 'settled'}
+                    or marked.get('run_id') != run_id):
+                raise ValueError('Backend v3 acceptance receipt was not confirmed')
+            receipt = marked
+    elif ('idempotency_key' in adapter_receipt
+            and adapter_receipt.get('idempotency_key') != carrier['idempotency_key']):
+        raise ValueError('v3 unknown Adapter receipt event identity mismatch')
+    elif (adapter_status == 'outcome_unknown' and 'idempotency_key' in adapter_receipt
+            and receipt.get('status') == 'reserved'):
+        # A known Runtime guard with an unresolved outcome proves the process
+        # boundary may have been crossed. Persist that fact before returning;
+        # it can never be converted back into dispatch permission.
+        marked = mark('outcome_unknown')
+        if (not isinstance(marked, dict) or marked.get('reservation_id') != reservation_id
+                or marked.get('idempotency_key') != carrier['idempotency_key']
+                or marked.get('status') != 'outcome_unknown'):
+            raise ValueError('Backend v3 unknown receipt was not confirmed')
+    if adapter_status != 'settled':
+        return
+    usage = adapter_receipt.get('request_usage')
+    outcome = adapter_receipt.get('outcome')
+    settlement_sha256 = adapter_receipt.get('settlement_sha256')
+    if (not isinstance(usage, dict) or outcome not in {'completed', 'needs_attention'}
+            or not isinstance(settlement_sha256, str)
+            or re.fullmatch(r'[0-9a-f]{64}', settlement_sha256) is None):
+        raise ValueError('v3 Adapter terminal receipt is incomplete')
+    if receipt.get('status') != 'settled':
+        settled = mark('settled', request_usage=usage, outcome=outcome,
+            settlement_sha256=settlement_sha256)
+        if (not isinstance(settled, dict) or settled.get('reservation_id') != reservation_id
+                or settled.get('idempotency_key') != carrier['idempotency_key']
+                or settled.get('status') != 'settled'
+                or settled.get('run_id') != adapter_receipt['run_id']
+                or settled.get('outcome') != outcome
+                or settled.get('settlement_sha256') != settlement_sha256):
+            raise ValueError('Backend v3 settlement receipt was not confirmed')
+        receipt = settled
+    elif (receipt.get('run_id') != adapter_receipt.get('run_id')
+            or receipt.get('outcome') != outcome
+            or receipt.get('settlement_sha256') != settlement_sha256):
+        raise ValueError('Backend and Adapter v3 settlement receipts conflict')
+    pending_cancel = task_continuation_delivery.pending_cancel(context)
+    cancel_hold_pending = (pending_cancel is not None and pending_cancel[0] == reservation_id)
+    if session is not None and not cancellation_pending and not cancel_hold_pending:
+        product_sessions.finish_continuation(session, reservation_id)
+        generation = product_sessions.idle_release_generation(session)
+        if generation is not None:
+            _schedule_idle_release(session, generation)
+
+
+def _validate_v3_product_session(session: ProductSession, context: dict) -> None:
+    if (session.conversation_id != context['conversation_id']
+            or session.session_id != context['session_id']
+            or session.trace_id != context['trace_id']
+            or session.workspace_id != context['workspace_id']
+            or session.principal.subject != context['owner']):
+        raise ValueError('v3 continuation Gateway session binding changed')
+
+
+def _validate_v3_backend_settled_receipt(receipt: dict, carrier: dict, reservation_id: str) -> None:
+    """Validate exact durable settlement facts before releasing a missing Runtime lease."""
+    if (receipt.get('reservation_id') != reservation_id
+            or receipt.get('idempotency_key') != carrier.get('idempotency_key')
+            or receipt.get('status') != 'settled'
+            or type(receipt.get('dispatch_attempts')) is not int
+            or receipt.get('dispatch_attempts') != 1
+            or not _valid_prompt_run_id(receipt.get('run_id'))):
+        raise ValueError('Backend settled v3 receipt identity is invalid')
+    usage = validate_request_usage_v2(receipt.get('request_usage'))
+    if (usage.get('execution_profile') != carrier.get('execution_profile')
+            or usage.get('request_limits') != carrier.get('request_limits')):
+        raise ValueError('Backend settled v3 receipt profile does not match its carrier')
+    outcome = receipt.get('outcome')
+    settlement_sha256 = receipt.get('settlement_sha256')
+    if (outcome not in {'completed', 'needs_attention'}
+            or not isinstance(settlement_sha256, str)
+            or re.fullmatch(r'[0-9a-f]{64}', settlement_sha256) is None):
+        raise ValueError('Backend settled v3 receipt is incomplete')
+    settled_facts = {
+        'reservation_id': reservation_id,
+        'idempotency_key': carrier['idempotency_key'],
+        'status': 'settled',
+        'run_id': receipt['run_id'],
+        'outcome': outcome,
+        'request_usage': usage,
+    }
+    expected_settlement_sha256 = hashlib.sha256(json.dumps(
+        settled_facts, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if settlement_sha256 != expected_settlement_sha256:
+        raise ValueError('Backend settled v3 receipt digest does not match')
+
+
+def _consume_admitted_task_continuation(context, *, allow_legacy=True, allow_dispatch=True):
     principal = Principal(subject=context['owner'])
     conversation = context['conversation_id']
     workspace = context['workspace_id']
-    def backend(suffix, payload=None, task=None):
+    def backend(suffix, payload=None, task=None, runtime_boot_id=None):
+        kwargs = {'payload': payload}
+        if runtime_boot_id is not None:
+            kwargs['runtime_boot_id'] = runtime_boot_id
         return _catalog_request('POST', f'/internal/task-continuation/{task or conversation}/{suffix}',
-            principal, workspace, payload=payload)
+            principal, workspace, **kwargs)
     intent = backend('peek')
+    if (intent.get('reservation_schema_version') == 'task-continuation-reservation.v3'
+            or _has_v3_continuation_intent(intent)):
+        _consume_v3_task_continuation(
+            context, intent, backend=backend, allow_dispatch=allow_dispatch)
+        return
+    # The default ordinary Product consumer has no authority to enter any
+    # historical F6 flow. Keep legacy liabilities reconcilable only through
+    # the explicitly enabled legacy consumer above.
+    if not allow_legacy:
+        return
     if intent.get('status') == 'eligible':
         try:
             session = product_sessions.get_owned(conversation, principal)
@@ -771,6 +1159,8 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
         if (session is None or not _valid_runtime_boot_id(session.boot_id)
                 or session.boot_id != snapshot.get("boot_id")):
             raise RuntimeError("active lifecycle event has no current Adapter boot binding")
+        if session is not None and _operator_fence_for_root(session, event["root_run_id"]) is not None:
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
         reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
             Principal(subject=context["owner"]), context["workspace_id"], payload={
                 "session_id": context["session_id"], "trace_id": context["trace_id"],
@@ -782,6 +1172,33 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
     session = product_sessions.find_owned(
         context["conversation_id"], Principal(subject=context["owner"]),
     )
+    if event["outcome"] != "active":
+        if session is None:
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        operator_fence = _operator_fence_for_root(session, event["root_run_id"])
+        if operator_fence is not None:
+            superseded = operator_fence["superseded_terminal"]
+            expected_receipt = lifecycle_receipt(event)
+            if operator_fence["outcome"] == "failed":
+                rows = [row for row in _runtime_root_rows(session)
+                        if row["root_run_id"] == event["root_run_id"]]
+                if (len(rows) != 1 or event["outcome"] != "failed"
+                        or rows[0]["status"] != "failed"
+                        or rows[0]["terminal_sequence"] != expected_receipt["sequence"]
+                        or rows[0]["terminal_event_sha256"] != expected_receipt["event_sha256"]):
+                    raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+                return _OPERATOR_SUPERSEDED_LIFECYCLE
+            receipt_sha256 = hashlib.sha256(json.dumps(
+                expected_receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if (event["outcome"] != "failed" or superseded is None
+                    or superseded["root_run_id"] != event["root_run_id"]
+                    or superseded["sequence"] != event["sequence"]
+                    or superseded["event_sha256"] != expected_receipt["event_sha256"]
+                    or superseded["receipt_sha256"] != receipt_sha256):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+            # Keep the historical trace event untouched, but do not replay its
+            # ordinary Backend close or Runtime terminal ACK after operator ACK.
+            return _OPERATOR_SUPERSEDED_LIFECYCLE
     boot_id = expected_boot_id or (session.boot_id if session is not None else snapshot.get("boot_id"))
     if snapshot.get("ready") is not True or not _valid_runtime_boot_id(boot_id):
         raise RuntimeError("runtime authority is unavailable for terminal close")
@@ -837,6 +1254,32 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
                     f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
                     payload=closed, timeout=TRACE_TERMINAL_ACK_TIMEOUT_SECONDS)
             except HTTPException as exc:
+                if exc.status_code == 409:
+                    detail = getattr(exc, "adapter_conflict_detail", None)
+                    reason = ({
+                        "terminal receipt does not match this runtime turn": "receipt_mismatch",
+                        "terminal receipt was superseded by an operator process-fence ACK": "receipt_superseded",
+                        "ACP root binding changed before terminal close": "root_binding_changed",
+                        "ACP terminal settlement receipt changed before close": "settlement_receipt_changed",
+                        "prior ACP process exit is not confirmed": "prior_process_exit_unconfirmed",
+                        "ACP root close is still in progress": "root_close_in_progress",
+                        "ACP root process is unavailable for close": "root_process_unavailable",
+                        "ACP generation changed before prior process exit was confirmed": "generation_changed",
+                        "ACP root process exit could not be confirmed": "root_process_exit_unconfirmed",
+                    }.get(detail, "unknown") if isinstance(detail, str) else "unknown")
+                    try:
+                        logger.warning("terminal_ack_rejected %s", json.dumps({
+                            "schema_version": "byq-gateway-terminal-ack-rejected.v1",
+                            "event": "terminal_ack_rejected",
+                            "root_run_id": event["root_run_id"],
+                            "session_id": context["session_id"],
+                            "boot_id": boot_id,
+                            "status": exc.status_code,
+                            "reason": reason,
+                        }, sort_keys=True, separators=(",", ":")))
+                    except Exception:
+                        # Diagnostics must never alter terminal ACK retry/raise behavior.
+                        pass
                 retryable = exc.status_code in {408, 429} or exc.status_code >= 500
                 if not retryable or attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
                     raise
@@ -846,10 +1289,436 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
             else:
                 if acknowledged != closed:
                     raise ValueError("runtime terminal acknowledgement mismatch")
+                try:
+                    logger.info("terminal_ack_observed %s", json.dumps({
+                        "schema_version": "byq-gateway-terminal-ack-observed.v1",
+                        "event": "terminal_ack_observed",
+                        "root_run_id": event["root_run_id"],
+                        "session_id": context["session_id"],
+                        "boot_id": boot_id,
+                        "trace_id": context["trace_id"],
+                        "sequence": event["sequence"],
+                        "event_sha256": receipt["event_sha256"],
+                        "outcome": event["outcome"],
+                    }, sort_keys=True, separators=(",", ":")))
+                except Exception:
+                    # This is an observation only; logging must not change ACK delivery.
+                    pass
                 return closed
         if attempt + 1 < TRACE_LIFECYCLE_SEND_ATTEMPTS:
             time.sleep(TRACE_RETRY_DELAY_SECONDS * (attempt + 1))
     raise RuntimeError("runtime terminal acknowledgement remains unconfirmed")
+
+
+def _request_v3_continuation_cancel_fence(context: dict, reservation_id: str) -> dict:
+    """Ask Backend to fence only the exact held v3 reservation."""
+    body = _catalog_request(
+        "POST",
+        f"/internal/task-continuation/{context['conversation_id']}/cancel",
+        Principal(subject=context['owner']),
+        context['workspace_id'],
+        payload={'reservation_id': reservation_id},
+    )
+    if (set(body) != {'reservation_id', 'cancel_requested', 'status'}
+            or body.get('reservation_id') != reservation_id
+            or body.get('cancel_requested') is not True
+            or body.get('status') not in {
+                'cancelled', 'outcome_unknown', 'accepted', 'settled', 'rejected',
+            }):
+        raise ValueError('Backend v3 cancellation fence was not confirmed')
+    return body
+
+
+def _read_exact_v3_continuation_intent(context: dict, reservation_id: str):
+    intent = _catalog_request(
+        'GET',
+        f"/internal/task-continuation/{context['conversation_id']}/reservations/{reservation_id}",
+        Principal(subject=context['owner']), context['workspace_id'])
+    if not _has_v3_continuation_intent(intent):
+        raise ValueError('exact Backend v3 continuation receipt is unavailable')
+    receipt, carrier, exact_id, instruction = _validate_v3_continuation_intent(intent, context)
+    if exact_id != reservation_id:
+        raise ValueError('Backend returned a different exact v3 continuation receipt')
+    return intent, receipt, carrier, instruction
+
+
+def _v3_never_dispatched_cancel_proof(
+    context: dict, reservation_id: str, *, allow_reserved: bool = False,
+) -> str | None:
+    """Use Backend's exact zero-attempt cancellation plus no Runtime contradiction."""
+    _intent, receipt, carrier, instruction = _read_exact_v3_continuation_intent(
+        context, reservation_id)
+    backend_status = receipt.get('status')
+    if (backend_status not in ({'cancelled', 'reserved'} if allow_reserved else {'cancelled'})
+            or type(receipt.get('dispatch_attempts')) is not int
+            or receipt.get('dispatch_attempts') != 0):
+        return None
+    adapter_receipt = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/continuation-receipt/{reservation_id}")
+    if adapter_receipt != {'reservation_id': reservation_id, 'status': 'outcome_unknown'}:
+        return None
+    identity_content = json.dumps(
+        {'content': instruction, 'reservation': carrier}, sort_keys=True, separators=(',', ':'))
+    reconciled = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/prompts/reconcile",
+        params={
+            'idempotency_key': reservation_id,
+            'content_sha256': hashlib.sha256(identity_content.encode()).hexdigest(),
+        })
+    if reconciled == {'schema_version': 'prompt-receipt.v1', 'state': 'outcome_unknown'}:
+        return backend_status
+    return None
+
+
+class _V3CancelReceiptConflict(ValueError):
+    """Backend and Runtime disagree about the held v3 execution identity."""
+
+
+def _v3_cancel_target(
+    context: dict, reservation_id: str, session: ProductSession, mode: str,
+) -> tuple[str, str] | None:
+    """Read-only bind a held reservation to its exact active or closed Runtime root."""
+    _intent, receipt, carrier, instruction = _read_exact_v3_continuation_intent(
+        context, reservation_id)
+
+    adapter_receipt = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/continuation-receipt/{reservation_id}")
+    if not isinstance(adapter_receipt, dict) or adapter_receipt.get('reservation_id') != reservation_id:
+        raise ValueError('v3 Runtime cancellation receipt identity mismatch')
+    backend_status = receipt.get('status')
+    adapter_status = adapter_receipt.get('status')
+
+    run_id = adapter_receipt.get('run_id')
+    known_event_key = adapter_receipt.get('idempotency_key')
+    runtime_settled = False
+    runtime_request_usage = None
+    runtime_outcome = None
+    runtime_settlement_sha256 = None
+    if adapter_receipt.get('status') in {'accepted', 'settled'}:
+        if (known_event_key != carrier['idempotency_key'] or not _valid_prompt_run_id(run_id)):
+            raise ValueError('v3 Runtime cancellation receipt does not bind the carrier')
+        if adapter_receipt.get('status') == 'settled':
+            request_usage = validate_request_usage_v2(adapter_receipt.get('request_usage'))
+            outcome = adapter_receipt.get('outcome')
+            settlement_sha256 = adapter_receipt.get('settlement_sha256')
+            if (request_usage['execution_profile'] != carrier['execution_profile']
+                    or request_usage['request_limits'] != carrier['request_limits']
+                    or outcome not in {'completed', 'needs_attention'}
+                    or not isinstance(settlement_sha256, str)
+                    or re.fullmatch(r'[0-9a-f]{64}', settlement_sha256) is None):
+                raise ValueError('v3 settled Runtime receipt facts are invalid')
+            settled_facts = {
+                'reservation_id': reservation_id,
+                'idempotency_key': carrier['idempotency_key'],
+                'status': 'settled',
+                'run_id': run_id,
+                'outcome': outcome,
+                'request_usage': request_usage,
+            }
+            expected_settlement_sha256 = hashlib.sha256(json.dumps(
+                settled_facts, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            if settlement_sha256 != expected_settlement_sha256:
+                raise ValueError('v3 settled Runtime receipt digest does not match')
+            runtime_settled = True
+            runtime_request_usage = request_usage
+            runtime_outcome = outcome
+            runtime_settlement_sha256 = settlement_sha256
+    elif adapter_receipt.get('status') == 'outcome_unknown':
+        if known_event_key is not None and known_event_key != carrier['idempotency_key']:
+            raise ValueError('v3 unknown Runtime cancellation receipt event mismatch')
+        identity_content = json.dumps(
+            {'content': instruction, 'reservation': carrier}, sort_keys=True, separators=(',', ':'))
+        reconciled = _continuation_adapter_get(
+            f"/internal/runtime/sessions/{context['session_id']}/prompts/reconcile",
+            params={
+                'idempotency_key': reservation_id,
+                'content_sha256': hashlib.sha256(identity_content.encode()).hexdigest(),
+            })
+        if (not isinstance(reconciled, dict) or reconciled.get('state') != 'accepted'
+                or not _valid_prompt_run_id(reconciled.get('run_id'))):
+            return None
+        run_id = reconciled['run_id']
+    else:
+        raise ValueError('v3 Runtime cancellation receipt status is invalid')
+
+    # All accepted roots, including one recovered through prompt reconciliation,
+    # pass the same Backend/Runtime ledger-state check before lifecycle data can
+    # prove an active target or a closed-root substitute.
+    if backend_status not in {'outcome_unknown', 'accepted', 'settled'}:
+        raise _V3CancelReceiptConflict(
+            'Backend ledger state conflicts with an accepted Runtime root')
+    if backend_status in {'accepted', 'settled'}:
+        backend_run_id = receipt.get('run_id')
+        if (not _valid_prompt_run_id(backend_run_id) or backend_run_id != run_id):
+            raise _V3CancelReceiptConflict(
+                'Backend and Runtime cancellation receipts bind different roots')
+    if backend_status == 'settled':
+        try:
+            backend_request_usage = validate_request_usage_v2(receipt.get('request_usage'))
+        except (TypeError, ValueError) as exc:
+            raise _V3CancelReceiptConflict(
+                'Backend settled receipt has invalid typed usage') from exc
+        if (adapter_status != 'settled' or not runtime_settled
+                or backend_request_usage != runtime_request_usage
+                or receipt.get('outcome') != runtime_outcome
+                or receipt.get('settlement_sha256') != runtime_settlement_sha256):
+            raise _V3CancelReceiptConflict(
+                'Backend and Runtime settled receipt facts do not match')
+
+    events = _runtime_events(trace_store.read(context['session_id']),
+        context['session_id'], context['trace_id'])
+    starts = []
+    terminals = []
+    for event in events:
+        if event.get('kind') not in {'session.started', 'session.result', 'session.failed',
+                'session.cancelled', 'session.closed'}:
+            continue
+        lifecycle = project_lifecycle_event(event, context['session_id'], context['trace_id'])
+        if lifecycle is None or lifecycle['root_run_id'] != run_id:
+            continue
+        (starts if lifecycle['outcome'] == 'active' else terminals).append((event, lifecycle))
+    if len(starts) != 1:
+        return None
+
+    roots = _runtime_root_rows(session)
+    matches = [row for row in roots if row.get('root_run_id') == run_id]
+    if len(matches) != 1:
+        return None
+    root = matches[0]
+    if (root.get('status') == 'active' and root.get('authority_status') == 'active'
+            and root.get('terminal_sequence') is None and root.get('terminal_event_sha256') is None
+            and not terminals):
+        active = [row for row in roots if row.get('status') == 'active'
+            and row.get('authority_status') == 'active']
+        if len(active) == 1:
+            return 'active', run_id
+        return None
+    if (backend_status == 'settled'
+            and root.get('status') in {'completed', 'failed', 'cancelled', 'interrupted'}
+            and root.get('authority_status') == 'closed' and len(terminals) == 1
+            and runtime_settled):
+        terminal_event, lifecycle = terminals[0]
+        if (terminal_event.get('kind') == 'session.cancelled'
+                and (not isinstance(terminal_event.get('payload'), dict)
+                     or terminal_event['payload'].get('mode') != mode)):
+            return None
+        proof = lifecycle_receipt(lifecycle)
+        if (proof['sequence'] == root.get('terminal_sequence')
+                and proof['event_sha256'] == root.get('terminal_event_sha256')):
+            return 'closed', run_id
+    if len(terminals) == 1:
+        terminal_event, lifecycle = terminals[0]
+        if (terminal_event.get('kind') == 'session.cancelled'
+                and (not isinstance(terminal_event.get('payload'), dict)
+                     or terminal_event['payload'].get('mode') != mode)):
+            return None
+        proof = lifecycle_receipt(lifecycle)
+        pending_close = (root.get('status') == 'active'
+            and root.get('authority_status') == 'active'
+            and root.get('terminal_sequence') is None
+            and root.get('terminal_event_sha256') is None)
+        recorded_terminal = (root.get('status') == lifecycle['outcome']
+            and root.get('authority_status') in {'active', 'authority_revoked_unconfirmed', 'closed'}
+            and proof['sequence'] == root.get('terminal_sequence')
+            and proof['event_sha256'] == root.get('terminal_event_sha256'))
+        if pending_close or recorded_terminal:
+            # A precise terminal event may be ready for the existing lifecycle
+            # close/ACK path before task-ready settlement can be produced.
+            return 'terminal', run_id
+    return None
+
+
+def _ack_v3_cancel_terminal(context: dict, session: ProductSession, run_id: str, mode: str) -> bool:
+    """Close and ACK one exact terminal event; control-cancel ACK is insufficient."""
+    events = _runtime_events(trace_store.read(context['session_id']),
+        context['session_id'], context['trace_id'])
+    starts = []
+    terminals = []
+    for event in events:
+        if event.get('kind') not in {'session.started', 'session.result', 'session.failed',
+                'session.cancelled', 'session.closed'}:
+            continue
+        lifecycle = project_lifecycle_event(event, context['session_id'], context['trace_id'])
+        if lifecycle is None or lifecycle['root_run_id'] != run_id:
+            continue
+        (starts if lifecycle['outcome'] == 'active' else terminals).append((event, lifecycle))
+    if len(starts) != 1 or len(terminals) != 1:
+        return False
+    terminal_event, lifecycle = terminals[0]
+    if (terminal_event.get('kind') == 'session.cancelled'
+            and (not isinstance(terminal_event.get('payload'), dict)
+                 or terminal_event['payload'].get('mode') != mode)):
+        return False
+    delivered = _send_agent_lifecycle(context, lifecycle, expected_boot_id=session.boot_id)
+    if delivered is _OPERATOR_SUPERSEDED_LIFECYCLE:
+        return False
+    return True
+
+
+def _request_v3_runtime_cancel(
+    context: dict, run_id: str, session: ProductSession, mode: str,
+) -> dict:
+    if not isinstance(mode, str) or mode not in {'soft', 'hard'}:
+        raise ValueError('invalid v3 cancellation mode')
+    path = (f"/internal/runtime/sessions/{context['session_id']}/cancel"
+        f"?mode={mode}&expected_root_run_id={run_id}")
+    body = _adapter_post(path, payload=None, timeout=5.0)
+    if (not isinstance(body, dict)
+            or body.get('session_id') != context['session_id']
+            or body.get('trace_id') != context['trace_id']
+            or body.get('boot_id') != session.boot_id
+            or body.get('cancelled_root_run_id') != run_id
+            or not isinstance(body.get('status'), str)
+            or type(body.get('active_prompt')) is not bool):
+        raise ValueError('Runtime exact-root cancellation acknowledgement did not match its session')
+    return body
+
+
+def _retry_v3_continuation_cancel(context: dict, reservation_id: str, mode: str) -> bool:
+    try:
+        _ensure_v3_cancel_marker(context, reservation_id)
+    except Exception as exc:
+        logger.warning('v3 continuation cancel marker remains unresolved: error=%s',
+            type(exc).__name__)
+        return False
+
+    session = product_sessions.find_owned(
+        context['conversation_id'], Principal(subject=context['owner']),
+    )
+    if session is None:
+        try:
+            session = _attach_continuation_observer(context)
+        except Exception as exc:
+            logger.warning('v3 continuation original Runtime is unavailable for cancel reconciliation: error=%s',
+                type(exc).__name__)
+            session = None
+    if session is None:
+        # A missing Gateway session/process is not itself proof. Require the
+        # exact zero-attempt Backend receipt and no contrary Runtime evidence.
+        try:
+            proof = _v3_never_dispatched_cancel_proof(
+                context, reservation_id, allow_reserved=True)
+            if proof == 'cancelled':
+                return True
+            if proof == 'reserved':
+                fenced = _request_v3_continuation_cancel_fence(context, reservation_id)
+                return (fenced.get('status') == 'cancelled'
+                    and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled')
+            _intent, receipt, _carrier, _instruction = _read_exact_v3_continuation_intent(
+                context, reservation_id)
+            if receipt.get('status') in {'outcome_unknown', 'accepted'}:
+                _request_v3_continuation_cancel_fence(context, reservation_id)
+            return False
+        except Exception as exc:
+            logger.warning('v3 no-dispatch cancellation proof remains unresolved: error=%s',
+                type(exc).__name__)
+            return False
+
+    try:
+        no_start = _v3_never_dispatched_cancel_proof(
+            context, reservation_id, allow_reserved=True)
+    except Exception as exc:
+        logger.warning('v3 no-dispatch cancellation proof remains unresolved: error=%s',
+            type(exc).__name__)
+        no_start = None
+    if no_start in {'reserved', 'cancelled'}:
+        try:
+            fenced = ({'status': 'cancelled'} if no_start == 'cancelled'
+                else _request_v3_continuation_cancel_fence(context, reservation_id))
+            if (fenced.get('status') == 'cancelled'
+                    and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled'):
+                if not product_sessions.record_v3_cancel_backend_status(
+                        session, reservation_id, 'cancelled'):
+                    raise ValueError('v3 no-dispatch proof no longer matches the held reservation')
+                product_sessions.finish_continuation(session, reservation_id)
+                generation = product_sessions.idle_release_generation(session)
+                if generation is not None:
+                    _schedule_idle_release(session, generation)
+                return True
+        except Exception as exc:
+            logger.warning('v3 no-dispatch cancellation remains unresolved: error=%s',
+                type(exc).__name__)
+
+    try:
+        _validate_v3_product_session(session, context)
+        _require_session_runtime_authority(session)
+        target = _v3_cancel_target(context, reservation_id, session, mode)
+    except _V3CancelReceiptConflict as exc:
+        logger.warning('v3 continuation receipts conflict; cancellation remains held: error=%s',
+            type(exc).__name__)
+        return False
+    except Exception as exc:
+        logger.warning('v3 continuation exact Runtime cancel target remains unconfirmed: error=%s',
+            type(exc).__name__)
+        return False
+
+    backend_body = None
+    try:
+        backend_body = _request_v3_continuation_cancel_fence(context, reservation_id)
+    except Exception as exc:
+        logger.warning('v3 continuation Backend cancel fence remains unconfirmed: error=%s',
+            type(exc).__name__)
+    if session is not None:
+        _validate_v3_product_session(session, context)
+        if session.continuation_reservation != reservation_id:
+            if not product_sessions.hold_v3_continuation(session, reservation_id):
+                raise ValueError('pending cancellation conflicts with the current session hold')
+        is_v3, held_id = product_sessions.begin_v3_cancel(session)
+        if not is_v3 or held_id != reservation_id:
+            raise ValueError('pending cancellation no longer matches the held reservation')
+        if backend_body is not None and not product_sessions.record_v3_cancel_backend_status(
+                session, reservation_id, backend_body['status']):
+            raise ValueError('v3 Backend cancellation no longer matches the held reservation')
+
+    if (backend_body is not None and backend_body.get('status') == 'cancelled'
+            and _v3_never_dispatched_cancel_proof(context, reservation_id) == 'cancelled'):
+        product_sessions.finish_continuation(session, reservation_id)
+        generation = product_sessions.idle_release_generation(session)
+        if generation is not None:
+            _schedule_idle_release(session, generation)
+        return True
+
+    if target is not None and target[0] == 'active':
+        try:
+            # This is only a control acknowledgement. Keep the sidecar until
+            # exact terminal delivery and Runtime cleanup are acknowledged.
+            _request_v3_runtime_cancel(context, target[1], session, mode)
+            target = _v3_cancel_target(context, reservation_id, session, mode)
+        except Exception as exc:
+            logger.warning('v3 continuation Runtime exact-root cancel remains unconfirmed: error=%s',
+                type(exc).__name__)
+            return False
+
+    if target is not None and target[0] == 'terminal':
+        try:
+            # Runtime task-ready settlement waits for this exact terminal
+            # lifecycle close/ACK; acknowledge it before settlement reconcile.
+            if not _ack_v3_cancel_terminal(context, session, target[1], mode):
+                return False
+            _consume_default_task_continuation(context, allow_dispatch=False)
+            target = _v3_cancel_target(context, reservation_id, session, mode)
+        except Exception as exc:
+            logger.warning('v3 continuation terminal settlement remains unconfirmed after ACK: error=%s',
+                type(exc).__name__)
+            return False
+
+    if target is None or target[0] != 'closed':
+        return False
+    try:
+        confirmed = _v3_cancel_target(context, reservation_id, session, mode)
+    except Exception as exc:
+        logger.warning('v3 continuation terminal ACK or cleanup remains unconfirmed: error=%s',
+            type(exc).__name__)
+        return False
+    if confirmed != ('closed', target[1]):
+        return False
+    if not product_sessions.record_v3_cancel_runtime_ack(session, reservation_id):
+        raise ValueError('v3 terminal ACK no longer matches the held reservation')
+    product_sessions.finish_continuation(session, reservation_id)
+    generation = product_sessions.idle_release_generation(session)
+    if generation is not None:
+        _schedule_idle_release(session, generation)
+    return True
 
 
 def _reconcile_research_receipts(context):
@@ -860,7 +1729,9 @@ def _reconcile_research_receipts(context):
 
 task_continuation_delivery = TaskContinuationDelivery(
     os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), _consume_task_continuation,
-    reconcile=_reconcile_research_receipts)
+    consume_default=_consume_default_task_continuation,
+    reconcile=_reconcile_research_receipts,
+    cancel_pending=_retry_v3_continuation_cancel)
 
 
 def _send_owned_answer(context, event):
@@ -980,7 +1851,10 @@ class ProductSession:
     release_generation: int = 0
     release_timer: threading.Timer | None = None
     continuation_reservation: str | None = None
-    continuation_deadline: float = 0
+    continuation_deadline: float | None = 0
+    continuation_cancel_requested: str | None = None
+    continuation_cancel_backend_status: str | None = None
+    continuation_cancel_runtime_ack: bool = False
 
 
 class ProductSessionRegistry:
@@ -1053,15 +1927,113 @@ class ProductSessionRegistry:
                 session.release_timer = None
             return True
 
+    def hold_v3_continuation(self, session: ProductSession, reservation_id: str) -> bool:
+        """Hold an exact v3 reservation until its durable outcome is resolved.
+
+        The v3 carrier intentionally has no expiry. This is a Gateway session
+        retention lease only; it does not grant dispatch or extend any business
+        authority. A different unresolved reservation cannot replace it.
+        """
+        if not isinstance(reservation_id, str) or re.fullmatch(r"continuation_[0-9a-f]{32}", reservation_id) is None:
+            raise ValueError("exact v3 continuation reservation required")
+        with self._lock:
+            if session.released:
+                return False
+            if session.continuation_reservation not in {None, reservation_id}:
+                return False
+            session.continuation_reservation = reservation_id
+            session.continuation_deadline = None
+            session.release_generation += 1
+            if session.release_timer is not None:
+                session.release_timer.cancel()
+                session.release_timer = None
+            return True
+
+    def begin_v3_cancel(self, session: ProductSession) -> tuple[bool, str | None]:
+        """Mark the exact held v3 reservation as locally fail-closed for dispatch."""
+        with self._lock:
+            if session.continuation_reservation is None or session.continuation_deadline is not None:
+                return False, None
+            reservation_id = session.continuation_reservation
+            if (session.released
+                    or not isinstance(reservation_id, str)
+                    or re.fullmatch(r"continuation_[0-9a-f]{32}", reservation_id) is None
+                    or session.continuation_cancel_requested not in {None, reservation_id}):
+                return True, None
+            session.continuation_cancel_requested = reservation_id
+            return True, reservation_id
+
+    def v3_cancel_blocks_dispatch(self, session: ProductSession, reservation_id: str) -> bool:
+        with self._lock:
+            return (session.continuation_reservation == reservation_id
+                    and session.continuation_deadline is None
+                    and session.continuation_cancel_requested is not None)
+
+    def mark_v3_cancel_requested(self, session: ProductSession, reservation_id: str) -> bool:
+        with self._lock:
+            if (session.released or session.continuation_reservation != reservation_id
+                    or session.continuation_deadline is not None):
+                return False
+            if session.continuation_cancel_requested not in {None, reservation_id}:
+                return False
+            session.continuation_cancel_requested = reservation_id
+            return True
+
+    def record_v3_cancel_backend_status(
+        self, session: ProductSession, reservation_id: str, status: str,
+    ) -> bool:
+        with self._lock:
+            if (session.continuation_reservation != reservation_id
+                    or session.continuation_cancel_requested != reservation_id):
+                return False
+            session.continuation_cancel_backend_status = status
+            return True
+
+    def record_v3_cancel_runtime_ack(self, session: ProductSession, reservation_id: str) -> bool:
+        with self._lock:
+            if (session.continuation_reservation != reservation_id
+                    or session.continuation_cancel_requested != reservation_id):
+                return False
+            session.continuation_cancel_runtime_ack = True
+            return True
+
+    def v3_cancel_state(self, session: ProductSession, reservation_id: str) -> tuple[bool, str | None, bool]:
+        with self._lock:
+            if (session.continuation_reservation != reservation_id
+                    or session.continuation_cancel_requested != reservation_id):
+                return False, None, False
+            return True, session.continuation_cancel_backend_status, session.continuation_cancel_runtime_ack
+
     def finish_continuation(self, session: ProductSession, reservation_id: str) -> None:
         with self._lock:
             if session.continuation_reservation == reservation_id:
                 session.continuation_reservation = None
                 session.continuation_deadline = 0
+                session.continuation_cancel_requested = None
+                session.continuation_cancel_backend_status = None
+                session.continuation_cancel_runtime_ack = False
 
-    def idle_release_delay(self, session: ProductSession) -> float:
+    def finish_v3_settled_missing_runtime(
+        self, session: ProductSession, reservation_id: str,
+    ) -> bool:
+        """Release only the exact uncancelled v3 lease with verified settlement."""
+        with self._lock:
+            if (session.released
+                    or session.continuation_reservation != reservation_id
+                    or session.continuation_deadline is not None
+                    or session.continuation_cancel_requested is not None
+                    or session.continuation_cancel_backend_status is not None
+                    or session.continuation_cancel_runtime_ack):
+                return False
+            session.continuation_reservation = None
+            session.continuation_deadline = 0
+            return True
+
+    def idle_release_delay(self, session: ProductSession) -> float | None:
         with self._lock:
             if session.continuation_reservation is not None:
+                if session.continuation_deadline is None:
+                    return None
                 return max(0, session.continuation_deadline + RUNTIME_SESSION_IDLE_SECONDS - time.monotonic())
             return RUNTIME_SESSION_IDLE_SECONDS
 
@@ -1075,7 +2047,9 @@ class ProductSessionRegistry:
     def claim_idle_release(self, session: ProductSession, generation: int) -> bool:
         with self._lock:
             if (session.released or session.public_streams or session.release_generation != generation
-                    or session.continuation_deadline > time.monotonic()):
+                    or (session.continuation_reservation is not None
+                        and (session.continuation_deadline is None
+                             or session.continuation_deadline > time.monotonic()))):
                 return False
             session.released = True
             session.release_timer = None
@@ -1193,7 +2167,10 @@ def _schedule_idle_release(session: ProductSession, generation: int | None = Non
             return
         product_sessions.remove_owned(session.conversation_id, session.principal)
 
-    timer = threading.Timer(product_sessions.idle_release_delay(session), release)
+    delay = product_sessions.idle_release_delay(session)
+    if delay is None:
+        return
+    timer = threading.Timer(delay, release)
     timer.daemon = True
     if product_sessions.attach_release_timer(session, generation, timer):
         timer.start()
@@ -1295,6 +2272,35 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
                 error = HTTPException(status_code=status, detail=detail)
                 error.adapter_conflict_detail = rejected_conflict["detail"]
                 raise error from exc
+        elif (status == 422 and path.startswith("/internal/runtime/sessions/")
+              and path.endswith("/prompt")):
+            try:
+                rejected = exc.response.json()
+            except ValueError:
+                rejected = None
+            if isinstance(rejected, dict):
+                rejected_detail = rejected.get("detail")
+                if isinstance(rejected_detail, list):
+                    safe_errors = []
+                    allowed_fields = {
+                        "body", "content", "require_model_key", "idempotency_key",
+                        "conversation_context", "role", "continuation_budget",
+                    }
+                    for item in rejected_detail:
+                        if not isinstance(item, dict) or not isinstance(item.get("loc"), list):
+                            continue
+                        error_type = item.get("type")
+                        if not isinstance(error_type, str) or not re.fullmatch(r"[a-z0-9_]{1,64}", error_type):
+                            continue
+                        location = [
+                            part for part in item["loc"]
+                            if (isinstance(part, str) and part in allowed_fields)
+                            or (type(part) is int and part >= 0)
+                        ]
+                        safe_errors.append({"loc": location, "type": error_type})
+                    logger.warning("runtime prompt 422 validation errors=%s", safe_errors)
+                elif isinstance(rejected_detail, str):
+                    logger.warning("runtime prompt 422 reason=runtime-value-error")
         elif status == 503:
             detail = "product model is unavailable"
             prefix = "/internal/runtime/sessions/"
@@ -1601,6 +2607,135 @@ def _catalog_request(
     return body
 
 
+def _validate_operator_process_fence_projection(
+    value: object, *, root_run_id: str, row: dict[str, object],
+) -> dict[str, object] | None:
+    if value is None:
+        return None
+    expected = {
+        "schema_version", "operation_id", "outcome", "ack_status", "slot_release_status",
+        "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
+        ("operator_failed_terminal_receipt_sha256" if isinstance(value, dict)
+         and value.get("outcome") == "failed" else
+         "operator_completed_cleanup_receipt_sha256" if isinstance(value, dict)
+         and value.get("outcome") == "completed" else "operator_interruption_receipt_sha256"),
+        "proof_receipt_sha256", "ack_receipt_sha256",
+        "superseded_terminal",
+    }
+    if isinstance(value, dict) and value.get("outcome") == "completed":
+        expected |= {"original_terminal_receipt_sha256", "scope", "terminal_acp_ingress_sequence",
+                     "terminal_acp_ingress_sha256", "terminal_unknown_claim_count",
+                     "terminal_unknown_claims_sha256"}
+        if "handoff_receipt_sha256" in value:
+            expected |= {"handoff_receipt_sha256", "handoff", "close_receipt",
+                         "runtime_observation", "handoff_confirmation"}
+    if (not isinstance(value, dict) or set(value) != expected
+            or value.get("schema_version") != "byq-business-root-operator-process-fence.v1"
+            or not isinstance(value.get("operation_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", value["operation_id"]) is None
+            or value.get("outcome") not in {"interrupted", "failed", "completed"}
+            or value.get("ack_status") != "confirmed"
+            or value.get("slot_release_status") != "released"
+            or row.get("status") != value.get("outcome") or row.get("authority_status") != "closed"
+            or (value.get("outcome") == "interrupted" and
+                (row.get("terminal_sequence") is not None or row.get("terminal_event_sha256") is not None))
+            or (value.get("outcome") == "failed" and
+                (type(row.get("terminal_sequence")) is not int
+                 or row["terminal_sequence"] < 1
+                 or not isinstance(row.get("terminal_event_sha256"), str)
+                 or re.fullmatch(r"[0-9a-f]{64}", row["terminal_event_sha256"]) is None))
+            or (value.get("outcome") == "completed" and (
+                type(row.get("terminal_sequence")) is not int or row["terminal_sequence"] < 1
+                or not isinstance(row.get("terminal_event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", row["terminal_event_sha256"]) is None
+                or row.get("terminal_unknown_claim_count") != 0
+                or type(row.get("terminal_acp_ingress_sequence")) is not int
+                or not isinstance(row.get("terminal_acp_ingress_sha256"), str)
+                or not isinstance(row.get("terminal_unknown_claims_sha256"), str)))):
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    for field in (
+        "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
+        ("operator_failed_terminal_receipt_sha256" if value.get("outcome") == "failed"
+         else "operator_completed_cleanup_receipt_sha256" if value.get("outcome") == "completed"
+         else "operator_interruption_receipt_sha256"), "proof_receipt_sha256", "ack_receipt_sha256",
+    ):
+        digest = value.get(field)
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    if value.get("outcome") == "completed":
+        scope = value.get("scope")
+        if (not isinstance(scope, dict)
+                or set(scope) != {"workspace_id", "owner_principal", "session_id", "trace_id",
+                                  "root_run_id", "runtime_boot_id", "generation_id", "cwd_leaf"}
+                or scope.get("root_run_id") != root_run_id
+                or not _valid_runtime_boot_id(scope.get("runtime_boot_id"))
+                or not isinstance(scope.get("generation_id"), str)
+                or not isinstance(scope.get("cwd_leaf"), str)
+                or value.get("terminal_acp_ingress_sequence") != row.get("terminal_acp_ingress_sequence")
+                or value.get("terminal_acp_ingress_sha256") != row.get("terminal_acp_ingress_sha256")
+                or value.get("terminal_unknown_claim_count") != 0
+                or value.get("terminal_unknown_claim_count") != row.get("terminal_unknown_claim_count")
+                or value.get("terminal_unknown_claims_sha256") != row.get("terminal_unknown_claims_sha256")):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        completed_expected = {
+                "schema_version", "operation_id", "outcome", "ack_status", "slot_release_status",
+                "process_fence_receipt_sha256", "close_receipt_sha256", "runtime_ack_sha256",
+                "operator_completed_cleanup_receipt_sha256", "original_terminal_receipt_sha256", "scope",
+                "terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
+                "terminal_unknown_claim_count", "terminal_unknown_claims_sha256",
+                "proof_receipt_sha256", "ack_receipt_sha256", "superseded_terminal"}
+        if "handoff_receipt_sha256" in value:
+            completed_expected |= {"handoff_receipt_sha256", "handoff", "close_receipt",
+                                   "runtime_observation", "handoff_confirmation"}
+        if (set(value) != completed_expected
+                or not isinstance(value.get("original_terminal_receipt_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", value["original_terminal_receipt_sha256"]) is None
+                or value.get("superseded_terminal") is not None):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        if "handoff_receipt_sha256" in value:
+            try:
+                close = validate_fence_close_receipt(value["close_receipt"])
+                handoff = validate_process_fence_handoff(value["handoff"], close_receipt=close)
+                observation = validate_process_fence_handoff_observation(
+                    value["runtime_observation"], handoff=handoff)
+                confirmation = validate_process_fence_handoff_confirmation(
+                    value["handoff_confirmation"], handoff=handoff)
+            except (OperatorProcessFenceContractError, TypeError, ValueError) as exc:
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable") from exc
+            if (handoff["handoff_sha256"] != value["handoff_receipt_sha256"]
+                    or handoff["operation_id"] != value["operation_id"]
+                    or handoff["proof_receipt_sha256"] != value["proof_receipt_sha256"]
+                    or handoff["process_fence_receipt_sha256"] != value["process_fence_receipt_sha256"]
+                    or handoff["close_receipt_sha256"] != value["close_receipt_sha256"]
+                    or confirmation["runtime_observation"] != observation
+                    or confirmation["receipt_sha256"] != value["ack_receipt_sha256"]
+                    or _operator_fence_digest(observation) != value["runtime_ack_sha256"]
+                    or handoff["scope"] != value["scope"]
+                    or handoff["terminal_receipt_sha256"] != value["original_terminal_receipt_sha256"]
+                    or value["terminal_acp_ingress_sequence"]
+                       != close["operator_completed_cleanup"]["terminal_acp_ingress_sequence"]
+                    or value["terminal_acp_ingress_sha256"]
+                       != close["operator_completed_cleanup"]["terminal_acp_ingress_sha256"]
+                    or value["terminal_unknown_claim_count"]
+                       != close["operator_completed_cleanup"]["terminal_unknown_claim_count"]
+                    or value["terminal_unknown_claims_sha256"]
+                       != close["operator_completed_cleanup"]["terminal_unknown_claims_sha256"]):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    superseded = value.get("superseded_terminal")
+    if superseded is not None:
+        if (not isinstance(superseded, dict)
+                or set(superseded) != {"schema_version", "root_run_id", "sequence",
+                                       "event_sha256", "receipt_sha256"}
+                or superseded.get("schema_version") != "byq-runtime-superseded-terminal.v1"
+                or superseded.get("root_run_id") != root_run_id
+                or type(superseded.get("sequence")) is not int or superseded["sequence"] < 1
+                or any(not isinstance(superseded.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", superseded[field]) is None
+                       for field in ("event_sha256", "receipt_sha256"))):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    return value
+
+
 def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
     """Read Backend's owner-scoped root ledger without inferring business outcomes."""
     try:
@@ -1613,7 +2748,7 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
             or body.get("schema_version") != "byq-business-root-status.v1"):
         raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     roots = body.get("roots")
-    if not isinstance(roots, list) or len(roots) > 500:
+    if not isinstance(roots, list):
         raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     validated: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -1621,6 +2756,8 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
                  "terminal_event_sha256"}
     acp_keys = {"terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
                 "terminal_unknown_claim_count", "terminal_unknown_claims_sha256"}
+    operator_key = "operator_process_fence"
+    local_key = "local_validation"
     for row in roots:
         status = row.get("status") if isinstance(row, dict) else None
         authority_status = row.get("authority_status") if isinstance(row, dict) else None
@@ -1628,9 +2765,20 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
         terminal_digest = row.get("terminal_event_sha256") if isinstance(row, dict) else None
         root_id = row.get("root_run_id") if isinstance(row, dict) else None
         keys = set(row) if isinstance(row, dict) else set()
-        has_acp_snapshot = keys == base_keys | acp_keys
+        has_operator_projection = operator_key in keys
+        has_local_projection = local_key in keys
+        projection_keys = keys - {operator_key, local_key}
+        has_acp_snapshot = projection_keys == base_keys | acp_keys
+        allowed_key_sets = [base_keys, base_keys | acp_keys]
+        for candidate in (base_keys, base_keys | acp_keys):
+            if has_operator_projection:
+                allowed_key_sets.append(candidate | {operator_key})
+            if has_local_projection:
+                allowed_key_sets.append(candidate | {local_key})
+            if has_operator_projection and has_local_projection:
+                allowed_key_sets.append(candidate | {operator_key, local_key})
         if (not isinstance(row, dict)
-                or keys not in (base_keys, base_keys | acp_keys)
+                or keys not in allowed_key_sets
                 or not isinstance(root_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_id) is None
                 or root_id in seen
                 or not isinstance(status, str)
@@ -1650,18 +2798,95 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
             unknown_digest = row["terminal_unknown_claims_sha256"]
             values = (cursor, cursor_digest, unknown_count, unknown_digest)
             if any(value is not None for value in values) and (
-                type(cursor) is not int or not 0 <= cursor <= 4096
+                type(cursor) is not int or cursor < 0
                 or not isinstance(cursor_digest, str) or re.fullmatch(r"[0-9a-f]{64}", cursor_digest) is None
-                or type(unknown_count) is not int or not 0 <= unknown_count <= 1024
+                or type(unknown_count) is not int or unknown_count < 0
                 or not isinstance(unknown_digest, str) or re.fullmatch(r"[0-9a-f]{64}", unknown_digest) is None
             ):
                 raise HTTPException(status_code=503, detail="business root recovery is unavailable")
             # Historical SDK roots predate the ACP cursor and legitimately
             # carry four nulls. ACP recovery explicitly requires all four
             # non-null fields before accepting a settled binding.
+        if has_operator_projection:
+            operator_fence = _validate_operator_process_fence_projection(
+                row[operator_key], root_run_id=root_id, row=row)
+        else:
+            operator_fence = None
+        if has_local_projection:
+            local = row[local_key]
+            try:
+                if (not isinstance(local, dict)
+                        or set(local) != {"final_receipt", "runtime_observation", "confirmation_receipt", "handoff_receipt"}):
+                    raise ValueError("local validation projection shape is invalid")
+                final = validate_local_validation_final_receipt(local["final_receipt"])
+                if local["handoff_receipt"] is not None:
+                    handoff_receipt = validate_local_validation_handoff(
+                        local["handoff_receipt"], final_receipt=final)
+                    if handoff_receipt != local["handoff_receipt"]:
+                        raise ValueError("local validation handoff projection changed")
+                raw_observation = local["runtime_observation"]
+                if raw_observation is None:
+                    observation = None
+                elif (isinstance(raw_observation, dict)
+                        and raw_observation.get("schema_version") == LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA):
+                    observation = validate_local_validation_handoff_observation(raw_observation)
+                else:
+                    observation = validate_local_validation_release_observation(raw_observation)
+                confirmation = (None if local["confirmation_receipt"] is None else
+                    validate_local_validation_backend_confirmation(local["confirmation_receipt"]))
+            except (OperatorProcessFenceContractError, TypeError, ValueError):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable") from None
+            scope = final["scope"]
+            if (operator_fence is not None
+                    or final["root_run_id"] != root_id
+                    or scope["owner_principal"] != session.principal.subject
+                    or scope["workspace_id"] != session.workspace_id
+                    or scope["session_id"] != session.session_id
+                    or scope["trace_id"] != session.trace_id
+                    or row.get("authority_status") != "closed"
+                    or row.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                    or final["terminal_event_receipt"]["sequence"] != terminal_sequence
+                    or final["terminal_event_receipt"]["event_sha256"] != terminal_digest
+                    or (has_acp_snapshot and (
+                        row.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                        or row.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                        or row.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                        or row.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]))
+                    or (observation is None and confirmation is not None)
+                    or (observation is not None
+                        and observation.get("schema_version") == LOCAL_VALIDATION_HANDOFF_OBSERVATION_SCHEMA
+                        and (local["handoff_receipt"] is None
+                             or observation["ack_intent"]["handoff"] != local["handoff_receipt"]))
+                    or (observation is not None
+                        and observation["ack_intent"]["final_receipt"] != final)
+                    or (confirmation is not None and (
+                        confirmation["root_run_id"] != root_id
+                        or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                        or (confirmation.get("handoff") is not None
+                            and confirmation.get("handoff") != local["handoff_receipt"])
+                        or confirmation["runtime_observation"] != observation))):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        if (status == "interrupted" and authority_status == "closed"
+                and terminal_sequence is None and terminal_digest is None
+                and operator_fence is None):
+            # This closed-without-an-ordinary-terminal shape is reserved for
+            # operator interruption. A missing/null proof+ACK projection must
+            # not fall through to ordinary terminal handling.
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
         seen.add(root_id)
         validated.append(row)
     return validated
+
+
+def _operator_fence_for_root(session: ProductSession, root_run_id: str) -> dict[str, object] | None:
+    rows = _runtime_root_rows(session)
+    matches = [row for row in rows if row["root_run_id"] == root_run_id]
+    if len(matches) > 1:
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    if not matches:
+        return None
+    value = matches[0].get("operator_process_fence")
+    return value if isinstance(value, dict) else None
 
 
 def _validate_recovery_binding(body: object, session: ProductSession) -> dict[str, object]:
@@ -1672,8 +2897,29 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 "root_run_id", "previous_boot_id", "previous_authority_epoch", "sequence"}
     if state == "settled":
         expected = {*expected, "settlement_receipt"}
-    if (set(body) != expected or body.get("schema_version") != RUNTIME_RECOVERY_BINDING_SCHEMA
-            or state not in ("transfer_required", "settled")
+    elif state == "local_validation_ack_released":
+        expected = (expected - {"sequence"}) | {
+            "final_receipt", "runtime_observation", "confirmation_receipt"}
+    elif state == "local_validation_handoff_confirmed":
+        expected = {*expected, "final_receipt", "handoff", "runtime_observation", "confirmation_receipt"}
+    elif state == "operator_completed_cleanup":
+        expected = {*expected, "operator_completed_cleanup", "settlement_receipt", "runtime_observation",
+                    "superseded_terminal"}
+    elif state == "operator_cleanup_handoff_confirmed":
+        expected = {*expected, "operator_completed_cleanup", "settlement_receipt", "superseded_terminal",
+                    "handoff_request", "runtime_observation"}
+    elif state in {"operator_interrupted", "operator_failed_terminal"}:
+        expected = {*expected, ("operator_failed_terminal" if state == "operator_failed_terminal"
+                                else "operator_interruption"), "superseded_terminal"}
+    if "recovery_boundary" in body:
+        expected.add("recovery_boundary")
+    expected_schema = ("byq-runtime-local-validation-recovery-binding.v1"
+                      if state in {"local_validation_ack_released", "local_validation_handoff_confirmed"}
+                      else RUNTIME_RECOVERY_BINDING_SCHEMA)
+    if (set(body) != expected or body.get("schema_version") != expected_schema
+            or state not in ("transfer_required", "settled", "local_validation_ack_released",
+                             "operator_interrupted", "operator_failed_terminal", "operator_completed_cleanup",
+                             "operator_cleanup_handoff_confirmed", "local_validation_handoff_confirmed")
             or body.get("session_id") != session.session_id or body.get("trace_id") != session.trace_id
             or body.get("owner_principal") != session.principal.subject
             or body.get("workspace_id") != session.workspace_id
@@ -1682,8 +2928,57 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
             or not _valid_runtime_boot_id(body.get("previous_boot_id"))
             or type(body.get("previous_authority_epoch")) is not int
             or body["previous_authority_epoch"] < 1
-            or type(body.get("sequence")) is not int or body["sequence"] < 0):
+            or (state != "local_validation_ack_released"
+                and (type(body.get("sequence")) is not int or body["sequence"] < 0))):
         raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if state == "local_validation_ack_released":
+        try:
+            final = validate_local_validation_final_receipt(body["final_receipt"])
+            observation = validate_local_validation_release_observation(body["runtime_observation"])
+            confirmation = (None if body["confirmation_receipt"] is None else
+                validate_local_validation_backend_confirmation(body["confirmation_receipt"]))
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime local validation recovery binding is invalid") from None
+        scope = final["scope"]
+        if (final["root_run_id"] != body["root_run_id"]
+                or scope["session_id"] != body["session_id"]
+                or scope["trace_id"] != body["trace_id"]
+                or scope["owner_principal"] != body["owner_principal"]
+                or scope["workspace_id"] != body["workspace_id"]
+                or scope["runtime_boot_id"] != body["previous_boot_id"]
+                or observation["ack_intent"]["final_receipt"] != final
+                or observation["ack_intent"]["runtime_boot_id"] != body["previous_boot_id"]
+                or observation["ack_intent"]["runtime_authority_epoch"]
+                   != body["previous_authority_epoch"]
+                or (confirmation is not None and (
+                    confirmation["root_run_id"] != body["root_run_id"]
+                    or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                    or confirmation["runtime_observation"] != observation))):
+            raise HTTPException(status_code=502, detail="runtime local validation recovery binding changed")
+    if state == "local_validation_handoff_confirmed":
+        try:
+            final = validate_local_validation_final_receipt(body["final_receipt"])
+            handoff = validate_local_validation_handoff(body["handoff"], final_receipt=final)
+            observation = validate_local_validation_handoff_observation(body["runtime_observation"])
+            confirmation = validate_local_validation_backend_confirmation(body["confirmation_receipt"])
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime local validation handoff binding is invalid") from None
+        scope = final["scope"]
+        if (final["root_run_id"] != body["root_run_id"]
+                or scope["session_id"] != body["session_id"]
+                or scope["trace_id"] != body["trace_id"]
+                or scope["owner_principal"] != body["owner_principal"]
+                or scope["workspace_id"] != body["workspace_id"]
+                or scope["runtime_boot_id"] != handoff["old_authority"]["boot_id"]
+                or body["previous_boot_id"] != handoff["old_authority"]["boot_id"]
+                or body["previous_authority_epoch"] != handoff["old_authority"]["epoch"]
+                or body["sequence"] != final["terminal_event_receipt"]["sequence"]
+                or observation["ack_intent"]["final_receipt"] != final
+                or observation["ack_intent"]["handoff"] != handoff
+                or confirmation["handoff"] != handoff
+                or confirmation["runtime_observation"] != observation
+                or confirmation["final_receipt_sha256"] != final["receipt_sha256"]):
+            raise HTTPException(status_code=502, detail="runtime local validation handoff binding changed")
     if state == "settled":
         receipt = body.get("settlement_receipt")
         if (not isinstance(receipt, dict)
@@ -1694,12 +2989,368 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 or not isinstance(receipt.get("event_sha256"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"]) is None):
             raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if "recovery_boundary" in body:
+        boundary = body["recovery_boundary"]
+        fields = {"schema_version", "binding_sequence", "previous_boot_id",
+                  "previous_authority_epoch", "runtime_boot_id", "runtime_authority_epoch",
+                  "next_sequence", "event_json_b64", "event_sha256", "state"}
+        try:
+            event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
+            event = json.loads(event_raw.decode("utf-8"))
+        except (KeyError, TypeError, ValueError, UnicodeError):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid") from None
+        receipt = body.get("settlement_receipt")
+        receipt_hash = hashlib.sha256(json.dumps(
+            receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if (state != "settled" or not isinstance(boundary, dict) or set(boundary) != fields
+                or boundary.get("schema_version") != "byq-acp-recovery-boundary.v1"
+                or type(boundary.get("binding_sequence")) is not int
+                or boundary["binding_sequence"] != body.get("sequence")
+                or boundary.get("previous_boot_id") != body.get("previous_boot_id")
+                or boundary.get("previous_authority_epoch") != body.get("previous_authority_epoch")
+                or type(boundary.get("runtime_authority_epoch")) is not int
+                or boundary["runtime_authority_epoch"] < 1
+                or not _valid_runtime_boot_id(boundary.get("runtime_boot_id"))
+                or type(boundary.get("next_sequence")) is not int
+                or boundary["next_sequence"] != boundary["binding_sequence"] + 1
+                or boundary.get("state") not in {"pending", "acknowledged"}
+                or not isinstance(boundary.get("event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", boundary["event_sha256"]) is None
+                or not hmac.compare_digest(hashlib.sha256(event_raw).hexdigest(), boundary["event_sha256"])
+                or json.dumps(event, sort_keys=True, separators=(",", ":")).encode() != event_raw
+                or not isinstance(receipt, dict)
+                or event.get("trace_id") != body.get("trace_id")
+                or event.get("session_id") != body.get("session_id")
+                or event.get("sequence") != boundary["next_sequence"]
+                or event.get("kind") != "session.reattached"
+                or event.get("source") != "runtime-adapter"
+                or event.get("payload") != {
+                    "schema_version": "runtime-recovery-boundary-event.v1",
+                    "root_run_id": body.get("root_run_id"),
+                    "settlement_receipt_sha256": receipt_hash,
+                    "prior_sequence": boundary["binding_sequence"],
+                    "runtime_boot_id": boundary["runtime_boot_id"],
+                    "authority_epoch": boundary["runtime_authority_epoch"],
+                }):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
+    if state in {"operator_interrupted", "operator_failed_terminal", "operator_completed_cleanup",
+                 "operator_cleanup_handoff_confirmed"}:
+        operator_interruption = body.get(
+            "operator_completed_cleanup" if state in {"operator_completed_cleanup", "operator_cleanup_handoff_confirmed"} else
+            "operator_failed_terminal" if state == "operator_failed_terminal" else "operator_interruption")
+        expected_fact_fields = {"operation_id", "process_fence_receipt_sha256",
+                                "close_receipt_sha256", "runtime_ack_sha256"}
+        if state == "operator_failed_terminal":
+            expected_fact_fields |= {"sequence", "event_sha256", "failed_terminal_receipt_sha256"}
+        if state in {"operator_completed_cleanup", "operator_cleanup_handoff_confirmed"}:
+            expected_fact_fields |= {"original_terminal_receipt_sha256", "completed_cleanup_receipt_sha256"}
+        if (not isinstance(operator_interruption, dict)
+                or set(operator_interruption) != expected_fact_fields
+                or not isinstance(operator_interruption.get("operation_id"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", operator_interruption["operation_id"]) is None
+                or any(not isinstance(operator_interruption.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", operator_interruption[field]) is None
+                       for field in ("process_fence_receipt_sha256", "close_receipt_sha256",
+                                     "runtime_ack_sha256"))):
+            raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if state == "operator_completed_cleanup":
+        fact = body.get("operator_completed_cleanup")
+        receipt = body.get("settlement_receipt")
+        try:
+            observation = validate_operator_observation_record(body.get("runtime_observation"))
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime completed cleanup observation is invalid") from None
+        if (not isinstance(fact, dict)
+                or set(fact) != {"operation_id", "process_fence_receipt_sha256", "close_receipt_sha256",
+                                "runtime_ack_sha256", "original_terminal_receipt_sha256",
+                                "completed_cleanup_receipt_sha256"}
+                or not isinstance(receipt, dict)
+                or set(receipt) != {"schema_version", "root_run_id", "sequence", "event_sha256"}
+                or receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or receipt.get("root_run_id") != body.get("root_run_id")
+                or type(receipt.get("sequence")) is not int or receipt["sequence"] < 1
+                or type(body.get("sequence")) is not int
+                or body["sequence"] < receipt["sequence"]
+                or body["sequence"] >= 2**63
+                or not isinstance(receipt.get("event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"]) is None
+                or hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                   != fact.get("original_terminal_receipt_sha256")
+                or any(not isinstance(fact.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", fact[field]) is None
+                       for field in ("process_fence_receipt_sha256", "close_receipt_sha256",
+                                     "runtime_ack_sha256", "original_terminal_receipt_sha256",
+                                     "completed_cleanup_receipt_sha256"))
+                or not isinstance(fact.get("operation_id"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", fact["operation_id"]) is None
+                or observation.get("operation_id") != fact.get("operation_id")
+                or observation.get("scope", {}).get("session_id") != body["session_id"]
+                or observation.get("scope", {}).get("trace_id") != body["trace_id"]
+                or observation.get("scope", {}).get("owner_principal") != body["owner_principal"]
+                or observation.get("scope", {}).get("workspace_id") != body["workspace_id"]
+                or observation.get("scope", {}).get("root_run_id") != body["root_run_id"]
+                or observation.get("scope", {}).get("runtime_boot_id") != body["previous_boot_id"]
+                or observation.get("operator_completed_cleanup", {}).get("receipt_sha256")
+                    != fact.get("completed_cleanup_receipt_sha256")
+                or observation.get("operator_completed_cleanup", {}).get("original_terminal_receipt_sha256")
+                    != fact.get("original_terminal_receipt_sha256")
+                or observation.get("close_receipt_sha256") != fact.get("close_receipt_sha256")
+                or observation.get("process_fence_receipt_sha256")
+                    != fact.get("process_fence_receipt_sha256")
+                or _operator_fence_digest(observation.get("runtime_ack")) != fact.get("runtime_ack_sha256")
+                or body.get("superseded_terminal") is not None):
+            raise HTTPException(status_code=502, detail="runtime completed cleanup binding is invalid")
+    if state == "operator_cleanup_handoff_confirmed":
+        try:
+            request = validate_process_fence_handoff_request(body["handoff_request"])
+            handoff = request["handoff"]
+            observation = validate_process_fence_handoff_observation(
+                body["runtime_observation"], handoff=handoff)
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="runtime cleanup handoff binding is invalid") from None
+        fact = body["operator_completed_cleanup"]
+        receipt = body["settlement_receipt"]
+        expected_scope = handoff["scope"]
+        if (handoff["operation_id"] != fact.get("operation_id")
+                or handoff["process_fence_receipt_sha256"] != fact.get("process_fence_receipt_sha256")
+                or handoff["close_receipt_sha256"] != fact.get("close_receipt_sha256")
+                or handoff["terminal_receipt_sha256"] != fact.get("original_terminal_receipt_sha256")
+                or request["close_receipt"]["operator_completed_cleanup"]["receipt_sha256"]
+                    != fact.get("completed_cleanup_receipt_sha256")
+                or _operator_fence_digest(observation) != fact.get("runtime_ack_sha256")
+                or (expected_scope.get("session_id"), expected_scope.get("trace_id"),
+                    expected_scope.get("owner_principal"), expected_scope.get("workspace_id"),
+                    expected_scope.get("root_run_id"), expected_scope.get("runtime_boot_id"))
+                   != (body["session_id"], body["trace_id"], body["owner_principal"],
+                       body["workspace_id"], body["root_run_id"], body["previous_boot_id"])
+                or body.get("previous_authority_epoch")
+                    != request["close_receipt"]["authority"]["previous_epoch"]
+                or body.get("sequence") != 344
+                or not isinstance(receipt, dict)
+                or receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or receipt.get("root_run_id") != body["root_run_id"]
+                or receipt.get("sequence") != 344
+                or receipt.get("event_sha256") != "0763e967f42dc958edbf3fb832b1dc5f84b4dfc2455cc4a774debc763fe45e1e"
+                or hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    != handoff["terminal_receipt_sha256"]
+                or body.get("superseded_terminal") is not None):
+            raise HTTPException(status_code=502, detail="runtime cleanup handoff facts changed")
+    if state == "operator_failed_terminal" and (
+            type(operator_interruption["sequence"]) is not int
+            or operator_interruption["sequence"] < 1
+            or any(not isinstance(operator_interruption[field], str)
+                   or re.fullmatch(r"[0-9a-f]{64}", operator_interruption[field]) is None
+                   for field in ("event_sha256", "failed_terminal_receipt_sha256"))
+            or body.get("superseded_terminal") is not None):
+        raise HTTPException(status_code=502, detail="runtime failed-terminal recovery is invalid")
+    if state in {"operator_interrupted", "operator_failed_terminal"}:
+        superseded = body.get("superseded_terminal")
+        if superseded is not None and (
+                not isinstance(superseded, dict)
+                or set(superseded) != {"schema_version", "root_run_id", "sequence",
+                                       "event_sha256", "receipt_sha256"}
+                or superseded.get("schema_version") != "byq-runtime-superseded-terminal.v1"
+                or superseded.get("root_run_id") != body["root_run_id"]
+                or type(superseded.get("sequence")) is not int or superseded["sequence"] < 1
+                or any(not isinstance(superseded.get(field), str)
+                       or re.fullmatch(r"[0-9a-f]{64}", superseded[field]) is None
+                       for field in ("event_sha256", "receipt_sha256"))):
+            raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
     return body
+
+
+def _verify_operator_interrupted_recovery_binding(
+    binding: dict[str, object], session: ProductSession,
+) -> dict[str, object]:
+    roots = _runtime_root_rows(session)
+    matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+    if len(matched) != 1:
+        _raise_agent_session_interrupted()
+    row = matched[0]
+    operator_fence = row.get("operator_process_fence")
+    completed_cleanup = binding["state"] == "operator_completed_cleanup"
+    failed_terminal = binding["state"] == "operator_failed_terminal"
+    recovery = binding["operator_completed_cleanup" if completed_cleanup else
+                       "operator_failed_terminal" if failed_terminal else "operator_interruption"]
+    expected_outcome = "completed" if completed_cleanup else "failed" if failed_terminal else "interrupted"
+    settlement = binding.get("settlement_receipt")
+    observation = binding.get("runtime_observation") if completed_cleanup else None
+    completed_fact = observation.get("operator_completed_cleanup") if isinstance(observation, dict) else None
+    if (not isinstance(operator_fence, dict)
+            or row.get("status") != expected_outcome
+            or row.get("authority_status") != "closed"
+            or (completed_cleanup and (
+                not isinstance(settlement, dict)
+                or settlement.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or settlement.get("root_run_id") != binding["root_run_id"]
+                or settlement.get("sequence") != row.get("terminal_sequence")
+                or settlement.get("event_sha256") != row.get("terminal_event_sha256")
+                or row.get("terminal_unknown_claim_count") != 0
+                or hashlib.sha256(json.dumps(settlement, sort_keys=True,
+                    separators=(",", ":")).encode()).hexdigest()
+                    != recovery.get("original_terminal_receipt_sha256")
+                or operator_fence.get("original_terminal_receipt_sha256")
+                    != recovery.get("original_terminal_receipt_sha256")
+                or operator_fence.get("operator_completed_cleanup_receipt_sha256")
+                    != recovery.get("completed_cleanup_receipt_sha256")))
+            or (failed_terminal and (row.get("terminal_sequence") != recovery.get("sequence")
+                or row.get("terminal_event_sha256") != recovery.get("event_sha256")
+                or operator_fence.get("operator_failed_terminal_receipt_sha256")
+                   != recovery.get("failed_terminal_receipt_sha256")))
+            or (not failed_terminal and not completed_cleanup and (row.get("terminal_sequence") is not None
+                or row.get("terminal_event_sha256") is not None))
+            or operator_fence.get("outcome") != expected_outcome
+            or operator_fence.get("operation_id") != recovery.get("operation_id")
+            or operator_fence.get("process_fence_receipt_sha256")
+                != recovery.get("process_fence_receipt_sha256")
+            or operator_fence.get("close_receipt_sha256") != recovery.get("close_receipt_sha256")
+            or operator_fence.get("runtime_ack_sha256") != recovery.get("runtime_ack_sha256")
+            or operator_fence.get("superseded_terminal") != binding.get("superseded_terminal")
+            or (completed_cleanup and (
+                operator_fence.get("runtime_ack_sha256") != recovery.get("runtime_ack_sha256")
+                or operator_fence.get("close_receipt_sha256") != recovery.get("close_receipt_sha256")
+                or operator_fence.get("process_fence_receipt_sha256")
+                    != recovery.get("process_fence_receipt_sha256")
+                or not isinstance(observation, dict)
+                or not isinstance(completed_fact, dict)
+                or operator_fence.get("scope") != observation.get("scope")
+                or observation.get("scope", {}).get("session_id") != session.session_id
+                or observation.get("scope", {}).get("trace_id") != session.trace_id
+                or observation.get("scope", {}).get("owner_principal") != session.principal.subject
+                or observation.get("scope", {}).get("workspace_id") != session.workspace_id
+                or observation.get("scope", {}).get("root_run_id") != binding.get("root_run_id")
+                or observation.get("scope", {}).get("runtime_boot_id") != binding.get("previous_boot_id")
+                or operator_fence.get("terminal_acp_ingress_sequence")
+                    != completed_fact.get("terminal_acp_ingress_sequence")
+                or operator_fence.get("terminal_acp_ingress_sha256")
+                    != completed_fact.get("terminal_acp_ingress_sha256")
+                or operator_fence.get("terminal_unknown_claim_count") != 0
+                or operator_fence.get("terminal_unknown_claims_sha256")
+                    != completed_fact.get("terminal_unknown_claims_sha256")
+                or completed_fact.get("terminal_unknown_claim_count") != 0
+                or _operator_fence_digest(observation.get("runtime_ack"))
+                    != operator_fence.get("runtime_ack_sha256")))):
+        _raise_agent_session_interrupted()
+    return binding
+
+
+def _verify_operator_handoff_recovery_binding(
+    binding: dict[str, object], session: ProductSession,
+) -> dict[str, object]:
+    roots = _runtime_root_rows(session)
+    matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+    if len(matched) != 1:
+        _raise_agent_session_interrupted()
+    row = matched[0]
+    fence = row.get("operator_process_fence")
+    try:
+        request = validate_process_fence_handoff_request(binding["handoff_request"])
+        handoff = request["handoff"]
+        completed = request["close_receipt"]["operator_completed_cleanup"]
+        observation = validate_process_fence_handoff_observation(binding["runtime_observation"], handoff=handoff)
+        confirmation = validate_process_fence_handoff_confirmation(
+            fence["handoff_confirmation"], handoff=handoff) if isinstance(fence, dict) else None
+    except (OperatorProcessFenceContractError, KeyError, TypeError, ValueError):
+        _raise_agent_session_interrupted()
+    receipt = binding["settlement_receipt"]
+    fact = binding["operator_completed_cleanup"]
+    if (row.get("status") != "completed" or row.get("authority_status") != "closed"
+            or row.get("terminal_unknown_claim_count") != 0
+            or row.get("terminal_sequence") != receipt.get("sequence")
+            or row.get("terminal_event_sha256") != receipt.get("event_sha256")
+            or row.get("terminal_acp_ingress_sequence") != completed["terminal_acp_ingress_sequence"]
+            or row.get("terminal_acp_ingress_sha256") != completed["terminal_acp_ingress_sha256"]
+            or row.get("terminal_unknown_claim_count") != completed["terminal_unknown_claim_count"]
+            or row.get("terminal_unknown_claims_sha256") != completed["terminal_unknown_claims_sha256"]
+            or not isinstance(fence, dict)
+            or not isinstance(confirmation, dict)
+            or fence.get("outcome") != "completed"
+            or fence.get("operation_id") != handoff["operation_id"]
+            or fence.get("scope") != handoff["scope"]
+            or fence.get("handoff") != handoff
+            or fence.get("close_receipt") != request["close_receipt"]
+            or fence.get("runtime_observation") != observation
+            or fence.get("handoff_receipt_sha256") != handoff["handoff_sha256"]
+            or fence.get("proof_receipt_sha256") != handoff["proof_receipt_sha256"]
+            or fence.get("process_fence_receipt_sha256") != handoff["process_fence_receipt_sha256"]
+            or fence.get("original_terminal_receipt_sha256") != handoff["terminal_receipt_sha256"]
+            or fence.get("operator_completed_cleanup_receipt_sha256") != completed["receipt_sha256"]
+            or fence.get("ack_receipt_sha256") != confirmation.get("receipt_sha256")
+            or confirmation.get("runtime_observation") != observation
+            or fact.get("operation_id") != handoff["operation_id"]
+            or fact.get("process_fence_receipt_sha256") != handoff["process_fence_receipt_sha256"]
+            or hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                != handoff["terminal_receipt_sha256"]):
+        _raise_agent_session_interrupted()
+    return binding
 
 
 def _verify_settled_recovery_binding(
     binding: dict[str, object], session: ProductSession,
 ) -> dict[str, object]:
+    if binding.get("state") == "local_validation_handoff_confirmed":
+        roots = _runtime_root_rows(session)
+        matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+        local = matched[0].get("local_validation") if len(matched) == 1 else None
+        if (not isinstance(local, dict)
+                or local.get("final_receipt") != binding.get("final_receipt")
+                or local.get("runtime_observation") != binding.get("runtime_observation")
+                or local.get("confirmation_receipt") != binding.get("confirmation_receipt")
+                or local.get("handoff_receipt") != binding.get("handoff")):
+            _raise_agent_session_interrupted()
+        try:
+            final = validate_local_validation_final_receipt(local["final_receipt"])
+            handoff = validate_local_validation_handoff(binding["handoff"], final_receipt=final)
+            observation = validate_local_validation_handoff_observation(local["runtime_observation"])
+            confirmation = validate_local_validation_backend_confirmation(local["confirmation_receipt"])
+        except (OperatorProcessFenceContractError, TypeError, ValueError):
+            _raise_agent_session_interrupted()
+        row = matched[0]
+        terminal = final["terminal_event_receipt"]
+        if (handoff != binding.get("handoff")
+                or observation["ack_intent"]["handoff"] != handoff
+                or confirmation["handoff"] != handoff
+                or confirmation["runtime_observation"] != observation
+                or row.get("authority_status") != "closed"
+                or row.get("status") != "completed"
+                or row.get("terminal_sequence") != terminal["sequence"]
+                or row.get("terminal_event_sha256") != terminal["event_sha256"]
+                or row.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                or row.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                or row.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                or row.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]):
+            _raise_agent_session_interrupted()
+        return terminal
+    if binding.get("state") == "local_validation_ack_released":
+        roots = _runtime_root_rows(session)
+        matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+        local = matched[0].get("local_validation") if len(matched) == 1 else None
+        if (not isinstance(local, dict)
+                or local.get("final_receipt") != binding.get("final_receipt")
+                or local.get("runtime_observation") != binding.get("runtime_observation")
+                or local.get("confirmation_receipt") != binding.get("confirmation_receipt")
+                or local.get("handoff_receipt") is not None
+                or local.get("runtime_observation") is None
+                or local.get("confirmation_receipt") is None):
+            _raise_agent_session_interrupted()
+        final = validate_local_validation_final_receipt(local["final_receipt"])
+        observation = validate_local_validation_release_observation(local["runtime_observation"])
+        confirmation = validate_local_validation_backend_confirmation(local["confirmation_receipt"])
+        receipt = final["terminal_event_receipt"]
+        row = matched[0]
+        if (observation["ack_intent"]["final_receipt"] != final
+                or confirmation["runtime_observation"] != observation
+                or confirmation["final_receipt_sha256"] != final["receipt_sha256"]
+                or row.get("authority_status") != "closed"
+                or row.get("status") not in {"completed", "failed", "cancelled", "interrupted"}
+                or row.get("terminal_sequence") != receipt["sequence"]
+                or row.get("terminal_event_sha256") != receipt["event_sha256"]
+                or row.get("terminal_acp_ingress_sequence") != final["terminal_acp_ingress_sequence"]
+                or row.get("terminal_acp_ingress_sha256") != final["terminal_acp_ingress_sha256"]
+                or row.get("terminal_unknown_claim_count") != final["terminal_unknown_claim_count"]
+                or row.get("terminal_unknown_claims_sha256") != final["terminal_unknown_claims_sha256"]):
+            _raise_agent_session_interrupted()
+        return receipt
     receipt = binding["settlement_receipt"]
     roots = _runtime_root_rows(session)
     matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
@@ -1720,6 +3371,8 @@ def _closed_before_adapter_ack_receipt(
     binding: dict[str, object], session: ProductSession,
 ) -> dict[str, object] | None:
     """Recover a Backend-closed ACP root whose Adapter lost its terminal ACK."""
+    if binding.get("state") == "local_validation_ack_released":
+        return _verify_settled_recovery_binding(binding, session)
     roots = _runtime_root_rows(session)
     matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
     if len(matched) != 1:
@@ -1810,8 +3463,59 @@ def _initial_runtime_sequence(session_id: str, binding_sequence: int = 0) -> int
     return max(persisted, binding_sequence)
 
 
+def _append_and_ack_recovery_boundary(
+    session: ProductSession, runtime_reply: dict[str, object],
+    receipt: dict[str, object] | None, binding: dict[str, object] | None = None,
+) -> dict[str, object]:
+    boundary = runtime_reply.get("recovery_boundary")
+    if boundary is None:
+        return runtime_reply
+    if binding is None:
+        binding = _validate_recovery_binding(_adapter_get(
+            f"/internal/runtime/sessions/{session.session_id}/recovery-binding", timeout=5.0), session)
+    if (not isinstance(boundary, dict) or binding.get("state") != "settled"
+            or binding.get("recovery_boundary") not in (None, boundary)
+            or not isinstance(binding.get("settlement_receipt"), dict)
+            or (receipt is not None and receipt != binding.get("settlement_receipt"))
+            or boundary.get("runtime_boot_id") != runtime_reply.get("boot_id")):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid")
+    receipt = binding["settlement_receipt"]
+    if binding.get("recovery_boundary") is None:
+        _validate_recovery_binding({**binding, "recovery_boundary": boundary}, session)
+    try:
+        event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
+        event = json.loads(event_raw.decode("utf-8"))
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid") from None
+    if (hashlib.sha256(event_raw).hexdigest() != boundary.get("event_sha256")
+            or json.dumps(event, sort_keys=True, separators=(",", ":")).encode() != event_raw
+            or event.get("session_id") != session.session_id
+            or event.get("trace_id") != session.trace_id
+            or event.get("sequence") != boundary.get("next_sequence")
+            or event.get("kind") != "session.reattached"):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
+    try:
+        trace_store.append(event)
+    except (TraceConflict, ValueError):
+        raise HTTPException(status_code=503, detail="durable recovery trace boundary conflicts") from None
+    acknowledged = _adapter_post(
+        f"/internal/runtime/sessions/{session.session_id}/recover",
+        payload={"receipt": receipt, "initial_sequence": boundary["next_sequence"],
+                 "trace_tail": boundary["next_sequence"],
+                 "boundary_ack_sha256": boundary["event_sha256"]},
+        timeout=20.0,
+    )
+    if (acknowledged.get("session_id") != session.session_id
+            or acknowledged.get("trace_id") != session.trace_id
+            or acknowledged.get("boot_id") != runtime_reply.get("boot_id")
+            or acknowledged.get("recovery_boundary") != {**boundary, "state": "acknowledged"}):
+        raise HTTPException(status_code=502, detail="runtime recovery boundary ACK is invalid")
+    return acknowledged
+
+
 def _restore_product_session(
     conversation_id: str, principal: Principal, workspace_id: str, *, force_recovery: bool = False,
+    required_recovery_state: str | tuple[str, ...] | None = None,
 ) -> ProductSession:
     body = _catalog_request("GET", f"/v1/product/conversations/{conversation_id}", principal, workspace_id)
     conversation = body.get("conversation")
@@ -1824,7 +3528,9 @@ def _restore_product_session(
         principal=principal,
         workspace_id=workspace_id,
     )
-    initial_sequence = _initial_runtime_sequence(session.session_id)
+    trace_events = trace_store.read(session.session_id)
+    trace_tail = max((event["sequence"] for event in trace_events), default=0)
+    initial_sequence = max(trace_tail, 0)
     try:
         if force_recovery:
             raise HTTPException(status_code=404, detail="cached runtime session belongs to an old Adapter boot")
@@ -1839,6 +3545,10 @@ def _restore_product_session(
                 "attach_live_only": True,
             },
         )
+        attached = _append_and_ack_recovery_boundary(session, attached, None)
+        live_tail = max((event["sequence"] for event in trace_store.read(session.session_id)), default=0)
+        if type(attached.get("sequence")) is not int or attached["sequence"] != live_tail:
+            raise HTTPException(status_code=503, detail="live Runtime sequence is not projected")
         session.boot_id = _adopt_runtime_session_boot(attached)
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
@@ -1849,6 +3559,8 @@ def _restore_product_session(
             except HTTPException as binding_error:
                 if binding_error.status_code != 404:
                     raise
+                if required_recovery_state is not None:
+                    raise HTTPException(status_code=503, detail="business root recovery is unavailable") from binding_error
                 # A missing Adapter record proves nothing by itself. A fresh
                 # shell is safe only when Backend confirms this session never
                 # had a business root bound to it.
@@ -1867,8 +3579,39 @@ def _restore_product_session(
                 session.boot_id = _adopt_runtime_session_boot(attached)
             else:
                 binding = _validate_recovery_binding(binding_reply, session)
-                initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
-                if binding["state"] == "transfer_required":
+                expected_recovery_states = (
+                    (required_recovery_state,) if isinstance(required_recovery_state, str)
+                    else required_recovery_state)
+                if (expected_recovery_states is not None
+                        and binding["state"] not in expected_recovery_states):
+                    raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+                if binding["state"] == "local_validation_ack_released":
+                    _verify_settled_recovery_binding(binding, session)
+                    # This local proof closes the old Root; it is never a
+                    # replay receipt for a child lost across Adapter boots.
+                    _raise_agent_session_interrupted()
+                if binding["state"] == "local_validation_handoff_confirmed":
+                    _verify_settled_recovery_binding(binding, session)
+                    # The immutable local confirmation authorizes only a fresh
+                    # idle Runtime record; it cannot replay the old native run.
+                    recovery_receipt = binding
+                    initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
+                    trace_tail = max((event["sequence"] for event in trace_store.read(session.session_id)), default=0)
+                else:
+                    initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
+                    trace_tail = max((event["sequence"] for event in trace_store.read(session.session_id)), default=0)
+                if binding["state"] == "local_validation_handoff_confirmed":
+                    pass
+                elif binding["state"] in {"operator_interrupted", "operator_failed_terminal",
+                                         "operator_completed_cleanup", "operator_cleanup_handoff_confirmed"}:
+                    # This distinct receipt authorizes only a fresh idle Adapter
+                    # session after Backend confirms the exact protected proof/ACK
+                    # projection. It is never an ordinary terminal ACK or old-child
+                    # resume receipt.
+                    recovery_receipt = (_verify_operator_handoff_recovery_binding(binding, session)
+                        if binding["state"] == "operator_cleanup_handoff_confirmed"
+                        else _verify_operator_interrupted_recovery_binding(binding, session))
+                elif binding["state"] == "transfer_required":
                     recovery_receipt = _closed_before_adapter_ack_receipt(binding, session)
                     if recovery_receipt is None:
                         try:
@@ -1883,7 +3626,8 @@ def _restore_product_session(
                     recovery_receipt = _verify_settled_recovery_binding(binding, session)
                 recovered = _adapter_post(
                     f"/internal/runtime/sessions/{session.session_id}/recover",
-                    payload={"receipt": recovery_receipt, "initial_sequence": initial_sequence},
+                    payload={"receipt": recovery_receipt, "initial_sequence": initial_sequence,
+                             "trace_tail": trace_tail},
                     timeout=20.0,
                 )
                 if (recovered.get("session_id") != session.session_id
@@ -1894,6 +3638,8 @@ def _restore_product_session(
                         or recovered.get("resumed_from_run_id") != (
                             binding["root_run_id"] if recovery_receipt.get("status") == "transferred" else None)):
                     raise HTTPException(status_code=502, detail="runtime recovery receipt is invalid")
+                recovered = _append_and_ack_recovery_boundary(
+                    session, recovered, recovery_receipt, binding)
                 session.boot_id = _adopt_runtime_session_boot(recovered)
         else:
             raise
@@ -1988,6 +3734,44 @@ def _attested_runtime_events(events: list[dict[str, object]], session: ProductSe
                 continue
             receipt = lifecycle_receipt(lifecycle)
             row = indexed.get(lifecycle["root_run_id"])
+            operator_fence = row.get("operator_process_fence") if row is not None else None
+            if operator_fence is not None:
+                superseded = operator_fence["superseded_terminal"]
+                if (operator_fence["outcome"] == "failed"
+                        and event.get("kind") == "session.failed"
+                        and row["terminal_sequence"] == receipt["sequence"]
+                        and row["terminal_event_sha256"] == receipt["event_sha256"]):
+                    # Keep the genuine failed event in public history; exclude
+                    # the old failed prompt from fresh native model context.
+                    continue
+                receipt_sha256 = hashlib.sha256(json.dumps(
+                    receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if (event.get("kind") == "session.failed"
+                        and isinstance(superseded, dict)
+                        and superseded.get("root_run_id") == lifecycle["root_run_id"]
+                        and superseded.get("sequence") == receipt["sequence"]
+                        and superseded.get("event_sha256") == receipt["event_sha256"]
+                        and superseded.get("receipt_sha256") == receipt_sha256):
+                    # The original failed event remains in TraceStore/public history.
+                    # It is omitted only from trusted completed-turn context.
+                    continue
+                if (event.get("kind") == "session.result"
+                        and lifecycle.get("outcome") == "completed"
+                        and row is not None
+                        and row.get("root_run_id") == lifecycle.get("root_run_id")
+                        and row.get("status") == "completed"
+                        and row.get("authority_status") == "closed"
+                        and row.get("terminal_unknown_claim_count") == 0
+                        and row.get("terminal_sequence") == receipt.get("sequence")
+                        and row.get("terminal_event_sha256") == receipt.get("event_sha256")
+                        and operator_fence.get("outcome") == "completed"
+                        and operator_fence.get("ack_status") == "confirmed"
+                        and operator_fence.get("slot_release_status") == "released"
+                        and operator_fence.get("superseded_terminal") is None
+                        and receipt_sha256 == operator_fence.get("original_terminal_receipt_sha256")):
+                    attested.append(event)
+                    continue
+                raise ValueError("operator interruption does not supersede this terminal event")
             if (row is None or row["status"] != lifecycle["outcome"]
                     or row["authority_status"] != "closed"
                     or row["terminal_sequence"] != receipt["sequence"]
@@ -2726,10 +4510,42 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
             _raise_agent_session_interrupted()
-        if (exc.status_code == 409
-                and getattr(exc, "adapter_conflict_detail", None) == _FAILED_RUNTIME_SESSION_MARKER):
-            _raise_agent_session_failed()
-        raise
+        failed_terminal = (exc.status_code == 409
+                           and getattr(exc, "adapter_conflict_detail", None)
+                           == _FAILED_RUNTIME_SESSION_MARKER)
+        cannot_resume = (exc.status_code == 409
+                         and getattr(exc, "adapter_conflict_detail", None)
+                         == f"session {session.session_id} cannot be resumed")
+        if not failed_terminal and not cannot_resume:
+            raise
+        # A settled ordinary failure may continue only after the same-root
+        # Backend and durable Runtime proofs pass the normal recovery path.
+        # Protected operator failures retain their distinct V3 proof.
+        restored = _restore_product_session(
+            session.conversation_id, session.principal, session.workspace_id,
+            force_recovery=True,
+            required_recovery_state=("settled" if failed_terminal else
+                                     ("settled", "operator_failed_terminal")))
+        if (restored.session_id != session.session_id
+                or restored.trace_id != session.trace_id
+                or restored.principal.subject != session.principal.subject
+                or restored.workspace_id != session.workspace_id):
+            raise HTTPException(status_code=502, detail="runtime recovery identity is invalid")
+        body = _adapter_post(
+            "/internal/runtime/sessions",
+            payload={"session_id": session.session_id, "trace_id": session.trace_id,
+                     "owner_principal": session.principal.subject,
+                     "workspace_id": session.workspace_id, "attach_live_only": True},
+        )
+        if (body.get("session_id") != session.session_id
+                or body.get("trace_id") != session.trace_id
+                or body.get("status") != "idle"
+                or body.get("active_prompt") is not False
+                or body.get("continuity") != "reattached"):
+            raise HTTPException(status_code=502, detail="runtime recovery receipt is invalid")
+        attached_boot = _adopt_runtime_session_boot(body)
+        if attached_boot != session.boot_id or attached_boot != restored.boot_id:
+            raise HTTPException(status_code=502, detail="runtime recovery boot is invalid")
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,
@@ -2748,6 +4564,124 @@ def cancel_product_session(
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    context = {
+        'session_id': session.session_id,
+        'trace_id': session.trace_id,
+        'conversation_id': session.conversation_id,
+        'workspace_id': session.workspace_id,
+        'owner': session.principal.subject,
+    }
+    try:
+        pending_cancel = task_continuation_delivery.pending_cancel(context)
+    except (OSError, ValueError) as exc:
+        # A marker written by an older version or with an invalid mode cannot
+        # safely be interpreted as either Product cancellation mode.
+        raise HTTPException(status_code=409,
+            detail='A prior continuation cancellation remains unresolved') from exc
+    if pending_cancel is not None and pending_cancel[1] != request.mode:
+        raise HTTPException(status_code=409,
+            detail='A pending continuation cancellation has a different mode')
+    is_v3, reservation_id = product_sessions.begin_v3_cancel(session)
+    if not is_v3:
+        # A Gateway restart may have lost only the in-memory hold. Reuse an
+        # already-fsynced marker for this exact registered context; never peek
+        # Backend to invent a new cancellation identity here.
+        if pending_cancel is not None:
+            pending_reservation_id, _pending_mode = pending_cancel
+            if product_sessions.hold_v3_continuation(session, pending_reservation_id):
+                is_v3, reservation_id = product_sessions.begin_v3_cancel(session)
+        if pending_cancel is not None and not is_v3:
+            raise HTTPException(status_code=409,
+                detail='A prior continuation cancellation cannot be restored safely')
+    if (pending_cancel is not None and is_v3
+            and reservation_id != pending_cancel[0]):
+        raise HTTPException(status_code=409,
+            detail='A pending continuation cancellation targets a different reservation')
+
+    if is_v3:
+        marker_persisted = False
+        marker_pending = False
+        backend_fence = None
+        receipt_conflict = False
+        if reservation_id is not None:
+            try:
+                task_continuation_delivery.request_cancel(context, reservation_id, request.mode)
+                marker_persisted = True
+                marker_pending = True
+            except CancelModeConflict as exc:
+                raise HTTPException(status_code=409,
+                    detail='A pending continuation cancellation has a different mode') from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=409,
+                    detail='A pending continuation cancellation cannot be replaced') from exc
+            except Exception as exc:
+                # The in-memory cancel flag was set first. Keep this process
+                # fail-closed and still attempt both exact external fences.
+                logger.warning('v3 continuation cancel marker was not persisted: error=%s',
+                    type(exc).__name__)
+        target = None
+        try:
+            _require_session_runtime_authority(session)
+            target = _v3_cancel_target(context, reservation_id, session, request.mode)
+        except _V3CancelReceiptConflict as exc:
+            receipt_conflict = True
+            logger.warning('v3 continuation receipts conflict; cancellation remains held: error=%s',
+                type(exc).__name__)
+        except Exception as exc:
+            logger.warning('v3 continuation exact Runtime cancel target remains unconfirmed: error=%s',
+                type(exc).__name__)
+
+        if reservation_id is not None and not receipt_conflict:
+            try:
+                backend_fence = _request_v3_continuation_cancel_fence(context, reservation_id)
+                if not product_sessions.record_v3_cancel_backend_status(
+                        session, reservation_id, backend_fence['status']):
+                    raise ValueError('v3 cancellation no longer matches the held reservation')
+            except Exception as exc:
+                logger.warning('v3 continuation cancel fence remains unconfirmed: error=%s',
+                    type(exc).__name__)
+
+        runtime_attempted = False
+        runtime_acknowledged = False
+        runtime_body = None
+        runtime_target_closed = target is not None and target[0] == 'closed'
+        if not receipt_conflict and target is not None and target[0] == 'active':
+            try:
+                runtime_attempted = True
+                # Stop only this exact background root and keep the original
+                # Product session available for ordinary user turns.
+                runtime_body = _request_v3_runtime_cancel(context, target[1], session, request.mode)
+                runtime_acknowledged = True
+            except Exception as exc:
+                logger.warning('v3 continuation Runtime exact-root cancel is unconfirmed: error=%s',
+                    type(exc).__name__)
+
+        # The cancellation endpoint ACK is not terminal proof. The poller keeps
+        # the fsynced marker until exact root terminal/Backend close/Runtime ACK
+        # and cleanup, or the exact cancelled-zero-attempt proof is established.
+        durable_cancel_confirmed = False
+
+        return {
+            'session_id': session.conversation_id,
+            'trace_id': session.trace_id,
+            'status': runtime_body.get('status') if runtime_acknowledged else 'outcome_unknown',
+            'active_prompt': runtime_body.get('active_prompt') if runtime_acknowledged else None,
+            'continuation_cancel': {
+                'reservation_id': reservation_id,
+                'backend_fence_confirmed': backend_fence is not None,
+                'backend_status': backend_fence.get('status') if backend_fence else None,
+                'marker_persisted_before_fence': marker_persisted,
+                'marker_pending': marker_pending,
+                'runtime_cancel_attempted': runtime_attempted,
+                'runtime_cancel_acknowledged': runtime_acknowledged,
+                'runtime_target_closed': runtime_target_closed,
+                'durable_cancel_confirmed': durable_cancel_confirmed,
+                'state': 'confirmed' if durable_cancel_confirmed else 'outcome_unknown',
+                'activation_hold': reservation_id is not None and not durable_cancel_confirmed,
+                'activation_hold_durable': marker_persisted or backend_fence is not None,
+            },
+        }
+
     _require_session_runtime_authority(session)
     path = f"/internal/runtime/sessions/{session.session_id}/cancel"
     if request.mode != "hard":

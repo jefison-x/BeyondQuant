@@ -106,7 +106,7 @@ class StrategyValidationError(ValueError):
 
     def public_problem(self):
         return {"schema_version": "strategy-validation-problem.v1", "field": self.field,
-            "code": self.code, "repair_limit": 1, "next_action": "read_strategy_contract_then_correct_once"}
+            "code": self.code}
 
 
 def _text(value: object, field: str, maximum: int) -> str:

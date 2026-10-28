@@ -1,0 +1,52 @@
+{
+  "binding_closed": false,
+  "cleanup_exit_fields": {
+    "code": 0,
+    "reason": "cancelled",
+    "signal": null
+  },
+  "container_identity_unchanged": true,
+  "docker_operations": 8,
+  "elapsed_ms": 448,
+  "exact_ack": true,
+  "head": "342c6d1b66de6042ffcd22b8afd35e1f176f19c6",
+  "independent_review": "Sol RAW PASS; Root PASS diagnosis only",
+  "job_boundary": "11-table count equality only; no unchanged row-content or causal assertion",
+  "job_counts_unchanged": true,
+  "native_session_close_confirmed": true,
+  "new_jobs_in_diagnosis": 0,
+  "new_models_in_diagnosis": 0,
+  "original_scene": "FAIL remains; zero cancel, second input NOT_RUN",
+  "pins": {
+    "exact-ack.json": "118f873625dc81ecdc0ed656e722a79fefbe3e2cf94792a60df4ddda50058e32",
+    "provider-aggregate.json": "eb7824a725c78a44a8670db0b476a967d9ac22f943997632aa8ac4923f1128cc",
+    "result.json": "94dfde58f93f7ce625b7fe3bf7ed49367da69f1fb15f17b6eb11d0b6c0d33954",
+    "signed-cleanup-proof.json": "68e273e88763ff75393850b35766a9298b23c2e43cad68d697bf2e5f6ca5af0e",
+    "state.sql": "6abe3b109a839d2e6b8c1e3a2fd115270fb7b9c4cb5e23a60ab0bf77b98d0173"
+  },
+  "process_exit_confirmed": true,
+  "provider": {
+    "actual_cache_read_tokens": 24576,
+    "actual_input_tokens": 27378,
+    "actual_output_tokens": 2457,
+    "attribution": "root_aggregate_only_child_unknown",
+    "declared_output_tokens": 8192,
+    "input_bytes": 91639,
+    "max_concurrent": 1,
+    "observed_elapsed_ms": 31286,
+    "provider_attempts": 1,
+    "provider_calls": 1,
+    "root_run_id": "69c6a18c465a4383a33f56ae9eb30afe",
+    "schema_version": "byq-provider-aggregate.v1",
+    "tool_payload_bytes": 85489
+  },
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-v1-post-stop-read",
+  "root": "69c6a18c465a4383a33f56ae9eb30afe",
+  "root_authority": "closed",
+  "root_status": "completed",
+  "schema": "byq-root-soft-direct-post-stop-read.v1",
+  "scope": "Natural completion diagnostic, not soft-cancel qualification",
+  "signed_process_group_cleanup": true,
+  "status": "PASS_INDEPENDENT_READ_SCOPE_ONLY",
+  "unknown_business_claim_count": 0
+}

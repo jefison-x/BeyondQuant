@@ -1,0 +1,66 @@
+{
+  "schema_version": "session-containment-live-projection-fixture.v1",
+  "source_receipt": "batch-v2/turn2-observe/receipt.json",
+  "session_id": "byq-session-b098fd2604ff4980bc7012307d9aaa1c",
+  "trace_id": "byq-trace-c012e550a1104ca2b17e342516ba10be",
+  "events": [
+    {
+      "kind": "session.started",
+      "payload": {
+        "run_id": "ce7cf2cbdb6247e3a494687e202e2de1"
+      },
+      "sequence": 2,
+      "session_id": "byq-session-b098fd2604ff4980bc7012307d9aaa1c",
+      "source": "runtime-adapter",
+      "timestamp": "2026-10-14T21:37:19.606189+00:00",
+      "trace_id": "byq-trace-c012e550a1104ca2b17e342516ba10be"
+    },
+    {
+      "kind": "session.result",
+      "payload": {
+        "finish_reason": "completed",
+        "run_id": "ce7cf2cbdb6247e3a494687e202e2de1"
+      },
+      "sequence": 7,
+      "session_id": "byq-session-b098fd2604ff4980bc7012307d9aaa1c",
+      "source": "runtime-adapter",
+      "timestamp": "2026-10-14T21:37:24.004243+00:00",
+      "trace_id": "byq-trace-c012e550a1104ca2b17e342516ba10be"
+    },
+    {
+      "kind": "session.started",
+      "payload": {
+        "run_id": "5fe705854ea843fdbfe9f1a3924e2723"
+      },
+      "sequence": 8,
+      "session_id": "byq-session-b098fd2604ff4980bc7012307d9aaa1c",
+      "source": "runtime-adapter",
+      "timestamp": "2026-10-14T21:37:49.480380+00:00",
+      "trace_id": "byq-trace-c012e550a1104ca2b17e342516ba10be"
+    },
+    {
+      "kind": "agent.activity",
+      "payload": {
+        "activity_id": "activity_60dd7eb0c8acda419e77f2bca2e5372655b2d12afc356e186b73a901f0d50e61",
+        "label": "理解请求",
+        "phase": "understand",
+        "schema_version": "workflow-activity.v1",
+        "state": "started"
+      },
+      "sequence": 9,
+      "session_id": "byq-session-b098fd2604ff4980bc7012307d9aaa1c",
+      "source": "runtime-adapter",
+      "timestamp": "2026-10-14T21:37:49.480735+00:00",
+      "trace_id": "byq-trace-c012e550a1104ca2b17e342516ba10be"
+    }
+  ],
+  "source_receipt_sha256": "afddd0ac2fed9b79318273f3720ef1f957145683d226b0b7edb37c845ade9584",
+  "runtime_identity_source": "batch-v2/EMPTY-DURABLE-RAW.json:stdout.conversation.runtime_session_id",
+  "runtime_identity_source_sha256": "ae5b9f5cd045e0ebac002d19a26d3024b06bda3f5eeebc5980225ffe40524c3a",
+  "identity_normalization": {
+    "public_get_session_id": "conversation_66e526b46b82497d8625156add0a3492",
+    "runtime_session_id": "byq-session-b098fd2604ff4980bc7012307d9aaa1c",
+    "note": "The public Gateway GET projection remaps event session_id to conversation_id. This fixture restores the runtime session_id expected by loss_from_evidence; it is a normalized public projection, not a raw trace."
+  },
+  "public_projection_status": "completed"
+}

@@ -1,0 +1,20 @@
+{
+  "result": "PASS_SOURCE_ONLY",
+  "source_sha256": {
+    "capture": "ac2504814c47fa494782d7833774f494fec9b4bb852c814d396a48cc1375c94f",
+    "observer": "a1bd6ed5b1db965d903ddf3c0419d3c2fedf232bca2ace4a3bbf07b92ce14d47",
+    "observer_tests": "e91c60cdf87471715fca2654d165300a6e621b7ce1fef7f7b732fc037fec6a1f"
+  },
+  "independent_sol": "PASS_SOURCE_ONLY",
+  "Root": "PASS_SOURCE_ONLY",
+  "tests": "NOT_RUN at this receipt",
+  "scope": "Fixed child UID and exact official storage path; preflight/projection original command and stdout joins; fixed reader/projector code hashes; fail-closed checkpoints and file metadata checks",
+  "storage_root_evidence_limit": "Source/profile contract and observed file metadata, not direct running child environment inspection",
+  "prior_source_failures": "Preserved in SOURCE-FAIL and SOURCE-V2-FAIL receipts",
+  "prior_live_batch": "FAIL_STOP, immutable",
+  "next_admission": "One bounded offline collector batch after capture test fixture freeze/review",
+  "batch_model_calls": 0,
+  "batch_job_calls": 0,
+  "production_mutations": 0,
+  "release_readiness": "NOT_READY"
+}

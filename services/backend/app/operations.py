@@ -15,6 +15,20 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from packages.contracts.acp_product_prebind import (
+    ACTIVATE_ACTION, ACTIVATE_IDEMPOTENCY_PREFIX,
+    PREPARE_IDEMPOTENCY_PREFIX, PREPARE_ACTION,
+)
+from packages.contracts.acp_operator_process_fence import (
+    ACK_ACTION as PROCESS_FENCE_ACK_ACTION,
+    ACK_IDEMPOTENCY_PREFIX as PROCESS_FENCE_ACK_PREFIX,
+    PROCESS_FENCE_ACTION,
+    PROCESS_FENCE_IDEMPOTENCY_PREFIX,
+    digest as _process_fence_digest,
+    validate_ack_receipt as _validate_process_fence_ack,
+    validate_process_fence_proof as _validate_process_fence_proof,
+)
+
 from .db import PgStoreMixin, execute, fetch_one
 
 
@@ -185,10 +199,109 @@ class OperationsStore(PgStoreMixin):
                 operations_audit = execute(
                     connection,
                     """SELECT audit_id, actor_principal, action, outcome,
-                              resource_type, resource_id, detail_json, created_at
+                              resource_type, resource_id, idempotency_key,
+                              detail_json, response_json, created_at
                        FROM operations_audit
                        ORDER BY created_at DESC, audit_id DESC LIMIT 30""",
                 )
+                # The reserved prebind row stores exact native deployment and
+                # volume identity for later Engineering readback. Keep that
+                # private detail out of the admin overview projection.
+                reserved_actions = {
+                    PREPARE_ACTION: ("prepared",),
+                    ACTIVATE_ACTION: ("active",),
+                }
+                safe_operations_audit = []
+                for row in operations_audit:
+                    process_fence_reserved = (
+                        row.get("action") in {PROCESS_FENCE_ACTION, PROCESS_FENCE_ACK_ACTION}
+                        or (isinstance(row.get("idempotency_key"), str)
+                            and row["idempotency_key"].startswith((
+                                PROCESS_FENCE_IDEMPOTENCY_PREFIX,
+                                PROCESS_FENCE_ACK_PREFIX,
+                            )))
+                    )
+                    if process_fence_reserved:
+                        # The global Engineering control rows retain the complete
+                        # proof/preimage for exact retry, but the Product-facing
+                        # operations projection exposes only a closed summary.
+                        detail = row.get("detail_json")
+                        try:
+                            if (row.get("action") == PROCESS_FENCE_ACTION
+                                    and isinstance(row.get("idempotency_key"), str)
+                                    and row["idempotency_key"].startswith(PROCESS_FENCE_IDEMPOTENCY_PREFIX)):
+                                proof = _validate_process_fence_proof(
+                                    detail.get("proof") if isinstance(detail, dict) else None
+                                )
+                                summary = {
+                                    "schema_version": proof["schema_version"],
+                                    "operation_id": proof["operation_id"],
+                                    "request_sha256": proof["request_sha256"],
+                                    "backend_snapshot_sha256": proof["backend_snapshot_sha256"],
+                                    "process_fence_receipt_sha256": proof["process_fence_receipt_sha256"],
+                                    "receipt_sha256": proof["receipt_sha256"],
+                                    "status": "closed",
+                                }
+                            elif (row.get("action") == PROCESS_FENCE_ACK_ACTION
+                                  and isinstance(row.get("idempotency_key"), str)
+                                  and row["idempotency_key"].startswith(PROCESS_FENCE_ACK_PREFIX)):
+                                ack = _validate_process_fence_ack(
+                                    row.get("response_json")
+                                )
+                                summary = {
+                                    "schema_version": ack["schema_version"],
+                                    "operation_id": ack["operation_id"],
+                                    "proof_receipt_sha256": ack["proof_receipt_sha256"],
+                                    "engineering_evidence_sha256": ack["engineering_evidence_sha256"],
+                                    "receipt_sha256": ack["receipt_sha256"],
+                                    "status": "confirmed",
+                                }
+                            else:
+                                raise ValueError("reserved process-fence namespace is inconsistent")
+                        except (TypeError, ValueError, KeyError):
+                            summary = {"schema_version": "byq-acp-r2-control-summary.v1",
+                                       "status": "unavailable"}
+                        safe_operations_audit.append({
+                            "audit_id": row.get("audit_id"),
+                            "action": row.get("action"),
+                            "outcome": row.get("outcome"),
+                            "resource_type": "workspace",
+                            "created_at": row.get("created_at"),
+                            "detail_json": summary,
+                        })
+                        continue
+                    reserved_key = reserved_actions.get(row.get("action"))
+                    if reserved_key is None:
+                        safe_operations_audit.append({
+                            "audit_id": row.get("audit_id"),
+                            "actor_principal": row.get("actor_principal"),
+                            "action": row.get("action"),
+                            "outcome": row.get("outcome"),
+                            "resource_type": row.get("resource_type"),
+                            "resource_id": row.get("resource_id"),
+                            "detail_json": row.get("detail_json"),
+                            "created_at": row.get("created_at"),
+                        })
+                        continue
+                    detail = row.get("detail_json")
+                    proof = next((detail.get(key) for key in reserved_key
+                                  if isinstance(detail, dict)
+                                  and isinstance(detail.get(key), dict)), {})
+                    safe_operations_audit.append({
+                        "audit_id": row.get("audit_id"),
+                        "action": row.get("action"),
+                        "outcome": row.get("outcome"),
+                        "resource_type": row.get("resource_type"),
+                        "created_at": row.get("created_at"),
+                        "detail_json": {
+                            key: proof.get(key) for key in (
+                                "schema_version", "status", "authorizes_start",
+                                "receipt_sha256", "activation_id",
+                                "prepared_receipt_sha256", "native_binding_sha256",
+                            )
+                        } if isinstance(proof, dict) else {},
+                    })
+                operations_audit = safe_operations_audit
                 stock_pool_producers = execute(
                     connection,
                     """SELECT producer_kind,status,COUNT(*)::bigint AS count
@@ -300,6 +413,10 @@ class OperationsStore(PgStoreMixin):
         key = self._text(payload.get("idempotency_key"), "idempotency_key", 128)
         if not _IDEMPOTENCY.fullmatch(key):
             raise ValueError("idempotency_key has an invalid format")
+        if key.startswith((PREPARE_IDEMPOTENCY_PREFIX, ACTIVATE_IDEMPOTENCY_PREFIX,
+                           PROCESS_FENCE_IDEMPOTENCY_PREFIX,
+                           PROCESS_FENCE_ACK_PREFIX)):
+            raise OperationsForbidden("idempotency namespace is reserved")
         canonical = {
             "enabled": enabled,
             "alert_total_tokens": total_tokens,

@@ -1,0 +1,82 @@
+{
+  "status": "PASS_SCOPED",
+  "recording_head": "bb4b9d7d386f21e28494359dea5bd7f709e0d706",
+  "frontend_source": "7d4d575771271b16f51128edd61ad5922b95e8b8",
+  "environment": "isolated localhost:32790; not production",
+  "collector_sha256": "c68912cb86305b882ea42e0eb4b90a8dbecc454938904ce405b9efeb820ac67b",
+  "caller_sha256": "6269803fb52896948f9186506a763ee53f527d22debde8004b04b1dc968870f7",
+  "offline": {
+    "directory": ".ci-artifacts/background-continuation-20261014/business-product-readonly-prepared-v6/offline-live-v2",
+    "cases": 12,
+    "exit_code": 0,
+    "elapsed_seconds": 0.082351929,
+    "scope": "actual collector entry with independent wire fixtures, transport substituted"
+  },
+  "readbacks": [
+    {
+      "directory": ".ci-artifacts/background-continuation-20261014/business-product-readonly-prepared-v6",
+      "http_calls": 8,
+      "exit_code": 0,
+      "elapsed_outer_seconds": 0.27874538998,
+      "elapsed_collector_seconds": 0.21587930398527533,
+      "scope": "exact task/version, approval absent, continuation permission absent; pool detail/members/snapshot projections consistent"
+    },
+    {
+      "directory": ".ci-artifacts/background-continuation-20261014/strategy-approval-ui-v1",
+      "ui": "FAIL_STOP unexpected export-shaped result; cause UNKNOWN",
+      "ui_elapsed_ms": 88160.56862600148,
+      "confirmation_clicks": 0,
+      "http_calls_readback": 8,
+      "readback_exit_code": 0,
+      "readback_elapsed_outer_seconds": 0.326723983,
+      "scope": "exact approval still absent; does not turn prior UI failure into PASS"
+    },
+    {
+      "directory": ".ci-artifacts/background-continuation-20261014/strategy-approval-ui-v2",
+      "ui": "PASS_SCOPED",
+      "ui_elapsed_ms": 64817.81160400808,
+      "ui_deadline_ms": 120000,
+      "start_clicks": 1,
+      "confirmation_clicks": 1,
+      "compute_submit_clicks": 0,
+      "http_calls_readback": 8,
+      "readback_exit_code": 0,
+      "readback_elapsed_outer_seconds": 0.241691700,
+      "approval_artifact_id": "artifact_0c5fb7dea05b416d84045791d0224a57",
+      "scope": "exact validated strategy approval, execution_authorized true, execution_outcome not_started; version immutable"
+    },
+    {
+      "directory": ".ci-artifacts/background-continuation-20261014/continuation-grant-ui-v1",
+      "ui": "FAIL_STOP checkbox action and time gate",
+      "ui_elapsed_ms": 148298.12612099946,
+      "ui_deadline_ms": 120000,
+      "root_submit_clicks": 0,
+      "submission_attribution": "human explicitly reported submitting; not Root automated UI PASS",
+      "http_calls_readback": 8,
+      "readback_exit_code": 0,
+      "readback_elapsed_outer_seconds": 0.558831241,
+      "confirmation_id": "f9594cb1-79e4-47ee-8238-fb3ca15a838a",
+      "scope": "exact owner/workspace/task/conversation/version/profile grant; reserved 0, remaining 1, unconfirmed 0; waiting_for_event"
+    }
+  ],
+  "shared_readback_contract": {
+    "calls": "one durable login plus seven fixed Product GETs per batch",
+    "soft_timeout_seconds": 430,
+    "hard_timeout_seconds": 435,
+    "retry": false,
+    "raw_sha256_checked": true,
+    "credentials_in_public_receipt": false
+  },
+  "task_id": "task_95563991efea45309f78425488d38839",
+  "strategy_version_artifact_id": "artifact_fa55edb3c41c458e84c3fe3bf4b9b752",
+  "pool_id": "stock_pool_495b6d57f99f4427a36ae6aebf758129",
+  "independent_sol_review": "PASS for the described scoped offline/readback and UI2 evidence; UI failures retained",
+  "root_acceptance": "PASS_SCOPED",
+  "operator_new_models_or_jobs": 0,
+  "global_zero_usage_proven": false,
+  "database_closure": "NOT_RUN",
+  "background_continuation": "NOT_RUN",
+  "production_qualification": "NOT_RUN",
+  "current_user_correction": "unified Bell approval maintenance pending; old domain approvals retained, not re-created",
+  "environment_and_page": "KEEP_OPEN"
+}

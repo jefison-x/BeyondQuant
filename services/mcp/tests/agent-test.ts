@@ -93,6 +93,7 @@ for (const resource_type of ['artifact', undefined]) {
   }, {}, async () => { throw new Error('invalid approval must not reach Backend'); });
   assert.equal(invalid.isError, true);
   assert.match(invalid.content[0].text, /resource_type=strategy_version/);
+  assert.doesNotMatch(invalid.content[0].text, /repair_limit|correct_once|at most one repair/i);
 }
 let approvedRequestReachedBackend = false;
 const validApproval = await fetchByqAgentApprovalRequest('http://backend', {

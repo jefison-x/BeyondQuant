@@ -450,3 +450,89 @@ def test_changed_binding_during_real_no_start_path_is_preserved_and_fenced(
     assert compatibility.start_attempts == []
     with pytest.raises(_SLOT_FIXTURE.SessionConflict, match="cleanup is unconfirmed"):
         runtime.submit_prompt("prepared-binding-race", "must not retry", conversation_context=[])
+
+
+def test_task_ready_guard_no_start_retirement_and_closed_root_rotation_are_root_exact(
+    tmp_path,
+):
+    import base64
+
+    from app.compat.dsh_acp import (
+        AcpTransportError,
+        archive_previous_continuation_guard_patch,
+        retire_prepared_guard_patch,
+        _write_continuation_guard,
+    )
+    from app.continuation_budget import create_acp_task_ready_execution_overlay
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import continuation_reservation_v3
+
+    def overlay(root: str, revision: int) -> bytes:
+        carrier = continuation_reservation_v3(
+            owner_principal="owner-a", workspace_id="workspace-a",
+            conversation_id="conversation-a", task_id="task_" + "1" * 32,
+            event_key="ready-v1:" + "2" * 64,
+            signal_job_id="signaljob_" + "3" * 32,
+            result_artifact_id="artifact_" + "4" * 32,
+            result_artifact_content_sha256="5" * 64,
+            options=default_agent_execution_options(), options_revision=revision,
+        )
+        return create_acp_task_ready_execution_overlay(
+            proxy_base_url="http://127.0.0.1:41337",
+            provider_session_id="11111111-2222-4333-8444-555555555555",
+            reservation_v3=carrier, root_run_id=root,
+        )
+
+    # These calls prove only the existing Adapter patch helpers' root-exact
+    # filesystem behavior. Runtime remains responsible for requiring native
+    # terminal ACK, close, process exit, and call-drain proof before archiving.
+    home = _home(tmp_path / "task-ready-home")
+    first_root, next_root = "a" * 32, "b" * 32
+    first_overlay = overlay(first_root, 7)
+    with pytest.raises(AcpTransportError, match="guard is invalid"):
+        _write_continuation_guard(
+            home, base64.b64encode(first_overlay).decode(), root_run_id=next_root)
+    assert not (home / "continuation-guard.patch.json").exists()
+
+    _write_continuation_guard(
+        home, base64.b64encode(first_overlay).decode(), root_run_id=first_root)
+    fixed_patch = home / "continuation-guard.patch.json"
+    first_value = json.loads(fixed_patch.read_bytes())
+    first_journal = Path(first_value[4]["insert"][0]["config"]["journalPath"])
+    assert first_journal.name == f"continuation-tool-guard-{first_root}.jsonl"
+    with pytest.raises(AcpTransportError, match="root mismatch"):
+        archive_previous_continuation_guard_patch(home, previous_root_id=next_root)
+    assert fixed_patch.is_file()
+
+    archive_previous_continuation_guard_patch(home, previous_root_id=first_root)
+    closed_archive = home / f"continuation-guard.closed-{first_root}.patch.json"
+    assert closed_archive.is_file()
+    assert not fixed_patch.exists()
+    closed_bytes = closed_archive.read_bytes()
+    archive_previous_continuation_guard_patch(home, previous_root_id=first_root)
+    assert closed_archive.read_bytes() == closed_bytes
+
+    next_overlay = overlay(next_root, 8)
+    _write_continuation_guard(
+        home, base64.b64encode(next_overlay).decode(), root_run_id=next_root)
+    next_value = json.loads(fixed_patch.read_bytes())
+    next_journal = Path(next_value[4]["insert"][0]["config"]["journalPath"])
+    assert next_journal.name == f"continuation-tool-guard-{next_root}.jsonl"
+    assert next_journal != first_journal
+    digest = hashlib.sha256(fixed_patch.read_bytes()).hexdigest()
+    with pytest.raises(AcpTransportError, match="changed before retirement"):
+        retire_prepared_guard_patch(
+            home, expected_root_id=first_root, expected_sha256=digest)
+    with pytest.raises(AcpTransportError, match="changed before retirement"):
+        retire_prepared_guard_patch(
+            home, expected_root_id=next_root, expected_sha256="0" * 64)
+    assert fixed_patch.is_file()
+    retire_prepared_guard_patch(
+        home, expected_root_id=next_root, expected_sha256=digest)
+    assert not fixed_patch.exists()
+    prepared_archive = home / f"continuation-guard.prepared-{next_root}-{digest}.patch.json"
+    assert prepared_archive.is_file()
+    prepared_bytes = prepared_archive.read_bytes()
+    retire_prepared_guard_patch(
+        home, expected_root_id=next_root, expected_sha256=digest)
+    assert prepared_archive.read_bytes() == prepared_bytes

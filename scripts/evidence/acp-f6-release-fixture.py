@@ -8,6 +8,7 @@ flows. It is integration evidence, not model-quality or production acceptance.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -79,8 +80,76 @@ def _run(args: list[str], *, env: dict[str, str], cwd: Path = ROOT,
         result = subprocess.run(args, cwd=cwd, env=env, capture_output=True,
                                 text=True, timeout=timeout, check=False)
     except (OSError, subprocess.SubprocessError):
+        if category == "f6_product_worker_chain_failed":
+            print("f6_driver_failure_diagnostic=diagnostic_unavailable", flush=True)
         raise FixtureFailure(category) from None
     if result.returncode != 0:
+        if category == "f6_product_worker_chain_failed":
+            diagnostic = "diagnostic_unavailable"
+            try:
+                driver = ROOT / "scripts/evidence/f6-chain-verification.py"
+                tree = ast.parse(driver.read_text(encoding="utf-8"))
+                stages = next(ast.literal_eval(node.value.args[0]) for node in tree.body
+                              if isinstance(node, ast.Assign)
+                              and any(isinstance(target, ast.Name) and target.id == "F6_OBSERVER_STAGES"
+                                      for target in node.targets)
+                              and isinstance(node.value, ast.Call))
+                categories = {
+                    node.args[1].value for node in ast.walk(tree)
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "require" and len(node.args) > 1
+                    and isinstance(node.args[1], ast.Constant) and type(node.args[1].value) is str
+                }
+                categories.update({"worker_cleanup_failed", "exact_execution_options_stop_not_proven"})
+                if len(result.stdout) <= 1048576:
+                    records = [json.loads(line) for line in result.stdout.splitlines()
+                               if len(line) <= 16384 and line.startswith('{"')
+                               and '"f6_evidence_saved"' in line]
+                    records = [row for row in records if row.get("stage") == "f6_evidence_saved"
+                               and row.get("phase") == "primary"]
+                    if len(records) == 1:
+                        row = records[0]
+                        status = row.get("status")
+                        digest = row.get("sha256")
+                        stage = row.get("execution_observation", {}).get("observer_stage")
+                        failure = row.get("failure_category")
+                        if (status in {"failed", "passed"} and type(digest) is str
+                                and re.fullmatch(r"[0-9a-f]{64}", digest)
+                                and type(stage) is str and stage in stages
+                                and type(failure) is str and len(failure) <= 128):
+                            known = failure in categories or re.fullmatch(r"http_status_[1-5][0-9]{2}", failure)
+                            diagnostic = json.dumps({
+                                "phase": "primary", "status": status, "sha256": digest,
+                                "observer_stage": stage,
+                                "failure_category": failure if known else "unknown",
+                                "category_sha256": hashlib.sha256(failure.encode()).hexdigest()
+                                if not known else None,
+                            }, sort_keys=True)
+            except (OSError, UnicodeError, ValueError, TypeError, StopIteration, AttributeError):
+                pass
+            print("f6_driver_failure_diagnostic=" + diagnostic, flush=True)
+        if category == "f6_product_api_browser_failed":
+            locations: list[tuple[int, int]] = []
+            try:
+                report = json.loads(result.stdout) if len(result.stdout) <= 1048576 else None
+                pending = [report] if isinstance(report, dict) else []
+                while pending:
+                    item = pending.pop()
+                    if isinstance(item, list):
+                        pending.extend(item)
+                    elif isinstance(item, dict):
+                        if isinstance(item.get("stack"), str):
+                            locations.extend((int(line), int(column)) for line, column in re.findall(
+                                r"(?<![A-Za-z0-9_.-])f6-chain\.spec\.ts:([1-9][0-9]{0,3}):([1-9][0-9]{0,3})(?![0-9])",
+                                item["stack"]))
+                        pending.extend(item[key] for key in ("suites", "specs", "tests", "results", "errors", "error") if key in item)
+            except (ValueError, TypeError):
+                locations = []
+            unique = sorted(set(locations))
+            print("f6_browser_failure_location=" + json.dumps({
+                "status": "available" if unique else "unavailable",
+                "locations": unique[:8], "truncated": len(unique) > 8,
+            }, sort_keys=True), flush=True)
         raise FixtureFailure(category)
     return result.stdout
 
@@ -292,7 +361,8 @@ def _validate_f6_evidence(primary_path: Path, closeout_path: Path) -> tuple[dict
         "background_structured_audit", "request_gate", "background_domain_scope",
     }
     _require(isinstance(checks, dict) and required.issubset(checks)
-             and checks.get("revoke") == "one_exact_post_and_get_confirmed_no_second_request",
+             and checks.get("execution_options_stop") == "one_exact_cas_and_get_confirmed"
+             and checks.get("request_state") == "one_exact_job_reservation_one_dispatch_exact_ready_event",
              "f6_release_checks_incomplete")
     _require(primary.get("uncertain_actions") == [] and closeout.get("uncertain_actions") == [],
              "f6_business_outcome_unknown")

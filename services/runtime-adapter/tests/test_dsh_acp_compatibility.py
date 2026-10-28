@@ -585,15 +585,17 @@ def test_close_retains_transport_handle_until_process_exit_is_confirmed(tmp_path
 
 
 @pytest.mark.parametrize(
-    ("provider", "selected_key", "expected_deepseek", "expected_opencode"),
+    ("provider", "selected_key", "expected_deepseek", "expected_opencode", "explicit_search_key"),
     [
-        ("deepseek-official", "DEEPSEEK_API_KEY", "selected-deepseek", None),
-        ("opencode-zen", "OPENCODE_API_KEY", None, "selected-opencode"),
+        ("deepseek-official", "DEEPSEEK_API_KEY", "selected-deepseek", None, None),
+        ("opencode-zen", "OPENCODE_API_KEY", None, "selected-opencode", None),
+        ("opencode-go-chat", "OPENCODE_API_KEY", None, "selected-opencode", "explicit-search-key"),
     ],
 )
 def test_acp_child_receives_only_selected_provider_credential(
     tmp_path: Path, monkeypatch, provider: str, selected_key: str,
     expected_deepseek: str | None, expected_opencode: str | None,
+    explicit_search_key: str | None,
 ) -> None:
     # The Adapter service may have both provider credentials for unrelated
     # sessions. The ACP child must receive only the key for this route.
@@ -613,6 +615,8 @@ def test_acp_child_receives_only_selected_provider_credential(
     environment[selected_key] = (
         "selected-deepseek" if selected_key == "DEEPSEEK_API_KEY" else "selected-opencode"
     )
+    if explicit_search_key is not None:
+        environment["DEEPSEEK_SEARCH_API_KEY"] = explicit_search_key
     composition = tmp_path / f"{provider}.yml"
     composition.write_text("[]\n", encoding="utf-8")
     compatibility = DshAcpCompatibility()
@@ -629,7 +633,7 @@ def test_acp_child_receives_only_selected_provider_credential(
     child_environment = json.loads(capture.with_name(capture.name + ".env").read_text())
     assert child_environment["deepseek_key"] == expected_deepseek
     assert child_environment["opencode_key"] == expected_opencode
-    assert child_environment["search_key"] is None
+    assert child_environment["search_key"] == explicit_search_key
     assert child_environment["credential_resolver_token"] is None
     assert child_environment["runner_control_secret"] is None
     assert child_environment["gateway_service_token"] is None
@@ -776,3 +780,289 @@ def test_resume_rejects_conflicting_echoed_session_id(tmp_path: Path) -> None:
             compatibility.resume_session(resumed_harness, native_id)
     finally:
         compatibility.close(resumed_harness)
+
+
+def test_ordinary_product_guard_uses_tightest_output_limit_and_remains_exclusive(
+    tmp_path: Path,
+) -> None:
+    import base64
+    import uuid
+
+    from app.compat.dsh_acp import (
+        _prepare_private_product_home,
+        _write_continuation_guard,
+        archive_previous_continuation_guard_patch,
+    )
+    from app.continuation_budget import create_acp_product_execution_overlay
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.product_turn_request import product_turn_execution_profile
+
+    provider_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "byq-ordinary-guard-test"))
+
+    def make_overlay(options: dict[str, object], revision: int = 4) -> bytes:
+        return create_acp_product_execution_overlay(
+            proxy_base_url="http://127.0.0.1:41337",
+            provider_session_id=provider_session_id,
+            provider="opencode-go-chat",
+            model="deepseek-v4.1-flash",
+            execution_profile=product_turn_execution_profile(options, revision=revision),
+        )
+
+    options = default_agent_execution_options()
+    options["max_output_tokens_per_call"] = 200
+    options["max_output_tokens_total"] = 100
+    overlay = make_overlay(options)
+    home = tmp_path / "ordinary-limited"
+    home.mkdir(mode=0o700)
+    _prepare_private_product_home(home)
+    _write_continuation_guard(
+        home, base64.b64encode(overlay).decode("ascii"), root_run_id="a" * 32,
+    )
+    patch_path = home / "continuation-guard.patch.json"
+    patch = json.loads(patch_path.read_text(encoding="utf-8"))
+    model = patch[0]["config"]["providers"]["opencode-go-chat"]["models"][0]
+    assert model == {"id": "deepseek-v4.1-flash", "maxTokens": 100}
+    before = patch_path.read_bytes()
+    with pytest.raises(AcpTransportError, match="could not be written"):
+        _write_continuation_guard(
+            home, base64.b64encode(overlay).decode("ascii"), root_run_id="a" * 32,
+        )
+    assert patch_path.read_bytes() == before
+
+    malformed = json.loads(overlay)
+    malformed[0]["config"]["providers"]["opencode-go-chat"]["models"][0]["maxTokens"] = 200
+    bad_home = tmp_path / "ordinary-wrong-cap"
+    bad_home.mkdir(mode=0o700)
+    _prepare_private_product_home(bad_home)
+    with pytest.raises(AcpTransportError, match="output parameter does not match options"):
+        _write_continuation_guard(
+            bad_home,
+            base64.b64encode(json.dumps(malformed).encode("utf-8")).decode("ascii"),
+            root_run_id="b" * 32,
+        )
+
+    default_home = tmp_path / "ordinary-unbounded"
+    default_home.mkdir(mode=0o700)
+    _prepare_private_product_home(default_home)
+    default_overlay = make_overlay(default_agent_execution_options(), revision=5)
+    _write_continuation_guard(
+        default_home, base64.b64encode(default_overlay).decode("ascii"), root_run_id="c" * 32,
+    )
+    default_patch = json.loads(
+        (default_home / "continuation-guard.patch.json").read_text(encoding="utf-8"))
+    default_model = default_patch[0]["config"]["providers"]["opencode-go-chat"]["models"][0]
+    assert default_model == {"id": "deepseek-v4.1-flash"}
+
+    lifecycle_root = "d" * 32
+    lifecycle_home = tmp_path / "ordinary-lifecycle"
+    lifecycle_home.mkdir(mode=0o700)
+    _prepare_private_product_home(lifecycle_home)
+    lifecycle_overlay = make_overlay(default_agent_execution_options(), revision=7)
+    _write_continuation_guard(
+        lifecycle_home, base64.b64encode(lifecycle_overlay).decode("ascii"),
+        root_run_id=lifecycle_root,
+    )
+    fixed_patch = lifecycle_home / "continuation-guard.patch.json"
+    original_patch = fixed_patch.read_bytes()
+    lifecycle_value = json.loads(original_patch)
+    lifecycle_journal = Path(
+        lifecycle_value[1]["insert"][0]["config"]["journalPath"])
+    assert lifecycle_journal.name == f"product-turn-tool-guard-{lifecycle_root}.jsonl"
+
+    with pytest.raises(AcpTransportError, match="root mismatch"):
+        archive_previous_continuation_guard_patch(
+            lifecycle_home, previous_root_id="e" * 32,
+        )
+    assert fixed_patch.read_bytes() == original_patch
+
+    closed_patch = lifecycle_home / (
+        f"continuation-guard.closed-{lifecycle_root}.patch.json")
+    archive_previous_continuation_guard_patch(
+        lifecycle_home, previous_root_id=lifecycle_root,
+    )
+    assert not fixed_patch.exists()
+    assert closed_patch.read_bytes() == original_patch
+    archive_previous_continuation_guard_patch(
+        lifecycle_home, previous_root_id=lifecycle_root,
+    )
+    assert closed_patch.read_bytes() == original_patch
+
+    next_root = "f" * 32
+    next_overlay = make_overlay(default_agent_execution_options(), revision=8)
+    _write_continuation_guard(
+        lifecycle_home, base64.b64encode(next_overlay).decode("ascii"),
+        root_run_id=next_root,
+    )
+    next_patch = fixed_patch.read_bytes()
+    next_value = json.loads(next_patch)
+    next_journal = Path(next_value[1]["insert"][0]["config"]["journalPath"])
+    assert next_journal.name == f"product-turn-tool-guard-{next_root}.jsonl"
+    assert next_journal != lifecycle_journal
+    with pytest.raises(AcpTransportError, match="could not be written"):
+        _write_continuation_guard(
+            lifecycle_home, base64.b64encode(next_overlay).decode("ascii"),
+            root_run_id=next_root,
+        )
+    assert fixed_patch.read_bytes() == next_patch
+
+
+def test_task_ready_guard_binds_trusted_root_and_canonical_journal(tmp_path: Path) -> None:
+    import base64
+    import uuid
+
+    from app.compat.dsh_acp import (
+        _prepare_private_product_home, _task_ready_profile_from_guard_b64,
+        _write_continuation_guard,
+    )
+    from app.continuation_budget import create_acp_task_ready_execution_overlay
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import continuation_reservation_v3
+
+    carrier = continuation_reservation_v3(
+        owner_principal="owner-a", workspace_id="workspace-a",
+        conversation_id="conversation-a", task_id="task_" + "1" * 32,
+        event_key="ready-v1:" + "2" * 64,
+        signal_job_id="signaljob_" + "3" * 32,
+        result_artifact_id="artifact_" + "4" * 32,
+        result_artifact_content_sha256="5" * 64,
+        options=default_agent_execution_options(), options_revision=7,
+    )
+    overlay = create_acp_task_ready_execution_overlay(
+        proxy_base_url="http://127.0.0.1:41337",
+        provider_session_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "task-ready-root")),
+        reservation_v3=carrier, root_run_id="a" * 32,
+    )
+    for malformed in (
+        b'{"guardMode":"task-ready-options","guardMode":"other"}',
+        b"NaN",
+        b"1e9999",
+        b" " * (16 * 1024 + 1),
+    ):
+        with pytest.raises(AcpTransportError, match="continuation guard is invalid"):
+            _task_ready_profile_from_guard_b64(
+                base64.b64encode(malformed).decode("ascii"), root_run_id="a" * 32)
+
+    wrong_home = tmp_path / "wrong-root"
+    wrong_home.mkdir(mode=0o700)
+    _prepare_private_product_home(wrong_home)
+    with pytest.raises(AcpTransportError, match="task-ready guard is invalid"):
+        _write_continuation_guard(
+            wrong_home, base64.b64encode(overlay).decode("ascii"), root_run_id="b" * 32)
+    assert not (wrong_home / "continuation-guard.patch.json").exists()
+
+    extra_route_home = tmp_path / "extra-route-config"
+    extra_route_home.mkdir(mode=0o700)
+    _prepare_private_product_home(extra_route_home)
+    extra_route = json.loads(overlay.decode("utf-8"))
+    extra_route[3]["config"]["globalConfig"] = {"provider": "synthetic"}
+    with pytest.raises(AcpTransportError, match="task-ready route is invalid"):
+        _write_continuation_guard(
+            extra_route_home,
+            base64.b64encode(json.dumps(
+                extra_route, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii"),
+            root_run_id="a" * 32,
+        )
+    assert not (extra_route_home / "continuation-guard.patch.json").exists()
+
+    bool_retry = json.loads(overlay.decode("utf-8"))
+    bool_retry[3]["config"]["providers"]["opencode-go-chat"][
+        "retryPolicy"]["maxRetries"] = False
+    with pytest.raises(AcpTransportError, match="task-ready route is invalid"):
+        _write_continuation_guard(
+            extra_route_home,
+            base64.b64encode(json.dumps(
+                bool_retry, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii"),
+            root_run_id="a" * 32,
+        )
+    assert not (extra_route_home / "continuation-guard.patch.json").exists()
+
+    home = tmp_path / "right-root"
+    home.mkdir(mode=0o700)
+    _prepare_private_product_home(home)
+    _write_continuation_guard(
+        home, base64.b64encode(overlay).decode("ascii"), root_run_id="a" * 32)
+    patch = json.loads((home / "continuation-guard.patch.json").read_text(encoding="utf-8"))
+    config = patch[4]["insert"][0]["config"]
+    assert config["rootRunId"] == "a" * 32
+    assert config["journalPath"] == str(home / f"continuation-tool-guard-{'a' * 32}.jsonl")
+    assert config["idempotencyKey"] == carrier["idempotency_key"]
+    assert config["sourceFactSha256"] == carrier["source_fact_sha256"]
+    assert "reservationId" not in config
+    assert "deadlineEpochMs" not in config
+
+
+@pytest.mark.parametrize(
+    ("runtime_seconds", "expected_deadline_at_ms"),
+    [(None, None), (37, 1_700_000_037_000)],
+    ids=("unset-runtime", "runtime-37s"),
+)
+def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
+    tmp_path: Path, monkeypatch, runtime_seconds: int | None,
+    expected_deadline_at_ms: int | None,
+) -> None:
+    from app.compat import acp_slot_transport, dsh_acp
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.product_turn_request import product_turn_execution_profile
+
+    monkeypatch.setattr(dsh_acp.time, "time", lambda: 1_700_000_000.0)
+    captured: list[dict[str, object]] = []
+    started = []
+
+    class CapturingSlotAcpProcess:
+        def __init__(self, command, cwd, environment, *, registry, guard_b64=None,
+                     deadline_at_ms=None, ordinary_execution=False,
+                     task_ready_execution=False, prepare_start=None,
+                     prelaunch_reject=None):
+            self.scope = {"root_run_id": environment["BYQ_ROOT_RUN_ID"]}
+            self.process = None
+            captured.append({
+                "command": command,
+                "cwd": cwd,
+                "environment": environment,
+                "registry": registry,
+                "guard_b64": guard_b64,
+                "deadline_at_ms": deadline_at_ms,
+                "ordinary_execution": ordinary_execution,
+                "task_ready_execution": task_ready_execution,
+                "prepare_start": prepare_start,
+                "prelaunch_reject": prelaunch_reject,
+            })
+
+        def start(self):
+            started.append(self)
+            return None
+
+    monkeypatch.setattr(acp_slot_transport, "SlotAcpProcess", CapturingSlotAcpProcess)
+    compatibility = DshAcpCompatibility()
+    compatibility.product_slots = object()
+    composition = tmp_path / "product-composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    options = default_agent_execution_options()
+    options["max_runtime_seconds"] = runtime_seconds
+    profile = product_turn_execution_profile(options, revision=6)
+    environment = _identity_environment(tmp_path / "wire.jsonl")
+    environment["OPENCODE_API_KEY"] = "synthetic-opencode-provider-key"
+    harness = compatibility.build_harness(
+        provider="opencode-go-chat",
+        model="deepseek-v4.1-flash",
+        composition=composition,
+        session_root=tmp_path / "sessions" / "ordinary-root",
+        runtime_command=(sys.executable,),
+        environment=environment,
+        product_execution_profile=profile,
+    )
+    # DshAcpCompatibility.start requires the fixed Product composition path;
+    # the transport itself is replaced above, so no external process is started.
+    harness.composition = Path("/opt/byq/profiles/byq-product.patch.yml")
+
+    compatibility.start(harness)
+
+    assert len(captured) == 1
+    assert started == [harness.process]
+    assert captured[0]["deadline_at_ms"] == expected_deadline_at_ms
+    assert captured[0]["ordinary_execution"] is True
+    assert captured[0]["task_ready_execution"] is False
+    assert captured[0]["prepare_start"] is None
+    assert captured[0]["prelaunch_reject"] is None
+    assert captured[0]["registry"] is compatibility.product_slots
+    assert harness.slot_scope == {"root_run_id": environment["BYQ_ROOT_RUN_ID"]}

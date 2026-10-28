@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 from http.client import IncompleteRead
 import io
 import json
 import os
 import re
+import subprocess
 import tempfile
 from pathlib import Path
 import sys
@@ -218,6 +220,67 @@ class AcpF6ReleaseFixtureTests(unittest.TestCase):
                            image_ids["signal-worker"]), inspect_container.call_args_list)
         self.assertIn(call([], {}, "byq-ci-stack-offline-fixture", "signal-sandbox",
                            image_ids["signal-sandbox"]), inspect_container.call_args_list)
+
+    def test_failed_f6_driver_only_projects_closed_evidence_fields(self) -> None:
+        digest = "a" * 64
+        record = {
+            "stage": "f6_evidence_saved", "phase": "primary", "status": "failed",
+            "sha256": digest, "failure_category": "background_root_events_missing",
+            "execution_observation": {"observer_stage": "background_one_exact_task_ready_read"},
+            "cookie": "private-cookie-canary", "body": "private-body-canary",
+        }
+        output = io.StringIO()
+        result = subprocess.CompletedProcess([], 1, json.dumps(record) + "\n", "private-stderr-canary")
+        with patch.object(self.fixture.subprocess, "run", return_value=result), \
+             patch("sys.stdout", output):
+            with self.assertRaises(self.fixture.FixtureFailure) as raised:
+                self.fixture._run(["f6-driver"], env={}, category="f6_product_worker_chain_failed")
+        self.assertEqual(raised.exception.category, "f6_product_worker_chain_failed")
+        self.assertTrue(output.getvalue().startswith("f6_driver_failure_diagnostic="))
+        projected = json.loads(output.getvalue().split("=", 1)[1])
+        self.assertEqual(projected["observer_stage"], "background_one_exact_task_ready_read")
+        self.assertEqual(projected["failure_category"], "background_root_events_missing")
+        self.assertEqual(projected["sha256"], digest)
+        self.assertNotIn("private-cookie-canary", output.getvalue())
+        self.assertNotIn("private-body-canary", output.getvalue())
+        self.assertNotIn("private-stderr-canary", output.getvalue())
+
+        record["failure_category"] = "secret=private-category-canary"
+        output = io.StringIO()
+        with patch.object(self.fixture.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 1, json.dumps(record) + "\n", "")), patch("sys.stdout", output):
+            with self.assertRaises(self.fixture.FixtureFailure):
+                self.fixture._run(["f6-driver"], env={}, category="f6_product_worker_chain_failed")
+        projected = json.loads(output.getvalue().split("=", 1)[1])
+        self.assertEqual(projected["failure_category"], "unknown")
+        self.assertEqual(projected["category_sha256"], hashlib.sha256(
+            b"secret=private-category-canary").hexdigest())
+        self.assertNotIn("private-category-canary", output.getvalue())
+
+        output = io.StringIO()
+        with patch.object(self.fixture.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 1, '{"stage":"f6_evidence_saved","phase":"primary","cookie":"private-cookie-canary"}\n', "")), \
+             patch("sys.stdout", output):
+            with self.assertRaises(self.fixture.FixtureFailure):
+                self.fixture._run(["f6-driver"], env={}, category="f6_product_worker_chain_failed")
+        self.assertEqual(output.getvalue().strip(),
+                         "f6_driver_failure_diagnostic=diagnostic_unavailable")
+
+    def test_failed_f6_browser_only_projects_numeric_source_location(self) -> None:
+        report = {"suites": [{"specs": [{"tests": [{"results": [{"errors": [{
+            "stack": "private-key-canary\n at /app/tests/e2e/f6-chain.spec.ts:181:23",
+            "message": "private-cookie-canary",
+        }]}]}]}]}], "stdout": "f6-chain.spec.ts:999:999 private-body-canary"}
+        output = io.StringIO()
+        with patch.object(self.fixture.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 1, json.dumps(report), "private-stderr-canary")), patch("sys.stdout", output):
+            with self.assertRaises(self.fixture.FixtureFailure) as raised:
+                self.fixture._run(["playwright"], env={}, category="f6_product_api_browser_failed")
+        self.assertEqual(raised.exception.category, "f6_product_api_browser_failed")
+        projected = json.loads(output.getvalue().split("=", 1)[1])
+        self.assertEqual(projected, {"status": "available", "locations": [[181, 23]], "truncated": False})
+        for secret in ("private-key-canary", "private-cookie-canary", "private-body-canary", "private-stderr-canary"):
+            self.assertNotIn(secret, output.getvalue())
 
     def test_prepared_f6_user_reuses_exact_product_slot_without_second_write(self) -> None:
         driver = ROOT / "scripts/evidence/f6-chain-verification.py"

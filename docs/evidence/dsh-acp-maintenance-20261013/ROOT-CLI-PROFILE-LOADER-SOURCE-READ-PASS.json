@@ -1,0 +1,77 @@
+{
+  "head": "b333b8de7607a418a92588ee5d26f33223614b41",
+  "independent_review": "Sol SOURCE+RAW PASS per read → Root PASS source-read scope only",
+  "local_preflight_failure": "ROOT-LOCAL-SOURCE-DIFF-PATH-FAIL-STOP.json preserved separately",
+  "observed_contract": {
+    "bundle": "bundle:1 imports app-boot;119 defaults installAnchor to CLI package.json;187/210-213 passes to loadProfile/createRuntimeResolution;271-275 boots PluginPackages with resolution",
+    "cached_cli_entry": "bin.js:213 literal ./profile-boot.js; official commit639ed015397290b3745d163aafe02ffee4aa3f84",
+    "facade": "profile-boot.js:1 literal ./profile-boot-BZ2ZjNWi.js",
+    "override_boundary": "resolvedProfile.installAnchor may override default; actual active override not established"
+  },
+  "pins": {
+    ".ci-artifacts/delegated-child-20261013/profile-boot-bundle-source-v1/CONTRACT.md": "b707febd8b5b8a8d56daff3489e3f69a58f32d74253fc1e3c06d00c0e3523ef2",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-bundle-source-v1/read-current-v1/executed-command.json": "5e91599b42316a783b9cea10bede47f7922bd3535ca909fe5fff203e3e253f67",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-bundle-source-v1/read-current-v1/profile-boot-bundle-source.json": "4233804d07833e931da51a62e28235b17a99f9bf3617d16ff755869c04014dec",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-bundle-source-v1/read-current-v1/result.json": "3c4da2c4c9173df18a70be436a1a318e7d663c7648e0dab710f41e02c05bd935",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-bundle-source-v1/read_profile_boot_bundle_source.py": "105b93627373cbd8f9a24cbc4ddf9ce00b56a43f9f00c76cb7971f740681dbdd",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-source-v1/CONTRACT.md": "f938a691a69076503c3d0cdb8ea7300b003599f3bc404cff50d9581b9ebebb18",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-source-v1/read-current-v1/executed-command.json": "c9426f22da5f38f3248824bfb0068a0ee4fd67cf493fe99a0d787019e774558e",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-source-v1/read-current-v1/profile-boot-source.json": "90e6c0643504533f2e4064adf0dcb05d52f47dad163cefa02e99758a391484d9",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-source-v1/read-current-v1/result.json": "7b60bc996cef0cdd7347106424f642ba71e49ee4d8dabe71bd4c1ef68340b6b9",
+    ".ci-artifacts/delegated-child-20261013/profile-boot-source-v1/read_profile_boot_source.py": "c283890c6fa5d98d69ba1f5fae19f67eb0abad29514b2f0ad9bdbbd19b75b80d"
+  },
+  "reads": [
+    {
+      "docker_operations": 3,
+      "elapsed_ms": 159,
+      "head": "b333b8de7607a418a92588ee5d26f33223614b41",
+      "helper_sha256": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "jobs": 0,
+      "model_requests": 0,
+      "module_executed": false,
+      "runner": {
+        "id": "b01cec2d1051f2fb7fd1acb91b1cb947155dd7f39024eb9c8fc3279ffbdae75e",
+        "image_id": "sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97",
+        "project": "byq-dev-e8b02b5475",
+        "running": "true",
+        "service": "acp-product-runner",
+        "started_at": "2026-10-13T03:16:39.881322967Z"
+      },
+      "schema": "byq-profile-boot-source-read.v1",
+      "source_bytes": 310,
+      "source_path": "/opt/dsh-runtime/apps/cli/lib/profile-boot.js",
+      "source_sha256": "c53d4e2caf21428e263b525e657dafaf63fd183f7ef016aabda56af7998b6c4f",
+      "status": "PASS_SOURCE_READ_ONLY"
+    },
+    {
+      "docker_operations": 3,
+      "elapsed_ms": 98,
+      "head": "b333b8de7607a418a92588ee5d26f33223614b41",
+      "helper_sha256": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "jobs": 0,
+      "model_requests": 0,
+      "module_executed": false,
+      "runner": {
+        "id": "b01cec2d1051f2fb7fd1acb91b1cb947155dd7f39024eb9c8fc3279ffbdae75e",
+        "image_id": "sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97",
+        "project": "byq-dev-e8b02b5475",
+        "running": "true",
+        "service": "acp-product-runner",
+        "started_at": "2026-10-13T03:16:39.881322967Z"
+      },
+      "schema": "byq-profile-boot-bundle-source-read.v1",
+      "source_bytes": 12593,
+      "source_path": "/opt/dsh-runtime/apps/cli/lib/profile-boot-BZ2ZjNWi.js",
+      "source_sha256": "c394b2aa2ce08a3b1fcc8c544257c7d689dd4d0b1cfaf8602687e65eeaba5aa1",
+      "status": "PASS_SOURCE_READ_ONLY"
+    }
+  ],
+  "schema": "byq-root-cli-profile-loader-source.v1",
+  "scope": "两次各3Docker/common20s；仅读已确认import引用的官方源码，不执行JS/模型/Job，不读会话正文。旧ESM anchor失败保留，不能解释为AgentLoop未安装。",
+  "status": "PASS_SOURCE_READ_ONLY",
+  "still_unknown": [
+    "app-boot实际解析实现",
+    "实际AgentLoop调用与持久化映射",
+    "individual native child close"
+  ]
+}

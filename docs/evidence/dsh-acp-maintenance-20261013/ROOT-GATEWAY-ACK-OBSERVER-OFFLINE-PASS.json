@@ -1,0 +1,38 @@
+{
+  "source_base_commit": "fa7b0e8a2e9a3b0786511e3712e2d976321f668a",
+  "scope": "Gateway Engineering observation only; unchanged Product API, ACK response, retry, authority and DSH privileges",
+  "source_sha256": {
+    "services/gateway/app/main.py": "2305731f84f166dcfad243a75eaa2db86dbad41154deb962efd3f7915dffefe3",
+    "services/gateway/tests/test_agent_lifecycle_delivery.py": "ee86040b25361ad3254393f640308a320b52f24010e1e1e72f65ab9808920ac7"
+  },
+  "independent_Sol": "PASS_SOURCE_AND_OFFLINE_FOUR_CASES",
+  "Root": "PASS_SOURCE_AND_OFFLINE_FOUR_CASES",
+  "offline": {
+    "dependency_image": "sha256:de93421f78bce2a6f56bbf3d4d1a03a20e2a0e951a7155e7dcc4344bff980833",
+    "network": "none",
+    "mounts": "read-only service and packages sibling mounts",
+    "test_nodes": [
+      "test_terminal_close_keeps_exact_same_boot_receipt_fence",
+      "test_mismatched_terminal_ack_emits_no_observation",
+      "test_terminal_ack_observation_logger_failure_does_not_change_return",
+      "test_terminal_ack_does_not_cross_an_adapter_boot_change"
+    ],
+    "exit_code": 0,
+    "tests_passed": 4,
+    "pytest_seconds": 0.10,
+    "outer_seconds": 3.087,
+    "limit_seconds": 120,
+    "source_hashes_unchanged": true,
+    "before_after_36_containers_equal": true,
+    "temporary_container_removed": true,
+    "real_http_model_job_calls": 0
+  },
+  "private_evidence": ".ci-artifacts/gateway-ack-observer-20261013/offline-fixed/",
+  "preserved_host_import_failures": ".ci-artifacts/gateway-ack-observer-20261013/host-import-fail/",
+  "host_import_failure_exit_codes": "UNKNOWN; not application test results",
+  "observation_limit": "Non-authoritative log after exact ACK response. Missing logs remain UNKNOWN; exact duplicate tuples are permitted; cleanup and current leases require separate evidence.",
+  "new_gateway_image": "NOT_RUN",
+  "real_ack_log": "NOT_RUN",
+  "real_model_browser_qualification": "NOT_RUN",
+  "production_deployment": "NOT_RUN"
+}

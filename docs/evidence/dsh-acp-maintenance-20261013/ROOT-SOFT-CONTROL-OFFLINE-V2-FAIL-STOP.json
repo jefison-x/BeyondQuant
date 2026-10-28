@@ -1,0 +1,48 @@
+{
+  "branches": "首例FAIL，其余NOT_RUN",
+  "cause": "FixtureLoaderProxy定义exec_module却缺create_module；stdlib module_from_spec拒绝，完整控制main首case在传输前STOP。已停止原批次，审计完整loader边界后修补。",
+  "head": "63be22f6466879fceaa178585665185578e3d76c",
+  "independent_review": "Sol RAW FAIL confirmed; Root FAIL original batch",
+  "new_jobs": 0,
+  "new_models": 0,
+  "pins": {
+    "plan.json": "778c754bdff7dcf6047ce2c3d7d97bfc259c025214d122a74e8dcacdf9ecac6d",
+    "run-v2/executed-command.json": "c02a737246d889ad9f080fbccd4bf1914acc6910fb159526925b470ffcd26d30",
+    "run-v2/run-result.json": "306d7a311a49f5bca5a9eccfa0b8db376fb1c4e5d40e37ec14cb8ecb37d7b807",
+    "run-v2/stderr.raw": "b6b7c2c5f81296bb17d82a970ca23d75db3e951e1877ac37c4e393644331af7e",
+    "test_soft_direct_control.py": "76bd7237c41fd51059665917636ed516b269e0369071f7acacfd186d73073ee3"
+  },
+  "preserved": "原V1 Cookie错误及V2 loader错误保留；后续独立V3结果不覆盖原失败",
+  "raw_result": {
+    "elapsed_ms": 87,
+    "elapsed_ns": 87744308,
+    "finished_utc": "2026-10-13T16:04:41.787545+00:00",
+    "post_source_sha256": {
+      "audit": "6b9e78d03f51d4a108c06b26080a5fed3faa1517711b18f08385ea10d3cf1f66",
+      "contract": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+      "controller": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+      "ordinary": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "plan": "778c754bdff7dcf6047ce2c3d7d97bfc259c025214d122a74e8dcacdf9ecac6d",
+      "test": "76bd7237c41fd51059665917636ed516b269e0369071f7acacfd186d73073ee3"
+    },
+    "pre_source_sha256": {
+      "audit": "6b9e78d03f51d4a108c06b26080a5fed3faa1517711b18f08385ea10d3cf1f66",
+      "contract": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+      "controller": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+      "ordinary": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "plan": "778c754bdff7dcf6047ce2c3d7d97bfc259c025214d122a74e8dcacdf9ecac6d",
+      "test": "76bd7237c41fd51059665917636ed516b269e0369071f7acacfd186d73073ee3"
+    },
+    "returncode": 1,
+    "source_unchanged": true,
+    "stderr_bytes": 1234,
+    "stderr_sha256": "b6b7c2c5f81296bb17d82a970ca23d75db3e951e1877ac37c4e393644331af7e",
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "timeout_exit": false
+  },
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-control-offline-v2",
+  "schema": "byq-root-soft-control-offline-stop.v1",
+  "status": "FAIL_STOP_LOADER_PROTOCOL",
+  "transport_calls": 0
+}

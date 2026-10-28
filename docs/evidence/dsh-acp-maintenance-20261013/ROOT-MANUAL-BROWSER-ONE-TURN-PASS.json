@@ -1,0 +1,68 @@
+{
+  "schema_version": "byq-maintenance-root-acceptance.v1",
+  "date": "2026-10-13",
+  "source_commit": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "isolated_mcp_image": "sha256:08dcc976ea506971cdafb6e860961690b3e90b56ceb6d184834c98184f80774c",
+  "result": "PASS_LIMITED_ONE_TURN",
+  "independent_sol_reviewer": "/root/manual_result_reviewer",
+  "reviewer_result": "PASS_LIMITED_ONE_TURN",
+  "root_result": "PASS_LIMITED_ONE_TURN",
+  "evidence_layer": "isolated real-model Gateway/Product API and real In-app Browser",
+  "session_id": "conversation_a0cb11a629dd46fe85888b7a9515be61",
+  "root_run_id": "a59e51ebd2894d20b601201691beda7e",
+  "trace_id": "byq-trace-394d76b4ab914ebcac3b79dcae84dc43",
+  "observed": {
+    "provider_calls_admitted_and_completed": 8,
+    "provider_http_status": 200,
+    "tool_ingress_settled": 6,
+    "new_business_jobs": 0,
+    "task_and_artifact_unchanged": true,
+    "job_counts_unchanged": true,
+    "root_status": "completed",
+    "authority_status": "closed",
+    "unknown_claim_count": 0,
+    "start_sequence": 2,
+    "answer_sequence": 9,
+    "terminal_sequence": 12,
+    "persisted_assistant_count": 1,
+    "refreshed_ui_answer_count": 1,
+    "ui_matches_persisted_sha256": "17788fe916d61bee2daac8add342ff3f051ac67031199362a32692e8a3514566",
+    "answer_delivery_state": "up_to_date",
+    "pending_events": 0,
+    "exhausted_events": 0,
+    "rejected_events": 0
+  },
+  "preserved_failure": {
+    "old_cookie_get": "403 session_invalid",
+    "wrong_public_replay_delta_assertion": "Gateway filters persisted assistant delta by workflow_sequence; observer assumption rejected; no new model request"
+  },
+  "automatic_observer": {
+    "V2": "FAIL_STOP",
+    "V3": "NOT_RUN"
+  },
+  "commands": [
+    "python3 .ci-artifacts/browser-combined-20261013/manual-real-20261013/gateway-postcheck.py",
+    "Cua: reload; exact marker locator count/visibility; innerText.trim SHA-256"
+  ],
+  "private_evidence_sha256": {
+    "gateway-postcheck.py": "493d34f56cd4a5a50323681ce18375f698bfe1fdb8a352feda52d11a9681a2ed",
+    "gateway-ui-durable-answer.json": "7d19a071b0c3ebc8208d135e04e37d55dd570b3512a14348d0efd75267c85818",
+    "browser-ui-after-refresh.json": "830d259d8490554ad234d12633bdfa6206403252c5dcfbd2156c43bcb6f01fb1",
+    "root-after.stdout": "45904df8d2262dd4e01b227a1e57ac5fc3934faa5becb217aa7be23a79fdd9f9",
+    "provider-scalar-after.json": "b16545b8e70f5ff375a818acebbcee67c82bce692516ac3d2cc9c34023cd0c54",
+    "facts-before.stdout": "7d92b3628da6f691b56985dae355990fdc9bfa7350208e0c6921852f3b136cc1",
+    "facts-after.stdout": "5b968219e3a06c4a0bc8270367cc58c67ca317d2140ff770252877d0aeaeb36f",
+    "jobs-before.stdout": "84ab3a392d2120260fdfbacb008ba302d0942746295d55478183d613bba24efd",
+    "jobs-after.stdout": "84ab3a392d2120260fdfbacb008ba302d0942746295d55478183d613bba24efd",
+    "manual-admission.json": "cdb6e9a2ac57511e62c4754d3d15a973a5159efe576f57730cffa634924426a1",
+    "gateway-postcheck-old-auth-failure.json": "2df07a4bdbfcbb04004d466c8af53778c9e5d647fd90a32ad4fec6ec8e696717",
+    "postcheck-auth-refresh.json": "2a8e4d238b9f42c1fd6afcac840ccdb6cbb9837f94cf33eb4166ea98e4891ad9"
+  },
+  "limits": [
+    "one manual real-model turn only",
+    "not continuation/delegation/F6/two-user/unknown-result/abnormal-process qualification",
+    "not exact-head CI, push, merge or production deployment acceptance"
+  ],
+  "password_changed": false,
+  "credentials_or_raw_api_bodies_published": false
+}

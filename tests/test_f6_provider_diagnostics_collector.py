@@ -173,6 +173,17 @@ class RuntimeCollection(unittest.TestCase):
             self.assertEqual(result["records"], [])
             self.assertNotIn("PRIVATE-", json.dumps(result))
 
+    def test_runtime_new_fail_closed_gate_reasons_are_accepted(self):
+        # The observer's closed gate_reason enum must include the fail-closed
+        # reasons the request gate can now emit; otherwise real rows degrade to
+        # "unknown" and lose diagnostic accuracy.
+        for reason in ("client_disconnected", "storage_failed", "queue_limit"):
+            value = self.runtime_row()
+            value["gate_reason"] = reason
+            result, _ = self.run_collector(encode([value]), runtime=True)
+            self.assertEqual(result["status"], "validated")
+            self.assertEqual(result["records"], [value])
+
     def test_runtime_bounded_rows_and_duplicate_fields_are_fail_closed(self):
         value = self.runtime_row()
         for payload in [encode([value] * 9), encode([value]).replace(

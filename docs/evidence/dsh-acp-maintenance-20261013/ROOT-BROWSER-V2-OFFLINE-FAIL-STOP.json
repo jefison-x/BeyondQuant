@@ -1,0 +1,23 @@
+{
+  "decision": "ROOT_FAIL_STOP",
+  "source_sha": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "batch": "browser-collector-v2-offline",
+  "command": "timeout 60s node source-v2-checkpoint/fake-playwright-contract.cjs",
+  "exit_code": 1,
+  "elapsed_ns": 101804017,
+  "first_case": "positive-delayed-acceptance-and-durable-answer",
+  "failure": "Fake required one durable replay event; navigation and refresh produced further durable reads. Repeated reads do not establish duplicate Product answers.",
+  "test_attempts": 1,
+  "retry": false,
+  "actual_browser": "NOT_RUN",
+  "model_requests": 0,
+  "new_jobs": 0,
+  "next_action": "SOURCE_CONTRACT_REASSESSMENT_ONLY_NO_TESTS",
+  "private_evidence": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/browser-combined-20261013/source-v2-offline-actual",
+  "raw_hashes": {
+    "rawstdout.bin": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "rawstderr.bin": "e634f2b2da855d7954fb787d1007a4cca27d52bb607a75f091b77b8052418ee0",
+    "pre-sha256.txt": "5a243ba160e6a18367d9aea836f3749ab6f8d3ce785d044f8947569b5382a4b1",
+    "post-sha256.txt": "5a243ba160e6a18367d9aea836f3749ab6f8d3ce785d044f8947569b5382a4b1"
+  }
+}

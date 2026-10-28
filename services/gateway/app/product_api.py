@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -559,6 +560,13 @@ def product_data_status(request: Request) -> dict[str, object]:
     }
 
 
+@router.get("/research/approval-requests/{request_id}")
+def product_approval_request_get(request_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}",
+                            headers=_trusted_agent_headers(request))
+
+
 @router.get("/research/{entity_type}/{entity_id}")
 def product_research_entity(entity_type: str, entity_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -629,6 +637,35 @@ def product_research_submission_watches(conversation_id: str, request: Request):
     return _backend_request('GET', f"/v1/product/research/submission-watches/{quote(conversation_id,safe='')}", headers=headers)
 
 
+def _human_execution_options_headers(request: Request) -> dict[str, str]:
+    """Execution options are ordinary user settings, never model-writable."""
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_human_identity_required", "durable user login required")
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ProductError(403, "product_cross_site_write_rejected", "cross-site configuration writes are rejected")
+    headers = _trusted_agent_headers(request)
+    headers["x-byq-product-human-actor"] = "true"
+    return headers
+
+
+@router.get("/agent/conversations/{conversation_id}/execution-options")
+def agent_conversation_execution_options(conversation_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET", f"/v1/product/conversations/{quote(conversation_id, safe='')}/execution-options",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.put("/agent/conversations/{conversation_id}/execution-options")
+def update_agent_conversation_execution_options(
+    conversation_id: str, payload: dict, request: Request,
+) -> dict[str, object]:
+    return _backend_request(
+        "PUT", f"/v1/product/conversations/{quote(conversation_id, safe='')}/execution-options",
+        payload=payload, headers=_human_execution_options_headers(request),
+    )
+
+
 def _continuation_permission_headers(request: Request) -> dict[str, str]:
     # A deployment token or model-provided owner is never human consent.
     if SESSION_COOKIE not in request.cookies:
@@ -638,6 +675,56 @@ def _continuation_permission_headers(request: Request) -> dict[str, str]:
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise ProductError(403, "product_forbidden", "不允许跨站许可操作。")
     return _trusted_agent_headers(request)
+
+
+def _product_approval_request_headers(request: Request) -> dict[str, str]:
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_authentication_required", "请先登录个人账号。")
+    if request.headers.get("x-byq-product-approval-confirmation") != "v1":
+        raise ProductError(403, "product_confirmation_required", "请明确确认审批申请或决定。")
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ProductError(403, "product_forbidden", "不允许跨站审批操作。")
+    return _trusted_agent_headers(request)
+
+
+@router.post("/research/approval-requests", status_code=201)
+def product_approval_request_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    headers = _product_approval_request_headers(request)
+    return _backend_request("POST", "/v1/product/research/approval-requests", payload, headers=headers)
+
+
+@router.get("/research/approval-requests")
+def product_approval_request_list(request: Request, status: str = "pending", limit: int = 50,
+                                  offset: int = 0) -> dict[str, object]:
+    _product_principal(request)
+    if status not in {"pending", "unresolved", "approved", "rejected", "all"}:
+        raise ProductError(422, "product_request_invalid", "审批记录筛选条件无效。")
+    if not 1 <= limit <= 100 or offset < 0:
+        raise ProductError(422, "product_request_invalid", "审批记录分页参数无效。")
+    return _backend_request("GET", "/v1/product/research/approval-requests",
+        headers=_trusted_agent_headers(request), params={"status": status, "limit": str(limit), "offset": str(offset)})
+
+
+@router.get("/research/approval-requests/by-key/{request_key}")
+def product_approval_request_by_key(request_key: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/product/research/approval-requests/by-key/{quote(request_key, safe='')}",
+                            headers=_trusted_agent_headers(request))
+
+
+@router.post("/research/approval-requests/{request_id}/reconcile")
+def product_approval_request_reconcile(request_id: str, request: Request) -> dict[str, object]:
+    headers = _product_approval_request_headers(request)
+    return _backend_request("POST", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}/reconcile",
+                            headers=headers)
+
+
+@router.post("/research/approval-requests/{request_id}/decision")
+def product_approval_request_decide(request_id: str, request: Request,
+                                    payload: dict[str, object]) -> dict[str, object]:
+    headers = _product_approval_request_headers(request)
+    return _backend_request("POST", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}/decision",
+                            payload, headers=headers)
 
 
 def _judgment_cancel_user_headers(request: Request) -> dict[str, str]:
@@ -1763,16 +1850,53 @@ def product_model_settings(request: Request) -> dict[str, object]:
     binding_body = _backend_request("GET", "/v1/users/model-bindings", headers=headers)
     audit_body = _backend_request("GET", "/v1/users/model-credential-audit?limit=50", headers=headers)
     credentials = credential_body.get("credentials", [])
+    if not isinstance(credentials, list) or any(not isinstance(item, dict) for item in credentials):
+        raise ProductError(502, "backend_invalid_response", "backend returned invalid credentials")
+    model_credentials = [item for item in credentials if item.get("purpose") == "model_api_key"]
+    search_records = [
+        item for item in credentials
+        if item.get("purpose") == "web_search_api_key" and item.get("status") != "revoked"
+    ]
+    if len(search_records) > 1:
+        raise ProductError(502, "backend_invalid_response", "backend returned ambiguous search credentials")
+    if search_records:
+        search_row = search_records[0]
+        if (search_row.get("scope") != "user" or search_row.get("provider") != "deepseek"
+                or search_row.get("status") not in {"active", "disabled"}
+                or type(search_row.get("version")) is not int or search_row["version"] < 1
+                or not isinstance(search_row.get("credential_id"), str)
+                or not re.fullmatch(r"cred_[0-9a-f]{32}", search_row["credential_id"])
+                or (search_row.get("masked") is not None
+                    and not isinstance(search_row.get("masked"), str))):
+            raise ProductError(502, "backend_invalid_response", "backend returned invalid search credentials")
+        search_credential = {
+            "configured": search_row["status"] == "active",
+            "status": search_row["status"],
+            "masked": search_row.get("masked"),
+            "version": search_row["version"],
+            "credential_id": search_row["credential_id"],
+            "provider": "deepseek",
+        }
+    else:
+        search_credential = {
+            "configured": False,
+            "status": "missing",
+            "masked": None,
+            "version": None,
+            "credential_id": None,
+            "provider": "deepseek",
+        }
     return {
         "provider": "deepseek",
         "providers": catalog.get("providers", []),
         "configured": any(
             isinstance(item, dict) and item.get("status") == "active"
-            for item in credentials if isinstance(credentials, list)
+            for item in model_credentials
         ),
+        "search_credential": search_credential,
         "models": catalog.get("models", []),
         "agents": catalog.get("agents", []),
-        "credential_items": credentials,
+        "credential_items": model_credentials,
         "profiles": profile_body.get("profiles", []),
         "bindings": binding_body.get("bindings", []),
         "audit": audit_body.get("events", []),
@@ -1782,11 +1906,19 @@ def product_model_settings(request: Request) -> dict[str, object]:
 
 
 @router.get("/settings/models/credentials/receipts")
-def product_model_credential_receipt(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+def product_model_credential_receipt(
+    request: Request,
+    operation: str,
+    request_id: str,
+    credential_id: str | None = None,
+    purpose: str = "model_api_key",
+) -> dict[str, object]:
     from urllib.parse import urlencode
     params = {"operation":operation,"request_id":request_id}
     if credential_id is not None:
         params["credential_id"] = credential_id
+    if purpose != "model_api_key":
+        params["purpose"] = purpose
     return _backend_request("GET","/v1/users/model-credentials/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
 
 

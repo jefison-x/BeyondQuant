@@ -1,0 +1,74 @@
+{
+  "schema": "byq-root-existing-parent-child-business-evidence.v1",
+  "status": "PASS_BYQ_RELATION_AND_TOOL_LOG_ONLY",
+  "root_decision": "PASS_LIMITED_EVIDENCE",
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "independent_review": "Sol RAW PASS, directly audited Backend raw parent/child and ingress/audit rows; Root PASS in stated scope.",
+  "tool_log": {
+    "actual_tool_names": [
+      "byq_agent_run_start",
+      "byq_delegate_market_research",
+      "byq_agent_run_start",
+      "byq_agent_authorize",
+      "byq_market_session_context",
+      "byq_agent_audit"
+    ],
+    "adapter_identity_unchanged": true,
+    "call_ids_parameters_sdk_run_id": "NOT_PROVEN_BY_THIS_LOG",
+    "docker_operations": 3,
+    "elapsed_ms": 167,
+    "exact_order_matches": true,
+    "expected_tool_names": [
+      "byq_agent_run_start",
+      "byq_delegate_market_research",
+      "byq_agent_run_start",
+      "byq_agent_authorize",
+      "byq_market_session_context",
+      "byq_agent_audit"
+    ],
+    "guard_sha256": "544971b2b4c7dc1599b1b41eb65e612128ce67ac5a98693617e81753c44c7d93",
+    "new_jobs": 0,
+    "new_models": 0,
+    "schema": "byq-existing-tool-scope-read.v1",
+    "status": "RAW_PASS_PENDING_REVIEW",
+    "tool_call_count": 6,
+    "uid": "NOT_MEASURED"
+  },
+  "command_receipts": [
+    {
+      "label": "adapter-after",
+      "returncode": 0,
+      "stdout_sha256": "e009bd1f8e7b4eb3a6c5e7f4c01f40df9035b1cfc4ce674569214f380cf264a6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "adapter-before",
+      "returncode": 0,
+      "stdout_sha256": "e009bd1f8e7b4eb3a6c5e7f4c01f40df9035b1cfc4ce674569214f380cf264a6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "product-tool-guard",
+      "returncode": 0,
+      "stdout_sha256": "9414b880322c0541f5ebd5d8612cf8ceab8f208d5dfc0bdfa909b9b72fc08c49",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "backend_raw_sha256": "223b98c3975aa489adf93245e640b424a93742d9c2dce44cd980813be559e6ad",
+  "registration_count": 2,
+  "parent_agent_run_id": "agent_run_afacb49d3aa640c3a394bf1042b7f9fa",
+  "child_agent_run_id": "agent_run_c17319a82d594133ae8fd328f0d7acdd",
+  "business_parent_relation": "child parent_run_id and run_parent equal the Root AgentRun id",
+  "native_parent_registration_metadata": "child native_parent_session_id equals registered Root native id; this is registration metadata, not native file lineage",
+  "common_identity_fields": "owner/workspace/session/trace/boot/generation/root consistent; foreign mismatch=0",
+  "registration_status": "Both bound/completed/closed",
+  "child_ingress": "3 consecutive settled entries: authorize, market context, audit",
+  "audits": "4: Root binding, child binding, authorized, completed; actor and scope consistent",
+  "sdk_raw_run_id": "UNKNOWN",
+  "native_file_parent_lineage": "UNKNOWN",
+  "individual_native_child_closed": "UNKNOWN",
+  "original_child_resume": "NOT_CLAIMED",
+  "call_ids_and_parameters": "Not proven by tool count log; ingress has recorded request ids/argument hashes, not original SDK assistant call/result proof",
+  "full_product_qualification": "NOT_READY; original 240s collector FAIL and browser wait FAIL remain.",
+  "local_summary_failure": "Preserved separately, no application change or repeated test."
+}

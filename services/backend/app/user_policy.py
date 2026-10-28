@@ -572,14 +572,24 @@ class UserPolicyStore(PgStoreMixin):
         result = dict(authorization)
         if result.get("authorized") is False and result.get("decision") != "approval_required":
             return result
-        settings = self.get(owner)
+        return self._apply_authorization_policy(authorization, self.get(owner), self.list_rules(owner))
+
+    @staticmethod
+    def _apply_authorization_policy(
+        authorization: dict[str, object],
+        settings: dict[str, object],
+        rules: list[dict[str, object]],
+    ) -> dict[str, object]:
+        result = dict(authorization)
+        if result.get("authorized") is False and result.get("decision") != "approval_required":
+            return result
         if settings["paused"] or not settings["automation_enabled"]:
             return result
         action = str(result.get("action", ""))
         compatible_actions = {action, _LEGACY_ACTION_ALIAS.get(action, action)}
         role_id = str(result.get("role_id", ""))
         matching = [
-            rule for rule in self.list_rules(owner)
+            rule for rule in rules
             if rule["enabled"]
             and rule["action"] in compatible_actions
             and rule["agent_id"] in {"*", role_id}
@@ -606,6 +616,53 @@ class UserPolicyStore(PgStoreMixin):
                 "policy_rule_id": matching[0]["rule_id"] if matching else None,
             }
         return result
+
+    def evaluate_authorization_in_transaction(
+        self,
+        connection,
+        owner: object,
+        authorization: dict[str, object],
+    ) -> tuple[dict[str, object], str]:
+        """Evaluate and fingerprint owner policy under its mutation lock.
+
+        The owner advisory lock is shared with ``_begin_command`` so a missing
+        settings row cannot race with a concurrent first policy write.
+        """
+        owner = _principal(owner, field="owner_principal")
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:owner,0))",
+                {"owner": "user-policy:" + owner})
+        settings = {
+            "owner_principal": owner,
+            "automation_enabled": False,
+            "paused": False,
+            "default_decision_mode": "manual",
+            "max_auto_executions_per_hour": 20,
+            "max_auto_failures_per_hour": 3,
+        }
+        stored_settings = fetch_one(connection,
+            "SELECT * FROM user_agent_policy WHERE owner_principal=:owner FOR SHARE",
+            {"owner": owner})
+        if stored_settings is not None:
+            settings.update(stored_settings)
+            settings["automation_enabled"] = bool(settings["automation_enabled"])
+            settings["paused"] = bool(settings["paused"])
+        rules = [self._rule_row(row) for row in execute(connection, """SELECT *
+            FROM user_agent_policy_rules WHERE owner_principal=:owner
+            ORDER BY priority ASC,created_at ASC,rule_id ASC FOR SHARE""", {"owner": owner})]
+        effective = self._apply_authorization_policy(authorization, settings, rules)
+        decision_snapshot = {
+            "schema_version": "user-agent-policy-decision-snapshot.v1",
+            "owner_principal": owner,
+            "settings": {key: settings[key] for key in (
+                "automation_enabled", "paused", "default_decision_mode",
+                "max_auto_executions_per_hour", "max_auto_failures_per_hour")},
+            "rules": [{key: rule[key] for key in (
+                "rule_id", "action", "agent_id", "decision_mode", "risk_level",
+                "priority", "enabled", "version")} for rule in rules],
+        }
+        encoded = json.dumps(decision_snapshot, ensure_ascii=True, allow_nan=False,
+                             sort_keys=True, separators=(",", ":")).encode("ascii")
+        return effective, hashlib.sha256(encoded).hexdigest()
 
     def list_audit(self, owner: object, *, limit: int = 100) -> list[dict[str, object]]:
         owner = _principal(owner, field="owner_principal")

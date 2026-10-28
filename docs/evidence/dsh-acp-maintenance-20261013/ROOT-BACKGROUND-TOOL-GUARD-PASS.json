@@ -1,0 +1,66 @@
+{
+  "verdict": "PASS_SOFTWARE_SCOPED",
+  "slice": "2B2A unactivated task-ready-options restricted tool guard and streaming journal reader",
+  "source_base": "3b3a0159b70e7c7c4b6c8b0d4a639123f37247a8",
+  "source_sha256sums_sha256": "627a12f4f3224efe68989135b82ac21381770b57624106c2e5e39863a96b0bc2",
+  "source_files_in_frozen_import_closure": 10,
+  "qualified_source_hashes": {
+    "plugins/dsh-byq/runtime/byq-continuation-budget.js": "3624c07942daaa3ca8a0c0b3e5ba6f88ec6fbc716cbd8c66c2eb28e5a5bed753",
+    "plugins/dsh-byq/runtime/byq-continuation-budget.test.js": "0b594e95da6b00270a65547402ed6707a3f0f5efbd098e12b63659251625b207",
+    "services/runtime-adapter/app/continuation_budget.py": "9d5750541e240d189ee2e928f51f61cd2fd33f01a7fe3ccf7d6bdb96a0abc698",
+    "services/runtime-adapter/tests/test_task_ready_v2_tool_guard.py": "483ccf0c6a3e0a9bbd5bb7b04224ac0666b95cea4de7773f200a1406229ef542"
+  },
+  "scope": [
+    "Distinct closed task-ready-options mode validates exact optional v2 profile, canonical hash, route, tools, limits, root, stable event and fact identities",
+    "Exact five existing F6 tools and per-Agent catalog restrictions remain; null tool-call limit has no old16 or synthetic180-second guard; explicit tool-call count, cancellation and storage errors deny before dispatch",
+    "Existing native append/fsync precedes dispatch; new Python reader validates ordered closed identity-bound rows without cumulative128KiB or18-row quota",
+    "Per-row128KiB serialization/corruption bound retained; old F6 and ordinary modes remain separate",
+    "Actual local Node apply with fake DSH hooks creates fsynced temporary journal accepted by Python reader; payload integrity only, not SQL authority or settlement"
+  ],
+  "tests": {
+    "selected_pass": 15,
+    "selected_fail": 0,
+    "selected_not_run": 0,
+    "new_cases": 8,
+    "regressions": 7,
+    "fresh_pass": 14,
+    "reused_pass": 1,
+    "reused_case": "frozen-v2/node_1, original plan and complete RAW retained; unchanged source/image/command/context",
+    "collection": "7 accurate Python IDs reused as collection only; contributes zero test passes",
+    "fresh_plan_sha256": "af8afa34ebfaa496b7dc1652595d55a2fe4b481211372e55ef29a8ce70e0b9d6",
+    "observation_contract_sha256": "198c99e17f4ad139b1ef29637aad11fe5b23580dcf8fa9abc29e7261f50e4a8c",
+    "fresh_start_utc": "2026-10-14T15:35:07.846276630Z",
+    "fresh_finish_utc": "2026-10-14T15:37:11.430205588Z",
+    "fresh_elapsed_seconds": 123.583928958,
+    "fresh_limit_seconds": 300,
+    "python_stdout_sha256": "229e4533d1597c28d56b8b7c42e076151a9d019effe66ced40bfb2ba3347ae36",
+    "image": "sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97",
+    "environment": "Keyless offline image; readonly exact source closure; tmpfs temporary files; fake DSH hooks with actual Node filesystem and Python reader",
+    "product_model_calls": 0,
+    "jobs": 0
+  },
+  "review": {
+    "tester": "PASS_SOFTWARE_SCOPED; frozen-v3/INDEPENDENT-TESTER.json",
+    "tester_receipt_sha256": "1a40acbf9d7fee83d52e36f69aca2dc5e96395cefa9d9f5d49a0de975cf108ac",
+    "sol": "PASS_SOFTWARE_SCOPED; frozen-v3/SOL-FINAL.json",
+    "root": "PASS_SOFTWARE_SCOPED after direct per-step native RAW inspection and complete independent receipts"
+  },
+  "preserved_history": {
+    "frozen_v1": "NOT_EXECUTED_SOURCE_HOLD: JS end-anchor allowed trailingLF identity; new-mode exact lengths corrected before tests",
+    "frozen_v2": "FAIL_STOP_OBSERVER_CONTRACT: actual1PASS14NOT_RUN; Root incorrectly expected17 TAP tests/16 skips from static declarations",
+    "observer_cause": "Pinned native Node reports only selected tests; prior same-image RAW already corroborated this. Root, Tester and Sol missed the reporter contract before first execution",
+    "observer_resolution": "Stopped batch and audited complete existing reporter/count/exit/stream/time/hash/selector contract; removed unfrozen inline counter; native RAW read directly at each command boundary. No new parser or Agent framework",
+    "old_raw_and_verdicts": "Preserved; successful fresh batch does not rewrite prior HOLD/FAIL"
+  },
+  "not_run": [
+    "Native DSH process and Product Runner/Runtime transport activation",
+    "Backend/Gateway/MCP automatic no-grant dispatch, actual Job/Artifact authority and revocation",
+    "Explicit runtime enforcement, journal path provenance and terminal ACK/cleanup integration",
+    "Real model, Job, database, browser and production qualification",
+    "Hosted CI, push/PR, merge, release and deployment"
+  ],
+  "remaining_compatibility_gap": "Python positive integers/revisions above Number.MAX_SAFE_INTEGER fail closed in JS; align supported representation before activation. Default null imposes no execution quota",
+  "private_evidence": ".ci-artifacts/execution-options-20261014/background-guard-2b2/",
+  "retained_environment_and_browser": "Preserved for interactive testing; no identity/password/volume reset",
+  "overall": "NOT_READY; permits next narrowly scoped transport integration, not Product Phase advancement or deployment"
+}

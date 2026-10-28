@@ -1,0 +1,92 @@
+{
+  "source_head": "1a82bcc49060a59abec41b6c9f6e7c52a7be544e",
+  "Root": "PASS",
+  "independent_Sol": "PASS: candidate_source_reviewer",
+  "scope": "local synthetic MCP contracts and authoritative ACP profile only",
+  "actual_commands": [
+    {
+      "name": "build",
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/services/mcp",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 0.994,
+      "stdout_sha256": "2f5d2797f38038198611eb83bf7d712e41c8496ca07d15fe553a0311270d6da8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "state-notes",
+      "argv": [
+        "node",
+        "dist/tests/state-expression-v2-test.js"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/services/mcp",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 3.958,
+      "stdout_sha256": "7d6abb1aceab831fc9113a100c082023b6cb742368eb5234ebb1460f6b783dc0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "profile-architecture",
+      "argv": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests/architecture/test_acp_authoritative_version.py"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 0.74,
+      "stdout_sha256": "caf56757b18b52a7c892a24609a6f4ec6e8900c554da434531b573fc2a87250b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "profile-resolver",
+      "argv": [
+        "python3",
+        "scripts/dsh/authoritative_version.py"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 0.093,
+      "stdout_sha256": "f910a4df5e099f62614d0c624a207136b66bd0b70b9fb12fee4d6960662f10c8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "dev-check",
+      "argv": [
+        "python3",
+        "scripts/ci/dev-check.py"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 0.277,
+      "stdout_sha256": "ddb345b794b30e56d2034143a05c733f09ae79765fca33caeb1d67f922ce9ba3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "seconds": 6.063,
+  "normal_MCP_tools_calls": 48,
+  "normal_primary": "none",
+  "normal_cleanup_errors": [],
+  "architecture_tests_passed": 7,
+  "reused": "Prior first batch1-6 scoped PASS, including unchanged collector fault path; no exact revised-head fault execution claim",
+  "prior_FAIL": "Original state-notes fixture reference 404 preserved; repaired run PASS",
+  "Product_real_model": "NOT_RUN for combined candidate",
+  "browser": "NOT_RUN for combined candidate; earlier result browser evidence separately retained",
+  "remote_CI": "NOT_RUN / REQUIRED",
+  "Full": "NOT_RUN / release gate",
+  "separate_signed_cleanup": "FAIL_STOP at offline substitute first case, no real read",
+  "overall": "NOT_READY"
+}

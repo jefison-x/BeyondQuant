@@ -1,0 +1,51 @@
+{
+  "schema_version": "byq-root-public-fetch-software-pass.v1",
+  "status": "ROOT_PASS_SCOPED_OFFLINE_PUBLIC_FETCH",
+  "utc": "2026-10-15T02:37:30.984713+00:00",
+  "source_base_head": "b02e580a009277b2e3da92f0f9b5628c0e8d2b49",
+  "source_diff_sha256": "07d30c31bcb7bf8602275f5aa62441433299244cb69a8a59c4a8fbefdc170ca9",
+  "source_files": {
+    "config/dsh/acp/authoritative.json": "c3811244d63a6e4545785e8e2f5bd2e8b525a085ac8afb6b7854dd6fdae07e7a",
+    "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json": "b78698a8c83bf5f14d8b9b45eeb210e613ed15d91ced850371795ca64351afd8",
+    "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml": "c111afa30333fb73fea223c01366825545140a15deb455d72a75958dba65eb36",
+    "plugins/dsh-byq/skills/byq-market-researcher/SKILL.md": "417e4a4040b7845181cd6339a914fc87a3287b16e7adae5da09a626204b76d74",
+    "services/acp_product_runner/tests/test_server.py": "4817e2b2b2e85565bd968dc7a5ab39448675c06c76448cda99e15214874f9f97",
+    "services/runtime-adapter/app/normalization.py": "5a7d18fbaceb45f9f48c4b52e5c87d4ef7ec14b8597fbdebd91ca464fd8a040e",
+    "services/runtime-adapter/tests/test_normalization.py": "45f762606798a01b446002685c97e6f939c6daa986c5196e73de5d983f0f3ab6",
+    "tests/architecture/test_acp_authoritative_version.py": "8b509e905a2189cce859a7f67571c7c82c67201623692f1eeac4265de2577ca0",
+    "tests/architecture/test_architecture.py": "3f009a1a50cad55cd947360d0b100a129f44c2d25c31eb3908b5d1215c427c6e"
+  },
+  "evidence_layer": "Native fixed official SDK offline negative checks and selected repository tests; no external HTTP",
+  "result": {
+    "native_assertions_passed": 12,
+    "pytest_passed": 5,
+    "pytest_failed": 0,
+    "pytest_skipped": 0,
+    "batch_elapsed_seconds": 139.920139,
+    "observation_seconds": 450,
+    "temporary_container_cleanup": "4 exact captured verified IDs removed; no network or volume deletion"
+  },
+  "change": "Enable official public HTTP(S) fetch in ordinary Product ACP and market researcher; preserve native SDK defaults. Emit only curated activity, not raw page tool body. Judgment and continuation-specific overlays remain disabled. No custom fetcher or SDK modification.",
+  "covers": [
+    "local/private literal URL, scheme, userinfo and length rejection",
+    "empty proxy environment and route selection; no real proxy requests",
+    "Runner child strips all8 proxy variables",
+    "normalized activity and no raw page-result leakage to WorkflowTrace",
+    "authoritative hashes and current-versus-historical profile boundaries"
+  ],
+  "not_run": [
+    "real page-body retrieval and answer quality",
+    "active proxy, redirect, DNS rebinding, IPv6/NAT64 end-to-end SSRF",
+    "candidate build and retained-service update",
+    "Product browser, model, business Job, DB mutation and production"
+  ],
+  "receipts": {
+    "FETCH-SLICE-PLAN-v3.json": "d90937843555ba1068d11405817bf8274f23517841a41588ad3e153573ad77ad",
+    "fetch-offline-v3/INDEPENDENT-RESULT.json": "7aed788f4dd7d3d510ef1390674fac6d2674cfb343aec03b970ed7fd7917c50d",
+    "fetch-offline-v3/SOL-FINAL.json": "2a0d5182429a46196194d74f9d30d2c9d8fea057d64555550544a13abb1b3afc",
+    "fetch-offline-v3/ROOT-SOURCE-CHECK.json": "c031a65fbff0fe4f2204a1f6799229f118800f265b35e749bc7c4ff73e4727bc"
+  },
+  "previous_plan_holds_preserved": true,
+  "production": "NOT_TOUCHED",
+  "product_phase_advanced": false
+}

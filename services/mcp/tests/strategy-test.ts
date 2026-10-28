@@ -23,6 +23,9 @@ for (const reason of ["domain_validation_failed", "correction_failed"]) {
     assert.equal(value.admission.stop, reason === "correction_failed");
     assert.equal(value.admission.validation, undefined);
     assert.equal(value.validation?.field, field === "strategy.script" ? field : undefined);
+    assert.equal(value.validation?.repair_limit, undefined);
+    assert.equal(value.validation?.next_action,
+      reason === "correction_failed" && field === "strategy.script" ? "stop_correction_failed" : undefined);
     assert.doesNotMatch(response.content[0].text, /private-source/);
   }
 }
@@ -135,7 +138,7 @@ const invalid = await fetchByqStrategyValidate(
 assert.equal(invalid.isError, true);
 assert.match(invalid.content[0].text, /strategy_request_invalid/);
 assert.match(invalid.content[0].text, /CustomStrategy must implement generate_signals/);
-assert.match(invalid.content[0].text, /"repair_limit":1/);
+assert.doesNotMatch(invalid.content[0].text, /repair_limit|correct_once|at most one repair/i);
 
 const sensitiveInvalid = await fetchByqStrategyValidate(
   "http://backend:8000",

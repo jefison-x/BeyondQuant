@@ -55,8 +55,6 @@ class OptimizationValidationError(ValueError):
             "schema_version": "optimization-validation-problem.v1",
             "field": self.field,
             "code": self.code,
-            "repair_limit": 1,
-            "next_action": "correct_once",
         }
 
 

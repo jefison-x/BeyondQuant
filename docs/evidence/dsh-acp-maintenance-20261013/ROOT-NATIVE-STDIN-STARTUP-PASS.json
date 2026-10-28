@@ -1,0 +1,86 @@
+{
+  "status": "ROOT_PASS_SCOPED_NATIVE_STARTUP_ONLY",
+  "maintenance_only": true,
+  "source_head_at_execution": "2a4ee363c3bfd76a56cad66f977337a09e7198a8",
+  "image_source_commit": "b551116201f8f45df8b19ead8b19798f9601c22a",
+  "image_id": "sha256:886155b42a866307a34e903eb01dd822bff5ac0f5939427d44427caca626b640",
+  "local": {
+    "status": "PASS_LOCAL_SYNTHETIC_ONLY",
+    "plan_sha256": "64880a63f0ca554716ef1744a43262da9590f1bb83966565b087aaab52b0ae4e",
+    "test_chunks": [
+      "926f60",
+      "e48e4f"
+    ],
+    "stdin_children": [
+      0,
+      7,
+      124
+    ],
+    "synthetic_manifest_payloads": 5,
+    "tester_sha256": "7c085e7fd5546cbb95b4f0ed391398ffc74a40e377dd94582a71649c75280aae"
+  },
+  "native": {
+    "status": "PASS_LOCAL_NATIVE_STARTUP_ONLY",
+    "command": "env -i PATH=/usr/bin:/bin /home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/execution-options-20261014/background-native-startup-2b2c/native-probe-stdin-20261015/capture.sh /home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/execution-options-20261014/background-native-startup-2b2c/native-probe-stdin-20261015/native-attempt-stdin-v3-20261015-2a4ee363",
+    "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+    "plan_sha256": "9ad7755826eb246677d128ae0cea9d396684fcb1187cef41552828ceb26ec397",
+    "run_probe_sha256": "129e7967b48bf1ed0f3dbadb2b7af804795c9b38b430d768cc19ef2e6dd4a912",
+    "client_sha256": "62da52865b03aad00498098b33794afbfbe2fa419901f47a0bd602e5af45b2f1",
+    "tool_chunks": [
+      "92a5aa",
+      "30e3e7",
+      "bb10b0"
+    ],
+    "tool_raw_sha256": "b8565c74acc02e8335834b415b50d918800f8b43b073ab6d87a93ab382c9b380",
+    "outer_rc": 0,
+    "steps_pass": 17,
+    "start_utc": "2026-10-14T19:00:53.639299324Z",
+    "finish_utc": "2026-10-14T19:01:11.836721901Z",
+    "elapsed_seconds": 18.197422577,
+    "observer_seconds": 120,
+    "model_calls": 0,
+    "jobs": 0,
+    "database_calls": 0,
+    "prompts": 0,
+    "API_evidence": "DshAcpCompatibility initialize/new/route-select/close; no ACP wire log",
+    "signed_exit_cleanup": "proven",
+    "guard_status": "nonterminal_observed",
+    "backend_ack": false,
+    "registry_observation": "held1/awaiting_backend_ack1 before Adapter cleanup; no durable post-shutdown ownership claim",
+    "manifest_payloads_verified": 5,
+    "tester_sha256": "08da4a4749d24f3ef6eabc22aa054dd6f8c4115ff9688b7f0accb67fc5d94c95",
+    "sol_sha256": "909b3f78ca86a799cb85eff0756ab131e1a3ef47d3a6ebe04d28b34b426748ed"
+  },
+  "failures_preserved": [
+    {
+      "status": "FAIL",
+      "record": "ROOT-NATIVE-TEST-ENTRY-FAIL-STOP.json",
+      "cause": "Original cross-UID bind script unreadable; no client/native execution then."
+    },
+    {
+      "status": "FAIL",
+      "chunk": "a0ca6e",
+      "cause": "Root auxiliary readback guessed probe/evidence, also wrong in plan; actual output declares probe/receipts.",
+      "actual_envelope_sha256": "6e030e6526622a9ef9e72d04cac6e8fd40458e02a76db7004e0ee61c62bed856",
+      "correction": "Parse stdout.evidence, validate contained real path and manifest; frozen evidence retained; no successful test replay."
+    }
+  ],
+  "metadata": "TOOL-RAW wall time differs from wrapper UTC; elapsed acceptance uses wrapper UTC. Cleanup13/14 stdout Docker --time deprecation notices preserved.",
+  "resources": {
+    "read_only_inventory_chunk": "702d75",
+    "new_pair_network": "removed by scoped controller after evidence verification",
+    "new_scratch": "retained",
+    "old_failed_scope": "retained unchanged",
+    "retained_test_environment": "byq-dev-e8b02b5475;14healthy",
+    "browser": "http://localhost:32790/user/research; kept open"
+  },
+  "NOT_RUN": [
+    "provider/model inference",
+    "Backend eligibility/revalidation/terminal ACK",
+    "full automatic business continuation",
+    "Product browser current-source flows",
+    "production changes",
+    "remote CI/push/merge/deployment"
+  ],
+  "next": "Continue minimum remaining ADR-0111 implementation slices; this receipt does not qualify complete maintenance or advance Product Phase."
+}

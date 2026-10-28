@@ -1,0 +1,55 @@
+{
+  "Root": "PASS",
+  "Sol": "PASS soft_real_reviewer",
+  "scope": "single existing Product runner signed cleanup receipt read only",
+  "container_id": "2a40ad9105fb126256b84a6e3d7419707a365e8373f772099bb1a88896df0bed",
+  "root_run_id": "9ff6d2061e32456b8797f6292c8d1f0c",
+  "scope_digest": "10078bd85167e12ff87ae0ed026c25bd7412e727415087fdec5473fc7adb31d6",
+  "receipt_sha256": "2b8a0b1412ae417fae98e486de0ea04d75d7c3948402972c970f1227d228f608",
+  "stdout_sha256": "4ee8dfc8ddac4120c18dbe1718f29dc28a9102486445f3f818e04dc888b3418a",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "command_sha256": "1542c51f10b6b58132e0e42d1b566ee8aac61ccbda6abe739fe95b2f478edb8b",
+  "result": {
+    "exit_code": 0,
+    "os_error": null,
+    "schema": "byq-cleanup-receipt-read-collector.v1",
+    "stderr_bytes": 0,
+    "stdout_bytes": 1046,
+    "timed_out": false
+  },
+  "cleanup": "proven",
+  "runner_exit_fields": {
+    "code": 0,
+    "reason": "cancelled",
+    "signal": null
+  },
+  "verifiers": {
+    "cleanup_proven": true,
+    "exit_fields_valid": true,
+    "file_bounded": true,
+    "key_set_valid": true,
+    "mac_valid": true,
+    "runner_identity_valid": true,
+    "schema_valid": true,
+    "scope_valid": true,
+    "strict_json": true,
+    "types_valid": true
+  },
+  "business_root": "Separate previously verified Backend completed/ACK10/authorityclosed/unknown0; runner cleanup reason cancelled does not rewrite business status",
+  "NOT_PROVEN": [
+    "Native ACP close ACK not independently granted here",
+    "No original child Agent resume claim"
+  ],
+  "calls": {
+    "docker_exec": 1,
+    "business_model": 0,
+    "Jobs": 0,
+    "production_operations": 0
+  },
+  "prior_V4_FAIL": "Preserved",
+  "source_sha256": {
+    "cleanup_receipt_child.py": "2aca17fa12636c25b64de5f1b792d44518a871f435f8b14d6d94f95a8ff5f4d5",
+    "cleanup_receipt_collector.py": "6f20f0f7089947c08816177add031e266bab72289b398039ccfe46c94df4b582",
+    "test_cleanup_receipt.py": "bf2fb7a2efe435c249fd5f63eca6d75e669d71e42e24ac7a6b6997875c1f12a4"
+  }
+}

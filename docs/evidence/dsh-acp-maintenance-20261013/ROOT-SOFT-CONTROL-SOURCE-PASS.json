@@ -1,0 +1,19 @@
+{
+  "behavior": "One evidence-directory argument, existing _request/_remaining/_binding_and_journal helpers, no prompt submission; preGET<=6/cancelPOST<=1/settlementGET<=6/bindingRead<=1",
+  "budget_limits": "Source declares120s; actual enforcement through complete controller not yet executed",
+  "contract_sha256": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+  "controller_sha256": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+  "earlier_holds": [
+    "Draft rejected normal soft cancelled notice as conflict and missed later-root/source/sequence proof; fixed before test",
+    "CWD accepted session-only instead of official root/session leaves; lacked body hash and applied fresh lifecycle schema to baseline history; fixed before test"
+  ],
+  "full_controller_test": "FAIL_FIXTURE_SETUP_BEFORE_MAIN; corrected fixture prepared only",
+  "independent_review": "Sol SOURCE PASS; Root PASS source scope only",
+  "privileges": "No application source change, new client/server/scheduler/agent harness, or Product DSH privilege change",
+  "real_soft_cancel": "NOT_RUN",
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-control-prepared-v2",
+  "schema": "byq-root-soft-control-source.v1",
+  "source_head": "63be22f6466879fceaa178585665185578e3d76c",
+  "status": "PASS_SOURCE_ONLY",
+  "timing_fix": "All command/source/admission prepared before 120s clock; after browser send invoke one frozen short command"
+}

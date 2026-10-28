@@ -97,6 +97,13 @@ MODEL_CATALOG: tuple[dict[str, object], ...] = (
     {
         "provider": "deepseek",
         "runtime_provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "display_name": "DeepSeek V4.1 Flash (Official)",
+        "reasoning_supported": False,
+    },
+    {
+        "provider": "deepseek",
+        "runtime_provider": "deepseek-official",
         "model": "deepseek-v4-flash",
         "display_name": "DeepSeek V4 Flash",
         "reasoning_supported": False,
@@ -266,7 +273,7 @@ _PRINCIPAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 _ID = re.compile(r"^(?:cred|profile)_[0-9a-f]{32}$")
 _KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _AGENT_IDS = {"byq-product"}
-_PURPOSES = {"model_api_key", "tushare_token"}
+_PURPOSES = {"model_api_key", "web_search_api_key", "tushare_token"}
 _SCOPES = {"user", "system"}
 _STATUSES = {"active", "disabled", "revoked"}
 
@@ -483,6 +490,12 @@ class CredentialStore(PgStoreMixin):
             ON credentials(scope, owner_principal, created_at DESC)
         """,
         """
+        CREATE UNIQUE INDEX IF NOT EXISTS credentials_one_current_search_per_owner
+            ON credentials(owner_principal)
+            WHERE scope = 'user' AND purpose = 'web_search_api_key'
+              AND status <> 'revoked'
+        """,
+        """
         CREATE TABLE IF NOT EXISTS credential_audit (
             audit_id TEXT PRIMARY KEY,
             credential_id TEXT NOT NULL,
@@ -628,6 +641,8 @@ class CredentialStore(PgStoreMixin):
             raise ValueError("credential purpose or scope is not supported")
         if purpose == "tushare_token" and (provider != "tushare" or scope != "system"):
             raise ValueError("Tushare credentials must use the system scope and tushare provider")
+        if purpose == "web_search_api_key" and (provider != "deepseek" or scope != "user"):
+            raise ValueError("search credentials must use the user scope and deepseek provider")
         if purpose == "model_api_key" and provider not in _MODEL_PROVIDER_IDS:
             raise ValueError("model credential provider is not in the BYQ catalogue")
         if scope == "system" and actor_role != "admin":
@@ -1039,9 +1054,15 @@ class CredentialStore(PgStoreMixin):
             )
         return self.get_credential(credential_id, owner=owner_principal, actor_role=actor_role)
 
-    def reconcile_model_write(self, operation, request_id, *, owner, credential_id=None):
+    def reconcile_model_write(
+        self, operation, request_id, *, owner, credential_id=None,
+        purpose="model_api_key",
+    ):
         owner = _principal(owner)
         request_id = _text(request_id,field="request_id",maximum=128)
+        purpose = _text(purpose, field="purpose", maximum=32)
+        if purpose not in {"model_api_key", "web_search_api_key"}:
+            raise ValueError("credential receipt purpose is not supported")
         actions = {"create":{"created"},"update":{"updated","secret_replaced","enabled","disabled"},"revoke":{"revoked","revoked_noop"}}
         if operation not in actions:
             raise ValueError("unsupported credential receipt operation")
@@ -1049,10 +1070,11 @@ class CredentialStore(PgStoreMixin):
         rows = self._execute("""SELECT a.credential_id,a.action,a.new_version FROM credential_audit a
             JOIN credentials c USING(credential_id)
             WHERE a.owner_principal=:owner AND c.owner_principal=:owner
-              AND a.scope='user' AND c.scope='user' AND c.purpose='model_api_key'
+              AND a.scope='user' AND c.scope='user' AND c.purpose=:purpose
               AND a.request_id=:key AND a.outcome='completed' AND a.action IN (SELECT jsonb_array_elements_text(CAST(:actions AS JSONB)))
               AND (CAST(:identity AS TEXT) IS NULL OR a.credential_id=:identity) LIMIT 2""",
-            {"owner":owner,"key":request_id,"identity":identity,"actions":sorted(actions[operation])})
+            {"owner":owner,"key":request_id,"identity":identity,
+             "purpose":purpose,"actions":sorted(actions[operation])})
         matching = [row for row in rows if row["action"] in actions[operation]]
         if not matching:
             return {"state":"not_found"}
@@ -1068,6 +1090,7 @@ class CredentialStore(PgStoreMixin):
         return self._execute(
             """SELECT audit_id, credential_id, scope, owner_principal,
                       actor_principal, action, request_id, prior_version,
+                      (SELECT purpose FROM credentials WHERE credentials.credential_id = credential_audit.credential_id) AS purpose,
                       new_version, outcome, created_at
                FROM credential_audit
                WHERE owner_principal = :owner
@@ -1571,6 +1594,51 @@ class CredentialStore(PgStoreMixin):
             "credential_id": row["credential_id"],
             "credential_version": row["credential_version"],
             "binding_version": row["binding_version"],
+        }
+
+    def resolve_search(self, owner: object) -> dict[str, object] | None:
+        """Resolve only the owner's active DeepSeek search credential."""
+        owner_principal = _principal(owner)
+        rows = self._execute(
+            """SELECT * FROM credentials
+               WHERE scope = 'user' AND owner_principal = :owner
+                 AND purpose = 'web_search_api_key' AND status <> 'revoked'
+               ORDER BY created_at DESC, credential_id DESC LIMIT 2""",
+            {"owner": owner_principal},
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise CredentialUnavailable("multiple current search credentials are configured")
+        row = rows[0]
+        if (row["scope"] != "user" or row["owner_principal"] != owner_principal
+                or row["purpose"] != "web_search_api_key" or row["provider"] != "deepseek"):
+            raise CredentialUnavailable("search credential is unavailable")
+        if row["status"] == "disabled":
+            return None
+        if row["status"] != "active":
+            raise CredentialUnavailable("search credential is unavailable")
+        secret = self.cipher.decrypt(
+            {
+                "envelope_version": row["envelope_version"],
+                "key_id": row["envelope_key_id"],
+                "nonce": row["envelope_nonce"],
+                "ciphertext": row["envelope_ciphertext"],
+            },
+            aad=_aad(
+                str(row["credential_id"]), "web_search_api_key", "deepseek",
+                "user", owner_principal,
+            ),
+        )
+        return {
+            "source": "credential_store",
+            "purpose": "web_search_api_key",
+            "provider": "deepseek",
+            "scope": "user",
+            "owner_principal": owner_principal,
+            "credential_id": row["credential_id"],
+            "credential_version": row["version"],
+            "api_key": secret,
         }
 
     def resolve_tushare(self) -> dict[str, object] | None:

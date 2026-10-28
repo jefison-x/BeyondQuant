@@ -9,14 +9,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, execute
+from .db import PgStoreMixin, execute, transaction
 from .workspace_reset_scope import RESET_SCOPE, SCOPE_BY_TABLE, RETIRED_KEY_FIELDS
 
 
@@ -27,7 +28,7 @@ _RESET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 # schema creation through the domain stores.
 _REQUIRED_TABLES = (
     "users", "workspaces", "workspace_memberships",
-    "product_conversations", "product_conversation_messages",
+    "product_conversations", "product_conversation_messages", "product_conversation_execution_options",
     "research_tasks", "experiments", "artifacts", "artifact_submission_receipts",
     "research_transitions", "research_execution_plans", "research_execution_plan_receipts",
     "research_task_actions", "research_judgment_acp_roots",
@@ -35,7 +36,7 @@ _REQUIRED_TABLES = (
     "data_demands", "factor_jobs", "signal_producer_jobs", "backtest_jobs",
     "optimization_jobs", "ml_training_runs", "ml_training_submission_keys",
     "ml_training_receipt_watches", "ml_prediction_runs",
-    "agent_runs", "agent_runtime_turns", "agent_domain_call_claims",
+    "agent_runs", "agent_runtime_turns", "agent_domain_call_claims", "operations_audit",
     "agent_domain_correction_buckets", "agent_approvals", "agent_audit",
     "learning_runs", "evaluation_signals", "lessons", "learning_history",
 )
@@ -83,6 +84,35 @@ class WorkspaceResetStore(PgStoreMixin):
     """Archive and delete one workspace's explicitly classified closed personal data."""
 
     SCHEMA_DDL: list[str] = []
+    _RUNTIME_WRITER_GATE = "runtime-authority:agent-writers"
+
+    def __init__(self, database_url: str | None = None) -> None:
+        super().__init__(database_url)
+        self.runtime_authority_guard_engine = create_engine(
+            self.database_url, pool_size=8, max_overflow=0, pool_timeout=0.25,
+            pool_pre_ping=True, future=True,
+        )
+
+    def close(self) -> None:
+        self.runtime_authority_guard_engine.dispose()
+        super().close()
+
+    @staticmethod
+    def _lifecycle_lock(connection, key: str) -> None:
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))", {"key": key})
+
+    @contextmanager
+    def _reset_transaction(self, workspace: str):
+        # Match Runtime reset and Agent lifecycle lock order so a proof cannot
+        # race a direct reset or be inserted after reset has begun.
+        with transaction(self.runtime_authority_guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, self._RUNTIME_WRITER_GATE)
+            with self._lock, self.engine.begin() as connection:
+                connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+                connection.execute(text("SET LOCAL statement_timeout = '120s'"))
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                self._lifecycle_lock(connection, f"workspace-reset|{workspace}")
+                yield connection
 
     @staticmethod
     def _identity(value: object, field: str) -> str:
@@ -180,6 +210,8 @@ class WorkspaceResetStore(PgStoreMixin):
             ('evaluation_signals','task_id','research_tasks','task_id'),
             ('evaluation_signals','source_artifact_id','artifacts','artifact_id'),
             ('lessons','task_id','research_tasks','task_id'),
+            ('product_approval_requests','task_id','research_tasks','task_id'),
+            ('product_approval_requests','resource_artifact_id','artifacts','artifact_id'),
         ):
             left=SCOPE_BY_TABLE[child].replace('r.','c.')
             right=SCOPE_BY_TABLE[parent].replace('r.','target.')
@@ -309,6 +341,105 @@ class WorkspaceResetStore(PgStoreMixin):
                    allow_active_agent_roots: bool = False) -> None:
         params = {"owner": owner, "workspace": workspace}
 
+        from .operator_process_fence import OperatorProcessFenceHold, require_workspace_process_fence_ack
+        try:
+            require_workspace_process_fence_ack(connection, workspace)
+        except OperatorProcessFenceHold as error:
+            raise WorkspaceResetBlocked(
+                "operator process-fence proof has no exact durable ACK and slot release"
+            ) from error
+
+        # ADR-0113's reserved proof is still needed for Backend/Adapter/Gateway
+        # terminal acknowledgement and exact slot release. The current durable
+        # Backend schema records its own lifecycle receipt, but has no persisted
+        # Gateway ACK plus slot-release receipt pair to prove that recovery no
+        # longer depends on this row. Hold only this one deterministic proof;
+        # do not exempt the broader agent_audit table from reset retention.
+        from .agent_research import (
+            _HISTORICAL_AUDIT_OWNER,
+            _HISTORICAL_AUDIT_WORKSPACE_ID,
+            _HISTORICAL_AUDIT_ROOT_ID,
+            historical_audit_reconciliation_id,
+        )
+
+        protected_proof = None
+        if owner == _HISTORICAL_AUDIT_OWNER and workspace == _HISTORICAL_AUDIT_WORKSPACE_ID:
+            protected_proof = WorkspaceResetStore._first_row(connection, """
+                SELECT audit_id FROM agent_audit WHERE audit_id=:audit_id LIMIT 1
+            """, {"audit_id": historical_audit_reconciliation_id(
+                _HISTORICAL_AUDIT_ROOT_ID)})
+        if protected_proof is not None:
+            raise WorkspaceResetBlocked(
+                "ADR-0113 reconciliation proof has no durable Gateway ACK and slot-release record"
+            )
+
+        from .agent_research import (
+            AgentConflict,
+            _LOCAL_VALIDATION_CALLBACK_EXIT_ACTION,
+            _local_validation_callback_exit_from_audit_row,
+        )
+        callback_proofs = execute(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id,
+                r.owner_principal AS audit_owner_principal,r.actor_principal AS audit_actor_principal,
+                t.workspace_id AS audit_workspace_id,c.status AS claim_status,
+                t.status AS root_status,t.authority_status AS root_authority_status
+            FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+            LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+            LEFT JOIN agent_domain_call_claims c ON c.claim_id=a.resource_id
+            WHERE a.action=:action
+              AND (a.owner_principal=:owner OR a.detail_json->'acp_control'->'scope'->>'owner_principal'=:owner)
+              AND (t.workspace_id=:workspace OR a.detail_json->'acp_control'->'scope'->>'workspace_id'=:workspace)
+            ORDER BY a.audit_id""", {**params, "action": _LOCAL_VALIDATION_CALLBACK_EXIT_ACTION})
+        for callback_row in callback_proofs:
+            try:
+                proof = _local_validation_callback_exit_from_audit_row(
+                    callback_row, callback_row.get("resource_id"))
+            except (AgentConflict, TypeError, ValueError) as error:
+                raise WorkspaceResetBlocked("local validation callback-exit proof is malformed") from error
+            if (proof is None or callback_row["claim_status"] not in {"succeeded", "correctable_failure"}
+                    or callback_row["root_status"] == "active"
+                    or callback_row["root_authority_status"] != "closed"):
+                raise WorkspaceResetBlocked(
+                    "unresolved local validation callback-exit proof prevents workspace reset"
+                )
+
+        from .agent_research import (
+            AgentConflict,
+            _local_validation_reservation_from_audit_row,
+            local_validation_reconciliation_audit_id,
+        )
+        scoped_roots = execute(connection, """SELECT root_run_id FROM agent_runtime_turns
+            WHERE owner_principal=:owner AND workspace_id=:workspace ORDER BY root_run_id""", params)
+        for scoped_root in scoped_roots:
+            root_id = scoped_root["root_run_id"]
+            reservation_row = WorkspaceResetStore._first_row(connection, """SELECT a.*,
+                    r.root_run_id AS audit_root_run_id,r.owner_principal AS audit_owner_principal,
+                    r.actor_principal AS audit_actor_principal,t.owner_principal AS root_owner_principal,
+                    t.workspace_id AS audit_workspace_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id
+                LEFT JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                WHERE a.audit_id=:audit_id""",
+                {"audit_id": local_validation_reconciliation_audit_id(root_id)})
+            if reservation_row is None:
+                continue
+            try:
+                receipt = _local_validation_reservation_from_audit_row(
+                    reservation_row, root_id)
+            except (AgentConflict, TypeError, ValueError) as error:
+                raise WorkspaceResetBlocked("local validation reservation is malformed") from error
+            if (receipt is None or reservation_row.get("audit_root_run_id") != root_id
+                    or reservation_row.get("audit_owner_principal") != owner
+                    or reservation_row.get("owner_principal") != owner
+                    or reservation_row.get("actor_principal") != receipt["scope"].get("actor_principal")
+                    or reservation_row.get("audit_actor_principal") != receipt["scope"].get("actor_principal")
+                    or reservation_row.get("root_owner_principal") != owner
+                    or reservation_row.get("audit_workspace_id") != workspace
+                    or receipt["scope"].get("owner_principal") != owner
+                    or receipt["scope"].get("workspace_id") != workspace):
+                raise WorkspaceResetBlocked("local validation reservation identity is malformed")
+            raise WorkspaceResetBlocked(
+                "local validation reservation has no durable terminal ACK and slot-release record"
+            )
+
         if not allow_active_agent_roots:
             root = WorkspaceResetStore._first_row(connection, """
                 SELECT root_run_id FROM agent_runtime_turns
@@ -348,6 +479,15 @@ class WorkspaceResetStore(PgStoreMixin):
         """, params)
         if unknown_approval is not None:
             raise WorkspaceResetBlocked("unknown approval continuation outcome prevents workspace reset")
+
+        unresolved_product_approval = WorkspaceResetStore._first_row(connection, """
+            SELECT request_id FROM product_approval_requests
+             WHERE owner_principal=:owner AND workspace_id=:workspace
+               AND status IN ('pending','decision_recorded','outcome_unknown','needs_attention')
+             ORDER BY request_id LIMIT 1
+        """, params)
+        if unresolved_product_approval is not None:
+            raise WorkspaceResetBlocked("unresolved Product approval request prevents workspace reset")
 
         for table, (identity_column, terminal) in _JOB_TERMINAL_STATES.items():
             placeholders = ", ".join(f":terminal_{index}" for index in range(len(terminal)))
@@ -591,6 +731,15 @@ class WorkspaceResetStore(PgStoreMixin):
         owner = WorkspaceResetStore._identity(owner_principal,'owner_principal')
         workspace = WorkspaceResetStore._identity(workspace_id,'workspace_id')
         reset_id = reset_id or uuid.uuid4().hex; now = now or datetime.now(timezone.utc)
+        WorkspaceResetStore._lifecycle_lock(connection, "runtime-authority:current")
+        WorkspaceResetStore._lifecycle_lock(connection, f"workspace-reset|{workspace}")
+        from .operator_process_fence import OperatorProcessFenceHold, require_workspace_process_fence_ack
+        try:
+            require_workspace_process_fence_ack(connection, workspace)
+        except OperatorProcessFenceHold as error:
+            raise WorkspaceResetBlocked(
+                "operator process-fence proof has no exact durable ACK and slot release"
+            ) from error
         params = {'owner':owner,'workspace':workspace,
                   'user_id':connection.execute(text('SELECT user_id FROM users WHERE username=:owner'),{'owner':owner}).scalar_one()}
         counts, archive = WorkspaceResetStore._archive_in_connection(
@@ -672,11 +821,7 @@ class WorkspaceResetStore(PgStoreMixin):
         candidate_refs: list[dict[str, object]] = []
 
         try:
-            with self._lock, self.engine.begin() as connection:
-                connection.execute(text("SET LOCAL lock_timeout = '5s'"))
-                connection.execute(text("SET LOCAL statement_timeout = '120s'"))
-                connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                                   {"scope": f"workspace-reset|{workspace}"})
+            with self._reset_transaction(workspace) as connection:
                 self.preflight_in_connection(
                     connection, owner_principal=owner, workspace_id=workspace,
                 )

@@ -23,6 +23,7 @@ import {
 import {
   acpAgentRunRegistrationFetcher,
   addAcpObservationHeader,
+  acpAuditValidationRefusalMatches,
   abortAcpToolIngressBeforeDispatch,
   bindAcpAgentRun,
   fetchAcpAgentAuthorize,
@@ -31,12 +32,13 @@ import {
   observeAcpToolIngress,
   settleAcpToolIngress,
   type AcpAuthorizationDenialReceipt,
+  type AcpAuditValidationRefusalReceipt,
   type AcpToolIngressOutcome,
 } from "./acp-bridge.js";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
-  fetchBudgetedByqBacktestAnalysis,
+  fetchByqBacktestAnalysis,
   fetchByqBacktestLookup,
   type BacktestLookup,
   fetchByqBacktestTaskCancel,
@@ -68,6 +70,7 @@ import {
   fetchByqAgentRoles,
   fetchByqAgentRunStart,
   isValidRuntimeBootId,
+  takeAcpAuditValidationRefusal,
   type AgentResult,
   type AgentContext,
 } from "./agent.js";
@@ -159,7 +162,6 @@ import {
   type DataDemandRequest,
   type DataDemandLookup,
 } from "./data-demand.js";
-import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 import { fetchByqResearchStageInput } from "./research-judgment.js";
 import {
   fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackReceipt, fetchByqFeedbackList, fetchByqFeedbackOptions,
@@ -213,15 +215,6 @@ const ACP_DOMAIN_CALL_ACTIONS = new Set([
   "byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute", "byq_strategy_version_create",
 ]);
 const ACP_LOCAL_ONLY_TOOLS = new Set(["byq_product_help_query", "byq_workflow_card_propose"]);
-const BACKTEST_ANALYSIS_PAGE_LIMIT = boundedIntegerEnvironment(
-  "BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT", 6, 1, 20,
-);
-const BACKTEST_ANALYSIS_PAGE_WINDOW_MS = boundedIntegerEnvironment(
-  "BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS", 300_000, 1_000, 3_600_000,
-);
-const backtestAnalysisPageBudget = new PageCallBudget(
-  BACKTEST_ANALYSIS_PAGE_LIMIT, BACKTEST_ANALYSIS_PAGE_WINDOW_MS,
-);
 
 const webEvidenceContentSchema = z.object({
   schema_version: z.literal("web-research-evidence.v1"),
@@ -468,6 +461,45 @@ function trustedBackendFetcher(context: CompleteAgentContext): typeof fetch {
   };
 }
 
+function backtestTaskCreateFetcher(context: CompleteAgentContext): typeof fetch | undefined {
+  const auth = context[privateAuth];
+  if (auth?.kind !== "acp-agent") return trustedBackendFetcher(context);
+
+  const observationId = context[privateObservationId];
+  if (!BACKEND_PROOF_TOKEN || !/^[0-9a-f]{32}$/.test(observationId ?? "")) return undefined;
+
+  const trustedFetch = trustedBackendFetcher(context);
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", `Bearer ${BACKEND_PROOF_TOKEN}`);
+    headers.set("x-byq-acp-native-agent-session-id", auth.claims.native_agent_session_id);
+    headers.set("x-byq-acp-native-root-session-id", auth.claims.native_root_session_id);
+    headers.set("x-byq-acp-native-parent-session-id", auth.claims.native_parent_session_id ?? "");
+    headers.set("x-byq-acp-origin", auth.claims.origin);
+    headers.set("x-byq-acp-depth", String(auth.claims.depth));
+    return trustedFetch(input, { ...init, headers });
+  };
+}
+
+function acpAgentAuditFetcher(context: CompleteAgentContext): typeof fetch | undefined {
+  const auth = context[privateAuth];
+  const observationId = context[privateObservationId];
+  if (auth?.kind !== "acp-agent" || !BACKEND_PROOF_TOKEN
+    || !/^[0-9a-f]{32}$/.test(observationId ?? "")) return undefined;
+
+  const trustedFetch = trustedBackendFetcher(context);
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", `Bearer ${BACKEND_PROOF_TOKEN}`);
+    headers.set("x-byq-acp-native-agent-session-id", auth.claims.native_agent_session_id);
+    headers.set("x-byq-acp-native-root-session-id", auth.claims.native_root_session_id);
+    headers.set("x-byq-acp-native-parent-session-id", auth.claims.native_parent_session_id ?? "");
+    headers.set("x-byq-acp-origin", auth.claims.origin);
+    headers.set("x-byq-acp-depth", String(auth.claims.depth));
+    return trustedFetch(input, { ...init, headers });
+  };
+}
+
 async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
@@ -656,7 +688,12 @@ async function byqAgentAuthorize(args: Record<string, unknown>, extra: unknown) 
 
 async function byqAgentAudit(args: Record<string, unknown>, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqAgentAudit(BACKEND_URL, args, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const isAcpAgent = context[privateAuth]?.kind === "acp-agent";
+  if (!isAcpAgent) return fetchByqAgentAudit(BACKEND_URL, args, context);
+  const fetcher = acpAgentAuditFetcher(context);
+  if (!fetcher) return acpBridgeUnavailable("acp_audit_backend_proof_unavailable");
+  return fetchByqAgentAudit(BACKEND_URL, args, context, fetcher, true);
 }
 
 async function byqAgentAuditGet(args: { run_id: string }, extra: unknown) {
@@ -760,11 +797,8 @@ async function byqBacktestAnalysis(
 ) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
-  const decision = backtestAnalysisPageBudget.consume([
-    context.workspace_id, context.session_id, context.dsh_run_id, args.job_id,
-  ].join("/"));
-  return fetchBudgetedByqBacktestAnalysis(
-    BACKEND_URL, args.job_id, args, decision, trustedBackendFetcher(context),
+  return fetchByqBacktestAnalysis(
+    BACKEND_URL, args.job_id, args, trustedBackendFetcher(context),
   );
 }
 
@@ -775,7 +809,11 @@ async function byqBacktestTaskPrepare(args: BacktestRequest, extra: unknown) {
 
 async function byqBacktestTaskCreate(args: BacktestRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestTaskCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const fetcher = backtestTaskCreateFetcher(context);
+  return fetcher
+    ? fetchByqBacktestTaskCreate(BACKEND_URL, args, fetcher)
+    : acpBridgeUnavailable("acp_backtest_task_admission_unavailable");
 }
 
 async function byqBacktestTaskGet(args: BacktestTaskLookup, extra: unknown) {
@@ -1058,7 +1096,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                 return acpBridgeUnavailable("acp_ingress_observation_unavailable");
               }
               let handlerResult: unknown;
-              let refusalReceipt: AcpAuthorizationDenialReceipt | undefined;
+              let refusalReceipt: AcpAuthorizationDenialReceipt | AcpAuditValidationRefusalReceipt | undefined;
               try {
                 if (judgmentCall) {
                   const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
@@ -1066,7 +1104,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     toolArgs, callContext, ...callArgs.slice(2));
                 } else if (auth.kind === "acp-agent" && ACP_DOMAIN_CALL_ACTIONS.has(name)) {
                   const receipt = await observeAcpDomainCall(BACKEND_URL, ingressProof,
-                    auth.claims, name, toolArgs as Record<string, unknown>);
+                    auth.claims, name, toolArgs as Record<string, unknown>, fetch, ingress.mcp_request_id);
                   if (!receipt) {
                     handlerResult = acpBridgeUnavailable("acp_observation_unavailable");
                   } else {
@@ -1074,6 +1112,13 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = await (callback as (...args: unknown[]) => unknown)(
                       toolArgs, callContext, ...callArgs.slice(2));
                   }
+                } else if (auth.kind === "acp-agent" && name === "byq_backtest_task_create") {
+                  // The generic ingress receipt is the Backend's exact Job
+                  // admission claim; this action does not use the strategy
+                  // domain-call evidence protocol.
+                  const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
+                  handlerResult = await (callback as (...args: unknown[]) => unknown)(
+                    toolArgs, callContext, ...callArgs.slice(2));
                 } else if (auth.kind === "acp-agent" && name === "byq_agent_authorize") {
                   const authorization = await fetchAcpAgentAuthorize(BACKEND_URL, ingressProof,
                     auth.claims, ingress, ingressArgs);
@@ -1086,6 +1131,17 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = acpAgentAuthorizationDenied();
                   } else {
                     handlerResult = acpAgentAuthorizationSuccess(authorization.authorization);
+                  }
+                } else if (auth.kind === "acp-agent" && name === "byq_agent_audit") {
+                  const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
+                  handlerResult = await (callback as (...args: unknown[]) => unknown)(
+                    toolArgs, callContext, ...callArgs.slice(2));
+                  const candidate = takeAcpAuditValidationRefusal(handlerResult);
+                  if (acpAuditValidationRefusalMatches(candidate, auth.claims, ingress, ingressArgs)) {
+                    refusalReceipt = candidate;
+                    // The proof remains private. The model receives the same
+                    // bounded public validation error as an ordinary 422.
+                    handlerResult = acpBridgeUnavailable("agent_request_invalid");
                   }
                 } else {
                   handlerResult = await (callback as (...args: unknown[]) => unknown)(...callArgs);
@@ -1333,7 +1389,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_agent_audit",
     {
-      description: "Append a bounded, owner-scoped audit outcome for a BYQ domain action.",
+      description: "Append a bounded, owner-scoped audit outcome for one BYQ domain action. Optional detail is a JSON object of at most 16 KiB; omit credential values and keys whose case/punctuation-normalized names contain token, password, secret, apikey, accesskey, privatekey, credential, or authorization at any depth. The reserved key acp_control and its case/punctuation variants are also forbidden. The sole authorization-key exception is top-level authorization_decision with value allowed, denied, or approval_required. Example detail: {\"summary\":\"ResearchTask read succeeded\"}.",
       inputSchema: {
         run_id: z.string().regex(/^agent_run_[0-9a-f]{32}$/),
         action: z.string(),
@@ -1343,7 +1399,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         detail: z.record(z.string(), z.unknown()).optional(),
       },
     },
-    (args) => byqAgentAudit(args, trustedContext),
+    (args, extra) => byqAgentAudit(args, auth?.kind === "acp-agent" ? extra : trustedContext),
   );
   registerTool(
     "byq_agent_audit_get",
@@ -1523,12 +1579,12 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string().min(1).max(128),
       },
     },
-    (args) => byqBacktestTaskCreate(args, trustedContext),
+    (args, extra) => byqBacktestTaskCreate(args, admittedReadContext(extra)),
   );
   registerTool(
     "byq_backtest_task_get",
     {
-      description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. This lookup only recovers an execution whose response was not observed; if the approved create was never submitted, execute it once with this exact original key. Unknown never permits duplicate resubmission; a confirmed receipt provides the ID for a subsequent state read.",
+      description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. This lookup only recovers an execution whose response was not observed. Unknown never permits duplicate resubmission; a confirmed receipt provides the ID for a subsequent state read. A successful task-ID read reports business readiness only and grants no execution permission.",
       inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/).optional(),
         task_id: z.string().min(1).optional(), idempotency_key: z.string().trim().min(1).max(128).optional() },
     },
@@ -1565,7 +1621,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_backtest_analysis_get",
     {
-      description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. The summary already contains deterministic return, drawdown-window, daily-risk, realized-trade, cost, benchmark and blocked-order diagnostics and is sufficient for a normal review. Detail sections provide only a first-page evidence sample; raw daily/equity series and object-store results are intentionally unavailable to the Agent. Every successful result reports remaining calls. Exhaustion is a normal stop-and-answer result, never a reason to retry or wait.",
+      description: "Read one bounded, owner-scoped evidence page from an immutable completed BYQ backtest. The summary already contains deterministic return, drawdown-window, daily-risk, realized-trade, cost, benchmark and blocked-order diagnostics and is sufficient for a normal review. Detail sections provide a page of evidence; raw daily/equity series and object-store results are intentionally unavailable to the Agent. Select only sections needed to answer the user and do not walk has_more mechanically.",
       inputSchema: {
         job_id: z.string().regex(/^backtest_[0-9a-f]{32}$/),
         section: z.enum(["summary", "trades", "blocked_trades", "logs"]).default("summary"),
@@ -1763,7 +1819,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_strategy_validate",
     {
-      description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message for at most one repair.",
+      description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message and correct supported inputs using the authoritative strategy contract; do not guess or resubmit an unchanged payload.",
       inputSchema: domainValidationSchemas.byq_strategy_validate,
     },
     (args, extra) => byqStrategyValidate(args, extra),

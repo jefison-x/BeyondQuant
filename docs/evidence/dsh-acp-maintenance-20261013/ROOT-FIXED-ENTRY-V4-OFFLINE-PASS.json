@@ -1,0 +1,39 @@
+{
+  "source_commit": "ee6bc94e29b67b44faeeb6e14827843d74e4213f",
+  "result": "PASS_LIMITED_OFFLINE_COMPLETE_ENTRY",
+  "Tester": "/root/two_user_offline_tester",
+  "independent_Sol": "/root/manual_result_reviewer",
+  "Root": "PASS_LIMITED_OFFLINE_COMPLETE_ENTRY",
+  "command": ["timeout", "--signal=TERM", "--kill-after=2s", "60s", "python3", "-B", ".ci-artifacts/latest-root-closure-20261013/source/test_read_fixed_root.py", "-v"],
+  "execution_count": 1,
+  "tests_passed": 6,
+  "exit_code": 0,
+  "elapsed_ms": 344,
+  "source_sha256": {
+    "read_fixed_root.py": "2d682d90006bf0cea3748b7bbdececed73169d9e8485c68e82f789aa35ed43ed",
+    "test_read_fixed_root.py": "c383a436bc0a4276c32332378c9247fc0cd7ce54587fb3c2e68b4f2b1804b27c"
+  },
+  "source_hashes_before_after_match": true,
+  "plan_sha256": "65753cee0084f8c84f3b98bdf4313aa3de93dd060d66e1fc12c50e1291be55e0",
+  "contract": [
+    "Complete fixed six-step entry; repo-relative paths resolve against the entry repository, including from another working directory.",
+    "Missing or mismatched preflight inputs cause zero subprocess calls.",
+    "Reuse the previously tested inventory raw-output gate; preserve argv, stdout, stderr and exit status before validation.",
+    "Every failed gate prevents all following data calls; checkpoint distinguishes PASS, FAIL and NOT_RUN.",
+    "Expired deadline prevents a new command; dependency drift prevents cleanup and is recorded without replacing the original failure reason.",
+    "Success checkpoint has all steps PASS; no actual ACK, global lease-free or native close claim."
+  ],
+  "private_evidence": ".ci-artifacts/latest-root-closure-20261013/offline-fixed-v4/",
+  "prepared_discover_command": "NOT_RUN",
+  "preserved_live_failure": "ROOT-LATEST-ROOT-READ-V3-FAIL-STOP.json",
+  "docker_calls": 0,
+  "model_calls": 0,
+  "jobs": 0,
+  "production_mutations": 0,
+  "next_read_admission": "One exact V4 fixed entry only, 180s, at most six data docker exec calls, no retries, model/Job/business writes zero.",
+  "actual_runtime_ack": "UNKNOWN",
+  "global_lease_state": "UNKNOWN",
+  "native_session_close": "UNKNOWN",
+  "live_read": "NOT_RUN",
+  "browser_qualification": "NOT_RUN_THIS_SLICE"
+}

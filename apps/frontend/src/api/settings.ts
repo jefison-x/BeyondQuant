@@ -1,4 +1,4 @@
-import type { AgentPolicyStatus, AssetImportReport, AssetSummary, ModelSettings, SettingsStatus, UiPreferences, UserProfile } from "./types";
+import type { AgentPolicyStatus, AssetImportReport, AssetSummary, CredentialPurpose, ModelSettings, SettingsStatus, UiPreferences, UserProfile } from "./types";
 
 export class SettingsRequestError extends Error {constructor(message:string,readonly status:number){super(message);}}
 
@@ -45,6 +45,41 @@ export function getModelSettings(): Promise<ModelSettings> {
 
 export function createModelCredential(payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {
   return request("/settings/models/credentials", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function assertSearchCredentialMutation(
+  credential: Record<string, unknown>,
+  operation: "create" | "update" | "revoke",
+  expectedVersion?: unknown,
+  expectedStatus?: "active" | "disabled",
+): void {
+  if (credential.purpose !== "web_search_api_key" || credential.provider !== "deepseek" || credential.scope !== "user"
+    || !Number.isSafeInteger(credential.version) || Number(credential.version) < 1) {
+    throw new Error("搜索服务凭据回执元数据不完整，请核对原操作");
+  }
+  if (operation === "create" && (credential.status !== "active" || credential.version !== 1)) {
+    throw new Error("搜索服务凭据创建状态回执不匹配，请核对原操作");
+  }
+  if (operation === "update" && (!Number.isSafeInteger(expectedVersion)
+    || credential.version !== Number(expectedVersion) + 1 || !expectedStatus || credential.status !== expectedStatus)) {
+    throw new Error("搜索服务凭据更新回执不匹配，请核对原操作");
+  }
+  if (operation === "revoke" && (!Number.isSafeInteger(expectedVersion)
+    || credential.version !== Number(expectedVersion) + 1 || credential.status !== "revoked")) {
+    throw new Error("搜索服务凭据撤销回执不匹配，请核对原操作");
+  }
+}
+
+export function assertSearchCredentialReceipt(
+  receipt: Record<string, unknown>,
+  operation: "create" | "update" | "revoke",
+  expectedVersion?: unknown,
+): void {
+  const committedVersion = operation === "create" ? 1 : Number.isSafeInteger(expectedVersion) ? Number(expectedVersion) + 1 : NaN;
+  if (receipt.state !== "confirmed" || receipt.operation !== operation || !Number.isSafeInteger(committedVersion)
+    || receipt.committed_version !== committedVersion) {
+    throw new Error("搜索服务原凭据回执与请求版本不匹配，请核对原操作");
+  }
 }
 
 export function updateModelCredential(credentialId: string, payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {
@@ -126,9 +161,10 @@ export async function getSettingsStatus(token: string): Promise<SettingsStatus> 
   return (await response.json()) as SettingsStatus;
 }
 
-export async function reconcileModelCredential(command:{operation:string;key:string;credential_id?:string}) {
+export async function reconcileModelCredential(command:{operation:string;key:string;credential_id?:string}, purpose?:CredentialPurpose) {
   const params=new URLSearchParams({operation:command.operation,request_id:command.key});
   if(command.credential_id)params.set('credential_id',command.credential_id);
+  if(purpose)params.set('purpose',purpose);
   const value=await request<any>('/settings/models/credentials/receipts?'+params);
   if(value.state==='not_found' && Object.keys(value).length===1)return value;
   if(value.state!=='confirmed' || value.operation!==command.operation || !/^cred_[0-9a-f]{32}$/.test(value.credential_id ?? '')

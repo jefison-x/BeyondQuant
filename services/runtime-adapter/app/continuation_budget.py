@@ -17,11 +17,17 @@ from pathlib import Path
 from packages.contracts.continuation_request import (
     ALLOWED_DOMAIN_TOOLS,
     ALLOWED_HARNESS_TOOLS,
+    ALLOWED_MODEL as TASK_READY_MODEL,
+    ALLOWED_PROVIDER as TASK_READY_PROVIDER,
     PROFILE_ID,
     RESERVATION_SCHEMA_VERSION,
+    UPSTREAM_BASE_URL as TASK_READY_UPSTREAM_BASE_URL,
+    UPSTREAM_REQUEST_TARGET as TASK_READY_UPSTREAM_REQUEST_TARGET,
     request_limits,
     validate_limits,
     validate_profile_binding,
+    validate_reservation_v3,
+    validate_task_ready_javascript_values_v2,
 )
 
 # Historical v1 receipt parser compatibility only. Current request bounds are
@@ -39,6 +45,16 @@ _ALLOWED_TOOL_NAMES = frozenset(
     _TOOL_PREFIX + name for name in (ALLOWED_DOMAIN_TOOLS | ALLOWED_HARNESS_TOOLS)
 )
 _GUARD_SCHEMA = 'continuation-tool-guard.v1'
+_TASK_READY_GUARD_SCHEMA = 'task-ready-tool-guard.v2'
+_TASK_READY_ROW_BYTES = 128 * 1024
+_TASK_READY_ROOT_RUN_ID_RE = re.compile(r'[0-9a-f]{32}')
+_TASK_READY_IDEMPOTENCY_KEY_RE = re.compile(r'task-ready-event:[0-9a-f]{64}')
+_TASK_READY_BLOCKED_REASONS = frozenset({
+    'BYQ_CONTINUATION_TOOL_UNQUALIFIED',
+    'BYQ_CONTINUATION_TOOL_LIMIT',
+    'BYQ_CONTINUATION_TOOL_STORAGE_FAILED',
+    'BYQ_CONTINUATION_CANCELLED',
+})
 
 
 def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
@@ -210,13 +226,9 @@ def create_acp_guard_overlay(
                                 proxy_base_url, provider_session_id)
 
 
-# ADR-0106: ordinary Product ACP provider egress pin. Closed single-route overlay:
-# it binds ONLY the authorized OpenCode Go chat route / `deepseek-v4.1-flash` to
-# the local budget proxy and installs NO continuation reservation and NO tool
-# allowlist. Other provider routes are NOT registered here (explicitly
-# unqualified; no silent provider/model switch). Web tools are left unchanged
-# (ordinary Product behavior); disabling them is an isolated-acceptance-only
-# choice, never a default Product change.
+# Archived ADR-0106 ordinary profile encoder. Active ordinary Product roots use
+# `create_acp_product_execution_overlay` below; this v1 encoder remains only to
+# interpret old profile receipts and is not a current runtime path.
 from packages.contracts.product_turn_request import (
     PRODUCT_TURN_LIMITS,
     PRODUCT_TURN_MODEL,
@@ -225,18 +237,22 @@ from packages.contracts.product_turn_request import (
     PRODUCT_TURN_PROFILE_VERSION,
     PRODUCT_TURN_PROVIDER,
     PRODUCT_TURN_UPSTREAM_BASE_URL,
+    OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID,
+    OFFICIAL_PRODUCT_TURN_PROVIDER,
+    OFFICIAL_PRODUCT_TURN_MODEL,
+    validate_official_product_turn_execution_profile,
+    product_turn_execution_output_cap,
+    product_turn_execution_limits,
+    validate_product_turn_execution_profile,
 )
 
 
 def create_acp_product_budget_overlay(*, proxy_base_url: str, provider_session_id: str,
                                       provider: str, model: str) -> bytes:
-    """ADR-0106 closed route-only overlay for one ordinary Product ACP root.
+    """Encode the archived ADR-0106 v1 route-only Product overlay.
 
-    Binds exactly the resolved provider/model (`opencode-go-chat` /
-    `deepseek-v4.1-flash`) to the local budget proxy. Any other provider/model is
-    refused (no silent switch); other routes are not registered. No continuation
-    reservation and no tool allowlist; the ordinary MCP tool authority is
-    unchanged and the web tools are untouched.
+    Current ordinary roots must use the v2 execution-options overlay below.
+    This fixed-limit encoder exists only for historical profile compatibility.
     """
     if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
         raise ValueError('ordinary product-turn provider/model is not qualified')
@@ -278,6 +294,138 @@ def create_acp_product_budget_overlay(*, proxy_base_url: str, provider_session_i
         }]},
     ]
     return json.dumps(overlay, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('utf-8')
+
+
+def create_acp_product_execution_overlay(*, proxy_base_url: str, provider_session_id: str,
+                                         provider: str, model: str,
+                                         execution_profile: dict) -> bytes:
+    """Pin one ordinary root to its trusted ADR-0111 option revision.
+
+    Numeric `None` values remain absent from the DSH model config. An explicit
+    per-call output ceiling is passed as maxTokens; a total-only output ceiling
+    is also declared per call, and the provider gate sums those declarations.
+    No deadline or request count is synthesized when the user left it unset.
+    """
+    official = (isinstance(execution_profile, dict)
+                and execution_profile.get('profile_id') == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID)
+    if official:
+        if provider != OFFICIAL_PRODUCT_TURN_PROVIDER or model != OFFICIAL_PRODUCT_TURN_MODEL:
+            raise ValueError('official ordinary provider/model is not qualified')
+        profile = validate_official_product_turn_execution_profile(execution_profile)
+    else:
+        if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
+            raise ValueError('ordinary product execution provider/model is not qualified')
+        profile = validate_product_turn_execution_profile(execution_profile)
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local product execution proxy address is required')
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    provider_session_id or "") is None:
+        raise ValueError('exact provider session identity is required')
+    options = profile['options']
+    output_cap = product_turn_execution_output_cap(options)
+    model_config: dict[str, object] = {'id': model}
+    if output_cap is not None:
+        model_config['maxTokens'] = output_cap
+    if official:
+        overlay = [
+            {'id': 'llm-deepseek', 'config': {
+                'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'models': [model_config],
+            }},
+            {'id': 'llm-pi-ai', 'disabled': True},
+        ]
+    else:
+        providers = {
+            PRODUCT_TURN_PROVIDER: {
+                'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+                'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'headers': {'x-opencode-session': provider_session_id},
+                'models': [model_config],
+            },
+        }
+        overlay = [{'id': 'llm-pi-ai', 'config': {'providers': providers}}]
+    overlay.extend([
+        {'insert': [{
+            'id': 'byq-continuation-budget',
+            'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
+            'config': {
+                'guardMode': 'ordinary-options',
+                'executionProfile': profile,
+                'requestLimits': product_turn_execution_limits(options),
+            },
+        }]},
+    ])
+    return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=True).encode('utf-8')
+
+
+def create_acp_task_ready_execution_overlay(
+    *, proxy_base_url: str, provider_session_id: str,
+    reservation_v3: dict, root_run_id: str,
+) -> bytes:
+    """Encode one task-ready carrier as a closed, root-bound ACP overlay.
+
+    The two DSH model rows carry only the user-derived optional output cap.
+    An unset cap remains unset, and this encoder creates no runtime deadline.
+    The carrier is structural input; Backend must separately recheck its facts
+    and business authority before dispatch.
+    """
+    reservation = validate_reservation_v3(reservation_v3)
+    profile, limits = validate_task_ready_javascript_values_v2(
+        reservation['execution_profile'], reservation['request_limits'])
+    if (profile['provider'] != TASK_READY_PROVIDER
+            or profile['model'] != TASK_READY_MODEL
+            or profile['upstream_base_url'] != TASK_READY_UPSTREAM_BASE_URL
+            or profile['upstream_request_target'] != TASK_READY_UPSTREAM_REQUEST_TARGET
+            or not isinstance(root_run_id, str)
+            or re.fullmatch(r'[0-9a-f]{32}', root_run_id) is None):
+        raise ValueError('task-ready execution identity is invalid')
+    if not isinstance(proxy_base_url, str):
+        raise ValueError('exact local task-ready execution proxy address is required')
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url)
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local task-ready execution proxy address is required')
+    if (not isinstance(provider_session_id, str)
+            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                            provider_session_id) is None):
+        raise ValueError('exact provider session identity is required')
+    output_values = [profile['options'][field] for field in (
+        'max_output_tokens_per_call', 'max_output_tokens_total',
+    ) if profile['options'][field] is not None]
+    output_cap = min(output_values) if output_values else None
+    default_adapter_config = {} if output_cap is None else {'maxTokens': output_cap}
+    model_config: dict[str, object] = {'id': TASK_READY_MODEL}
+    if output_cap is not None:
+        model_config['maxTokens'] = output_cap
+    overlay = [
+        {'id': 'web-search-deepseek', 'disabled': True},
+        {'id': 'tool-web', 'disabled': True},
+        {'id': 'llm-deepseek', 'config': default_adapter_config},
+        {'id': 'llm-pi-ai', 'config': {'providers': {
+            TASK_READY_PROVIDER: {
+                'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+                'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'headers': {'x-opencode-session': provider_session_id},
+                'models': [model_config],
+            },
+        }}},
+        {'insert': [{'id': 'byq-continuation-budget',
+                     'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
+                     'config': {
+                         'guardMode': 'task-ready-options',
+                         'rootRunId': root_run_id,
+                         'idempotencyKey': reservation['idempotency_key'],
+                         'sourceFactSha256': reservation['source_fact_sha256'],
+                         'executionProfile': profile,
+                         'requestLimits': limits,
+                     }}]},
+    ]
+    return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=True).encode('utf-8')
 
 
 def create_acp_guard_patch(
@@ -376,6 +524,139 @@ def read_request_guard(journal: Path, reservation: dict, *, terminal: bool = Fal
         'tool_calls': calls,
         'blocked_reason': blocked_reason,
         'status': 'settled' if terminal else 'accepted',
+    }
+
+
+def _load_task_ready_guard_row(line: bytes) -> dict:
+    def object_without_duplicates(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate key in task-ready tool journal')
+            result[key] = value
+        return result
+
+    def reject_non_finite(value):
+        raise ValueError('non-finite value in task-ready tool journal')
+
+    try:
+        value = json.loads(
+            line.decode('utf-8'), object_pairs_hook=object_without_duplicates,
+            parse_constant=reject_non_finite,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError('invalid task-ready tool journal JSON') from exc
+    if not isinstance(value, dict):
+        raise ValueError('invalid task-ready tool journal row')
+    return value
+
+
+def _same_json_value(left: object, right: object) -> bool:
+    """Compare JSON types as well as values (so True never equals 1)."""
+    return json.dumps(left, sort_keys=True, separators=(',', ':'), ensure_ascii=True) == json.dumps(
+        right, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+
+
+def read_task_ready_v2_guard(
+    journal: Path, reservation_v3: dict, root_run_id: str, *, terminal: bool = False,
+) -> dict:
+    """Stream the v2 DSH guard journal as payload-bound execution evidence.
+
+    This checks the v3 carrier's structure/self-digests and its binding to the
+    separately supplied trusted root run ID. It does not prove SQL facts,
+    eligibility, authorization, completion, or business settlement. The 128 KiB
+    bound applies to each JSONL row only; cumulative file size and row count are
+    intentionally unbounded when the profile leaves tool calls unbounded.
+    """
+    reservation = validate_reservation_v3(reservation_v3)
+    if (not isinstance(root_run_id, str)
+            or _TASK_READY_ROOT_RUN_ID_RE.fullmatch(root_run_id) is None
+            or type(terminal) is not bool):
+        raise ValueError('invalid task-ready guard identity or classification')
+    idempotency_key = reservation['idempotency_key']
+    if _TASK_READY_IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key) is None:
+        raise ValueError('invalid task-ready event idempotency identity')
+    profile = reservation['execution_profile']
+    profile_sha256 = profile['profile_sha256']
+    options_revision = profile['options_revision']
+    expected_header = {
+        'schema_version': _TASK_READY_GUARD_SCHEMA,
+        'root_run_id': root_run_id,
+        'idempotency_key': idempotency_key,
+        'source_fact_sha256': reservation['source_fact_sha256'],
+        'execution_profile': profile,
+        'request_limits': reservation['request_limits'],
+        'ready': True,
+    }
+    tool_fields = {
+        'phase', 'root_run_id', 'idempotency_key', 'source_fact_sha256',
+        'profile_sha256', 'options_revision', 'call', 'tool_name',
+    }
+    blocked_fields = {
+        'phase', 'root_run_id', 'idempotency_key', 'source_fact_sha256',
+        'profile_sha256', 'options_revision', 'blocked_reason', 'tool_name',
+    }
+    identity = {
+        'root_run_id': root_run_id,
+        'idempotency_key': idempotency_key,
+        'source_fact_sha256': reservation['source_fact_sha256'],
+        'profile_sha256': profile_sha256,
+        'options_revision': options_revision,
+    }
+    calls = 0
+    blocked_reason = None
+    header_seen = False
+    with journal.open('rb') as stream:
+        while True:
+            line = stream.readline(_TASK_READY_ROW_BYTES + 1)
+            if not line:
+                break
+            if len(line) > _TASK_READY_ROW_BYTES or not line.endswith(b'\n'):
+                raise ValueError('task-ready tool journal row is oversized or incomplete')
+            row = _load_task_ready_guard_row(line[:-1])
+            if not header_seen:
+                if (set(row) != set(expected_header)
+                        or type(row.get('ready')) is not bool
+                        or not _same_json_value(row, expected_header)):
+                    raise ValueError('task-ready DSH tool guard is not ready or bound')
+                header_seen = True
+                continue
+            if blocked_reason is not None:
+                raise ValueError('task-ready tool journal has rows after a terminal block')
+            if set(row) == tool_fields:
+                calls += 1
+                if (row.get('phase') != 'tool'
+                        or any(not _same_json_value(row.get(key), value)
+                               for key, value in identity.items())
+                        or type(row.get('call')) is not int or row['call'] != calls
+                        or not isinstance(row.get('tool_name'), str)
+                        or row['tool_name'] not in _ALLOWED_TOOL_NAMES
+                        or (reservation['request_limits']['max_tool_calls'] is not None
+                            and calls > reservation['request_limits']['max_tool_calls'])):
+                    raise ValueError('invalid admitted task-ready tool dispatch')
+            elif set(row) == blocked_fields:
+                if (row.get('phase') != 'blocked'
+                        or any(not _same_json_value(row.get(key), value)
+                               for key, value in identity.items())
+                        or not isinstance(row.get('blocked_reason'), str)
+                        or row['blocked_reason'] not in _TASK_READY_BLOCKED_REASONS
+                        or not isinstance(row.get('tool_name'), str)
+                        or len(row['tool_name']) > 192):
+                    raise ValueError('invalid blocked task-ready tool dispatch')
+                blocked_reason = row['blocked_reason']
+            else:
+                raise ValueError('invalid task-ready tool journal row')
+    if not header_seen:
+        raise ValueError('task-ready DSH tool guard is not ready')
+    return {
+        'root_run_id': root_run_id,
+        'idempotency_key': idempotency_key,
+        'source_fact_sha256': reservation['source_fact_sha256'],
+        'profile_sha256': profile_sha256,
+        'options_revision': options_revision,
+        'tool_calls': calls,
+        'blocked_reason': blocked_reason,
+        'observed_status': 'terminal_observed' if terminal else 'nonterminal_observed',
     }
 
 

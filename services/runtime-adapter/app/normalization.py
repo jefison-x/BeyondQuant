@@ -56,6 +56,7 @@ _CAPABILITIES: dict[str, tuple[str, str]] = {
     "byq_market_fundamentals": ("select", "读取基本面数据"),
     "byq_web_evidence_create": ("select", "保存网页研究来源"),
     "web_search": ("select", "检索公开网页"),
+    "web_fetch": ("select", "读取公开网页"),
     "byq_pool_list": ("select", "读取股票池"),
     "byq_pool_get": ("select", "读取股票池详情"),
     "byq_pool_history": ("select", "读取股票池历史"),
@@ -522,7 +523,7 @@ def _execution_context(capability: str) -> dict[str, str]:
     }
     if capability in delegates:
         agent, plugin, skill = delegates[capability]
-    elif capability == "web_search":
+    elif capability in {"web_search", "web_fetch"}:
         agent, plugin, skill = "市场研究 Agent", "网页研究插件", "市场研究 Skill"
     elif capability.startswith("byq_market_") or capability == "byq_web_evidence_create":
         agent, plugin, skill = "量化研究 Agent", "BeyondQuant MCP", "市场研究 Skill"

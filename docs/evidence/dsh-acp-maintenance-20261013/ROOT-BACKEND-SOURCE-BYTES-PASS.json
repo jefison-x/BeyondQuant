@@ -1,0 +1,83 @@
+{
+  "schema_version": "byq-backend-listed-source-bytes-observation.v1",
+  "status": "PASS_LISTED_SOURCE_BYTES_ONLY",
+  "review": {
+    "sol_raw_review": "PASS",
+    "root_disposition": "ACCEPTED_LIMITED_SCOPE"
+  },
+  "candidate": {
+    "head": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+    "worktree": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant"
+  },
+  "container": {
+    "id": "80ba314669f8e10d470fe474d860ac5bb76a5ee69a9c7808f51c672be94931f7",
+    "image_id": "sha256:979ebeddeee01ef06f74d8046098c68e194350e09554bf05ce2b95ca028fc695",
+    "name": "/byq-dev-e8b02b5475-backend-1",
+    "started_at": "2026-10-13T03:16:40.377405586Z",
+    "running_before_after": true,
+    "identity_unchanged": true
+  },
+  "read": {
+    "docker_commands": 3,
+    "elapsed_ms": 680.066,
+    "listed_files": 93,
+    "total_bytes": 2831136,
+    "tree_sha256": "28eb115f8ea58697dc69151b49ebc8d8e6811083073b2f2528532838d1cd3126",
+    "four_stat_snapshots_stable_for_all_files": true,
+    "candidate_source_before_after_equal": true,
+    "source_bytes_emitted": false,
+    "manifest_input_sha256": "c9e63b576725c9001581f274c8ec6121aedf7f719483743aa1cef643c56e1fe8",
+    "helper_receipt_input_sha256": null,
+    "input_digest_note": "The helper transport receipt does not independently record stdin digest. The canonical manifest input bytes were saved separately and hashed by the outer evidence collector.",
+    "outer_stdout_bytes": 0,
+    "outer_stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "outer_stderr_bytes": 0,
+    "outer_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "offline_substitute": {
+    "status": "PASS_HOST_AND_HELPER_JOIN_ONLY",
+    "methods_passed": 4,
+    "methods_failed": 0,
+    "methods_skipped": 0,
+    "main_invocations": 6,
+    "fake_docker_calls": 15,
+    "elapsed_ms": 214.181,
+    "stderr_bytes": 102,
+    "stderr_sha256": "23edcc150c2943a9873c3b6bf59612522386c96a26fd0ab7f549545336b4a753",
+    "inline_filesystem_reader_executed": false
+  },
+  "pins": {
+    "plan_sha256": "4c2bb9858531c0857a2fd4c07203039d3b6496ade629e071b1b940f41a601bf3",
+    "manifest_sha256": "33d7c51d282e8b29a97f3ef197c98aedadaebaa0a20f86d5a32e276407e09e7f",
+    "reader_sha256": "1bc153ee5b724f02fdabc60c6e38b2d41cc00e8663bcc53735aefa93418a76f4",
+    "offline_test_sha256": "9e6c4d3ab34b1a8aa5641522a7fae939c37a173e4921c58dc79d7bdc21ae8526",
+    "inline_reader_sha256": "cb47b24bb52cd41d78148d9f588a65e92a028c6598615f56a9ae1c8b1f1a8129",
+    "shared_helper_sha256": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "dockerfile_sha256": "d03308169747a50e91375ea79c568a34c02995a33934b4049a652c968624a283",
+    "dockerignore_sha256": "a0f39b26bb10f5f22761a916527df625a073d834198bb68e68fc7762df86629a"
+  },
+  "evidence_paths": {
+    "execution": ".ci-artifacts/backend-source-hash-20261014/live-read-v4/execution.json",
+    "outer_command": ".ci-artifacts/backend-source-hash-20261014/live-read-v4/command.json",
+    "manifest_input": ".ci-artifacts/backend-source-hash-20261014/live-read-v4/manifest-input.raw",
+    "outer_stdout": ".ci-artifacts/backend-source-hash-20261014/live-read-v4/stdout.raw",
+    "outer_stderr": ".ci-artifacts/backend-source-hash-20261014/live-read-v4/stderr.raw",
+    "reader_result": ".ci-artifacts/backend-source-hash-20261014/prepared-v4/run-v4/result.json",
+    "reader_raw_stdout": ".ci-artifacts/backend-source-hash-20261014/prepared-v4/run-v4/commands/source-read.stdout.raw",
+    "reader_command_receipt": ".ci-artifacts/backend-source-hash-20261014/prepared-v4/run-v4/commands/source-read.json",
+    "offline_execution": ".ci-artifacts/backend-source-hash-20261014/offline-v4/execution.json"
+  },
+  "superseded_preparations": {
+    "qualification": "SOURCE_HOLD_HISTORY_ONLY",
+    "last_observed_shared_runner_sha256": "6b9e5840ae391fc6bb7a963168b2690c9c141d9b9441e43a996b25bafac7d916",
+    "last_observed_shared_test_sha256": "0e3dee279ae17a6ec72e3392977b3f9f273b11a00da28bf27c9c277d13dde8f5",
+    "bytes_preserved": false,
+    "note": "Earlier V1/V2 preparation bytes were overwritten during revisions; these hashes are historical observations only and do not claim preservation."
+  },
+  "limitations": [
+    "This is a hash observation for the 93 fixed paths copied by the inspected Backend Dockerfile only.",
+    "It does not prove extra-file absence, loaded modules, installed dependencies, configuration, whole-image qualification, or runtime behavior.",
+    "No application module, environment, runtime state, database, API, model, or Job was accessed; no service configuration was changed.",
+    "A prior wait caused by Root coordination tooling was a coordination issue, not a BeyondQuant failure."
+  ]
+}

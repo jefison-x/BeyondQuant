@@ -1,0 +1,129 @@
+{
+  "actor_provenance": {
+    "human_conversation_actor": "admin",
+    "kind": "deterministic_product_actor_contract",
+    "not_claimed": "No direct live child environment observation; the previous root process already exited.",
+    "product_actor_is_not_human_actor": true,
+    "session_id_source": "ordinary-capture-20261013/live-v3/capture/turn-2/binding.json",
+    "source_lines": [
+      "packages/contracts/acp_product_slot.py:154",
+      "services/runtime-adapter/app/runtime.py:2865"
+    ],
+    "source_sha256": {
+      "packages/contracts/acp_product_slot.py": "65c73b22245ce174b1d350ba1b4690267e11cc3f6e0f5517a32d144935b3ff1b",
+      "services/runtime-adapter/app/runtime.py": "c94a5f77cb6b75f0150f01454ecdf097e2c8a753f3021ffd7728b0026da07dfb"
+    }
+  },
+  "commands": [
+    {
+      "elapsed_ms": 28,
+      "label": "postgres-before",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 201,
+      "stdout_sha256": "e5bfd4bdc2f13646ab0434e425006e585747909ddae5d1d460406edd5f5eacff"
+    },
+    {
+      "elapsed_ms": 105,
+      "label": "existing-root-sql",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1029,
+      "stdout_sha256": "4aa09819a3fec9d4fd3a155cbe19d77e0c8c4255e2bfa462d092c17200fb6744"
+    },
+    {
+      "elapsed_ms": 32,
+      "label": "postgres-after",
+      "returncode": 0,
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 201,
+      "stdout_sha256": "e5bfd4bdc2f13646ab0434e425006e585747909ddae5d1d460406edd5f5eacff"
+    }
+  ],
+  "gates": {
+    "raw_result_sol": "PASS_EXISTING_ROOT_ONLY",
+    "root": "PASS_EXISTING_ROOT_ONLY",
+    "source_sol": "PASS"
+  },
+  "manifest_sha256": "c89b44aa1db539965adc6b29095b5cbdccfa7c4e1e1b7e91490030eed6c89d20",
+  "not_qualified": [
+    "child startup",
+    "child result",
+    "child model usage allocation",
+    "signed cleanup for this root",
+    "production",
+    "complete delegated collector"
+  ],
+  "outer_result": {
+    "argv": [
+      "python3",
+      ".ci-artifacts/delegated-child-20261013/scope-existing-read-entry-v1/run.py"
+    ],
+    "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+    "elapsed_ms": 277,
+    "returncode": 0,
+    "runner_sha256": "79046cf5563ebcbba46baf16fc5705e5b189f8c3b08a7c6ab29af606571b2a19",
+    "stderr_bytes": 0,
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_bytes": 288,
+    "stdout_sha256": "979eb23e218b22f5d49f6ea40c7021025bf8a5ddf4a439646fa31ba6d893e0fa",
+    "timed_out": false
+  },
+  "plan_sha256": "5e0d2542c87a5be06a0e5af763f494b2a355cdc9a7d62947e64da915b4bdbaee",
+  "preserved_plan_holds": [
+    "v1/v2 used the human conversation actor for Product Agent scope; no SQL executed",
+    "v3 scope/provenance passed but the executable command entry was missing; no SQL executed"
+  ],
+  "projection": {
+    "audit_count": 0,
+    "audits": [],
+    "ingress": [],
+    "ingress_count": 0,
+    "mode": "preflight",
+    "registration_count": 0,
+    "registrations": [],
+    "root": {
+      "authority_boot_id": "7877cb9f801dc694bbea241aff867225",
+      "authority_status": "closed",
+      "owner_principal": "admin",
+      "root_run_id": "767d4900d2ef4fa399ca8df894a040ac",
+      "session_id": "byq-session-03e4a55382e945c4ba1a605e59f7d3ac",
+      "status": "completed",
+      "terminal_acp_ingress_sequence": 0,
+      "terminal_acp_ingress_sha256": "4a3ac1fc4eaedb50528cafccb671aeb544a514237f09426785f1790d74251f90",
+      "terminal_event_sha256": "cdd868c79bc0b026705cc54c04393ec545feb4468357d73dbc1dc6ab08a1340a",
+      "terminal_sequence": 13,
+      "terminal_unknown_claim_count": 0,
+      "terminal_unknown_claims_sha256": "56383697566016c2bfe81dbc573efcad486f85aa7aadad3f883d7c0e0d1918d3",
+      "trace_id": "byq-trace-d83967d7de074ff09aad783dbda57811",
+      "workspace_id": "workspace_4c5b803209d549019b7804976f6930c6"
+    },
+    "schema_version": "byq-acp-child-scope-read.v1"
+  },
+  "projection_sha256": "07f65fca289b4958d05d169bd5c182ed71a9a0b4b80ded64b3a4d3e954aade5d",
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/scope-existing-read-v1",
+  "result": {
+    "database_queries": 1,
+    "docker_commands": 3,
+    "elapsed_ms": 224,
+    "manifest_sha256": "c89b44aa1db539965adc6b29095b5cbdccfa7c4e1e1b7e91490030eed6c89d20",
+    "model_requests": 0,
+    "new_jobs": 0,
+    "postgres_identity_unchanged": true,
+    "source_unchanged": true,
+    "status": "PASS_EXISTING_ROOT_ONLY"
+  },
+  "runner_sha256": "79046cf5563ebcbba46baf16fc5705e5b189f8c3b08a7c6ab29af606571b2a19",
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "child-scope-existing-ordinary-root-read",
+  "source_head": "492b0beab4b6e35b4c19b5ee27ed4ba096ffba78",
+  "source_sha256": {
+    "scripts/evidence/acp-child-scope-read.py": "31ad3c9480a68ac42f844814175dd4f254904a33eb9038002df445fb962af40a",
+    "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "scripts/evidence/test_acp_child_scope_read.py": "9661977282303f27e5e3cd75cf6c59071e7528ac4000c26de0524906bd12d60c"
+  },
+  "status": "PASS_EXISTING_ROOT_ONLY"
+}

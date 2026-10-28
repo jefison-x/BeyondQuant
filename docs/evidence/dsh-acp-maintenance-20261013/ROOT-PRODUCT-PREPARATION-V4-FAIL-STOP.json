@@ -1,0 +1,20 @@
+{
+  "status": "FAIL_STOP_OFFLINE_FIXTURE",
+  "live_admission": "HOLD",
+  "evidence_directory": ".ci-artifacts/background-continuation-20261014/business-product-prepared-v4",
+  "failure_summary_sha256": "227ad0f36e9123f636c2d84ad0f3849a7807930366da1530c1a9bed3ce704e5e",
+  "static_contract_map_sha256": "e5cae830245cdb0704260082ca80f63866301ff599cf961259a9e04009a83ba0",
+  "failure": "Substituted grant response used a placeholder profile digest; the collector correctly rejected it.",
+  "same_class_reason": "Substituted responses were not independently grounded in the Product source contract. Reading expected values from collector constants can produce self-confirming tests.",
+  "subsequent_offline_rc0": "PRESERVED_NOT_ADMITTED; replacing the placeholder and rerunning before renewed Root admission does not establish PASS",
+  "independent_sol_review": "SOURCE_HOLD",
+  "root_acceptance": "STOP_THIS_BATCH",
+  "http_calls": 0,
+  "product_writes": 0,
+  "models": 0,
+  "jobs": 0,
+  "next_preparation": "A separate minimal read-only collector: normal login and exact Product GETs only. Remove grant submission and grant-profile qualification from this entry. Prepare source-to-wire mapping for independent review before any new testing admission.",
+  "next_preparation_state": "STATIC_PREPARATION_ONLY",
+  "overall_maintenance": "NOT_READY",
+  "environment_and_page": "KEEP_OPEN"
+}

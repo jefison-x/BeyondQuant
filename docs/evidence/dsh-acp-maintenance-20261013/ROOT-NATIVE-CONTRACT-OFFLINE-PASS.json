@@ -1,0 +1,87 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "PASS_OFFLINE_ONLY",
+  "repository_head": "63ba926d",
+  "source_sha256_before": {
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2-contract-review/offline-plan-draft.json": "7a700ae831917f08bdfd6c5924ec838f14f560bc01a2b427f94af2b42f05fc0f",
+    "scripts/evidence/acp-child-scope-read.py": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scripts/evidence/acp-foreground-child-capture.py": "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69",
+    "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "scripts/evidence/test_acp_child_scope_read.py": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31",
+    "scripts/evidence/test_acp_foreground_child_capture.py": "7699d79939b394e71d7017a512dc8f29933ee7dc551320d762546791d356e6ae"
+  },
+  "native_reader_sha256": "bb9de5ea6017c5c19a747c84742322a64fd7cceee734ec1b90fd8484e818775d",
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=2s",
+    "60s",
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_preflight_capture_child_finish_full_chain_synthetic_transport",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_accepts_zero_native_user_sequences",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_skips_unknown_ignorable_event_with_opaque_metadata",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_accepts_close_runtime_root_without_terminal_binding_audits",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_whole_main_fail_stop_matrix_preserves_first_stop"
+  ],
+  "fresh_methods_passed": 5,
+  "fresh_fail_stop_matrix_passed": 42,
+  "raw": {
+    "returncode": 0,
+    "elapsed_ms": 3047,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 1230,
+    "stderr_sha256": "25eeb27ea94384aa8f1af19ca5dbc36c2c6653af4a512e104ea45682e52fc39e"
+  },
+  "source_before_after_equal": true,
+  "independent_sol_raw_review": "PASS",
+  "root": "PASS",
+  "limits": {
+    "database": 0,
+    "http": 0,
+    "job": 0,
+    "model": 0,
+    "one_fail_fast_process": true,
+    "outer_timeout_seconds": 60,
+    "real_docker": 0
+  },
+  "reused": {
+    "prior_native_contract_v1_pure_methods_passed": 3,
+    "unchanged_scope_methods_passed": 16,
+    "unchanged_provider_and_finish_methods": "Reuse recorded prior bounded tests; not a fresh full-file run."
+  },
+  "official_source_oracle": {
+    "path": "packages/core/session/lib/index.js",
+    "embedded_source_sha256": "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d",
+    "wrapper_sha256": "a67fa205c66401601542c0e52df7690b226159d963dc0c55d54e3cad462e9f2d"
+  },
+  "repair_scope": [
+    "Official top-level toolCallId/source.callId/isError with ordinary content blocks",
+    "Message ID/role/source and model/lifecycle contracts",
+    "Zero-based contiguous event sequence and safe time/envelope validation",
+    "Unknown ignorable opaque metadata and known surface markers",
+    "Optional/extended header fields with precise BYQ Root/child lineage",
+    "Developer tool removal and cross-role tool-change restrictions",
+    "JSON Path/string and pre-STOP raw versus success-only derived artifact boundaries"
+  ],
+  "fixture_claim": "Manual source-conforming synthetic bytes checked independently against the pinned oracle; not claimed SDK serializer output.",
+  "static_holds_retained": [
+    "Opaque unknown metadata and developer removal source omissions",
+    "Error-result assertion read a success-only artifact after STOP",
+    "Plan active test pin stale",
+    "Native fixture Path serialization V1 failure"
+  ],
+  "not_claimed": [
+    "Current existing native files PASS",
+    "Original failed live batch recovery",
+    "Original child resume or close",
+    "Full surface folding",
+    "Per-child provider billing",
+    "Production readiness"
+  ]
+}

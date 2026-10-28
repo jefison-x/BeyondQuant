@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, resumeSession,
-  streamWorkflowEvents, submitTurn, updateAgentSession,
+  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession,
+  listAgentSessions, resumeSession, streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { continueApproval } from "@/api/research";
 import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunState, workflowWaiting } from "@/api/workflow";
@@ -26,6 +26,7 @@ const error = ref("");
 const busy = ref(false);
 const loading = ref(false);
 const initialized = ref(false);
+const requestedSessionUnavailable = ref(false);
 const activityOpen = ref(false);
 const historyOpen = ref(false);
 const historyStatus = ref<"active" | "archived">("active");
@@ -48,9 +49,20 @@ const approvalContinuationChecks = new Map<string, number>();
 let viewDisposed = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
+let streamEvidenceUnavailableGeneration = -1;
 const terminalSessionId = ref("");
+const softCancelPending = ref(false);
+const softCancelRunId = ref("");
+const activeRunId = ref("");
+const agentMessageRunIds = new WeakMap<object, string>();
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
+const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。可在系统设置中关闭后续自动接续。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
+// A known, fully-settled model-budget exhaustion closes the failed root but
+// leaves the live conversation promptable. The browser must not treat it as a
+// terminal session and must not attempt a failed-run resume; an explicit new
+// user instruction is submitted directly as a fresh root.
+const budgetExhaustedCode = "budget-exhausted";
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
@@ -65,7 +77,7 @@ const activeActivity = computed(() => [...activities.value].reverse().find((item
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
 const runActive = computed(() => terminalSessionId.value !== agent.activeSessionId
-  && (replayRun.value.running || Boolean(localRunStartedAt.value)));
+  && (softCancelPending.value || replayRun.value.running || Boolean(localRunStartedAt.value)));
 const processingVisible = computed(() => runActive.value && !replayRun.value.answerStarted);
 const runStartedAt = computed(() => replayRun.value.startedAt || localRunStartedAt.value);
 const elapsedSeconds = computed(() => {
@@ -86,25 +98,84 @@ const timeline = computed(() => [
   ...outcomes.value.map((outcome) => ({ type: "outcome" as const, at: outcome.timestamp, key: `outcome-${outcome.key}`, outcome })),
 ].sort((left, right) => left.at.localeCompare(right.at)));
 
+function runIdsBySequence(events: WorkflowTraceEvent[], sequences: number[]): Map<number, string> {
+  const intervals: Array<{ start: number; end: number; runId: string }> = [];
+  let currentRunId = "";
+  let currentStart = 0;
+  const terminalKinds = new Set(["session.result", "session.failed", "session.result.discarded"]);
+  const closeCurrentRun = (end: number) => {
+    if (currentRunId) intervals.push({ start: currentStart, end, runId: currentRunId });
+    currentRunId = "";
+  };
+  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
+    if (event.kind === "session.started") {
+      closeCurrentRun(event.sequence);
+      currentRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      currentStart = event.sequence;
+      continue;
+    }
+    const terminalRunEvent = terminalKinds.has(event.kind)
+      || (event.kind === "session.cancelled" && event.payload.mode !== "soft");
+    if (event.kind === "session.closed") {
+      closeCurrentRun(event.sequence);
+      continue;
+    }
+    if (!terminalRunEvent) continue;
+    const eventRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+    const matchesActiveRun = !currentRunId || !eventRunId || eventRunId === currentRunId;
+    const matchesDiscardedRun = event.kind !== "session.result.discarded"
+      || !currentRunId || eventRunId === currentRunId;
+    if (matchesActiveRun && matchesDiscardedRun) closeCurrentRun(event.sequence);
+  }
+  closeCurrentRun(Number.POSITIVE_INFINITY);
+  const runIds = new Map<number, string>();
+  for (const sequence of sequences) {
+    const interval = intervals.find((candidate) => sequence >= candidate.start && sequence < candidate.end);
+    if (interval) runIds.set(sequence, interval.runId);
+  }
+  return runIds;
+}
+
 function replayMessages(messages: AgentReplayMessage[], events: WorkflowTraceEvent[]): AgentMessage[] {
   const persistedAnswerSequences = new Set(messages
     .filter((message) => message.role === "assistant" && typeof message.workflow_sequence === "number")
     .map((message) => message.workflow_sequence));
+  const outputSequences = events.filter((event) => event.kind === "agent.output.delta"
+    && typeof event.payload.delta === "string" && !persistedAnswerSequences.has(event.sequence))
+    .map((event) => event.sequence);
+  const messageSequences = messages.filter((message) => message.role === "assistant"
+    && typeof message.workflow_sequence === "number")
+    .map((message) => message.workflow_sequence as number);
+  const runIds = runIdsBySequence(events, [...messageSequences, ...outputSequences]);
   const ordered = [
     ...messages.map((message) => ({
       kind: message.role === "assistant" ? "agent" as const : "user" as const,
       at: message.created_at,
       text: message.content,
+      runId: message.role === "assistant" && typeof message.workflow_sequence === "number"
+        ? runIds.get(message.workflow_sequence) ?? ""
+        : "",
     })),
     ...events.filter((event) => event.kind === "agent.output.delta"
       && typeof event.payload.delta === "string" && !persistedAnswerSequences.has(event.sequence))
-      .map((event) => ({ kind: "agent" as const, at: event.timestamp, text: String(event.payload.delta) })),
+      .map((event) => ({
+        kind: "agent" as const,
+        at: event.timestamp,
+        text: String(event.payload.delta),
+        runId: runIds.get(event.sequence) ?? "",
+      })),
   ].sort((left, right) => left.at.localeCompare(right.at));
   const result: AgentMessage[] = [];
   for (const item of ordered) {
     const last = result[result.length - 1];
-    if (item.kind === "agent" && last?.role === "agent") last.text += item.text;
-    else result.push({ role: item.kind, text: item.text, createdAt: item.at });
+    const lastRunId = last?.role === "agent" ? agentMessageRunIds.get(toRaw(last)) ?? "" : "";
+    if (item.kind === "agent" && item.runId && last?.role === "agent" && lastRunId === item.runId) {
+      last.text += item.text;
+    } else {
+      const message: AgentMessage = { role: item.kind, text: item.text, createdAt: item.at };
+      if (item.kind === "agent" && item.runId) agentMessageRunIds.set(toRaw(message), item.runId);
+      result.push(message);
+    }
   }
   return result;
 }
@@ -125,6 +196,19 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
   if (agent.events.some((current) => current.sequence === event.sequence)) return;
   agent.addEvent(event);
+  if (event.kind === "session.started") {
+    activeRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+  }
+  if (event.kind === "session.cancelled" && event.payload.mode === "soft") {
+    const runId = typeof event.payload.run_id === "string" ? event.payload.run_id : activeRunId.value;
+    const alreadySettled = Boolean(runId) && agent.events.some((current) =>
+      ["session.result", "session.failed", "session.result.discarded"].includes(current.kind)
+      && current.payload.run_id === runId);
+    if (!alreadySettled) {
+      softCancelPending.value = true;
+      softCancelRunId.value = runId;
+    }
+  }
   if (event.kind === "session.closed" || (event.kind === "session.cancelled" && event.payload.mode === "hard")) {
     terminalSessionId.value = event.session_id;
     error.value = terminalSessionMessage;
@@ -135,15 +219,37 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (event.kind === "agent.card.approval") {
     window.dispatchEvent(new Event("byq:approvals-changed"));
   }
-  if (["session.result", "session.failed", "session.cancelled", "session.result.discarded"].includes(event.kind)) {
+  const terminalRunEvent = ["session.result", "session.failed", "session.result.discarded"].includes(event.kind)
+    || (event.kind === "session.cancelled" && event.payload.mode !== "soft");
+  const eventRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+  const matchesSoftCancelledRun = softCancelPending.value
+    && Boolean(softCancelRunId.value)
+    && eventRunId === softCancelRunId.value
+    && terminalRunEvent;
+  const matchesActiveRun = !activeRunId.value || !eventRunId || eventRunId === activeRunId.value;
+  const matchesDiscardedRun = event.kind !== "session.result.discarded"
+    || !activeRunId.value || eventRunId === activeRunId.value;
+  if (terminalRunEvent && matchesActiveRun && matchesDiscardedRun) {
     localRunStartedAt.value = "";
     stopping.value = false;
     stopReconciliation();
+    activeRunId.value = "";
+  }
+  if (matchesSoftCancelledRun) {
+    softCancelPending.value = false;
+    softCancelRunId.value = "";
+    if (error.value === softCancelWaitingMessage) error.value = "";
   }
   if (event.kind === "agent.output.delta" && typeof event.payload.delta === "string") {
     const last = agent.messages[agent.messages.length - 1];
-    if (last?.role === "agent") last.text += event.payload.delta;
-    else agent.addMessage({ role: "agent", text: event.payload.delta, createdAt: event.timestamp });
+    const runId = activeRunId.value;
+    const lastRunId = last?.role === "agent" ? agentMessageRunIds.get(toRaw(last)) ?? "" : "";
+    if (runId && last?.role === "agent" && lastRunId === runId) last.text += event.payload.delta;
+    else {
+      const message: AgentMessage = { role: "agent", text: event.payload.delta, createdAt: event.timestamp };
+      if (runId) agentMessageRunIds.set(toRaw(message), runId);
+      agent.addMessage(message);
+    }
   }
   void nextTick(() => scrollConversation("smooth"));
 }
@@ -156,8 +262,10 @@ function reconnectDelay(milliseconds: number, signal: AbortSignal): Promise<void
 }
 
 async function replayMissedEvents(sessionId: string, generation: number): Promise<number> {
+  if (streamEvidenceUnavailableGeneration === generation) return 0;
   const replay = await getAgentSession(sessionId, auth.token);
-  if (generation !== conversationGeneration || sessionId !== agent.activeSessionId) return 0;
+  if (generation !== conversationGeneration || sessionId !== agent.activeSessionId
+      || streamEvidenceUnavailableGeneration === generation) return 0;
   let maximum = 0;
   for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
     maximum = Math.max(maximum, event.sequence);
@@ -184,6 +292,14 @@ async function maintainStream(
       }, String(cursor), controller.signal);
     } catch (exc) {
       if (controller.signal.aborted || generation !== conversationGeneration) return;
+      if (exc instanceof AgentRequestError && exc.status === 409
+          && exc.message === "runtime adapter evidence is unavailable") {
+        streamEvidenceUnavailableGeneration = generation;
+        stopStream();
+        stopReconciliation();
+        ElMessage.warning("当前运行记录尚未核清，历史已保留。");
+        return;
+      }
       if (exc instanceof AgentRequestError && [401, 403, 404, 410].includes(exc.status)) return;
       if (exc instanceof AgentRequestError && terminalSessionCodes.has(exc.code ?? "")) {
         terminalSessionId.value = sessionId;
@@ -211,28 +327,58 @@ function startStream(sessionId: string, afterSequence: number, generation: numbe
 
 function scheduleRunReconciliation(sessionId: string, generation: number) {
   stopReconciliation();
-  if (!localRunStartedAt.value) return;
+  if (!localRunStartedAt.value || streamEvidenceUnavailableGeneration === generation) return;
   reconciliationTimer = setTimeout(async () => {
     reconciliationTimer = null;
-    if (generation !== conversationGeneration || sessionId !== agent.activeSessionId || !localRunStartedAt.value) return;
+    if (generation !== conversationGeneration || sessionId !== agent.activeSessionId || !localRunStartedAt.value
+        || streamEvidenceUnavailableGeneration === generation) return;
     if (Date.now() - lastStreamEventAt >= 10_000) {
       try { await replayMissedEvents(sessionId, generation); }
       catch { /* the live stream remains primary; the next bounded poll retries */ }
     }
-    if (localRunStartedAt.value) scheduleRunReconciliation(sessionId, generation);
+    if (localRunStartedAt.value && streamEvidenceUnavailableGeneration !== generation) {
+      scheduleRunReconciliation(sessionId, generation);
+    }
   }, 5_000);
 }
 
-async function openSession(sessionId: string, updateRoute = true) {
+async function openSession(sessionId: string, updateRoute = true, strictRequest = false) {
   const generation = ++conversationGeneration;
   stopStream(); stopReconciliation(); localRunStartedAt.value = ""; stopping.value = false;
+  softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
+  if (strictRequest) {
+    requestedSessionUnavailable.value = true;
+    agent.clearActiveSession();
+  } else {
+    requestedSessionUnavailable.value = false;
+  }
   loading.value = true; error.value = "";
   try {
     const replay = await getAgentSession(sessionId, auth.token);
     if (generation !== conversationGeneration) return;
+    requestedSessionUnavailable.value = false;
     agent.replaceSession({ ...replay.conversation, session_id: sessionId });
     agent.hydrateSession(sessionId, replayMessages(replay.messages, replay.events), replay.events);
+    for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
+      if (event.kind === "session.started") {
+        activeRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      }
+      if (event.kind === "session.cancelled" && event.payload.mode === "soft") {
+        softCancelPending.value = true;
+        softCancelRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : activeRunId.value;
+      }
+      const terminal = ["session.result", "session.failed", "session.result.discarded"].includes(event.kind)
+        || (event.kind === "session.cancelled" && event.payload.mode !== "soft");
+      const runId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      if (terminal && softCancelPending.value && softCancelRunId.value && runId === softCancelRunId.value) {
+        softCancelPending.value = false; softCancelRunId.value = "";
+      }
+      const matchesActiveRun = !activeRunId.value || !runId || runId === activeRunId.value;
+      const matchesDiscardedRun = event.kind !== "session.result.discarded"
+        || !activeRunId.value || runId === activeRunId.value;
+      if (terminal && matchesActiveRun && matchesDiscardedRun) activeRunId.value = "";
+    }
     if (replay.events.some((event) => event.kind === "session.closed"
       || (event.kind === "session.cancelled" && event.payload.mode === "hard"))) {
       terminalSessionId.value = sessionId;
@@ -244,7 +390,15 @@ async function openSession(sessionId: string, updateRoute = true) {
     await nextTick();
     scrollConversation();
   } catch (exc) {
-    if (generation === conversationGeneration) error.value = exc instanceof Error ? exc.message : "会话加载失败";
+    if (generation === conversationGeneration) {
+      if (strictRequest) {
+        requestedSessionUnavailable.value = true;
+        agent.clearActiveSession();
+        error.value = "无法打开此会话。它可能不存在或你无权访问。请从历史会话中选择，或新建会话。";
+      } else {
+        error.value = exc instanceof Error ? exc.message : "会话加载失败";
+      }
+    }
   } finally { if (generation === conversationGeneration) loading.value = false; }
 }
 
@@ -252,12 +406,17 @@ async function persistNewSession() {
   const session = await createAgentSession(auth.token);
   agent.addSession(session);
   await openSession(session.session_id, false);
+  if (agent.activeSessionId === session.session_id) {
+    await router.replace({ path: "/agent", query: { session: session.session_id } });
+  }
 }
 
 function startNewSession(preservePrompt = false) {
   conversationGeneration += 1;
   stopStream(); stopReconciliation();
   localRunStartedAt.value = ""; stopping.value = false; loading.value = false; error.value = "";
+  requestedSessionUnavailable.value = false;
+  softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
   agent.clearActiveSession();
   if (!preservePrompt) prompt.value = "";
@@ -381,7 +540,7 @@ function navigateCard(event: WorkflowCardEvent) {
 
 async function send(value = prompt.value) {
   const content = value.trim();
-  if (!content || busy.value || runActive.value) return;
+  if (!content || busy.value || loading.value || requestedSessionUnavailable.value || runActive.value || softCancelPending.value) return;
   if (agent.activeSessionId && terminalSessionId.value === agent.activeSessionId) {
     error.value = terminalSessionMessage;
     return;
@@ -392,7 +551,9 @@ async function send(value = prompt.value) {
   try {
     if (!agent.activeSessionId) await persistNewSession();
     pendingSession = agent.activeSessionId;
-    if (replayRun.value.failed) await resumeSession(agent.activeSessionId, auth.token);
+    if (replayRun.value.failed && replayRun.value.failureCode !== budgetExhaustedCode) {
+      await resumeSession(agent.activeSessionId, auth.token);
+    }
     pendingMessage = { role: "user", text: content, createdAt: new Date().toISOString() };
     agent.addMessage(pendingMessage);
     localRunStartedAt.value = new Date().toISOString();
@@ -415,7 +576,7 @@ async function send(value = prompt.value) {
         && message.createdAt === pendingMessage!.createdAt && message.text === pendingMessage!.text));
     }
     localRunStartedAt.value = "";
-    if (terminalSessionId.value !== pendingSession) {
+    if (!pendingSession || terminalSessionId.value !== pendingSession) {
       error.value = exc instanceof Error ? exc.message : "发送失败";
     }
   }
@@ -477,38 +638,60 @@ async function retryApprovalContinuation(value: unknown) {
 async function stopCurrentRun() {
   if (!agent.activeSessionId || stopping.value || !runActive.value) return;
   stopping.value = true;
+  softCancelPending.value = true;
+  softCancelRunId.value = activeRunId.value;
   try {
-    await cancelSession(agent.activeSessionId, "hard", auth.token);
-    terminalSessionId.value = agent.activeSessionId;
-    error.value = terminalSessionMessage;
-    localRunStartedAt.value = "";
-    stopReconciliation();
-    stopStream();
-    ElMessage.success("本轮已停止，请新建会话继续");
+    await cancelSession(agent.activeSessionId, "soft", auth.token);
+    if (softCancelPending.value) {
+      error.value = softCancelWaitingMessage;
+      ElMessage.success("已请求停止当前回复；独立后台任务可能稍后接续");
+    } else {
+      stopping.value = false;
+      error.value = "本轮已结算；停止本轮只停止当前回复，独立后台任务可能稍后接续。关闭自动接续可阻止后续事件。";
+      ElMessage.success("本轮已停止；独立后台任务可能稍后接续");
+    }
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "停止失败";
-  } finally {
-    stopping.value = false;
+    // The request outcome may be unknown. Keep the same session, stream and
+    // input gate until replay proves whether the original run settled.
+    scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
   }
 }
 
 onMounted(async () => {
   clockTimer = setInterval(() => { clock.value = Date.now(); }, 1000);
   applyRouteDraft(route.query.draft);
+  const initialRequested = typeof route.query.session === "string" ? route.query.session : "";
+  const explicitNew = typeof route.query.new === "string";
+  if (initialRequested && !explicitNew) {
+    requestedSessionUnavailable.value = true;
+    agent.clearActiveSession();
+  }
   try {
     await refreshCatalog();
     const requested = typeof route.query.session === "string" ? route.query.session : "";
     if (typeof route.query.new === "string") startNewSession(typeof route.query.draft === "string");
-    else if (requested && agent.sessions.some((item) => item.session_id === requested)) await openSession(requested, false);
+    else if (requested) await openSession(requested, false, true);
     else if (agent.sessions[0]) await openSession(agent.sessions[0].session_id, false);
     else startNewSession(typeof route.query.draft === "string");
     await retryApprovalContinuation(route.query.approval);
     if (route.query.history) await showHistory();
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : "初始化失败"; }
+  } catch (exc) {
+    if (initialRequested && !explicitNew) {
+      requestedSessionUnavailable.value = true;
+      agent.clearActiveSession();
+      error.value = "无法打开此会话。它可能不存在或你无权访问。请从历史会话中选择，或新建会话。";
+    } else {
+      error.value = exc instanceof Error ? exc.message : "初始化失败";
+    }
+  }
   finally { initialized.value = true; }
 });
 watch(() => route.query.new, (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) startNewSession(typeof route.query.draft === "string"); });
-watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await openSession(value, false); });
+watch(() => route.query.session, async (value, previous) => {
+  if (initialized.value && typeof value === "string" && value !== previous
+      && value !== agent.activeSessionId) await openSession(value, false, true);
+});
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
 watch(() => route.query.draft, applyRouteDraft);
 watch(() => route.query.approval, retryApprovalContinuation);
@@ -541,7 +724,7 @@ onBeforeUnmount(() => {
       <div v-else-if="!timeline.length" class="conversation-empty">
         <div class="xiaoba-mark">小巴</div><h1>今天想研究什么？</h1>
         <p>从问题出发，小巴会把结论、策略草案、候选股票与回测上下文放在同一条对话时间线中。</p>
-        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" @click="send(starter)">{{ starter }}</button></div>
+        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" :disabled="loading || requestedSessionUnavailable" @click="send(starter)">{{ starter }}</button></div>
       </div>
       <div v-else class="timeline">
         <template v-for="item in timeline" :key="item.key">
@@ -581,7 +764,7 @@ onBeforeUnmount(() => {
     </main>
     <footer class="composer-wrap">
       <form class="agent-composer" @submit.prevent="send()">
-        <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" @keydown="handleComposerKeydown" />
+        <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" :disabled="loading || requestedSessionUnavailable" @keydown="handleComposerKeydown" />
         <el-button
           v-if="runActive"
           class="composer-action composer-stop"
@@ -591,7 +774,7 @@ onBeforeUnmount(() => {
           title="停止本轮"
           @click="stopCurrentRun"
         ><span class="stop-square" aria-hidden="true"></span></el-button>
-        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim()" @click="send()">发送</el-button>
+        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim() || loading || requestedSessionUnavailable" @click="send()">发送</el-button>
       </form>
     </footer>
     <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">

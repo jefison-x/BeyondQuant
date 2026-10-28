@@ -1,0 +1,28 @@
+{
+  "schema": "byq-browser-existing-child-refresh.v1",
+  "status": "WAIT_FAIL_STOP_RECOVERED_OBSERVATION",
+  "conversation_id": "conversation_dae4a2d6221547888349dd3d3daaf25e",
+  "browser_id": "2",
+  "tab_id": "2",
+  "reload_count": 1,
+  "new_inputs": 0,
+  "new_models": 0,
+  "new_jobs": 0,
+  "failed_wait": {
+    "locator": "getByText(/I'll begin with the root AgentRun registration/)",
+    "requested_timeout_ms": 15000,
+    "reported_tool_wall_seconds": 3.0681,
+    "result": "Playwright selector deadline exceeded; no_matches",
+    "cause": "UNKNOWN: do not infer persistence failure or exact selector implementation from this timeout."
+  },
+  "post_stop_diagnosis": "One fresh AX read (no retry/reload/input) showed original conversation, one user message and one assistant response with ROOT_OK; this does not erase failed wait.",
+  "proof": {
+    "source": "cua_repl getAXState tool outputs before reload and fresh diagnostic afterward",
+    "screenshot": "browser-after-refresh.png",
+    "screenshot_sha256": "381190cc82b474e12d25db2284e1dd2a2595697b2e27924d87ead3cfa66ca7ca",
+    "screenshot_limit": "Viewport shows user message only; does not itself prove assistant result or exact counts."
+  },
+  "root_decision": "Retain wait failure; accept restored-page observation only, no full Product PASS.",
+  "independent_review": "Sol confirmed evidence boundaries; no new operation after failure except read-only diagnosis/screenshot.",
+  "current_browser_operations": "STOPPED_NO_RETRY"
+}

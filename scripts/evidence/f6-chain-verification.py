@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot Product API driver for the current ADR-0090 F6 contract.
+"""One-shot Product API driver for the current ADR-0111 F6 contract.
 
 The model-facing Provider is scripted locally, while Agent sessions, BYQ MCP,
 Product approvals, durable Jobs, the signal Worker and request settlement use
@@ -35,19 +35,22 @@ RESERVATION_PATTERN = re.compile(r"continuation_[0-9a-f]{32}\Z")
 SESSION_PATTERN = re.compile(r"byq-session-[0-9a-f]{32}\Z")
 TRACE_PATTERN = re.compile(r"byq-trace-[0-9a-f]{32}\Z")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 _continuation_contract_path = Path(__file__).resolve().parents[2] / "packages/contracts/continuation_request.py"
 _continuation_contract = runpy.run_path(str(_continuation_contract_path))
-PROFILE_BINDING = _continuation_contract["profile_binding"]()
-PROFILE_REQUEST_LIMITS = _continuation_contract["request_limits"]()
+_execution_profile_v2 = _continuation_contract["execution_profile_v2"]
+_request_limits_v2 = _continuation_contract["request_limits_v2"]
+_validate_request_usage_v2 = _continuation_contract["validate_request_usage_v2"]
+_validate_reservation_v3 = _continuation_contract["validate_reservation_v3"]
 del _continuation_contract
 SESSION_IDENTITY_FAILURES = frozenset({
     "original_agent_session_identity_changed", "original_agent_session_trace_changed",
 })
 UNTRUSTED_IDENTITY_FAILURES = frozenset({
     *SESSION_IDENTITY_FAILURES,
-    "reconciliation_task_identity_changed", "reconciliation_permission_identity_changed",
-    "reconciliation_signal_job_identity_changed", "continuation_permission_identity_changed",
-    "reconciliation_unexpected_permission", "reconciliation_request_identity_changed",
+    "reconciliation_task_identity_changed", "reconciliation_execution_options_identity_changed",
+    "reconciliation_signal_job_identity_changed", "execution_options_identity_changed",
+    "reconciliation_request_identity_changed",
     "structured_agent_audit_task_scope_invalid", "structured_agent_audit_runtime_session_invalid",
     "structured_agent_audit_envelope_invalid", "structured_agent_audit_event_invalid",
     "structured_agent_audit_scope_mismatch", "unexpected_structured_request_receipt",
@@ -56,16 +59,17 @@ UNTRUSTED_IDENTITY_FAILURES = frozenset({
     "structured_agent_audit_actions_or_resources_invalid", "structured_settlement_root_link_invalid",
     "research_task_original_conversation_identity_invalid", "strategy_draft_product_lineage_invalid",
     "validated_strategy_version_product_lineage_invalid", "human_strategy_approval_lineage_invalid",
-    "single_request_grant_contract_invalid", "single_request_profile_binding_invalid",
-    "single_request_profile_limits_invalid", "exact_grant_version_invalid",
+    "default_execution_options_not_unbounded", "background_execution_profile_binding_invalid",
+    "background_execution_profile_limits_invalid", "background_execution_options_binding_changed",
     "foreground_structured_runtime_session_changed", "background_structured_runtime_session_changed",
     "original_session_answer_or_trace_changed_after_gateway_restart", "same_job_identity_changed",
     "signal_worker_job_identity_changed", "unexpected_active_job_in_dedicated_f6_owner_scope",
     "gateway_event_identity_changed",
     "validated_signal_artifact_identity_invalid", "validated_signal_artifact_content_lineage_invalid",
-    "validated_signal_artifact_lineage_invalid", "background_grant_identity_changed",
+    "validated_signal_artifact_lineage_invalid",
     "background_runtime_root_identity_invalid", "background_reservation_identity_invalid",
     "background_settlement_digest_invalid", "background_ready_event_identity_invalid",
+    "background_request_carrier_or_usage_invalid", "background_request_receipt_not_exactly_settled",
     "background_ready_event_does_not_match_delivered_signal_job",
     "background_root_correlation_ambiguous", "background_answer_correlation_ambiguous",
     "structured_ready_event_input_binding_invalid",
@@ -251,19 +255,19 @@ F6_OBSERVER_STAGES = frozenset({
     "preflight", "isolate_signal_worker", "prepare_only_test_user",
     "product_login_and_original_session", "foreground_1_task_and_strategy_version",
     "verify_exact_task_and_strategy_lineage", "human_strategy_approval_and_stock_pool",
-    "human_product_api_v2_single_request_grant", "foreground_2_exact_backtest_task_and_signal_job",
+    "default_execution_options_exact_conversation", "foreground_2_exact_backtest_task_and_signal_job",
     "durable_exact_job_admission_with_worker_stopped", "gateway_restart_and_original_logical_session_connect",
     "gateway_ready_original_session_before_connect", "gateway_original_event_connection_once",
     "gateway_same_original_session_after_connect", "start_exact_signal_worker_once",
     "wait_for_exact_completed_job_and_validated_signal_artifact", "background_one_exact_task_ready_read",
-    "exact_grant_revoke_and_get_confirmation", "passed",
+    "exact_execution_options_stop_and_get_confirmation", "passed",
 })
 F6_OBSERVER_ACTIONS = frozenset({
     "signal_worker_stop_before_job", "isolated_ci_user_fixture", "product_login",
     "product_session_create", "foreground_agent_turn_1", "product_strategy_approval",
-    "product_stock_pool", "continuation_permission_grant", "foreground_agent_turn_2",
+    "product_stock_pool", "foreground_agent_turn_2",
     "gateway_restart", "signal_worker_start_after_durable_job",
-    "signal_worker_stop_after_chain", "continuation_permission_revoke",
+    "signal_worker_stop_after_chain", "execution_options_disable",
 })
 
 
@@ -447,7 +451,7 @@ def _write_evidence(*, suffix: str = "") -> str:
     return digest
 
 
-def _background_wait_observation(session_view: dict, request_state: dict, *,
+def _background_wait_observation(session_view: dict, root_id: str | None, *,
                                  bg_user_count: int, answer_present: bool,
                                  answer_ready: bool) -> dict[str, object]:
     """Closed diagnostic projection; no answer text or receipt is a PASS proof."""
@@ -457,16 +461,6 @@ def _background_wait_observation(session_view: dict, request_state: dict, *,
     def count(value, maximum):
         return value if type(value) is int and 0 <= value <= maximum else "invalid_or_unknown"
 
-    identity = request_state.get("request_identity")
-    identity = identity if isinstance(identity, dict) else {}
-    usage = request_state.get("request_usage")
-    usage = usage if isinstance(usage, dict) else {}
-    actual = usage.get("actual_usage")
-    actual = actual if isinstance(actual, dict) else {}
-    violations = usage.get("limit_violations")
-    root = identity.get("run_id")
-    digest = identity.get("settlement_sha256")
-    reservation = identity.get("reservation_id")
     return {
         "qualification": "diagnostic_only_not_a_pass",
         "session_status": category(session_view.get("conversation", {}).get("status"),
@@ -475,24 +469,9 @@ def _background_wait_observation(session_view: dict, request_state: dict, *,
         "background_user_count": count(bg_user_count, 1),
         "assistant_answer_present": answer_present is True,
         "exact_answer_ready": answer_ready is True,
-        "requests_reserved": count(request_state.get("requests_reserved"), 1),
-        "requests_remaining": count(request_state.get("requests_remaining"), 1),
-        "unconfirmed_requests": count(request_state.get("unconfirmed_requests"), 1),
-        "request_status": category(identity.get("status"),
-            {"reserved", "accepted", "settled", "rejected", "outcome_unknown"}),
-        "dispatch_attempts": count(identity.get("dispatch_attempts"), 1),
-        "request_outcome": category(identity.get("outcome"), {"completed", "needs_attention"}),
-        "runtime_root_sha256": (hashlib.sha256(root.encode()).hexdigest()
-            if isinstance(root, str) and RUNTIME_ROOT_PATTERN.fullmatch(root) else None),
-        "reservation_sha256": (hashlib.sha256(reservation.encode()).hexdigest()
-            if isinstance(reservation, str) and RESERVATION_PATTERN.fullmatch(reservation) else None),
-        "settlement_hash_present": isinstance(digest, str) and SHA256_PATTERN.fullmatch(digest) is not None,
-        "request_usage_present": bool(usage),
-        "usage_completeness": category(actual.get("completeness"), {"known", "partial", "unknown"}),
-        "usage_source": category(actual.get("usage_source"),
-            {"provider_response", "unknown", "no_provider_calls"}),
-        "limit_violation_count": (count(len(violations), 32)
-            if isinstance(violations, list) else "invalid_or_unknown"),
+        "runtime_root_sha256": (hashlib.sha256(root_id.encode()).hexdigest()
+            if isinstance(root_id, str) and RUNTIME_ROOT_PATTERN.fullmatch(root_id) else None),
+        "settlement_status": "not_read_in_public_session",
     }
 
 
@@ -541,28 +520,33 @@ def _background_answer_for_root(session_view: dict[str, object], runtime_root_id
 
 def _assert_background_ready_signal(receipt: dict[str, object], signal_job_id: str,
                                     artifact_id: str) -> None:
-    signal = receipt.get("ready_signal")
-    require(isinstance(signal, dict) and set(signal) == {
-        "kind", "data_ready", "identity", "status", "updated_at", "result_artifact_id"}
-        and signal.get("kind") == "signal_producer_jobs" and signal.get("data_ready") is True
-        and signal.get("status") == "completed" and signal.get("identity") == signal_job_id
-        and signal.get("result_artifact_id") == artifact_id
-        and isinstance(signal.get("updated_at"), str) and len(signal["updated_at"]) <= 64,
-        "background_ready_event_does_not_match_delivered_signal_job")
-    digest = "ready-v1:" + hashlib.sha256(json.dumps(signal, sort_keys=True).encode()).hexdigest()
-    require(receipt.get("event_key") == digest
-            and isinstance(receipt.get("input_sha256"), str)
-            and SHA256_PATTERN.fullmatch(receipt["input_sha256"]) is not None,
-            "structured_ready_event_input_binding_invalid")
+    carrier = _validate_reservation_v3(receipt.get("reservation"))
+    digest = carrier["idempotency_key"].removeprefix("task-ready-event:")
+    require(receipt.get("signal_job_id") == carrier["signal_job_id"] == signal_job_id
+            and carrier["result_artifact_id"] == artifact_id
+            and receipt.get("reservation_id") == "continuation_" + digest[:32]
+            and receipt.get("event_key") == carrier["event_key"] == "ready-v1:" + digest,
+            "background_ready_event_does_not_match_delivered_signal_job")
 
 
-def _validate_settlement_identity(candidate: object, grant_version: int) -> dict[str, object]:
+def _validate_settlement_identity(candidate: object, options_view: dict) -> dict[str, object]:
     require(isinstance(candidate, dict), "background_request_identity_missing")
     require(candidate.get("status") == "settled"
-            and type(candidate.get("dispatch_attempts")) is int and candidate.get("dispatch_attempts") == 1
-            and type(candidate.get("grant_version")) is int
-            and candidate.get("grant_version") == grant_version,
+            and type(candidate.get("dispatch_attempts")) is int and candidate.get("dispatch_attempts") == 1,
             "background_request_receipt_not_exactly_settled")
+    try:
+        carrier = _validate_reservation_v3(candidate.get("reservation"))
+        usage = _validate_request_usage_v2(candidate.get("request_usage"))
+    except ValueError:
+        raise EvidenceError("background_request_carrier_or_usage_invalid") from None
+    require(carrier["execution_profile"] == _execution_profile_v2(
+                options_view["options"], revision=options_view["revision"])
+            and carrier["request_limits"] == _request_limits_v2(options_view["options"])
+            and carrier["conversation_id"] == options_view["conversation_id"]
+            and carrier["owner_principal"] == options_view["owner_principal"]
+            and carrier["workspace_id"] == options_view["workspace_id"]
+            and carrier["task_id"] == state["identities"].get("task_id"),
+            "background_execution_options_binding_changed")
     runtime_root_id = candidate.get("run_id")
     require(isinstance(runtime_root_id, str)
             and RUNTIME_ROOT_PATTERN.fullmatch(runtime_root_id) is not None,
@@ -570,17 +554,23 @@ def _validate_settlement_identity(candidate: object, grant_version: int) -> dict
     require(isinstance(candidate.get("reservation_id"), str)
             and RESERVATION_PATTERN.fullmatch(candidate["reservation_id"]) is not None,
             "background_reservation_identity_invalid")
-    require(isinstance(candidate.get("input_sha256"), str)
-            and SHA256_PATTERN.fullmatch(candidate["input_sha256"]) is not None,
-            "structured_ready_event_input_binding_invalid")
+    require(usage["execution_profile"] == carrier["execution_profile"]
+            and usage["request_limits"] == carrier["request_limits"],
+            "background_request_usage_profile_invalid")
     require(isinstance(candidate.get("settlement_sha256"), str)
             and SHA256_PATTERN.fullmatch(candidate["settlement_sha256"]) is not None,
             "background_settlement_digest_invalid")
-    require(candidate.get("event_key") is not None
-            and isinstance(candidate.get("event_key"), str)
-            and re.fullmatch(r"ready-v1:[0-9a-f]{64}", candidate["event_key"]) is not None
-            and candidate.get("grant_version") == grant_version,
+    digest = carrier["idempotency_key"].removeprefix("task-ready-event:")
+    require(candidate.get("reservation_id") == "continuation_" + digest[:32]
+            and candidate.get("event_key") == carrier["event_key"] == "ready-v1:" + digest,
             "background_ready_event_identity_invalid")
+    runtime_receipt = {"reservation_id": candidate["reservation_id"],
+                       "idempotency_key": carrier["idempotency_key"],
+                       "status": "settled", "run_id": runtime_root_id,
+                       "outcome": candidate.get("outcome"), "request_usage": usage}
+    require(hashlib.sha256(json.dumps(runtime_receipt, sort_keys=True,
+            separators=(",", ":")).encode()).hexdigest() == candidate["settlement_sha256"],
+            "background_settlement_digest_invalid")
     return candidate
 
 
@@ -648,6 +638,22 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
                 "structured_agent_audit_event_identity_invalid")
         actual_events.append((event["action"], event.get("outcome"),
                               event.get("resource_type"), event.get("resource_id")))
+
+    if stage == "fg1":
+        callbacks = [event for event in events
+                     if event["action"] == "local_strategy_validation_callback_exit"]
+        require(document.get("fg1_callback_exit_verified") is True and len(callbacks) == 1,
+                "structured_agent_audit_actions_or_resources_invalid")
+        callback = callbacks[0]
+        claim_id = callback.get("resource_id")
+        require(isinstance(claim_id, str) and re.fullmatch(r"[0-9a-f]{32}", claim_id)
+                and callback.get("outcome") == "callback_exited"
+                and callback.get("resource_type") == "domain_call_claim"
+                and callback.get("audit_id") == "agent_audit_" + hashlib.sha256(
+                    b"byq-local-strategy-validation-callback-exit.v1\0" + claim_id.encode("ascii")
+                ).hexdigest()[:32], "structured_agent_audit_actions_or_resources_invalid")
+        expected_events = [*expected_events, (
+            "local_strategy_validation_callback_exit", "callback_exited", "domain_call_claim", claim_id)]
 
     expected_active_binding = ("runtime_turn_binding", "active", "runtime_turn", runtime_root_id)
     expected_completed_binding = ("runtime_turn_binding", "completed", "runtime_turn", runtime_root_id)
@@ -737,24 +743,19 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
         raise EvidenceError("structured_agent_audit_actions_or_resources_invalid")
     observation["domain_event_multiset"]["status"] = "exact"
     observed_settlement = document.get("settlement")
-    if settlement is None:
+    if stage != "background":
         require(observed_settlement is None, "unexpected_structured_request_receipt")
     else:
         require(isinstance(observed_settlement, dict), "structured_settlement_not_confirmed")
-        require(observed_settlement.get("reservation_id") == settlement.get("reservation_id")
-                and observed_settlement.get("run_id") == runtime_root_id
-                and type(observed_settlement.get("grant_version")) is int
-                and observed_settlement.get("grant_version") == settlement.get("grant_version") == 1
-                and observed_settlement.get("status") == "settled"
-                and observed_settlement.get("outcome") == "completed"
-                and type(observed_settlement.get("dispatch_attempts")) is int
-                and observed_settlement.get("dispatch_attempts") == 1
-                and observed_settlement.get("event_key") == settlement.get("event_key")
-                and observed_settlement.get("input_sha256") == settlement.get("input_sha256")
-                and observed_settlement.get("settlement_sha256") == settlement.get("settlement_sha256"),
+        if settlement is not None:
+            require(observed_settlement == settlement, "structured_settlement_root_link_invalid")
+        require(observed_settlement.get("run_id") == runtime_root_id
+                and observed_settlement.get("outcome") == "completed",
                 "structured_settlement_root_link_invalid")
+        _validate_settlement_identity(observed_settlement, state["execution_options_before"])
         _assert_background_ready_signal(observed_settlement,
             state["identities"]["signal_job_id"], state["identities"]["signal_snapshot_artifact_id"])
+        state["_settlement_receipt"] = observed_settlement
     observation["settlement_check"] = "validated"
     return {
         "stage": stage, "runtime_root_id": runtime_root_id, "agent_run_id": run["run_id"],
@@ -816,9 +817,8 @@ def _read_structured_agent_audit(stage: str, *, task_id: str, conversation_id: s
         payload["strategy_draft_artifact_id"] = draft_artifact_id
     if strategy_version_artifact_id is not None:
         payload["strategy_version_artifact_id"] = strategy_version_artifact_id
-    if settlement is not None:
-        payload["reservation_id"] = settlement["reservation_id"]
-        payload["settlement_sha256"] = settlement["settlement_sha256"]
+    if stage == "background":
+        payload["signal_job_id"] = state["identities"]["signal_job_id"]
     project = os.environ.get("COMPOSE_PROJECT_NAME", "")
     require(PROJECT_PATTERN.fullmatch(project) is not None, "isolated_ci_project_required")
     deadline = time.monotonic() + timeout
@@ -851,9 +851,8 @@ def _read_structured_agent_audit(stage: str, *, task_id: str, conversation_id: s
                     "structured_runtime_root_terminal_not_confirmed",
                 "F6 Runtime root does not identify one AgentRun": "structured_agent_run_terminal_not_confirmed",
                 "exact F6 task/conversation scope not found": "structured_agent_audit_task_not_visible",
-                "exact F6 settled request receipt not found": "structured_settlement_not_confirmed",
+                "exact F6 settled request receipt is ambiguous": "structured_settlement_root_link_invalid",
                 "F6 settlement is not bound to the exact Runtime root": "structured_settlement_root_link_invalid",
-                "F6 ready event input binding is invalid": "structured_ready_event_input_binding_invalid",
                 "F6 AgentRun audit event count exceeds the exact bounded contract":
                     "structured_agent_audit_actions_or_resources_invalid",
             }
@@ -870,7 +869,7 @@ def _read_structured_agent_audit(stage: str, *, task_id: str, conversation_id: s
                 raise EvidenceError("structured_agent_audit_scope_mismatch")
             if document.get("status") == "not_ready":
                 category = document.get("category")
-                if category in {"runtime_root_not_visible", "runtime_root_active"}:
+                if category in {"runtime_root_not_visible", "runtime_root_active", "settlement_not_visible"}:
                     observations["last_not_ready_category"] = category
                     time.sleep(min(1, max(0, deadline - time.monotonic())))
                     continue
@@ -905,49 +904,6 @@ def _failure_observation_summary(observation: object) -> dict[str, object] | Non
 
 def _is_untrusted_identity(category: object) -> bool:
     return isinstance(category, str) and category in UNTRUSTED_IDENTITY_FAILURES
-
-
-def _request_state_identity_mismatch(request_state: object, identities: dict[str, object]) -> bool:
-    if not isinstance(request_state, dict):
-        return False
-    reserved = request_state.get("requests_reserved")
-    remaining = request_state.get("requests_remaining")
-    unconfirmed = request_state.get("unconfirmed_requests")
-    if (type(reserved) is not int or type(remaining) is not int
-            or type(unconfirmed) is not int):
-        return False
-    if reserved not in {0, 1} or (reserved, remaining) not in {(0, 1), (1, 0)}:
-        return True
-    if reserved == 0:
-        return (unconfirmed != 0 or request_state.get("request_identity") is not None
-                or request_state.get("request_usage") is not None)
-    identity = request_state.get("request_identity")
-    if not isinstance(identity, dict):
-        return unconfirmed == 0
-    status = identity.get("status")
-    if status not in {"settled", "rejected"}:
-        return unconfirmed == 0
-    if unconfirmed != 0:
-        return True
-    if (type(identity.get("grant_version")) is not int
-            or identity.get("grant_version") != identities.get("grant_version")):
-        return True
-    reservation_id = identity.get("reservation_id")
-    if (not isinstance(reservation_id, str) or RESERVATION_PATTERN.fullmatch(reservation_id) is None
-            or (isinstance(identities.get("background_reservation_id"), str)
-                and reservation_id != identities["background_reservation_id"])):
-        return True
-    event_key = identity.get("event_key")
-    if (not isinstance(event_key, str) or re.fullmatch(r"ready-v1:[0-9a-f]{64}", event_key) is None
-            or (isinstance(identities.get("background_event_key"), str)
-                and event_key != identities["background_event_key"])):
-        return True
-    if status == "rejected":
-        return identity.get("run_id") is not None
-    run_id = identity.get("run_id")
-    return (not isinstance(run_id, str) or RUNTIME_ROOT_PATTERN.fullmatch(run_id) is None
-            or (isinstance(identities.get("background_runtime_root_id"), str)
-                and run_id != identities["background_runtime_root_id"]))
 
 
 def _failure_readonly_window(api_call, *, seconds: int) -> None:
@@ -998,7 +954,7 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
         observations["signal_job_status"] = None
         session_ok = False
         task_ok = not isinstance(task_id, str)
-        permission_ok = not isinstance(state.get("grant_idempotency_key"), str)
+        options_ok = state.get("execution_options_before") is None
         job_ok = not isinstance(identities.get("signal_job_id"), str)
         try:
             session_view = _session_call(
@@ -1043,52 +999,21 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
 
             if task_ok:
                 try:
-                    permission_view = _permission_view(
-                        api_call, task_id, timeout=_remaining_timeout(deadline, 15))
+                    options_view = _permission_view(
+                        api_call, conversation_id, timeout=_remaining_timeout(deadline, 15))
                     observations["permission_reads"] = int(observations["permission_reads"]) + 1
-                    require(permission_view.get("schema_version") == "task-continuation-permission.v2",
-                            "reconciliation_permission_schema_invalid")
-                    permission = permission_view.get("permission")
-                    grant_key = state.get("grant_idempotency_key")
-                    version_id = identities.get("strategy_version_artifact_id")
-                    if permission is not None and isinstance(grant_key, str):
-                        require(isinstance(permission, dict)
-                                and permission.get("confirmation_id") == grant_key
-                                and permission.get("confirmed_artifact_ids") == [version_id]
-                                and type(permission.get("grant_version")) is int
-                                and permission.get("grant_version") == identities.get("grant_version", 1),
-                                "reconciliation_permission_identity_changed")
-                        observations["grant_status"] = (
-                            "revoked" if permission.get("revoked_at") is not None else "active")
-                        permission_ok = permission.get("revoked_at") is not None
-                    elif permission is not None:
-                        raise EvidenceError("reconciliation_unexpected_permission")
-                    else:
-                        permission_ok = ("continuation_permission_grant" not in
-                                         state.get("mutation_attempts", []))
-                        observations["grant_status"] = "absent"
-                    request_state = permission_view.get("request_state")
-                    if isinstance(request_state, dict):
-                        request_identity = request_state.get("request_identity")
-                        request_summary = {
-                            key: request_state.get(key) for key in (
-                                "requests_reserved", "requests_remaining", "unconfirmed_requests")
-                        }
-                        request_summary["request_identity"] = (
-                            {key: request_identity.get(key) for key in (
-                                "reservation_id", "status", "run_id", "event_key", "grant_version",
-                                "outcome", "settlement_sha256", "dispatch_attempts")}
-                            if isinstance(request_identity, dict) else None
-                        )
-                        request_usage = request_state.get("request_usage")
-                        request_summary["request_usage"] = request_usage
-                        observations["request_state"] = request_summary
-                        if _request_state_identity_mismatch(request_state, identities):
-                            observations.update(classification="untrusted_identity",
-                                                stop_category="reconciliation_request_identity_changed")
-                            break
-                    else:
-                        observations["permission_read_category"] = "reconciliation_request_state_missing"
+                    before = state.get("execution_options_before")
+                    if isinstance(before, dict):
+                        unchanged = (options_view.get("revision") == before.get("revision")
+                                     and options_view.get("options") == before.get("options"))
+                        disabled = (state.get("options_disable_attempted") is True
+                                    and options_view.get("revision") == before.get("revision", -1) + 1
+                                    and options_view.get("options") == {
+                                        **before["options"], "auto_continue": False})
+                        require(unchanged or disabled, "reconciliation_execution_options_identity_changed")
+                        options_ok = disabled or not state.get("options_disable_attempted")
+                    observations["execution_options_revision"] = options_view["revision"]
+                    observations["auto_continue"] = options_view["options"].get("auto_continue")
                 except EvidenceError as error:
                     observations["permission_read_category"] = error.category
                     if _is_untrusted_identity(error.category):
@@ -1124,52 +1049,14 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
                 if error.category == "reconciliation_deadline_exhausted":
                     break
 
-        request_state = observations.get("request_state")
-        request_ok = task_id is None
-        if isinstance(request_state, dict):
-            reserved = request_state.get("requests_reserved")
-            remaining = request_state.get("requests_remaining")
-            unconfirmed = request_state.get("unconfirmed_requests")
-            request_identity = request_state.get("request_identity")
-            if (type(reserved) is int and type(remaining) is int
-                    and type(unconfirmed) is int and unconfirmed == 0):
-                if reserved == 0 and remaining == 1 and request_identity is None:
-                    request_ok = True
-                elif (reserved == 1 and isinstance(request_identity, dict)
-                      and request_identity.get("status") in {"settled", "rejected"}):
-                    receipt_status = request_identity.get("status")
-                    exact_request = (
-                        remaining == 0
-                        and type(request_identity.get("grant_version")) is int
-                        and request_identity.get("grant_version") == identities.get("grant_version")
-                        and isinstance(request_identity.get("reservation_id"), str)
-                        and RESERVATION_PATTERN.fullmatch(request_identity["reservation_id"]) is not None
-                        and isinstance(request_identity.get("event_key"), str)
-                        and re.fullmatch(r"ready-v1:[0-9a-f]{64}", request_identity["event_key"]) is not None
-                        and isinstance(identities.get("background_event_key"), str)
-                        and request_identity.get("event_key") == identities.get("background_event_key")
-                        and (identities.get("background_reservation_id") is None
-                             or request_identity.get("reservation_id") == identities.get("background_reservation_id"))
-                    )
-                    if receipt_status == "rejected":
-                        request_ok = (exact_request and request_identity.get("run_id") is None
-                                      and type(request_identity.get("dispatch_attempts")) is int
-                                      and request_identity.get("dispatch_attempts") in {0, 1}
-                                      and request_identity.get("outcome") is None
-                                      and request_identity.get("settlement_sha256") is None)
-                    else:
-                        background_root = identities.get("background_runtime_root_id")
-                        receipt_root = request_identity.get("run_id")
-                        request_ok = (exact_request
-                                      and isinstance(receipt_root, str)
-                                      and RUNTIME_ROOT_PATTERN.fullmatch(receipt_root) is not None
-                                      and (background_root is None or background_root == receipt_root)
-                                      and type(request_identity.get("dispatch_attempts")) is int
-                                      and request_identity.get("dispatch_attempts") == 1
-                                      and request_identity.get("outcome") in {"completed", "needs_attention"}
-                                      and isinstance(request_identity.get("settlement_sha256"), str)
-                                      and SHA256_PATTERN.fullmatch(request_identity["settlement_sha256"]) is not None
-                                      and _audit_closes_root("background", receipt_root))
+        receipt = state.get("_settlement_receipt")
+        request_ok = (isinstance(receipt, dict)
+                      and receipt.get("reservation_id") == identities.get("background_reservation_id")
+                      and receipt.get("event_key") == identities.get("background_event_key")
+                      and receipt.get("run_id") == identities.get("background_runtime_root_id")
+                      and receipt.get("status") == "settled"
+                      and receipt.get("dispatch_attempts") == 1
+                      and _audit_closes_root("background", receipt.get("run_id")))
 
         roots_closed = True
         for stage, key in (
@@ -1186,7 +1073,7 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
             roots_closed = False
 
         if (mode == "bounded_readonly" and session_ok and task_ok
-                and observations.get("task_state_valid", task_id is None) and permission_ok
+                and observations.get("task_state_valid", task_id is None) and options_ok
                 and request_ok and job_ok and roots_closed):
             observations.update(classification="healthy_observer_confirmed", side_effects_resolved=True)
             break
@@ -1205,25 +1092,31 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
     state["failure_observation"] = observations
 
 
-def _permission_view(api_call, task_id: str, *, timeout: float = 15) -> dict[str, object]:
-    view = api_call("GET", f"/api/product/research/tasks/{task_id}/continuation-permission", timeout=timeout)
-    require(isinstance(view, dict) and view.get("task_id") == task_id,
-            "continuation_permission_identity_changed")
+def _permission_view(api_call, conversation_id: str, *, timeout: float = 15) -> dict[str, object]:
+    view = api_call("GET", f"/api/product/agent/conversations/{conversation_id}/execution-options", timeout=timeout)
+    require(isinstance(view, dict) and view.get("schema_version") == "agent-execution-options.v1"
+            and view.get("conversation_id") == conversation_id
+            and view.get("owner_principal") == "f6-chain-user"
+            and view.get("workspace_id") == state["identities"].get("workspace_id")
+            and type(view.get("revision")) is int and view["revision"] >= 0
+            and isinstance(view.get("options"), dict),
+            "execution_options_identity_changed")
     return view
 
 
-def _assert_task_ready_read_profile(permission: object) -> dict[str, object]:
-    require(isinstance(permission, dict), "single_request_profile_invalid")
-    profile = permission.get("execution_profile")
-    require(isinstance(profile, dict) and profile == PROFILE_BINDING
-            and type(profile.get("profile_version")) is int,
-            "single_request_profile_binding_invalid")
-    limits = permission.get("request_limits")
-    require(isinstance(limits, dict) and set(limits) == set(PROFILE_REQUEST_LIMITS)
-            and all(type(limits.get(key)) is int for key in PROFILE_REQUEST_LIMITS)
-            and limits == PROFILE_REQUEST_LIMITS,
-            "single_request_profile_limits_invalid")
-    return dict(limits)
+def _assert_task_ready_read_profile(carrier: object, options_view: dict) -> dict[str, object]:
+    require(isinstance(carrier, dict), "background_execution_profile_invalid")
+    require(carrier.get("execution_profile") == _execution_profile_v2(
+                options_view["options"], revision=options_view["revision"]),
+            "background_execution_profile_binding_invalid")
+    limits = _request_limits_v2(options_view["options"])
+    require(carrier.get("request_limits") == limits,
+            "background_execution_profile_limits_invalid")
+    try:
+        _validate_reservation_v3(carrier)
+    except ValueError:
+        raise EvidenceError("background_execution_profile_binding_invalid") from None
+    return limits
 
 
 def _audit_closes_root(stage: str, root_id: object) -> bool:
@@ -1286,60 +1179,43 @@ def _stop_owned_signal_worker(compose_once, *, attempted: bool, project: str) ->
 
 
 def _revoke_exact_grant(api_call) -> None:
-    task_id = state["identities"].get("task_id")
-    version_id = state["identities"].get("strategy_version_artifact_id")
-    if not isinstance(task_id, str) or not isinstance(version_id, str):
+    """Close future automatic events with one exact CAS, preserving the settled event."""
+    conversation_id = state["identities"].get("conversation_id")
+    before = state.get("execution_options_before")
+    if not isinstance(conversation_id, str) or not isinstance(before, dict):
         return
     try:
-        view = _permission_view(api_call, task_id)
+        view = _permission_view(api_call, conversation_id)
     except EvidenceError:
-        state["checks"]["revoke"] = "could_not_read_exact_permission_state"
+        state["checks"]["execution_options_stop"] = "could_not_read_exact_options_state"
         return
-    permission = view.get("permission")
-    if not isinstance(permission, dict):
-        state["checks"]["revoke"] = "no_permission_to_revoke"
+    if (view.get("revision") != before.get("revision") or view.get("options") != before.get("options")):
+        state["checks"]["execution_options_stop"] = "options_changed_no_mutation"
         return
-    if (permission.get("confirmation_id") != state.get("grant_idempotency_key")
-            or permission.get("confirmed_artifact_ids") != [version_id]
-            or type(permission.get("grant_version")) is not int
-            or permission.get("grant_version") != 1):
-        state["checks"]["revoke"] = "permission_identity_mismatch_no_mutation"
-        return
-    if permission.get("revoked_at") is not None:
-        state["checks"]["revoke"] = "already_revoked"
-        return
-    before = view.get("request_state")
-    state["revoke_attempted"] = True
+    expected_options = {**view["options"], "auto_continue": False}
+    state["options_disable_attempted"] = True
+    state["mutation_attempts"].append("execution_options_disable")
     try:
-        revoked = _post_once(api_call, "continuation_permission_revoke",
-            f"/api/product/research/tasks/{task_id}/continuation-permission/revoke",
-            {"grant_version": 1}, headers={"x-byq-continuation-confirmation": "v1"}, timeout=20)
-        permission_after_post = revoked.get("permission")
-        require(isinstance(permission_after_post, dict)
-                and type(permission_after_post.get("grant_version")) is int
-                and permission_after_post.get("grant_version") == 1
-                and isinstance(permission_after_post.get("revoked_at"), str)
-                and bool(permission_after_post["revoked_at"].strip()),
-                "exact_permission_revoke_not_confirmed")
+        updated = api_call("PUT", f"/api/product/agent/conversations/{conversation_id}/execution-options",
+            {"schema_version": "agent-execution-options.v1", "expected_revision": view["revision"],
+             "options": expected_options}, expected=200, timeout=20)
+        require(isinstance(updated, dict) and updated.get("revision") == view["revision"] + 1
+                and updated.get("options") == expected_options,
+                "exact_execution_options_update_not_confirmed")
     except EvidenceError as error:
-        state["checks"]["revoke_post_category"] = error.category
-        if "continuation_permission_revoke" not in state["uncertain_actions"]:
-            state["uncertain_actions"].append("continuation_permission_revoke")
+        state["checks"]["execution_options_put_category"] = error.category
+        if "execution_options_disable" not in state["uncertain_actions"]:
+            state["uncertain_actions"].append("execution_options_disable")
     try:
-        after = _permission_view(api_call, task_id)
-        current = after.get("permission")
-        require(isinstance(current, dict) and type(current.get("grant_version")) is int
-                and current.get("grant_version") == 1
-                and isinstance(current.get("revoked_at"), str)
-                and bool(current["revoked_at"].strip()),
-                "exact_permission_revoke_get_not_confirmed")
-        require(after.get("request_state") == before,
-                "request_state_changed_after_exact_revoke")
-        state["checks"]["revoke"] = "one_exact_post_and_get_confirmed_no_second_request"
+        after = _permission_view(api_call, conversation_id)
+        require(after.get("revision") == view["revision"] + 1
+                and after.get("options") == expected_options,
+                "exact_execution_options_get_not_confirmed")
+        state["checks"]["execution_options_stop"] = "one_exact_cas_and_get_confirmed"
         state["uncertain_actions"] = [action for action in state["uncertain_actions"]
-                                       if action != "continuation_permission_revoke"]
+                                       if action != "execution_options_disable"]
     except EvidenceError as error:
-        state["checks"]["revoke"] = error.category
+        state["checks"]["execution_options_stop"] = error.category
 
 
 project = os.environ.get("COMPOSE_PROJECT_NAME", "")
@@ -1383,9 +1259,9 @@ state: dict[str, object] = {
         "background_event_key",
         "task_id", "strategy_draft_artifact_id",
         "strategy_version_artifact_id", "approval_artifact_id", "stock_pool_snapshot_id",
-        "backtest_task_id", "signal_job_id", "signal_snapshot_artifact_id", "grant_version")},
+        "backtest_task_id", "signal_job_id", "signal_snapshot_artifact_id")},
     "checks": {}, "audit_summaries": {}, "mutation_attempts": [], "uncertain_actions": [],
-    "grant_idempotency_key": None, "revoke_attempted": False,
+    "execution_options_before": None, "options_disable_attempted": False,
     "worker_cleanup_attempted": False,
     "primary_evidence_written": False, "failure_observation": None,
     "product_session_public_error_reason": None,
@@ -1545,39 +1421,21 @@ try:
             "product_stock_pool_snapshot_invalid")
     state["identities"]["stock_pool_snapshot_id"] = snapshot_id
 
-    state["stage"] = "human_product_api_v2_single_request_grant"
-    grant_key = "f6-ci-read-grant-" + project
-    state["grant_idempotency_key"] = grant_key
-    grant_payload = {
-        "idempotency_key": grant_key, "execution_profile_id": "task-ready-read.v1",
-        "confirmed_artifact_ids": [version_id], "max_turns": 1,
-        "valid_seconds": 900, "turn_timeout_seconds": 900,
-    }
-    try:
-        grant = _post_once(call, "continuation_permission_grant",
-            f"/api/product/research/tasks/{task_id}/continuation-permission", grant_payload,
-            expected=201, headers={"x-byq-continuation-confirmation": "v1"}, timeout=30)
-    except EvidenceError as error:
-        state["checks"]["grant_post_category"] = error.category
-        # A GET may reconcile the exact original grant; a second grant POST is never sent.
-        grant = _permission_view(call, task_id)
-        current_permission = grant.get("permission")
-        require(isinstance(current_permission, dict)
-                and current_permission.get("confirmation_id") == grant_key
-                and current_permission.get("confirmed_artifact_ids") == [version_id],
-                "single_request_grant_outcome_unknown")
-    permission = grant.get("permission")
-    require(grant.get("schema_version") == "task-continuation-permission.v2"
-            and isinstance(permission, dict)
-            and permission.get("confirmation_id") == grant_key
-            and permission.get("confirmed_artifact_ids") == [version_id]
-            and type(permission.get("max_turns")) is int and permission.get("max_turns") == 1,
-            "single_request_grant_contract_invalid")
-    limits = _assert_task_ready_read_profile(permission)
-    require("token_limit" not in permission, "single_request_profile_limits_invalid")
-    grant_version = permission.get("grant_version")
-    require(type(grant_version) is int and grant_version == 1, "exact_grant_version_invalid")
-    state["identities"]["grant_version"] = grant_version
+    state["stage"] = "default_execution_options_exact_conversation"
+    options_before = _permission_view(call, session_id)
+    require(options_before["revision"] == 0
+            and options_before["options"].get("auto_continue") is True
+            and set(options_before["options"]) == {
+                "auto_continue", "max_provider_calls", "max_provider_attempts", "max_tool_calls",
+                "max_concurrent_provider_calls", "max_input_bytes_per_call", "max_input_bytes_total",
+                "max_output_tokens_per_call", "max_output_tokens_total",
+                "max_tool_payload_bytes_per_call", "max_tool_payload_bytes_total",
+                "max_continuations", "max_runtime_seconds", "max_no_progress_seconds",
+                "max_child_runtime_seconds", "max_child_no_progress_seconds"}
+            and all(value is None for key, value in options_before["options"].items()
+                    if key != "auto_continue"), "default_execution_options_not_unbounded")
+    state["execution_options_before"] = options_before
+    state["checks"]["execution_options"] = "default_auto_continue_true_all_optional_limits_null"
 
     fg2 = "\n".join((
         "F6-CI:FG2",
@@ -1718,46 +1576,35 @@ try:
             "exact_signal_job_or_artifact_deadline")
 
     state["stage"] = "background_one_exact_task_ready_read"
-    request_settlement = None
     assistant_answer = None
+    background_root = None
     deadline = time.monotonic() + 240
     while time.monotonic() < deadline:
-        # Both readiness facts must be observed in the same bounded polling
-        # pass. A settlement from an earlier pass is not enough to close it.
         gateway_events.assert_healthy()
-        request_settlement = None
         session_view = _session_call(call, session_id, trace_id,
             timeout=_remaining_timeout(deadline, 12))
         messages = _messages(session_view)
-        # Automatic BYQ instruction is internal request data, not a human user
-        # row. Derive readiness from the authoritative receipt, not prompt text.
-        assistant_answer = None
-        view = _permission_view(call, task_id, timeout=_remaining_timeout(deadline, 15))
-        require(view.get("schema_version") == "task-continuation-permission.v2"
-                and view.get("permission", {}).get("grant_version") == grant_version,
-                "background_grant_identity_changed")
-        request_state = view.get("request_state")
-        require(isinstance(request_state, dict), "background_request_state_missing")
-        candidate = request_state.get("request_identity")
-        if isinstance(candidate, dict) and candidate.get("run_id") is not None:
-            require(candidate.get("grant_version") == grant_version,
-                    "background_grant_identity_changed")
-            assistant_answer = _background_answer_for_root(session_view, candidate["run_id"])
-        if (request_state.get("requests_reserved") == 1
-                and request_state.get("requests_remaining") == 0
-                and request_state.get("unconfirmed_requests") == 0):
-            if (isinstance(candidate, dict)
-                    and candidate.get("status") == "settled"
-                    and candidate.get("dispatch_attempts") == 1
-                    and candidate.get("grant_version") == grant_version):
-                request_settlement = _validate_settlement_identity(candidate, grant_version)
+        events = session_view.get("events")
+        require(isinstance(events, list), "background_root_events_missing")
+        roots = {event["payload"]["run_id"] for event in events if isinstance(event, dict)
+            and event.get("source") == "runtime-adapter" and event.get("kind") == "session.started"
+            and event.get("session_id") == session_id
+            and event.get("trace_id") == trace_id and isinstance(event.get("payload"), dict)
+            and isinstance(event["payload"].get("run_id"), str)
+            and event["payload"]["run_id"] not in {
+                state["identities"]["foreground_1_runtime_root_id"],
+                state["identities"]["foreground_2_runtime_root_id"]}}
+        require(len(roots) <= 1, "background_root_correlation_ambiguous")
+        background_root = next(iter(roots), None)
+        assistant_answer = (_background_answer_for_root(session_view, background_root)
+                            if background_root is not None else None)
         answer_ready = (isinstance(assistant_answer, str)
                         and all(value in assistant_answer for value in (
                             task_id, backtest_task_id, signal_job_id,
                             state["identities"]["signal_snapshot_artifact_id"],
                         ))
                         and "No domain writes were made." in assistant_answer)
-        observed = _background_wait_observation(session_view, request_state,
+        observed = _background_wait_observation(session_view, background_root,
             bg_user_count=sum(item.get("role") == "user" and
                 "BYQ trusted read-only task-ready follow-up for exact task " + task_id
                 in _body_text(item.get("content")) for item in messages),
@@ -1767,51 +1614,50 @@ try:
             "poll_count": min(int(previous.get("poll_count", 0)) + 1, 10000),
             "last_poll": observed,
         }
-        if request_settlement is not None and answer_ready and time.monotonic() <= deadline:
+        if answer_ready and time.monotonic() <= deadline:
             break
         if isinstance(session_view.get("conversation"), dict):
             require(session_view["conversation"].get("status") not in {"failed", "interrupted", "archived"},
                     "background_agent_session_failed")
         time.sleep(min(2, max(0, deadline - time.monotonic())))
-    require(isinstance(request_settlement, dict)
-            and request_settlement.get("status") == "settled"
-            and request_settlement.get("dispatch_attempts") == 1
-            and request_settlement.get("grant_version") == grant_version
-            and isinstance(request_settlement.get("run_id"), str)
-            and RUNTIME_ROOT_PATTERN.fullmatch(request_settlement["run_id"]) is not None
-            and request_settlement.get("outcome") == "completed"
-            and isinstance(request_settlement.get("settlement_sha256"), str)
-            and SHA256_PATTERN.fullmatch(request_settlement["settlement_sha256"]) is not None,
-            "single_background_request_not_durably_settled")
+    require(isinstance(background_root, str) and RUNTIME_ROOT_PATTERN.fullmatch(background_root),
+            "single_background_root_not_observed")
     require(isinstance(assistant_answer, str)
             and all(value in assistant_answer for value in (task_id, backtest_task_id, signal_job_id,
                                                              state["identities"]["signal_snapshot_artifact_id"]))
             and "No domain writes were made." in assistant_answer,
             "background_answer_not_persisted_for_exact_ready_evidence")
 
-    permission_state = _permission_view(call, task_id)
-    usage = permission_state.get("request_state", {}).get("request_usage")
-    settled_permission = permission_state.get("permission")
-    settled_limits = _assert_task_ready_read_profile(settled_permission)
-    require(isinstance(usage, dict) and usage.get("schema_version") == "continuation-request-usage.v1"
-            and usage.get("execution_profile") == PROFILE_BINDING
-            and usage.get("request_limits") == PROFILE_REQUEST_LIMITS == limits == settled_limits
-            and usage.get("limit_violations") == [],
-            "settled_request_usage_profile_invalid")
+    background_audit = _read_structured_agent_audit(
+        "background", task_id=task_id, conversation_id=session_id, trace_id=trace_id,
+        runtime_root_id=background_root, backtest_task_id=backtest_task_id,
+        expected_events=[
+            ("byq_research_get", "authorized", "research_task", task_id),
+            ("byq_research_get", "success", "research_task", task_id),
+            ("byq_backtest_task_get", "authorized", "backtest_task", backtest_task_id),
+            ("byq_backtest_task_get", "success", "backtest_task", backtest_task_id),
+        ])
+    request_settlement = state.get("_settlement_receipt")
+    require(isinstance(request_settlement, dict), "single_background_request_not_durably_settled")
+    limits = _assert_task_ready_read_profile(request_settlement["reservation"], options_before)
+    usage = _validate_request_usage_v2(request_settlement["request_usage"])
+    require(usage.get("schema_version") == "continuation-request-usage.v2"
+            and usage.get("execution_profile") == request_settlement["reservation"]["execution_profile"]
+            and usage.get("request_limits") == limits
+            and usage.get("limit_violations") == [], "settled_request_usage_profile_invalid")
     admission = usage.get("admission_usage")
     actual = usage.get("actual_usage")
     require(isinstance(admission, dict) and isinstance(actual, dict)
             and admission.get("provider_calls") == admission.get("provider_attempts")
-            and 1 <= admission.get("provider_attempts", 0) <= limits["max_attempts"]
+            and admission.get("provider_attempts") is not None
+            and admission["provider_attempts"] >= 1
             and admission.get("tool_calls") == 7
-            and admission.get("max_concurrent") == 1
-            and admission.get("input_bytes", 0) <= limits["max_total_input_bytes"]
-            and admission.get("declared_output_tokens", 0) <= limits["max_total_output_tokens"]
-            and admission.get("tool_payload_bytes", 0) <= limits["max_total_tool_payload_bytes"],
+            and admission.get("max_concurrent") is not None
+            and admission["max_concurrent"] >= 1,
             "request_gate_admission_measurements_invalid")
     require(actual == {
-        "input_tokens": "unknown", "cache_read_tokens": "unknown", "output_tokens": "unknown",
-        "provider_attempts": "unknown", "usage_source": "unknown", "completeness": "unknown",
+        "input_tokens": None, "cache_read_tokens": None, "output_tokens": None,
+        "provider_attempts": None, "usage_source": "unknown", "completeness": "unknown",
     }, "synthetic_provider_usage_was_not_preserved_as_unknown")
     event_key = request_settlement.get("event_key")
     require(isinstance(event_key, str)
@@ -1819,16 +1665,6 @@ try:
             "request_ready_event_identity_invalid")
     state["identities"]["background_reservation_id"] = request_settlement["reservation_id"]
     state["identities"]["background_event_key"] = event_key
-    background_audit = _read_structured_agent_audit(
-        "background", task_id=task_id, conversation_id=session_id, trace_id=trace_id,
-        runtime_root_id=request_settlement["run_id"], backtest_task_id=backtest_task_id,
-        settlement=request_settlement,
-        expected_events=[
-            ("byq_research_get", "authorized", "research_task", task_id),
-            ("byq_research_get", "success", "research_task", task_id),
-            ("byq_backtest_task_get", "authorized", "backtest_task", backtest_task_id),
-            ("byq_backtest_task_get", "success", "backtest_task", backtest_task_id),
-        ])
     state["audit_summaries"]["background"] = background_audit
     state["identities"]["background_runtime_root_id"] = request_settlement["run_id"]
     state["identities"]["background_agent_run_id"] = background_audit["agent_run_id"]
@@ -1842,17 +1678,17 @@ try:
     state["checks"].update({
         "background_answer_and_settlement": "both_persisted_for_same_task_and_request",
         "background_structured_audit": "settlement_runtime_root_bound_to_exact_terminal_owner_run_and_two_read_actions",
-        "request_state": "one_reservation_one_dispatch_exact_ready_event_no_second_request",
-        "request_gate": "measured_admission_limits_and_unknown_actual_model_usage",
+        "request_state": "one_exact_job_reservation_one_dispatch_exact_ready_event",
+        "request_gate": "measured_admission_and_unknown_actual_model_usage_without_default_limits",
         "background_domain_scope": "only_byq_research_get_exact_task_and_byq_backtest_task_get_exact_task",
-        "background_ready_event": "exact_signal_job_and_validated_artifact_hash_bound_to_grant_and_settlement",
+        "background_ready_event": "exact_signal_job_and_validated_artifact_hash_bound_to_v3_settlement",
         "task_completion": "not_required_and_not_fabricated",
     })
 
-    state["stage"] = "exact_grant_revoke_and_get_confirmation"
+    state["stage"] = "exact_execution_options_stop_and_get_confirmation"
     _revoke_exact_grant(call)
-    require(state["checks"].get("revoke") == "one_exact_post_and_get_confirmed_no_second_request",
-            "exact_grant_revoke_get_or_no_second_request_failed")
+    require(state["checks"].get("execution_options_stop") == "one_exact_cas_and_get_confirmed",
+            "exact_execution_options_stop_not_confirmed")
 
     gateway_events.assert_healthy()
     state["stage"] = "passed"
@@ -1897,12 +1733,11 @@ finally:
             if state["status"] == "passed":
                 state["status"] = "failed"
                 state["failure_category"] = "worker_cleanup_failed"
-        if not state["revoke_attempted"]:
+        if not state["options_disable_attempted"]:
             _revoke_exact_grant(call)
-            if state["status"] == "passed" and state["checks"].get("revoke") != "one_exact_post_and_get_confirmed_no_second_request":
-                # A successful run must use the single explicit revoke path above.
+            if state["status"] == "passed" and state["checks"].get("execution_options_stop") != "one_exact_cas_and_get_confirmed":
                 state["status"] = "failed"
-                state["failure_category"] = "exact_permission_revoke_not_proven"
+                state["failure_category"] = "exact_execution_options_stop_not_proven"
         try:
             _write_evidence(suffix=".closeout.json" if state.get("primary_evidence_written") else "")
         except FileExistsError:

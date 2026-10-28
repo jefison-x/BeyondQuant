@@ -107,6 +107,102 @@ def test_no_terminal_and_matching_containment_is_the_loss_terminal() -> None:
     assert loss["interrupted_run_id"] == RUN_A
 
 
+def test_latest_start_without_terminal_uses_its_exact_containment() -> None:
+    events = [_event(1, "session.started", run_id=RUN_A),
+              _event(2, "session.failed", run_id=RUN_A),
+              _event(3, "session.started", run_id=RUN_B)]
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1", _containment(run_id=RUN_B))
+    assert loss["status"] == "interrupted"
+    assert loss["interrupted_run_id"] == RUN_B
+
+
+def test_live_turn_two_projection_ignores_prior_run_terminal() -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "session-containment-turn2-live-projection.json"
+    fixture = json.loads(fixture_path.read_text())
+    runtime_session_id = fixture["session_id"]
+    events = fixture["events"]
+
+    # The saved GET projection exposed the prior turn as completed. It remaps
+    # event session_id to the public conversation id, so this fixture records
+    # the sole restoration to the runtime session_id used by this function.
+    assert fixture["public_projection_status"] == "completed"
+    assert fixture["identity_normalization"]["runtime_session_id"] == runtime_session_id
+    assert all(event["session_id"] == runtime_session_id for event in events)
+    assert events[-2]["kind"] == "session.started"
+    assert events[-2]["sequence"] == 8
+
+    loss = sc.loss_from_evidence(events, runtime_session_id, fixture["trace_id"])
+    assert loss["status"] == "active"
+    assert loss["last_terminal_sequence"] is None
+
+
+@pytest.mark.parametrize("terminal", ["session.result", "session.cancelled", "session.failed"])
+def test_prior_run_terminal_does_not_cover_later_start(terminal: str) -> None:
+    events = [
+        _event(1, "session.started", run_id=RUN_A),
+        _event(2, terminal, run_id=RUN_A),
+        _event(3, "session.started", run_id=RUN_B),
+    ]
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1", _containment(run_id=RUN_A))
+    assert loss["status"] == "active"
+    assert loss["interrupted"] is False
+    assert loss["last_terminal_sequence"] is None
+
+
+def test_late_old_run_terminal_and_containment_do_not_cover_latest_run() -> None:
+    events = [
+        _event(1, "session.started", run_id=RUN_A),
+        _event(3, "session.started", run_id=RUN_B),
+        _event(4, "session.result", run_id=RUN_A),
+    ]
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1", _containment(run_id=RUN_A))
+    assert loss["status"] == "active"
+    assert loss["interrupted"] is False
+
+
+def test_same_run_terminal_before_newer_start_does_not_end_that_start() -> None:
+    events = [
+        _event(1, "session.started", run_id=RUN_A),
+        _event(2, "session.result", run_id=RUN_A),
+        _event(3, "session.started", run_id=RUN_A),
+    ]
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1")
+    assert loss["status"] == "active"
+    assert loss["last_terminal_sequence"] is None
+
+
+def test_unbound_late_terminal_does_not_cover_or_promote_newer_start() -> None:
+    events = [
+        _event(1, "session.started", run_id=RUN_A),
+        _event(2, "session.failed", run_id=RUN_A),
+        _event(3, "session.started", run_id=RUN_B),
+        _event(4, "session.failed"),
+    ]
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1", _containment(run_id=RUN_B))
+    assert loss["status"] == "active"
+    assert loss["interrupted"] is False
+
+
+@pytest.mark.parametrize("identity", [
+    {"session_id": "another-runtime"},
+    {"source": "dsh"},
+    {"trace_id": "another-trace"},
+])
+def test_terminal_outside_owned_session_source_or_trace_is_ignored(identity: dict) -> None:
+    events = [_event(3, "session.started", run_id=RUN_B), _event(4, "session.result", run_id=RUN_B)]
+    events[-1].update(identity)
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1")
+    assert loss["status"] == "active"
+
+
+def test_current_run_terminal_after_latest_start_is_used() -> None:
+    events = [_event(3, "session.started", run_id=RUN_B),
+              _event(4, "session.result", run_id=RUN_B)]
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1")
+    assert loss["status"] == "completed"
+    assert loss["last_terminal_sequence"] == 4
+
+
 def test_matching_fenced_containment_projects_interrupted() -> None:
     loss = sc.loss_from_evidence(_interrupted_events(terminal="session.failed"),
                                  "runtime-1", "trace-1", _containment())

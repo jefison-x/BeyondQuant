@@ -1,0 +1,26 @@
+{
+  "result": "FAIL_SOURCE_STOP",
+  "scope": "Static review of native reader and observer repair; no tests started",
+  "base_commit": "d9a7f853",
+  "reviewed_source_sha256": {
+    "capture": "72f290b83957617baf59a2991aa149fc25a56f0c053133ca842a7ea3eb443eb3",
+    "observer": "4166f8c823ba02add77419220540b88d077adfe0c0d0e1364368b730758c0b78",
+    "observer_tests": "d17853575be27e42421e363bdf5ec70dfae7a333b9413eca8824485f3ee4882b"
+  },
+  "independent_sol": "FAIL",
+  "findings": [
+    "Capture preflight uses undefined _sha before publishing its receipt.",
+    "Observer source receipt does not pin the actual source-reader inline code SHA.",
+    "Derived native projection does not join original command/rc/stdout SHA/bytes/UID/code/binding tuple."
+  ],
+  "admission": {
+    "offline": "NOT_ADMITTED",
+    "real_read": "NOT_ADMITTED",
+    "real_models": "NOT_ADMITTED"
+  },
+  "batch_model_calls": 0,
+  "batch_job_calls": 0,
+  "repair_scope": "Fix all three entry defects together; static review, then one bounded offline batch, then independent read-only existing-file projection.",
+  "prior_live_batch": "FAIL_STOP, immutable",
+  "release_readiness": "NOT_READY"
+}

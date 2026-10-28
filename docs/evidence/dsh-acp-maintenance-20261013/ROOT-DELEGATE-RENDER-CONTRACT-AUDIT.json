@@ -1,0 +1,26 @@
+{
+  "schema": "byq-root-delegate-render-contract-audit.v1",
+  "status": "SOURCE_FINDING_NOT_PRODUCT_PASS",
+  "head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "stored_public_source": {
+    "path": "/opt/dsh-runtime/packages/subagent/tool-subagent/lib/index.js",
+    "sha256": "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fda33b966a840",
+    "wrapper_sha256": "249584b188edf37201a8c3fecb7b4c2954261a72b1c6eddd2bef1f5ec3c0cbdc"
+  },
+  "known": [
+    "Foreground execute returns kind/runId/output envelope.",
+    "Declared output.render returns one text block containing the concatenated text blocks of child output.",
+    "Current observer attempts JSON decoding of that text as the original envelope.",
+    "BYQ ACP profile and composition use generic tool-subagent; current budget guard does not override renderer."
+  ],
+  "unknown": [
+    "Normal AgentLoop execute/render/tool-result persistence mapping.",
+    "Precise exception and event position behind native_child_invalid.",
+    "Original envelope runId/output cannot be inferred from ordinary rendered text."
+  ],
+  "qualification_status": "UNKNOWN",
+  "models": 0,
+  "jobs": 0,
+  "container_reads": 0,
+  "next": "Reuse existing native files and Backend scope/call-chain records. Acquire only missing public AgentLoop source, then unify contract before one targeted reread; preserve exact ACK, cleanup and unknown-no-replay gates."
+}

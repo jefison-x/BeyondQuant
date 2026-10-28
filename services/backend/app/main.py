@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import anyio
 from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from collections.abc import Callable
@@ -198,6 +199,11 @@ from .research import (
     ResearchNotFound,
     ResearchPersistenceError,
     ResearchStore,
+)
+from .product_approval_requests import ProductApprovalConflict, ProductApprovalNotFound
+from packages.contracts.product_approval_requests import (
+    validate_decision_shape as validate_product_approval_decision,
+    validate_request_shape as validate_product_approval_request,
 )
 from .research_judgment import StageModelCallLimitExceeded
 from .strategy_artifact import (
@@ -589,6 +595,40 @@ def get_conversation(conversation_id: str, request: Request) -> dict[str, object
     })
 
 
+def _execution_options_context(request: Request) -> tuple[str, str]:
+    owner = _conversation_owner(request)
+    workspace_id = request.headers.get("x-byq-workspace-id")
+    if not workspace_id:
+        raise HTTPException(status_code=401, detail="trusted workspace context required")
+    return owner, workspace_id
+
+
+def _human_execution_options_context(request: Request) -> tuple[str, str]:
+    owner, workspace_id = _execution_options_context(request)
+    if (request.headers.get("x-byq-product-human-actor") != "true"
+            or request.headers.get("x-byq-actor-principal") != owner):
+        raise HTTPException(status_code=403, detail="trusted human conversation actor required")
+    return owner, workspace_id
+
+
+@app.get("/v1/product/conversations/{conversation_id}/execution-options")
+def get_conversation_execution_options(conversation_id: str, request: Request) -> dict[str, object]:
+    owner, workspace_id = _execution_options_context(request)
+    return _conversation_call(lambda: conversation_store.get_execution_options(
+        owner, workspace_id, conversation_id
+    ))
+
+
+@app.put("/v1/product/conversations/{conversation_id}/execution-options")
+def put_conversation_execution_options(
+    conversation_id: str, payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    owner, workspace_id = _human_execution_options_context(request)
+    return _conversation_call(lambda: conversation_store.update_execution_options(
+        owner, workspace_id, conversation_id, payload
+    ))
+
+
 @app.post("/v1/product/conversations/{conversation_id}/messages", status_code=201)
 def append_conversation_message(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     owner = _conversation_owner(request)
@@ -753,12 +793,27 @@ def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], requ
 
 @app.get("/internal/runtime-authority/workspaces/{workspace_id}/agent-admission")
 def workspace_agent_admission(workspace_id: str, root_run_id: str, session_id: str,
-                              request: Request) -> dict[str, object]:
+                              request: Request, runner_identity: str | None = None,
+                              operator_scope: str | None = None) -> dict[str, object]:
     _require_runtime_authority_bearer(request)
-    return _agent_call(lambda: agent_store.workspace_agent_admission(
+    if runner_identity is None and operator_scope is None:
+        return _agent_call(lambda: agent_store.workspace_agent_admission(
+            owner_principal=request.headers.get("x-byq-owner-principal"),
+            workspace_id=workspace_id, root_run_id=root_run_id, session_id=session_id,
+            boot_id=request.headers.get("x-byq-runtime-boot-id")))
+    if runner_identity is None or operator_scope is None:
+        raise HTTPException(status_code=422,
+                            detail="runner_identity and operator_scope must be provided together")
+    query_names = {"root_run_id", "session_id", "runner_identity", "operator_scope"}
+    if (set(request.query_params.keys()) != query_names
+            or any(len(request.query_params.getlist(name)) != 1 for name in query_names)):
+        raise HTTPException(status_code=422, detail="qualified admission query fields are invalid")
+    return _agent_call(lambda: agent_store.workspace_agent_admission_qualified(
         owner_principal=request.headers.get("x-byq-owner-principal"),
         workspace_id=workspace_id, root_run_id=root_run_id, session_id=session_id,
-        boot_id=request.headers.get("x-byq-runtime-boot-id")))
+        trace_id=request.headers.get("x-byq-trace-id"),
+        boot_id=request.headers.get("x-byq-runtime-boot-id"),
+        runner_identity_json=runner_identity, operator_scope_json=operator_scope))
 
 
 @app.post("/internal/runtime-authority/roots/{root_run_id}/transfer")
@@ -801,8 +856,19 @@ def authorize_continuation_tool(reservation_id: str, payload: dict[str, Any], re
 
 
 @app.post('/internal/task-continuation/{conversation_id}/claim')
-def claim_task_continuation(conversation_id: str, request: Request) -> dict:
+def claim_task_continuation(conversation_id: str, request: Request,
+        payload: dict[str, Any] | None = None) -> dict:
     context = _continuation_consumer_context(request)
+    if payload:
+        from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION_V3
+        if (set(payload) != {'reservation_schema_version', 'signal_job_id'}
+                or payload.get('reservation_schema_version') != RESERVATION_SCHEMA_VERSION_V3
+                or not isinstance(payload.get('signal_job_id'), str)):
+            raise HTTPException(status_code=422, detail='exact v3 SignalJob claim required')
+        return _research_call(lambda: research_store.claim_default_continuation_v3(
+            conversation_id, signal_job_id=payload['signal_job_id'], trusted_context=context))
+    # The empty-body form is the separately gated legacy F6/internal path. The
+    # default consumer enters through /peek and may claim only typed v3 work.
     return _research_call(lambda: research_store.claim_conversation_continuation(
         conversation_id, trusted_context=context))
 
@@ -810,8 +876,29 @@ def claim_task_continuation(conversation_id: str, request: Request) -> dict:
 @app.post('/internal/task-continuation/{conversation_id}/peek')
 def peek_task_continuation(conversation_id: str, request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    return _research_call(lambda: research_store.claim_conversation_continuation(
-        conversation_id, trusted_context=context, admit=False))
+    candidate = _research_call(lambda: research_store.peek_default_continuation_v3(
+        conversation_id, trusted_context=context))
+    # The default consumer is v3-only. Historical v1/v2 liabilities remain
+    # available through the explicitly gated claim path, but a missing or
+    # blocked v3 candidate must never fall back to a legacy eligible intent.
+    return candidate if candidate is not None else {'status': 'waiting'}
+
+
+@app.get('/internal/task-continuation/{conversation_id}/reservations/{reservation_id}')
+def get_exact_task_continuation(conversation_id: str, reservation_id: str,
+        request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.get_default_continuation_v3_exact(
+        conversation_id, reservation_id, trusted_context=context))
+
+
+@app.post('/internal/task-continuation/{conversation_id}/cancel')
+def cancel_task_continuation(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    if set(payload) != {'reservation_id'}:
+        raise HTTPException(status_code=422, detail='exact v3 continuation reservation required')
+    return _research_call(lambda: research_store.cancel_default_continuation_v3(
+        conversation_id, payload['reservation_id'], trusted_context=context))
 
 
 @app.post('/internal/task-continuation/{task_id}/dispatch')
@@ -834,7 +921,8 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome', 'request_usage'}
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256',
+        'outcome', 'request_usage', 'idempotency_key'}
     if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
@@ -2265,6 +2353,10 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
+    except ProductApprovalConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ProductApprovalNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except (MLValidationError, FactorValidationError, OptimizationValidationError) as error:
         raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
@@ -2327,6 +2419,14 @@ def _backtest_task_call(operation: Callable[[], dict[str, object]]) -> dict[str,
         return operation()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    except AgentUnauthorized as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except AgentForbidden as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except AgentConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except AgentNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except (ResearchNotFound, PaperTradingNotFound, SignalProducerNotFound, BacktestNotFound, MLPredictionNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except (SignalProducerConflict, BacktestConflict, MLPredictionConflict, PaperTradingConflict) as error:
@@ -2737,6 +2837,214 @@ def revoke_research_continuation_permission(task_id: str, payload: dict[str, Any
             raise ValueError("exact continuation grant version required")
         return research_store.revoke_continuation_permission(task_id, grant_version=payload["grant_version"], trusted_context=context)
     return _research_call(operation)
+
+
+def _product_approval_context(request: Request) -> dict[str, str]:
+    context = _required_agent_context(request, include_workspace=True)
+    if context["actor_principal"] != context["owner_principal"] or context["actor_principal"].startswith("byq-product-agent-"):
+        raise HTTPException(status_code=403, detail="human Product owner approval is required")
+    return context
+
+
+def _product_approval_record(envelope: dict[str, object]) -> dict[str, object]:
+    if (envelope.get("schema_version") != "byq-product-approval-request.v1"
+            or not isinstance(envelope.get("request"), dict)):
+        raise RuntimeError("Product approval store returned an invalid request envelope")
+    return envelope["request"]
+
+
+def _observe_product_approval_fact(record: dict[str, object], context: dict[str, str]) -> tuple[str, str | None, dict[str, object] | None, str | None]:
+    """Read the exact domain fact without changing either domain or request state."""
+    if record.get("request_type") == "continuation_consent":
+        snapshot = research_store.get_continuation_permission_snapshot_readonly(
+            str(record["task_id"]), trusted_context=context)
+        ledger = snapshot["ledger"]
+        permission = snapshot["view"]
+        if not isinstance(ledger, dict):
+            return "missing", "domain_fact_missing", None, None
+        matches = (ledger.get("idempotency_key") == f"product-approval-{record['request_id']}"
+            and ledger.get("execution_profile") == record.get("execution_profile")
+            and ledger.get("request_limits") == record.get("request_limits")
+            and ledger.get("confirmed_artifact_ids") == record.get("confirmed_artifact_ids")
+            and ledger.get("confirmed_artifacts") == record.get("confirmed_artifacts")
+            and ledger.get("max_turns") == record.get("max_turns")
+            and ledger.get("valid_seconds") == record.get("valid_seconds")
+            and ledger.get("turn_timeout_seconds") == record.get("turn_timeout_seconds")
+            and ledger.get("conversation_id") == record.get("conversation_id")
+            and ledger.get("owner_principal") == context["owner_principal"]
+            and ledger.get("workspace_id") == context["workspace_id"])
+        return ("confirmed", None, permission, None) if matches else ("mismatch", "domain_fact_mismatch", None, None)
+
+    artifact = research_store.get_product_approval_domain_artifact(str(record["request_id"]),
+        owner=context["owner_principal"], workspace=context["workspace_id"])
+    if artifact is None:
+        return "missing", "domain_fact_missing", None, None
+    if artifact.get("status") != "validated":
+        return "draft", "domain_fact_draft", None, None
+    kind = "strategy_approval" if record["request_type"] == "strategy_version" else "ml_strategy_approval"
+    target_field = "strategy_version_artifact_id" if kind == "strategy_approval" else "ml_strategy_artifact_id"
+    content = artifact.get("content")
+    source_version = research_store.get_artifact(str(record.get("resource_artifact_id")))
+    expected_decision = record.get("decision")
+    matches = (artifact.get("kind") == kind and isinstance(content, dict)
+        and content.get("decision") == expected_decision
+        and content.get("execution_authorized") is (expected_decision == "approved")
+        and content.get(target_field) == record.get("resource_artifact_id")
+        and content.get("reviewer_principal") == record.get("decision_by")
+        and content.get("rationale") == record.get("rationale")
+        and artifact.get("lineage") == [
+            {"kind": "research_task", "id": record.get("task_id")},
+            {"kind": "artifact", "id": record.get("resource_artifact_id")},
+        ]
+        and source_version is not None and source_version.get("status") == "validated"
+        and source_version.get("owner_principal") == context["owner_principal"]
+        and source_version.get("workspace_id") == context["workspace_id"]
+        and source_version.get("content_sha256") == record.get("content_sha256"))
+    return ("confirmed", None, None, str(artifact["artifact_id"])) if matches else ("mismatch", "domain_fact_mismatch", None, None)
+
+
+def _observe_product_approval_response(envelope: dict[str, object], context: dict[str, str]) -> dict[str, object]:
+    record = _product_approval_record(envelope)
+    if (record.get("status") not in {"decision_recorded", "outcome_unknown", "needs_attention"}
+            or (record.get("decision") == "rejected" and record.get("request_type") == "continuation_consent")):
+        return envelope
+    try:
+        state, _code, _permission, _artifact = _observe_product_approval_fact(record, context)
+    except (ValueError, ResearchNotFound):
+        state = "unavailable"
+    return {**envelope, "request": {**record, "observed_state": state}}
+
+
+def _settle_product_approval_reconciliation(envelope: dict[str, object], context: dict[str, str]) -> dict[str, object]:
+    record = _product_approval_record(envelope)
+    if record.get("status") not in {"decision_recorded", "outcome_unknown", "needs_attention"}:
+        return envelope
+    if record.get("decision") == "rejected" and record.get("request_type") == "continuation_consent":
+        return research_store.finish_product_approval_decision(str(record["request_id"]), owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="rejected")
+    if record.get("decision") not in {"approved", "rejected"}:
+        return envelope
+    try:
+        state, code, permission, artifact_id = _observe_product_approval_fact(record, context)
+    except (ValueError, ResearchNotFound):
+        state, code, permission, artifact_id = "unavailable", "domain_scope_unavailable", None, None
+    if state == "confirmed":
+        result = research_store.finish_product_approval_decision(str(record["request_id"]), owner=context["owner_principal"],
+            workspace=context["workspace_id"], status=str(record["decision"]), domain_artifact_id=artifact_id,
+            permission=permission)
+    else:
+        result = research_store.finish_product_approval_decision(str(record["request_id"]), owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="needs_attention", materialization_error_code=code or "domain_fact_mismatch")
+    return {**result, "request": {**_product_approval_record(result), "observed_state": state}}
+
+
+@app.post("/v1/product/research/approval-requests", status_code=201)
+def create_product_approval_request(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    return _research_call(lambda: research_store.create_product_approval_request(
+        validate_product_approval_request(payload), owner=context["owner_principal"], workspace=context["workspace_id"]))
+
+
+@app.get("/v1/product/research/approval-requests")
+def list_product_approval_requests(request: Request, status: str = "pending", limit: int = 50, offset: int = 0) -> dict[str, object]:
+    context = _product_approval_context(request)
+    return _research_call(lambda: research_store.list_product_approval_requests(
+        owner=context["owner_principal"], workspace=context["workspace_id"], status=status, limit=limit, offset=offset))
+
+
+@app.get("/v1/product/research/approval-requests/by-key/{request_key}")
+def get_product_approval_request_by_key(request_key: str, request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    envelope = _research_call(lambda: research_store.get_product_approval_request_by_key(
+        request_key, owner=context["owner_principal"], workspace=context["workspace_id"]))
+    return _observe_product_approval_response(envelope, context)
+
+
+@app.get("/v1/product/research/approval-requests/{request_id}")
+def get_product_approval_request(request_id: str, request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    envelope = _research_call(lambda: research_store.get_product_approval_request(
+        request_id, owner=context["owner_principal"], workspace=context["workspace_id"]))
+    return _observe_product_approval_response(envelope, context)
+
+
+@app.post("/v1/product/research/approval-requests/{request_id}/reconcile")
+def reconcile_product_approval_request(request_id: str, request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    envelope = _research_call(lambda: research_store.get_product_approval_request(
+        request_id, owner=context["owner_principal"], workspace=context["workspace_id"]))
+    return _settle_product_approval_reconciliation(envelope, context)
+
+
+@app.post("/v1/product/research/approval-requests/{request_id}/decision")
+def decide_product_approval_request(request_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    try:
+        decision = validate_product_approval_decision(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        envelope, claimed = research_store.claim_product_approval_decision(request_id,
+            owner=context["owner_principal"], workspace=context["workspace_id"], decision=decision["decision"],
+            decision_key=decision["decision_key"], rationale=decision["rationale"], actor=context["actor_principal"])
+    except ProductApprovalConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProductApprovalNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    record = _product_approval_record(envelope)
+    if decision["decision"] == "rejected" and record["request_type"] == "continuation_consent":
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="rejected")
+    if not claimed:
+        return envelope
+    body = record
+    domain_key = f"product-approval-{request_id}"
+    try:
+        if record["request_type"] == "continuation_consent":
+            research_store.create_continuation_permission(record["task_id"], {
+                "idempotency_key": domain_key,
+                "execution_profile_id": body["execution_profile_id"],
+                "confirmed_artifact_ids": body["confirmed_artifact_ids"],
+            }, trusted_context=context, expected_frozen_request={
+                "idempotency_key": domain_key, "task_id": record["task_id"],
+                "owner_principal": record["owner_principal"], "workspace_id": record["workspace_id"],
+                "conversation_id": record["conversation_id"],
+                "execution_profile": body["execution_profile"], "request_limits": body["request_limits"],
+                "confirmed_artifact_ids": body["confirmed_artifact_ids"],
+                "confirmed_artifacts": body["confirmed_artifacts"], "max_turns": body["max_turns"],
+                "valid_seconds": body["valid_seconds"], "turn_timeout_seconds": body["turn_timeout_seconds"],
+            })
+        elif record["request_type"] == "strategy_version":
+            create_strategy_approval({"task_id": record["task_id"], "strategy_version_artifact_id": record["resource_artifact_id"],
+                "decision": decision["decision"], "reviewer_principal": context["actor_principal"],
+                "rationale": decision["rationale"], "trace_id": context["trace_id"],
+                "idempotency_key": domain_key}, request)
+        else:
+            create_ml_strategy_approval({"task_id": record["task_id"], "ml_strategy_artifact_id": record["resource_artifact_id"],
+                "decision": decision["decision"], "rationale": decision["rationale"], "trace_id": context["trace_id"],
+                "idempotency_key": domain_key}, request)
+    except HTTPException as exc:
+        if 400 <= exc.status_code < 500:
+            code = {409: "domain_conflict", 422: "domain_validation_failed"}.get(
+                exc.status_code, "domain_request_rejected")
+            return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+                workspace=context["workspace_id"], status="needs_attention", materialization_error_code=code)
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="outcome_unknown")
+    except ValueError:
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="needs_attention",
+            materialization_error_code="domain_validation_failed")
+    except ResearchNotFound:
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="needs_attention",
+            materialization_error_code="domain_scope_unavailable")
+    except (ResearchPersistenceError, SQLAlchemyError):
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="outcome_unknown")
+    return _settle_product_approval_reconciliation(envelope, context)
 
 
 @app.get("/v1/research/tasks/{task_id}/execution-plan")
@@ -4136,17 +4444,19 @@ def list_strategy_artifacts(
 
 @app.get("/v1/research/strategies/versions/{artifact_id}/approval")
 def get_strategy_version_approval(artifact_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         version = research_store.get_artifact(artifact_id)
         if (
             version.get("owner_principal") != context["owner_principal"]
+            or version.get("workspace_id") != context["workspace_id"]
             or version.get("kind") != "strategy_version"
         ):
             raise ResearchNotFound("strategy version not found")
         approval = research_store.get_strategy_approval(
-            owner_principal=context["owner_principal"], strategy_version_artifact_id=artifact_id
+            owner_principal=context["owner_principal"], workspace_id=context["workspace_id"],
+            strategy_version_artifact_id=artifact_id
         )
         return {"approval": approval}
 
@@ -4638,9 +4948,109 @@ def _prepare_signal_producer(
     }
 
 
-def _submit_signal_component(data: dict[str, Any], context: dict[str, str], *, purpose: str) -> dict[str, object]:
-    _owned_research_entity("research_task", data.get("task_id"), context)
+def _authenticated_signal_submission_origin(
+    request: Request, context: dict[str, str], task: dict[str, object],
+) -> dict[str, str] | None:
+    """Snapshot a verified human source without persisting its auth session."""
+    session_id = request.headers.get("x-byq-session-id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    try:
+        user = user_store.get_session_user(session_id)
+    except (UserForbidden, ValueError):
+        # Product-token/bootstrap callers remain able to submit their existing
+        # business Job, but that Job has unknown origin and cannot auto-resume.
+        return None
+    except UserAuthPersistenceError as error:
+        raise HTTPException(status_code=503, detail="user storage is unavailable") from error
+
+    owner, workspace = context.get("owner_principal"), context.get("workspace_id")
+    if (not isinstance(owner, str) or not isinstance(workspace, str)
+            or user.get("username") != owner or context.get("actor_principal") != owner
+            or task.get("owner_principal") != owner or task.get("workspace_id") != workspace
+            or not isinstance(task.get("task_id"), str)
+            or not isinstance(task.get("conversation_id"), str)):
+        return None
+    try:
+        tenancy = workspace_tenancy_store.resolve_context(owner, workspace)
+    except ValueError:
+        return None
+    if (tenancy.get("owner_user_id") != user.get("user_id")
+            or tenancy.get("actor_principal") != owner
+            or tenancy.get("workspace_id") != workspace):
+        return None
+    # No cookie, auth-session ID, or credentials cross this storage boundary.
+    return {
+        "schema_version": "signal-job-submission-origin.v1",
+        "kind": "authenticated_human",
+        "user_id": str(user["user_id"]),
+        "owner_principal": owner,
+        "workspace_id": workspace,
+        "task_id": str(task["task_id"]),
+        "conversation_id": str(task["conversation_id"]),
+    }
+
+
+def _submit_signal_component(
+    data: dict[str, Any], context: dict[str, str], *, purpose: str, request: Request,
+    agent_arguments: dict[str, Any] | None = None,
+) -> dict[str, object]:
+    task = _owned_research_entity("research_task", data.get("task_id"), context)
+    acp_markers = (
+        *_ACP_RUN_HEADERS, "x-byq-root-run-id", "x-byq-runtime-boot-id",
+        "x-byq-acp-observation-id",
+    )
+    carries_acp_identity = (
+        context.get("actor_principal") != context.get("owner_principal")
+        or any(name in request.headers for name in acp_markers)
+        or (MCP_BACKEND_PROOF_TOKEN is not None
+            and request.headers.get("authorization") == f"Bearer {MCP_BACKEND_PROOF_TOKEN}")
+    )
+    agent_submission = purpose == "backtest_task" and carries_acp_identity
+    submission_origin = None if agent_submission else _authenticated_signal_submission_origin(request, context, task)
     command = {key: value for key, value in data.items() if key not in {"trace_id", "idempotency_key"}}
+
+    submission_origin_factory = None
+    if agent_submission:
+        if agent_arguments is None or not isinstance(agent_arguments, dict):
+            raise AgentUnauthorized("exact raw ACP backtest arguments are required")
+        scope = _acp_private_scope(request)
+        if any(name not in request.headers for name in _ACP_RUN_HEADERS):
+            raise HTTPException(status_code=401, detail="exact trusted ACP native Agent headers are required")
+        depth_value = request.headers.get("x-byq-acp-depth")
+        if depth_value not in {"0", "1"}:
+            raise HTTPException(status_code=422, detail="invalid exact ACP Agent depth")
+        trusted_identity = {
+            "root_run_id": scope["root"],
+            "runtime_boot_id": scope["boot_id"],
+            "native_root_session_id": request.headers.get("x-byq-acp-native-root-session-id"),
+            "native_agent_session_id": request.headers.get("x-byq-acp-native-agent-session-id"),
+            "native_parent_session_id": request.headers.get("x-byq-acp-native-parent-session-id") or None,
+            "origin": request.headers.get("x-byq-acp-origin"),
+            "depth": int(depth_value),
+        }
+        mcp_request_id = request.headers.get("x-byq-acp-observation-id")
+
+        def submission_origin_factory(connection, _prepared, existing):
+            admission = agent_store.authorize_acp_backtest_task_submission(
+                connection,
+                mcp_request_id=mcp_request_id,
+                arguments=agent_arguments,
+                task_id=data.get("task_id"),
+                trusted_scope=scope,
+                trusted_identity=trusted_identity,
+                existing_job=existing,
+            )
+            effective, policy_sha256 = user_policy_store.evaluate_authorization_in_transaction(
+                connection, context["owner_principal"], admission["authorization"]
+            )
+            if effective.get("authorized") is not True or effective.get("decision") != "allowed":
+                raise AgentForbidden("current owner policy does not allow this backtest task admission")
+            if admission["kind"] == "existing":
+                # Re-evaluate current permission before returning an idempotent
+                # receipt, while preserving the original immutable admission snapshot.
+                return admission["origin"]
+            return {**admission["origin"], "policy_snapshot_sha256": policy_sha256}
 
     def prepare() -> dict[str, object]:
         prepared = _prepare_signal_producer(
@@ -4661,6 +5071,8 @@ def _submit_signal_component(data: dict[str, Any], context: dict[str, str], *, p
         trusted_workspace=context["workspace_id"], trace_id=str(data.get("trace_id") or context["trace_id"]),
         idempotency_key=data.get("idempotency_key"), prepare=prepare,
         record_reference=paper_store.record_pool_reference_in_transaction,
+        submission_origin=submission_origin,
+        submission_origin_factory=submission_origin_factory,
     )
 
 
@@ -4678,7 +5090,7 @@ def create_signal_producer_job(payload: dict[str, Any], request: Request) -> dic
                 "execution", "order_quantity", "trace_id", "idempotency_key",
             },
         )
-        job = _submit_signal_component(data, context, purpose="signal_producer")
+        job = _submit_signal_component(data, context, purpose="signal_producer", request=request)
         return {"job": job}
 
     return _signal_producer_call(operation)
@@ -4812,7 +5224,8 @@ def create_backtest_task(payload: dict[str, Any], request: Request) -> dict[str,
 
     def operation() -> dict[str, object]:
         data = _backtest_task_input(payload, include_idempotency=True)
-        job = _submit_signal_component(data, context, purpose="backtest_task")
+        job = _submit_signal_component(data, context, purpose="backtest_task", request=request,
+                                       agent_arguments=payload)
         return {"task": _backtest_task_view(job, owner_principal=context["owner_principal"])}
 
     return _backtest_task_call(operation)
@@ -5453,8 +5866,43 @@ def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[st
     return _agent_call(operation)
 
 
-@app.post("/v1/agents/audit")
-def record_agent_audit(payload: dict[str, Any], request: Request) -> dict[str, object]:
+@app.post("/v1/agents/audit", response_model=None)
+def record_agent_audit(payload: dict[str, Any], request: Request) -> Any:
+    observation_header_present = "x-byq-acp-observation-id" in request.headers
+    acp_identity_headers_present = any(name in request.headers for name in _ACP_RUN_HEADERS)
+    supplied_backend_proof = bool(MCP_BACKEND_PROOF_TOKEN) and secrets.compare_digest(
+        request.headers.get("authorization", "").encode("utf-8"),
+        f"Bearer {MCP_BACKEND_PROOF_TOKEN}".encode("utf-8"),
+    )
+    if (observation_header_present or acp_identity_headers_present
+            or supplied_backend_proof):
+        if not observation_header_present:
+            raise HTTPException(status_code=422, detail="ACP audit identity requires its exact ingress observation")
+        if any(name not in request.headers for name in _ACP_RUN_HEADERS):
+            raise HTTPException(status_code=401, detail="exact trusted ACP native Agent headers are required")
+        observation_id = request.headers.get("x-byq-acp-observation-id")
+        if not isinstance(observation_id, str) or re.fullmatch(r"[0-9a-f]{32}", observation_id) is None:
+            raise HTTPException(status_code=422, detail="invalid exact ACP audit observation id")
+        depth_value = request.headers.get("x-byq-acp-depth")
+        if depth_value not in {"0", "1"}:
+            raise HTTPException(status_code=422, detail="invalid exact ACP Agent depth")
+        scope = _acp_private_scope(request)
+        trusted_identity = {
+            "root_run_id": scope["root"],
+            "runtime_boot_id": scope["boot_id"],
+            "native_root_session_id": request.headers.get("x-byq-acp-native-root-session-id"),
+            "native_agent_session_id": request.headers.get("x-byq-acp-native-agent-session-id"),
+            "native_parent_session_id": request.headers.get("x-byq-acp-native-parent-session-id") or None,
+            "origin": request.headers.get("x-byq-acp-origin"),
+            "depth": int(depth_value),
+        }
+        result = _agent_call(lambda: agent_store.record_acp_agent_audit(
+            payload, trusted_scope=scope, trusted_identity=trusted_identity,
+            mcp_request_id=observation_id))
+        if result.get("status") == "validation_refused":
+            return JSONResponse(status_code=422, content={"detail": result["refusal_receipt"]})
+        return {"audit": result["audit"]}
+
     context = _required_agent_context(request, payload)
     return _agent_call(lambda: {"audit": agent_store.record_audit(
         {key: value for key, value in payload.items() if key not in {"owner_principal", "actor_principal", "trace_id", "session_id", "dsh_run_id"}},
@@ -6339,18 +6787,26 @@ def discover_model_credential_models(credential_id: str, request: Request) -> di
 
 
 @app.get("/v1/users/model-credentials/receipts")
-def reconcile_model_credential(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+def reconcile_model_credential(
+    request: Request,
+    operation: str,
+    request_id: str,
+    credential_id: str | None = None,
+    purpose: str = "model_api_key",
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     return _credential_call(lambda: credential_store.reconcile_model_write(
-        operation,request_id,owner=context["owner_principal"],credential_id=credential_id))
+        operation, request_id, owner=context["owner_principal"],
+        credential_id=credential_id, purpose=purpose))
 
 
 @app.post("/v1/users/model-credentials", status_code=201)
 def create_model_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
+    purpose = payload.get("purpose", "model_api_key")
     return _credential_call(lambda: {"credential": credential_store.create_credential(
         context["owner_principal"],
-        {**payload, "purpose": "model_api_key", "scope": "user"},
+        {**payload, "purpose": purpose, "scope": "user"},
         actor=context["actor_principal"],
     )})
 
@@ -6522,6 +6978,44 @@ def resolve_model_credential(payload: dict[str, Any], request: Request) -> dict[
         raise HTTPException(status_code=403, detail="credential resolver denied") from error
     except CredentialUnavailable as error:
         raise HTTPException(status_code=409, detail="selected model binding is unavailable") from error
+    except CredentialPersistenceError as error:
+        raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
+
+
+@app.post("/internal/credentials/search-resolution")
+def resolve_search_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    try:
+        authorize_resolver(
+            request.headers.get("x-byq-credential-resolver-token"),
+            CREDENTIAL_RESOLVER_TOKEN,
+        )
+        if set(payload) != {"owner_principal", "session_id", "trace_id"}:
+            raise ValueError("search credential resolver request fields are invalid")
+        owner = payload.get("owner_principal")
+        session_id = payload.get("session_id")
+        trace_id = payload.get("trace_id")
+        for field, value in (("session_id", session_id), ("trace_id", trace_id)):
+            if not isinstance(value, str) or not value or len(value) > 128:
+                raise ValueError(f"{field} is not valid")
+        resolution = credential_store.resolve_search(owner)
+        if resolution is None:
+            raise CredentialNotFound("search credential not found")
+        # Echo validated runtime identity so the Adapter can reject a stale or
+        # misrouted private resolution before placing its key in a child env.
+        resolution["session_id"] = session_id
+        resolution["trace_id"] = trace_id
+        return {"resolution": resolution}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except CredentialNotFound as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "search_credential_not_configured"},
+        ) from error
+    except CredentialForbidden as error:
+        raise HTTPException(status_code=403, detail="credential resolver denied") from error
+    except CredentialUnavailable as error:
+        raise HTTPException(status_code=409, detail="search credential is unavailable") from error
     except CredentialPersistenceError as error:
         raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
 

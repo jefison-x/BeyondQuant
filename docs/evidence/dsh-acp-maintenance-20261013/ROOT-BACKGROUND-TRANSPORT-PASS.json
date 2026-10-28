@@ -1,0 +1,96 @@
+{
+  "decision": "ROOT_PASS_SOFTWARE_SCOPED_BACKGROUND_TRANSPORT",
+  "scope": "ADR-0111 task-ready optional execution parameters: six source and five test files, transport only; no Product activation.",
+  "source": {
+    "base_sha": "ba6be7189eefea1f37fc294799ac98ad6b8ce1ab",
+    "branch": "codex/dsh-acp-maintenance-candidate",
+    "files_sha256": {
+      "packages/contracts/continuation_request.py": "e82c6e2406a07b83c41b2d430d758650ee7cc4ca81603d22e8865abc59b1db7e",
+      "services/runtime-adapter/app/continuation_budget.py": "a910504c8115e708cda34a5e2bc0fcb765228f4b928d561fb29d4feec4244750",
+      "services/runtime-adapter/app/compat/dsh_acp.py": "6599f6158ce4686185752d50e189444883706384520f4f9a8ae0045b084d2a40",
+      "services/runtime-adapter/app/compat/acp_slot_transport.py": "909b765eda1fe85cef46cb2b3c14cba29a5c0ca5d6f3ea9f37523ab052df622b",
+      "services/acp_product_runner/server.py": "a3fa1e325f8449b29e28e29c1b7c06e5198b42da7f5770d05b173b8adebd94cd",
+      "services/acp_product_runner/Dockerfile": "fd09ad5cb3bad0537462f227202af3dc7e23bf4754bcfef7ee6d3037a3a6db7d",
+      "services/runtime-adapter/tests/test_product_turn_budget.py": "230b5f4ecb60b575e1d0678c7fdc846683e8c6f87a32b8b0b79ae9333d731a28",
+      "services/runtime-adapter/tests/test_dsh_acp_compatibility.py": "1eb539f707865266ccf0cfee93499b6c0c2e1b414cab8c0d30d3e37e30fbc889",
+      "services/runtime-adapter/tests/test_acp_slot_transport.py": "846f72065bcd38da760aadcc415b2d14ba1f08be270a79585267eda831eac9aa",
+      "services/runtime-adapter/tests/test_acp_prepared_guard_retirement.py": "f856d91a31a8dab580b8f47f1dd908490d41a186256dcf002238377e3d78ea04",
+      "services/acp_product_runner/tests/test_server.py": "8fa6d78a3fa5af089bc68034b5135eb7153dd80e896022cc0dec4b756ddb0567"
+    },
+    "frozen_manifest_sha256": "2de47f69462172a154da52c59d371c5fbbd7127f92aa8251b138ecee5e7422f2",
+    "manifest_paths": 563
+  },
+  "changes": [
+    "Closed five-entry task-ready overlay with active native DeepSeek adapter registration, selected Go route and optional user-derived output cap; null stays absent.",
+    "Trusted root/profile/limits validation in Adapter and signed Runner START; canonical root journal/retirement/archive boundaries retained.",
+    "Null runtime propagates without legacy 180s/1h fallback; explicit runtime converts to finite monotonic deadline.",
+    "JS-bound numbers reject unsafe integer precision; signed Python-only START epoch deadline stays outside the JS representation boundary.",
+    "Strict bounded guard predecoder and rejection of an unselected DeepSeek credential; Runner image copies the added contract dependency."
+  ],
+  "verification": {
+    "PASS": 18,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "fresh": 9,
+    "reused": 9,
+    "evidence_type": "offline synthetic software",
+    "model_calls": 0,
+    "jobs": 0,
+    "batch_limit_seconds": 300,
+    "batch_elapsed_seconds": 44.641871701,
+    "syntax": {
+      "command": "python3 scripts/ci/dev-check.py --base ba6be7189eefea1f37fc294799ac98ad6b8ce1ab",
+      "result": "local_syntax PASS, files10, component_tests NOT_RUN, remote_ci REQUIRED",
+      "tool_chunk": "c7bb2c"
+    },
+    "commands": {
+      "source_checksum": {
+        "cwd": ".ci-artifacts/execution-options-20261014/background-transport-2b2b/native-pytest-plan-v2/context",
+        "literal_command": "timeout --signal=TERM --kill-after=2s 5s sha256sum --quiet --check ../source.SHA256SUMS"
+      },
+      "collection": {
+        "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+        "literal_command": "timeout --signal=TERM --kill-after=2s 30s docker run --rm --pull=never --name byq-background-transport-2b2b-collect-v2 --label byq.maintenance.slice=background-transport-2b2b --security-opt=no-new-privileges:true --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,mode=1777 --pids-limit 256 --memory 1g --cpus 2 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/verify/services/runtime-adapter:/verify:/app -v /home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/execution-options-20261014/background-transport-2b2b/native-pytest-plan-v2/context:/verify:ro -w /verify --entrypoint /opt/byq-venv/bin/python3 sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97 -m pytest --import-mode=importlib -x -q -p no:cacheprovider --collect-only services/acp_product_runner/tests/test_server.py::test_task_ready_start_honors_only_explicit_user_runtime services/acp_product_runner/tests/test_server.py::test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runtime services/acp_product_runner/tests/test_server.py::test_validate_guard_requires_the_exact_route_session_header services/runtime-adapter/tests/test_dsh_acp_compatibility.py::test_ordinary_product_guard_uses_tightest_output_limit_and_remains_exclusive services/runtime-adapter/tests/test_dsh_acp_compatibility.py::test_ordinary_product_slot_start_wires_optional_runtime_deadline services/runtime-adapter/tests/test_acp_slot_transport.py::test_ordinary_slot_transport_preserves_unset_runtime_deadline services/runtime-adapter/tests/test_acp_product_slot_client.py::test_ordinary_start_preserves_unset_runtime_deadline services/runtime-adapter/tests/test_acp_product_slot_runtime.py::test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_guards"
+      },
+      "pytest": {
+        "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+        "literal_command": "timeout --signal=TERM --kill-after=2s 240s docker run --rm --pull=never --name byq-background-transport-2b2b-test-v2 --label byq.maintenance.slice=background-transport-2b2b --security-opt=no-new-privileges:true --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,mode=1777 --pids-limit 256 --memory 1g --cpus 2 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/verify/services/runtime-adapter:/verify:/app -v /home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/execution-options-20261014/background-transport-2b2b/native-pytest-plan-v2/context:/verify:ro -w /verify --entrypoint /opt/byq-venv/bin/python3 sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97 -m pytest --import-mode=importlib -x -q -p no:cacheprovider services/acp_product_runner/tests/test_server.py::test_task_ready_start_honors_only_explicit_user_runtime services/acp_product_runner/tests/test_server.py::test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runtime services/acp_product_runner/tests/test_server.py::test_validate_guard_requires_the_exact_route_session_header services/runtime-adapter/tests/test_dsh_acp_compatibility.py::test_ordinary_product_guard_uses_tightest_output_limit_and_remains_exclusive services/runtime-adapter/tests/test_dsh_acp_compatibility.py::test_ordinary_product_slot_start_wires_optional_runtime_deadline services/runtime-adapter/tests/test_acp_slot_transport.py::test_ordinary_slot_transport_preserves_unset_runtime_deadline services/runtime-adapter/tests/test_acp_product_slot_client.py::test_ordinary_start_preserves_unset_runtime_deadline services/runtime-adapter/tests/test_acp_product_slot_runtime.py::test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_guards"
+      }
+    },
+    "raw_root": ".ci-artifacts/execution-options-20261014/background-transport-2b2b/native-pytest-plan-v2",
+    "plan_sha256": "6f0f7835f8a8ef4e8ffb027596c51ae4bc4e02531821298ec89035594982f9e7",
+    "stdout_sha256": "7e4b1924c789c45c1de63365d1cf6dea4df6b886d495b0e461d9cb2f08aed091",
+    "tester_sha256": "cdb81f76b1da335e224d6844899fa72bf56b9dc35a73ccc87bc5c121dd8e9541",
+    "sol_final_sha256": "eb43a9a98c7e1f0e16c0c6eeccac233dc9b73ddb7070a0f07ed20e898a2f2e3d"
+  },
+  "history": {
+    "v1": "FAIL_STOP:10PASS1FAIL7NOT_RUN; pre-call clock sampling assertion missed in inherited regression. Original raw preserved.",
+    "repair": "Full selected clock audit; only two pure tests use isolated fixed Runner clocks, exact arithmetic, no production clock changes. Nine unchanged passes reused, changed previously passing case rechecked.",
+    "metadata": "v1 source TOOL-RAW omitted self in file list while actual file existed; preserved. v2 command-order metadata HOLD preserved before exact wrapper-derived correction."
+  },
+  "limits": {
+    "native_empty_config_startup": "NOT_RUN_HOLD",
+    "product_activation": "NOT_ACTIVATED",
+    "real_models_jobs_browser": "NOT_RUN_FOR_THIS_SLICE",
+    "production_qualification": "NOT_RUN",
+    "remote_ci_push_merge_deploy": "NOT_RUN",
+    "carrier_hashes": "Structural self-integrity only; Backend live facts/authority still required.",
+    "native_intrinsic_defaults": "Pinned unselected registered DeepSeek adapter has native 256000 maxTokens and 300000ms idle defaults; no unlimited provider claim.",
+    "cross_uid_runner": "NOT_RUN; synthetic child cleanup does not qualify production privilege boundary."
+  },
+  "production_read_only": {
+    "three_acp_containers": "running healthy",
+    "repo_digest": "ghcr.io/jefison-x/beyondquant/acp-unified@sha256:150b4802b41b955be1613d524691d26bf04d13e9b862c6970699116ea3d8b440",
+    "source_attribution_receipt": "docs/evidence/dsh-acp-maintenance-20261013/ROOT-PRODUCTION-SOURCE-ATTRIBUTION-PASS.json",
+    "tool_chunk": "f42471",
+    "mutation": false
+  },
+  "retained_environment": {
+    "project": "byq-dev-e8b02b5475",
+    "containers": "14 running healthy at resume",
+    "page": "http://localhost:32790/user/research",
+    "kept_open": true,
+    "identity_volumes_password_preserved": true
+  },
+  "overall": "NOT_READY_FOR_DEPLOYMENT; next exact pinned native startup qualification, then trusted task-ready producer/dispatch integration."
+}

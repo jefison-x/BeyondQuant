@@ -1,0 +1,33 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-affected-offline-v2",
+  "status": "ADMITTED_ONCE_OFFLINE_ONLY",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "source_sha256": {
+    "capture": "7e64733917f670b1dc4a62a0ad8c9feeb823bf646db91ba460e6b1de6d281071",
+    "capture_test": "7aaff5355f8289fb28bc898e48e3efa9fa13a9f89983e85a2529e2e7cf024a10",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "independent_reviewer": "Sol TEST SOURCE PASS",
+  "root_decision": "Execute affected capture module once under fail-fast and 60-second total limit. Preserve V1 failure. Any failure stops this batch, no rerun or live escalation.",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture"
+  ],
+  "test_methods_ast": 18,
+  "limits": {
+    "total_seconds": 60,
+    "real_models": 0,
+    "real_docker": 0,
+    "real_http": 0,
+    "real_db": 0,
+    "new_jobs": 0
+  },
+  "reuse": "V1 scope module 16 PASS under unchanged source/test pins; ordinary and cleanup mechanism PASS retain original scope.",
+  "live": "NOT_ADMITTED"
+}

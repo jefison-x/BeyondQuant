@@ -99,6 +99,10 @@ groups execute independently. The Adapter retains occupancy through both the
 exact Backend terminal ACK and confirmed process cleanup, in either order.
 An unknown or lost receipt keeps that group fenced; no prompt is replayed.
 Backend root authority remains the durable business truth across Adapter loss.
+Accepted [ADR-0104](ADR-0104-acp-operator-process-fence-proof.md) adds a separately
+qualified Engineering-origin process-fence proof for ordinary Product roots with
+lost cleanup receipts. It does not infer cleanup from container replacement or
+relax business-unknown protection; until qualified, the fence above remains.
 
 Reuse the existing sequential runner's process ownership, bounded relay and
 cleanup. Do not add a supervisor process per root, per-root UID pool, cgroup

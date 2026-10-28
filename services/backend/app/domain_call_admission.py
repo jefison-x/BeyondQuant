@@ -4,6 +4,7 @@ import hashlib
 import math
 import re
 import uuid
+import logging
 from contextlib import nullcontext
 
 from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence, validate_call_evidence
@@ -17,6 +18,8 @@ _ACP_REQUEST_ID = re.compile(r"^[0-9a-f]{32}$")
 _ACP_ROOT_ID = re.compile(r"^[0-9a-f]{32}$")
 _ACP_TOOL_NAME = re.compile(r"^byq_[a-z0-9_]{1,96}$")
 _ACP_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_ACP_AUDIT_REFUSAL_SCHEMA = "byq-acp-audit-validation-refusal.v1"
+_ACP_AUDIT_MARKER_SCHEMA = "byq-acp-audit-validation-marker.v1"
 
 
 def acp_binding_sha256(value: dict) -> str:
@@ -91,6 +94,61 @@ def _canonical_acp_arguments(arguments: object) -> tuple[str, int]:
     if len(encoded) > 32 * 1024 * 1024:
         raise ValueError("ACP tool arguments exceed the bounded JSON size")
     return hashlib.sha256(encoded).hexdigest(), len(encoded)
+
+
+def _historical_audit_unknown_coverage(connection, root_run_id: str,
+                                       receipt: dict) -> tuple[list[dict], list[dict]]:
+    """Validate the exact immutable eight-row ingress history covered by ADR-0113."""
+    from .agent_research import (
+        AgentConflict, _HISTORICAL_AUDIT_INGRESS, _HISTORICAL_AUDIT_UNKNOWN,
+        _historical_ingress_rows_sha256,
+    )
+
+    rows = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+        WHERE root_run_id=:root ORDER BY sequence""", {"root": root_run_id})
+    if len(rows) != len(_HISTORICAL_AUDIT_INGRESS):
+        raise AgentConflict("historical audit reconciliation ingress set changed")
+    if _historical_ingress_rows_sha256(rows) != receipt.get("original_ingress_rows_sha256"):
+        raise AgentConflict("historical audit reconciliation ingress snapshot changed")
+
+    unknown_rows: list[dict] = []
+    for row, (sequence, request_id, tool_name, event_sha256) in zip(
+            rows, _HISTORICAL_AUDIT_INGRESS, strict=True):
+        event, expected_receipt = DomainCallEvidenceMixin._acp_audit_ingress_event_and_receipt(row)
+        if (row.get("sequence") != sequence
+                or row.get("mcp_request_id") != request_id
+                or row.get("tool_name") != tool_name
+                or row.get("event_sha256") != event_sha256
+                or row.get("receipt_json") != expected_receipt
+                or acp_binding_sha256(event) != event_sha256
+                or row.get("owner_principal") != receipt["scope"].get("owner_principal")
+                or row.get("workspace_id") != receipt["scope"].get("workspace_id")
+                or row.get("session_id") != receipt["scope"].get("session_id")
+                or row.get("trace_id") != receipt["scope"].get("trace_id")
+                or row.get("runtime_boot_id") != receipt["scope"].get("runtime_boot_id")
+                or row.get("root_run_id") != root_run_id):
+            raise AgentConflict("historical audit reconciliation ingress identity changed")
+        selected = request_id in _HISTORICAL_AUDIT_UNKNOWN
+        if selected:
+            if row.get("status") != "unknown" or not isinstance(row.get("settlement_json"), dict):
+                raise AgentConflict("historical audit uncertainty is no longer the exact unknown state")
+            unknown_rows.append(row)
+        elif row.get("status") != "settled" or not isinstance(row.get("settlement_json"), dict):
+            raise AgentConflict("another unresolved ingress prevents historical audit reconciliation")
+
+    expected_unknowns = [{
+        "mcp_request_id": row["mcp_request_id"],
+        "sequence": row["sequence"],
+        "event_sha256": row["event_sha256"],
+        "arguments_sha256": row["arguments_sha256"],
+        "settlement_sha256": acp_binding_sha256(row["settlement_json"]),
+        "status": "unknown",
+    } for row in unknown_rows]
+    if (len(unknown_rows) != 2
+            or receipt.get("unknown_ingresses") != expected_unknowns
+            or receipt.get("unknown_count") != 2):
+        raise AgentConflict("historical audit receipt does not match the exact unknown rows")
+    return rows, unknown_rows
 
 
 class DomainValidationRejected(ValueError):
@@ -218,7 +276,49 @@ DOMAIN_CALL_DDL = [
 class DomainCallEvidenceMixin:
     def _require_acp_root_terminal_safe(self, connection, root_run_id: str) -> None:
         """Reject terminal ACK while ACP bind, tool dispatch, or domain claim is unresolved."""
-        from .agent_research import AgentConflict
+        from .agent_research import (AgentConflict, AgentResearchStore, _historical_reconciliation_row,
+            _local_validation_final_from_audit_row, _local_validation_final_audit_id,
+            _local_validation_reservation_from_audit_row, local_validation_reconciliation_audit_id,
+            _local_validation_unknown_ingress_digest, local_validation_callback_exit_audit_id,
+            _require_local_validation_root_unfenced)
+
+        local_final = None
+        try:
+            _require_local_validation_root_unfenced(connection, root_run_id)
+        except AgentConflict:
+            final_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+            local_final = _local_validation_final_from_audit_row(final_row, root_run_id)
+            reservation_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                {"id": local_validation_reconciliation_audit_id(root_run_id)})
+            reservation = _local_validation_reservation_from_audit_row(reservation_row, root_run_id)
+            if (local_final is None or reservation is None
+                    or local_final["reservation_sha256"] != reservation["reservation_sha256"]
+                    or local_final["scope"]["root_run_id"] != root_run_id
+                    or any(local_final["scope"][k] != reservation["scope"][v] for k, v in {
+                        "owner_principal":"owner_principal", "workspace_id":"workspace_id",
+                        "session_id":"session_id", "trace_id":"trace_id",
+                        "generation_id":"generation"}.items())):
+                raise AgentConflict("fenced Root lacks an exact local terminal reservation")
+            frozen = AgentResearchStore._local_validation_frozen_snapshot(
+                connection, root_run_id, local_final["task_id"], reservation["idempotency_key"])
+            frozen_claim = next((row for row in frozen["agent_domain_call_claims"]
+                                 if row["claim_id"] == local_final["claim_id"]), None)
+            callback_id = local_validation_callback_exit_audit_id(local_final["claim_id"])
+            callback_fact = next((row for row in frozen["agent_audit"]
+                                  if row["audit_id"] == callback_id), None)
+            source_sha = acp_binding_sha256({"claim": frozen_claim,
+                "business_facts": frozen["local_validation_business_facts"], "callback_exit": callback_fact})
+            raw_unknown = execute(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                WHERE root_run_id=:root AND status IN ('pending','unknown') ORDER BY sequence""",
+                {"root": root_run_id})
+            if (source_sha != local_final["source_rows_sha256"] or len(raw_unknown) != 1
+                    or raw_unknown[0]["status"] != "unknown"
+                    or local_final["unknown_ingress_count"] != 1
+                    or local_final["unknown_ingress_sha256"] != _local_validation_unknown_ingress_digest(raw_unknown)):
+                raise AgentConflict("local final receipt does not cover the exact frozen source rows")
 
         pending_registration = fetch_one(connection, """SELECT count(*) AS count
             FROM agent_acp_native_agent_registrations
@@ -226,11 +326,48 @@ class DomainCallEvidenceMixin:
         if pending_registration["count"]:
             raise AgentConflict("pending ACP native registration prevents root close")
 
-        unsettled_ingress = fetch_one(connection, """SELECT count(*) AS count
+        unsettled_rows = execute(connection, """SELECT *
             FROM agent_acp_tool_ingress_observations
-            WHERE root_run_id=:root AND status IN ('pending','unknown')""", {"root": root_run_id})
-        if unsettled_ingress["count"]:
-            raise AgentConflict("pending or unknown ACP tool ingress prevents root close")
+            WHERE root_run_id=:root AND status IN ('pending','unknown') ORDER BY sequence""",
+            {"root": root_run_id})
+        if any(row.get("status") == "pending" for row in unsettled_rows):
+            raise AgentConflict("pending ACP tool ingress prevents root close")
+        if any(row.get("status") == "unknown" for row in unsettled_rows):
+            audit_row = _historical_reconciliation_row(connection, root_run_id)
+            receipt = (audit_row.get("detail_json", {}).get("acp_control")
+                       if audit_row is not None else None)
+            if isinstance(receipt, dict):
+                _historical_audit_unknown_coverage(connection, root_run_id, receipt)
+            else:
+                local_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                    {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+                local = local_final or _local_validation_final_from_audit_row(local_row, root_run_id)
+                if (local is None or len(unsettled_rows) != 1 or local["unknown_ingress_count"] != 1
+                        or local["unknown_ingress_sha256"] != _local_validation_unknown_ingress_digest(unsettled_rows)):
+                    raise AgentConflict("unknown ACP tool ingress prevents root close")
+                terminal_snapshot = self._acp_terminal_evidence_snapshot(connection, root_run_id)
+                if any(local[key] != terminal_snapshot[source] for key, source in {
+                    "terminal_acp_ingress_sequence": "terminal_acp_ingress_sequence",
+                    "terminal_acp_ingress_sha256": "terminal_acp_ingress_sha256",
+                    "terminal_unknown_claim_count": "terminal_unknown_claim_count",
+                    "terminal_unknown_claims_sha256": "terminal_unknown_claims_sha256",
+                }.items()):
+                    raise AgentConflict("local terminal receipt differs from unchanged raw terminal counts")
+                covered_claim = fetch_one(connection, """SELECT claim_id,root_run_id,task_id,action,
+                    idempotency_key,status FROM agent_domain_call_claims WHERE claim_id=:claim""",
+                    {"claim": local["claim_id"]})
+                if (covered_claim is None or covered_claim["root_run_id"] != root_run_id
+                        or covered_claim["task_id"] != local["task_id"]
+                        or covered_claim["action"] != "byq_strategy_validate"
+                        or hashlib.sha256(covered_claim["idempotency_key"].encode()).hexdigest()
+                           != local["idempotency_key_sha256"]
+                        or (local["disposition"] == "uncommitted"
+                            and (covered_claim["status"] != local["claim_status"]
+                                 or local["claim_status"] not in {"executing", "correctable_failure"}))
+                        or (local["disposition"] == "committed"
+                            and (local["claim_status"] != "succeeded" or covered_claim["status"] != "succeeded"))):
+                    raise AgentConflict("local terminal receipt does not cover the exact unknown claim")
 
         acp_marker = fetch_one(connection, """SELECT
             (SELECT count(*) FROM agent_acp_native_agent_registrations WHERE root_run_id=:root)
@@ -242,7 +379,22 @@ class DomainCallEvidenceMixin:
                 FROM agent_domain_call_claims
                 WHERE root_run_id=:root AND status IN ('claimed','executing')""", {"root": root_run_id})
             if unresolved_claims["count"]:
-                raise AgentConflict("unresolved ACP domain call claim prevents root close")
+                local = None
+                local_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
+                    FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
+                    {"id": _local_validation_final_audit_id(root_run_id, "terminal")})
+                if local_row is not None:
+                    local = _local_validation_final_from_audit_row(local_row, root_run_id)
+                exact = fetch_one(connection, """SELECT claim_id,task_id,idempotency_key,status
+                    FROM agent_domain_call_claims WHERE root_run_id=:root
+                    AND status IN ('claimed','executing') ORDER BY claim_id""", {"root": root_run_id})
+                if (unresolved_claims["count"] != 1 or local is None
+                        or local["disposition"] != "uncommitted" or exact is None
+                        or exact["status"] != "executing" or exact["claim_id"] != local["claim_id"]
+                        or exact["task_id"] != local["task_id"]
+                        or hashlib.sha256(exact["idempotency_key"].encode()).hexdigest()
+                           != local["idempotency_key_sha256"]):
+                    raise AgentConflict("unresolved ACP domain call claim prevents root close")
 
     def _require_judgment_root_result_before_close(self, connection, root_run_id: str,
                                                     outcome: str) -> None:
@@ -511,6 +663,203 @@ class DomainCallEvidenceMixin:
             raise AgentConflict("research-judgment ingress AgentRun does not match its root binding")
         return run["run_id"]
 
+    def authorize_acp_backtest_task_submission(
+        self,
+        connection,
+        *,
+        mcp_request_id: object,
+        arguments: object,
+        task_id: object,
+        trusted_scope: dict,
+        trusted_identity: dict,
+        existing_job: dict | None = None,
+    ) -> dict:
+        """Bind one backtest Job admission to its exact persisted ACP tool ingress.
+
+        This runs on SignalJobStore's acceptance connection: the current root,
+        native AgentRun, tool request, Product task and Job origin therefore
+        share one transaction.  It returns only identity/role facts; the
+        caller evaluates mutable owner policy under that same connection.
+        """
+        from .agent_research import AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized
+        from .agent_research import _entity_id, _text
+
+        if not isinstance(mcp_request_id, str) or _ACP_REQUEST_ID.fullmatch(mcp_request_id) is None:
+            raise AgentUnauthorized("exact ACP tool ingress identity is required")
+        request_task = _entity_id(task_id, field="task_id", prefix="task")
+        if not isinstance(arguments, dict) or arguments.get("task_id") != request_task:
+            raise AgentConflict("backtest Job arguments do not match the exact Product task")
+        idempotency_key = _text(arguments.get("idempotency_key"), field="idempotency_key", max_length=128)
+        arguments_sha256, _ = _canonical_acp_arguments(arguments)
+        identity = self._normalize_acp_agent_identity(trusted_identity)
+        scope = {"owner": trusted_scope["owner"], "workspace": trusted_scope["workspace"],
+                 "actor": trusted_scope["actor"], "session": trusted_scope["session"],
+                 "trace": trusted_scope["trace"], "generation": trusted_scope["generation"]}
+        if (identity["root_run_id"] != trusted_scope["root"]
+                or identity["runtime_boot_id"] != trusted_scope["boot_id"]
+                or scope["actor"] != "byq-product-agent-" + scope["session"]
+                or scope["actor"] == scope["owner"]):
+            raise AgentUnauthorized("ACP backtest admission does not match its signed Agent identity")
+
+        # Match the lock order used by observe/settle: boot authority, active
+        # owner workspace, exact request, then exact root.
+        self._lifecycle_lock(connection, "runtime-authority:current")
+        self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
+        authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
+        self._lifecycle_lock(connection, "acp-mcp-request:" + mcp_request_id)
+        self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+
+        root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+            WHERE root_run_id=:root FOR SHARE""", {"root": identity["root_run_id"]})
+        if root is None:
+            raise AgentNotFound("ACP Backend root not found")
+        if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (
+                scope["owner"], scope["workspace"], scope["session"], scope["trace"]):
+            raise AgentUnauthorized("ACP backtest admission does not match the exact Backend root scope")
+
+        ingress = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:id FOR UPDATE""", {"id": mcp_request_id})
+        if ingress is None:
+            raise AgentNotFound("ACP tool ingress receipt not found")
+        expected = {
+            "owner_principal": scope["owner"], "workspace_id": scope["workspace"],
+            "actor_principal": scope["actor"], "session_id": scope["session"],
+            "trace_id": scope["trace"], "dsh_run_id": scope["generation"],
+            "runtime_boot_id": identity["runtime_boot_id"], "root_run_id": identity["root_run_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "tool_name": "byq_backtest_task_create", "arguments_sha256": arguments_sha256,
+        }
+        if any(ingress.get(key) != value for key, value in expected.items()):
+            raise AgentConflict("ACP tool ingress does not match this exact backtest request")
+        if ingress.get("agent_run_id") is None:
+            raise AgentForbidden("backtest task creation requires a bound native AgentRun")
+
+        event = {"sequence": ingress["sequence"], "owner_principal": scope["owner"],
+            "workspace_id": scope["workspace"], "actor_principal": scope["actor"],
+            "session_id": scope["session"], "trace_id": scope["trace"],
+            "dsh_run_id": scope["generation"], "agent_run_id": ingress["agent_run_id"],
+            "root_run_id": identity["root_run_id"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "tool_name": "byq_backtest_task_create", "arguments_sha256": arguments_sha256}
+        event_sha256 = acp_binding_sha256(event)
+        receipt = {"schema_version": "byq-acp-tool-ingress-receipt.v1",
+            "mcp_request_id": mcp_request_id, "root_run_id": identity["root_run_id"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "tool_name": "byq_backtest_task_create", "agent_run_id": ingress["agent_run_id"],
+            "sequence": ingress["sequence"], "event_sha256": event_sha256}
+        if ingress.get("event_sha256") != event_sha256 or ingress.get("receipt_json") != receipt:
+            raise AgentConflict("ACP tool ingress receipt is inconsistent with its durable event")
+
+        task = fetch_one(connection, """SELECT t.task_id,t.owner_principal,t.workspace_id,t.status AS task_status,
+                t.conversation_id,u.user_id,c.runtime_session_id,c.trace_id AS conversation_trace_id,
+                c.status AS conversation_status
+            FROM research_tasks t
+            JOIN users u ON u.username=t.owner_principal
+            JOIN workspaces w ON w.workspace_id=t.workspace_id AND w.owner_user_id=u.user_id
+            JOIN workspace_memberships m ON m.workspace_id=w.workspace_id
+                AND m.user_id=u.user_id AND m.role='owner'
+            JOIN product_conversations c ON c.conversation_id=t.conversation_id
+                AND c.owner_principal=t.owner_principal AND c.workspace_id=t.workspace_id
+            WHERE t.task_id=:task AND t.owner_principal=:owner AND t.workspace_id=:workspace
+              AND c.runtime_session_id=:session AND c.trace_id=:trace
+              AND u.status='active' AND w.status='active' AND w.kind='personal'
+              AND m.status='active'
+            FOR SHARE OF t,u,w,m,c""",
+            {"task": request_task, "owner": scope["owner"], "workspace": scope["workspace"],
+             "session": scope["session"], "trace": scope["trace"]})
+        if task is None:
+            raise AgentForbidden("backtest task is not bound to the exact ACP conversation")
+
+        bound_run = fetch_one(connection, """SELECT run_id,role_id,owner_principal,workspace_id,
+                actor_principal,session_id,trace_id,dsh_run_id,authority_boot_id,root_run_id
+            FROM agent_runs WHERE run_id=:run FOR SHARE""", {"run": ingress["agent_run_id"]})
+        if (bound_run is None or (bound_run["owner_principal"], bound_run["workspace_id"],
+                bound_run["actor_principal"], bound_run["session_id"], bound_run["trace_id"],
+                bound_run["dsh_run_id"], bound_run["authority_boot_id"], bound_run["root_run_id"])
+                != (scope["owner"], scope["workspace"], scope["actor"], scope["session"],
+                    scope["trace"], scope["generation"], identity["runtime_boot_id"],
+                    identity["root_run_id"])):
+            raise AgentConflict("ACP tool ingress no longer has its exact durable AgentRun")
+
+        base_origin = {
+            "schema_version": "signal-job-submission-origin.v2", "kind": "authorized_agent",
+            "action": "byq_backtest_task_create", "authorization_decision": "allowed",
+            "user_id": task["user_id"], "owner_principal": scope["owner"],
+            "workspace_id": scope["workspace"], "task_id": request_task,
+            "conversation_id": task["conversation_id"], "actor_principal": scope["actor"],
+            "session_id": scope["session"], "trace_id": scope["trace"],
+            "dsh_run_id": scope["generation"], "root_run_id": identity["root_run_id"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+            "native_agent_session_id": identity["native_agent_session_id"],
+            "native_parent_session_id": identity["native_parent_session_id"],
+            "origin": identity["origin"], "depth": identity["depth"],
+            "agent_run_id": ingress["agent_run_id"], "role_id": bound_run["role_id"],
+            "mcp_request_id": mcp_request_id, "idempotency_key": idempotency_key,
+            "arguments_sha256": arguments_sha256, "event_sha256": event_sha256,
+        }
+
+        if (authority["boot_id"] != identity["runtime_boot_id"]
+                or root["status"] != "active" or root.get("authority_status", "active") != "active"
+                or root.get("authority_boot_id") != authority["boot_id"]):
+            raise AgentConflict("ACP backtest creation requires an active current Backend root")
+        if existing_job is None:
+            if ingress["status"] != "pending" or ingress.get("settlement_json") is not None:
+                raise AgentConflict("new backtest Job requires the exact pending ACP tool ingress")
+        elif ingress["status"] not in {"pending", "settled"} or (
+                ingress["status"] == "settled"
+                and (ingress.get("settlement_json") or {}).get("outcome") != "settled"):
+            # Unknown, denied, and abort tombstones cannot authorize a create
+            # replay. Closed roots remain recoverable only through read routes.
+            raise AgentConflict("existing backtest Job requires its exact pending or settled ingress")
+        self._require_judgment_tool_scope(
+            connection, identity, trusted_scope, "byq_backtest_task_create", arguments,
+            new_dispatch=existing_job is None)
+        agent_run_id = self._acp_tool_ingress_agent_run(
+            connection, identity, scope, "byq_backtest_task_create", bootstrap=False)
+        if agent_run_id != ingress["agent_run_id"]:
+            raise AgentConflict("ACP tool ingress AgentRun binding changed before Job admission")
+        authorization, _, denied = self._authorize_agent_action_in_transaction(
+            connection,
+            {"run_id": agent_run_id, "action": "byq_backtest_task_create",
+             "resource_type": "research_task", "resource_id": request_task},
+            trusted_owner=scope["owner"], trusted_actor=scope["actor"],
+            trusted_session_id=scope["session"], trusted_dsh_run_id=scope["generation"],
+            trusted_boot_id=identity["runtime_boot_id"],
+        )
+        if denied or authorization.get("authorized") is not True or authorization.get("decision") != "allowed":
+            raise AgentForbidden("ACP Agent role is not authorized to create this backtest task")
+        if authorization.get("role_id") != bound_run["role_id"]:
+            raise AgentConflict("ACP role changed between ingress and backtest Job admission")
+        if task.get("conversation_status") != "active":
+            raise AgentConflict("backtest Job requires its original active Product conversation")
+        if existing_job is None and task.get("task_status") in {"completed", "failed", "cancelled"}:
+            raise AgentConflict("terminal Product task cannot admit a new backtest Job")
+        if existing_job is not None:
+            existing_origin = existing_job.get("submission_origin")
+            if (not isinstance(existing_origin, dict)
+                    or existing_origin.get("kind") != "authorized_agent"
+                    or any(existing_origin.get(key) != value for key, value in base_origin.items()
+                           if key != "authorization_decision")
+                    or existing_origin.get("authorization_decision") != "allowed"
+                    or not isinstance(existing_origin.get("policy_snapshot_sha256"), str)
+                    or _ACP_SHA256.fullmatch(existing_origin["policy_snapshot_sha256"]) is None):
+                raise AgentConflict("existing Job is not the exact previously admitted ACP request")
+            return {"kind": "existing", "origin": existing_origin,
+                    "authorization": authorization}
+        return {"kind": "new", "origin": base_origin, "authorization": authorization}
+
     @staticmethod
     def _normalize_acp_agent_identity(identity: object) -> dict:
         from .agent_research import _entity_id, _runtime_boot_id
@@ -761,6 +1110,8 @@ class DomainCallEvidenceMixin:
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                               {"root": identity["root_run_id"]})
             if root is None:
@@ -785,6 +1136,10 @@ class DomainCallEvidenceMixin:
                     **identity_fields}
                 if any(prior.get(key) != value for key, value in expected_prior.items()):
                     raise AgentConflict("ACP tool ingress request id was reused for changed input or identity")
+                if prior["status"] == "pending" and prior.get("settlement_json") is not None:
+                    raise AgentConflict("pending ACP tool ingress with a settlement marker cannot be redispatched")
+                if self._acp_audit_refusal_marker(prior) is not None:
+                    raise AgentConflict("ACP audit validation refusal already consumed this request")
                 if (prior.get("settlement_json") or {}).get("outcome") == "aborted_before_dispatch":
                     raise AgentConflict("ACP tool ingress request was aborted before dispatch")
                 return prior["receipt_json"]
@@ -792,12 +1147,6 @@ class DomainCallEvidenceMixin:
             agent_run_id = self._acp_tool_ingress_agent_run(
                 connection, identity, scope, tool_name, bootstrap=bootstrap)
 
-            total = fetch_one(connection, """SELECT
-                (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
-                + (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
-                AS count""", {"root": identity["root_run_id"]})
-            if total["count"] >= 4096:
-                raise AgentConflict("ACP root ingress evidence retention bound reached")
             sequence_row = fetch_one(connection, """SELECT GREATEST(
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root),0),
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_domain_call_observations WHERE root_run_id=:root),0)
@@ -880,6 +1229,8 @@ class DomainCallEvidenceMixin:
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                               {"root": identity["root_run_id"]})
             if root is None:
@@ -899,6 +1250,10 @@ class DomainCallEvidenceMixin:
             if prior is not None:
                 if any(prior.get(key) != value for key, value in expected_prior.items()):
                     raise AgentConflict("ACP tool ingress abort conflicts with the exact request identity")
+                if prior["status"] == "pending" and prior.get("settlement_json") is not None:
+                    raise AgentConflict("pending ACP tool ingress with a settlement marker cannot be overwritten")
+                if self._acp_audit_refusal_marker(prior) is not None:
+                    raise AgentConflict("ACP audit validation refusal cannot be overwritten by an abort")
                 previous_abort = prior.get("settlement_json")
                 if (prior["status"] == "settled" and isinstance(previous_abort, dict)
                         and previous_abort.get("outcome") == "aborted_before_dispatch"):
@@ -923,12 +1278,6 @@ class DomainCallEvidenceMixin:
                 raise AgentConflict("ACP tool ingress abort root is not active under current authority")
             agent_run_id = self._acp_tool_ingress_agent_run(
                 connection, identity, scope, tool_name, bootstrap=bootstrap)
-            total = fetch_one(connection, """SELECT
-                (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
-                + (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
-                AS count""", {"root": identity["root_run_id"]})
-            if total["count"] >= 4096:
-                raise AgentConflict("ACP root ingress evidence retention bound reached")
             sequence_row = fetch_one(connection, """SELECT GREATEST(
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root),0),
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_domain_call_observations WHERE root_run_id=:root),0)
@@ -996,6 +1345,104 @@ class DomainCallEvidenceMixin:
             "arguments_sha256": row["arguments_sha256"], "sequence": row["sequence"],
             "event_sha256": row["event_sha256"], "outcome": "aborted_before_dispatch"}
         return {**base, "abort_sha256": acp_binding_sha256(base)}
+
+    @staticmethod
+    def _acp_audit_refusal_marker(row: dict) -> dict | None:
+        """Return an internal audit refusal marker, including malformed markers for fail-closed handling."""
+        settlement = row.get("settlement_json")
+        if not isinstance(settlement, dict):
+            return None
+        if settlement.get("schema_version") == _ACP_AUDIT_MARKER_SCHEMA:
+            return settlement
+        if "audit_validation_refusal_marker" in settlement:
+            marker = settlement.get("audit_validation_refusal_marker")
+            return marker if isinstance(marker, dict) else {"schema_version": _ACP_AUDIT_MARKER_SCHEMA}
+        return None
+
+    @staticmethod
+    def _acp_audit_ingress_event_and_receipt(row: dict) -> tuple[dict, dict]:
+        event = {"sequence": row["sequence"], "owner_principal": row["owner_principal"],
+            "workspace_id": row["workspace_id"], "actor_principal": row["actor_principal"],
+            "session_id": row["session_id"], "trace_id": row["trace_id"],
+            "dsh_run_id": row["dsh_run_id"], "agent_run_id": row["agent_run_id"],
+            "root_run_id": row["root_run_id"], "runtime_boot_id": row["runtime_boot_id"],
+            "native_root_session_id": row["native_root_session_id"],
+            "native_agent_session_id": row["native_agent_session_id"],
+            "native_parent_session_id": row["native_parent_session_id"],
+            "origin": row["origin"], "depth": row["depth"],
+            "tool_name": row["tool_name"], "arguments_sha256": row["arguments_sha256"]}
+        receipt = {"schema_version": "byq-acp-tool-ingress-receipt.v1",
+            "mcp_request_id": row["mcp_request_id"], "root_run_id": row["root_run_id"],
+            "runtime_boot_id": row["runtime_boot_id"],
+            "native_root_session_id": row["native_root_session_id"],
+            "native_agent_session_id": row["native_agent_session_id"],
+            "native_parent_session_id": row["native_parent_session_id"],
+            "origin": row["origin"], "depth": row["depth"],
+            "tool_name": row["tool_name"], "agent_run_id": row["agent_run_id"],
+            "sequence": row["sequence"], "event_sha256": row["event_sha256"]}
+        return event, receipt
+
+    def _verify_acp_audit_validation_refusal(self, receipt: object, row: dict) -> tuple[dict, dict]:
+        """Verify a deterministic no-insert receipt against its immutable locked ingress marker."""
+        from .agent_research import AgentConflict
+
+        marker = self._acp_audit_refusal_marker(row)
+        marker_fields = {"schema_version", "refusal_receipt", "marker_sha256"}
+        if not isinstance(marker, dict) or set(marker) != marker_fields:
+            raise AgentConflict("ACP audit validation refusal has no exact persisted marker")
+        marker_base = {key: value for key, value in marker.items() if key != "marker_sha256"}
+        if (marker.get("schema_version") != _ACP_AUDIT_MARKER_SCHEMA
+                or not isinstance(marker.get("marker_sha256"), str)
+                or _ACP_SHA256.fullmatch(marker["marker_sha256"]) is None
+                or acp_binding_sha256(marker_base) != marker["marker_sha256"]):
+            raise AgentConflict("ACP audit validation refusal marker is invalid")
+
+        fields = {"schema_version", "mcp_request_id", "owner_principal", "workspace_id",
+            "actor_principal", "session_id", "trace_id", "dsh_run_id", "root_run_id",
+            "runtime_boot_id", "native_root_session_id", "native_agent_session_id",
+            "native_parent_session_id", "origin", "depth", "agent_run_id", "tool_name",
+            "arguments_sha256", "sequence", "event_sha256", "reason", "outcome", "receipt_sha256"}
+        if not isinstance(receipt, dict) or set(receipt) != fields:
+            raise AgentConflict("ACP audit validation refusal is not a closed exact object")
+        expected = {"schema_version": _ACP_AUDIT_REFUSAL_SCHEMA,
+            "mcp_request_id": row["mcp_request_id"], "owner_principal": row["owner_principal"],
+            "workspace_id": row["workspace_id"], "actor_principal": row["actor_principal"],
+            "session_id": row["session_id"], "trace_id": row["trace_id"],
+            "dsh_run_id": row["dsh_run_id"], "root_run_id": row["root_run_id"],
+            "runtime_boot_id": row["runtime_boot_id"],
+            "native_root_session_id": row["native_root_session_id"],
+            "native_agent_session_id": row["native_agent_session_id"],
+            "native_parent_session_id": row["native_parent_session_id"],
+            "origin": row["origin"], "depth": row["depth"], "agent_run_id": row["agent_run_id"],
+            "tool_name": "byq_agent_audit", "arguments_sha256": row["arguments_sha256"],
+            "sequence": row["sequence"], "event_sha256": row["event_sha256"],
+            "outcome": "denied"}
+        if (row.get("tool_name") != "byq_agent_audit" or not row.get("agent_run_id")
+                or any(receipt.get(key) != value for key, value in expected.items())
+                or receipt.get("reason") not in {"invalid_audit_payload", "invalid_audit_detail"}
+                or type(receipt.get("sequence")) is not int
+                or not isinstance(receipt.get("arguments_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["arguments_sha256"]) is None
+                or not isinstance(receipt.get("event_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["event_sha256"]) is None
+                or not isinstance(receipt.get("receipt_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["receipt_sha256"]) is None):
+            raise AgentConflict("ACP audit validation refusal does not match its exact ingress")
+
+        event, observed_receipt = self._acp_audit_ingress_event_and_receipt(row)
+        receipt_base = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+        if (acp_binding_sha256(event) != row["event_sha256"]
+                or row.get("receipt_json") != observed_receipt
+                or receipt.get("receipt_sha256") != acp_binding_sha256(receipt_base)
+                or marker.get("refusal_receipt") != receipt):
+            raise AgentConflict("ACP audit validation refusal hash or persisted proof is invalid")
+        return receipt, marker
+
+    @staticmethod
+    def _public_acp_tool_ingress_settlement(settlement: dict) -> dict:
+        """Keep the pre-insert proof private while preserving the existing wire projection."""
+        return {key: value for key, value in settlement.items()
+                if key != "audit_validation_refusal_marker"}
 
     def _verify_acp_authorization_denial_receipt(self, connection, receipt: object,
                                                 ingress: dict) -> dict:
@@ -1092,6 +1539,8 @@ class DomainCallEvidenceMixin:
             self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             self._require_judgment_tool_scope(
                 connection, identity, trusted_scope, tool_name, None, new_dispatch=False)
             row = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
@@ -1111,12 +1560,23 @@ class DomainCallEvidenceMixin:
                 raise AgentConflict("ACP tool ingress settlement does not match the exact receipt")
             if row["status"] == "unknown" and outcome == "denied":
                 raise AgentConflict("unknown ACP tool ingress cannot be rewritten as a known denial")
+            audit_marker = self._acp_audit_refusal_marker(row)
+            if audit_marker is not None:
+                stored_refusal = (audit_marker.get("refusal_receipt")
+                                  if isinstance(audit_marker, dict) else None)
+                _, audit_marker = self._verify_acp_audit_validation_refusal(stored_refusal, row)
             denial_receipt = None
             if outcome == "denied":
-                if tool_name != "byq_agent_authorize":
-                    raise AgentConflict("known denial settlement is limited to Agent authorization")
-                denial_receipt = self._verify_acp_authorization_denial_receipt(
-                    connection, payload["refusal_receipt"], row)
+                if tool_name == "byq_agent_authorize":
+                    denial_receipt = self._verify_acp_authorization_denial_receipt(
+                        connection, payload["refusal_receipt"], row)
+                elif tool_name == "byq_agent_audit":
+                    denial_receipt, audit_marker = self._verify_acp_audit_validation_refusal(
+                        payload["refusal_receipt"], row)
+                else:
+                    raise AgentConflict("known denial settlement is limited to exact ACP refusals")
+            elif audit_marker is not None and row["status"] == "pending" and outcome != "unknown":
+                raise AgentConflict("ACP audit validation refusal cannot be settled as a success")
             if row["status"] in {"settled", "unknown"}:
                 if (row["status"] != ("settled" if outcome == "denied" else outcome)
                         or row["settlement_json"] is None
@@ -1124,7 +1584,7 @@ class DomainCallEvidenceMixin:
                         or (outcome == "denied" and row["settlement_json"].get("refusal_receipt_sha256")
                             != denial_receipt["receipt_sha256"])):
                     raise AgentConflict("ACP tool ingress settlement outcome is already fixed")
-                return row["settlement_json"]
+                return self._public_acp_tool_ingress_settlement(row["settlement_json"])
             root = fetch_one(connection, """SELECT status,authority_status,authority_boot_id
                 FROM agent_runtime_turns WHERE root_run_id=:root""", {"root": identity["root_run_id"]})
             if (root is None or root["status"] != "active" or root["authority_status"] != "active"
@@ -1146,15 +1606,20 @@ class DomainCallEvidenceMixin:
             if denial_receipt is not None:
                 receipt["refusal_receipt_sha256"] = denial_receipt["receipt_sha256"]
             stored_status = "settled" if outcome == "denied" else outcome
+            stored_receipt = ({**receipt, "audit_validation_refusal_marker": audit_marker}
+                              if audit_marker is not None else receipt)
             execute(connection, """UPDATE agent_acp_tool_ingress_observations
                 SET status=:status,settlement_json=CAST(:settlement AS jsonb),settled_at=CURRENT_TIMESTAMP
                 WHERE mcp_request_id=:id AND status='pending'""",
-                {"status": stored_status, "settlement": json.dumps(receipt, allow_nan=False), "id": request_id})
+                {"status": stored_status, "settlement": json.dumps(stored_receipt, allow_nan=False), "id": request_id})
             return receipt
 
     def _acp_terminal_evidence_snapshot(self, connection, root_run_id: str) -> dict[str, object]:
         """Freeze the shared ingress cursor and raw-free unknown claim summary under the root lock."""
-        from .agent_research import AgentConflict
+        from .agent_research import (
+            AgentConflict, _historical_ingress_rows_sha256,
+            _historical_reconciliation_row,
+        )
 
         events = execute(connection, """SELECT sequence,event_sha256,event_kind,status,outcome,settlement_sha256 FROM (
                 SELECT sequence,event_sha256,'domain_call'::text AS event_kind,
@@ -1166,9 +1631,9 @@ class DomainCallEvidenceMixin:
                     COALESCE(settlement_json->>'settlement_sha256',settlement_json->>'abort_sha256')
                         AS settlement_sha256
                 FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root
-            ) evidence ORDER BY sequence LIMIT 4097""", {"root": root_run_id})
-        if len(events) > 4096 or any(row["sequence"] != index for index, row in enumerate(events, 1)):
-            raise AgentConflict("ACP root ingress evidence cursor is not contiguous and bounded")
+            ) evidence ORDER BY sequence""", {"root": root_run_id})
+        if any(row["sequence"] != index for index, row in enumerate(events, 1)):
+            raise AgentConflict("ACP root ingress evidence cursor is not contiguous")
         ingress_sequence = len(events)
         ingress_sha256 = acp_binding_sha256({"schema_version": "byq-acp-root-ingress-cursor.v1",
             "root_run_id": root_run_id, "sequence": ingress_sequence,
@@ -1179,21 +1644,34 @@ class DomainCallEvidenceMixin:
         claims = execute(connection, """SELECT claim_id,task_id,action,idempotency_key,request_sha256,
                     input_sha256,agent_run_id,evidence_sequence,status
                 FROM agent_domain_call_claims WHERE root_run_id=:root AND status IN ('claimed','executing')
-                ORDER BY claim_id LIMIT 4097""", {"root": root_run_id})
-        if len(claims) > 4096:
-            raise AgentConflict("ACP unresolved claim projection exceeds its bounded result")
-        bounded_claims = [{"claim_id": row["claim_id"], "task_id": row["task_id"],
+                ORDER BY claim_id""", {"root": root_run_id})
+        unknown_claims = [{"claim_id": row["claim_id"], "task_id": row["task_id"],
             "action": row["action"], "idempotency_key_sha256": hashlib.sha256(
                 row["idempotency_key"].encode("utf-8")).hexdigest(),
             "request_sha256": row["request_sha256"], "input_sha256": row["input_sha256"],
             "agent_run_id": row["agent_run_id"], "evidence_sequence": row["evidence_sequence"],
             "status": row["status"]} for row in claims]
+        reconciliation_row = _historical_reconciliation_row(connection, root_run_id)
+        if reconciliation_row is not None:
+            reconciliation = reconciliation_row["detail_json"]["acp_control"]
+            ingress_rows, _unknown_rows = _historical_audit_unknown_coverage(
+                connection, root_run_id, reconciliation)
+            ingress_sha256 = acp_binding_sha256({
+                "schema_version": "byq-acp-root-ingress-reconciliation-snapshot.v1",
+                "root_run_id": root_run_id,
+                "sequence": ingress_sequence,
+                "original_cursor_sha256": ingress_sha256,
+                "original_ingress_rows_sha256": _historical_ingress_rows_sha256(ingress_rows),
+                "audit_unknown_count": reconciliation["unknown_count"],
+                "audit_unknown_disposition": reconciliation["unknown_disposition"],
+                "reconciliation_receipt_sha256": reconciliation["receipt_sha256"],
+            })
         return {"terminal_acp_ingress_sequence": ingress_sequence,
             "terminal_acp_ingress_sha256": ingress_sha256,
-            "terminal_unknown_claim_count": len(bounded_claims),
+            "terminal_unknown_claim_count": len(unknown_claims),
             "terminal_unknown_claims_sha256": acp_binding_sha256({
                 "schema_version": "byq-acp-unknown-claims.v1", "root_run_id": root_run_id,
-                "claims": bounded_claims})}
+                "claims": unknown_claims})}
 
     def observe_acp_domain_call(self, payload: object, *, trusted_scope: dict) -> dict:
         from .agent_research import AgentConflict, AgentNotFound, AgentUnauthorized, _runtime_boot_id
@@ -1237,6 +1715,8 @@ class DomainCallEvidenceMixin:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, identity["root_run_id"])
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             prior = fetch_one(connection, "SELECT * FROM agent_acp_domain_call_observations WHERE mcp_request_id=:id",
                               {"id": request_id})
@@ -1277,19 +1757,7 @@ class DomainCallEvidenceMixin:
             self._domain_identity(connection, {**evidence, "generation": scope["generation"]},
                                   context, active=True)
 
-            root_count = fetch_one(connection, """SELECT
-                (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
-                + (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
-                AS count""",
-                {"root": identity["root_run_id"]})
-            if root_count["count"] >= 4096:
-                raise AgentConflict("ACP root ingress evidence retention bound reached")
             self._lifecycle_lock(connection, "domain-call-session:" + scope["session"])
-            session_count = fetch_one(connection, """SELECT count(*) AS count FROM agent_domain_call_evidence
-                WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session""",
-                {"owner": scope["owner"], "workspace": scope["workspace"], "session": scope["session"]})
-            if session_count["count"] >= 1024:
-                raise AgentConflict("private call evidence retention bound reached")
             sequence_row = fetch_one(connection, """SELECT GREATEST(
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root),0),
                 COALESCE((SELECT MAX(sequence) FROM agent_acp_domain_call_observations WHERE root_run_id=:root),0)
@@ -1358,6 +1826,8 @@ class DomainCallEvidenceMixin:
         self._lifecycle_lock(connection, "runtime-authority:current")
         self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
         self._lifecycle_lock(connection, "root:" + context["root"])
+        from .agent_research import _require_local_validation_root_unfenced
+        _require_local_validation_root_unfenced(connection, context["root"])
         root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root", context)
         if root is None:
             raise AgentConflict("runtime root binding is not yet confirmed")
@@ -1398,7 +1868,7 @@ class DomainCallEvidenceMixin:
     def claim_domain_call(self, action, payload, *, trusted_owner, trusted_workspace,
                           trusted_session_id, trusted_trace_id, trusted_generation, trusted_root,
                           trusted_boot_id=None, trusted_acp_observation_id=None):
-        """Commit the debit before domain validation; proof arrival never executes."""
+        """Persist the idempotent claim before validation; proof arrival never executes."""
         from .agent_research import AgentConflict, _principal, _trace
         value = request_evidence(action, payload, trace_id=trusted_trace_id)
         # Reuse the closed proof identity validator, not a model-provided root.
@@ -1412,6 +1882,7 @@ class DomainCallEvidenceMixin:
             "session": _trace(trusted_session_id, field="session_id"), "trace": trusted_trace_id,
             "root": trusted_root, "boot_id": trusted_boot_id}
         scope = {**value, **context}
+        acp_observation_id = None
         with self._transaction() as connection:
             # No proof means no claim and no execution, including when the
             # root/registration delivery itself is still pending. Do not turn
@@ -1449,6 +1920,7 @@ class DomainCallEvidenceMixin:
                         or binding["runtime_boot_id"] != trusted_boot_id
                         or binding["agent_run_id"] != value["agent_run_id"]):
                     raise AgentConflict("ACP observation does not have a bound native AgentRun")
+                acp_observation_id = trusted_acp_observation_id
                 proof = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                     WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
                       AND trace_id=:trace AND sequence=:sequence AND root_run_id=:root
@@ -1487,16 +1959,14 @@ class DomainCallEvidenceMixin:
                 WHERE root_run_id=:root AND task_id=:task_id AND action=:action AND status IN ('claimed','executing') LIMIT 1""", scope)
             if unresolved:
                 return {"state": "blocked", "reason": "prior_call_outcome_unknown"}
-            if bucket["failed_input_sha256"] == value["input_sha256"]:
+            failed_input = fetch_one(connection, """SELECT claim_id FROM agent_domain_call_claims
+                WHERE root_run_id=:root AND task_id=:task_id AND action=:action
+                  AND status='correctable_failure' AND input_sha256=:input_sha256 LIMIT 1""",
+                {**scope, "input_sha256": value["input_sha256"]})
+            # Keep the bucket hash as a conservative fallback for records created
+            # before every failed input was retained in the claim ledger.
+            if bucket["failed_input_sha256"] == value["input_sha256"] or failed_input:
                 return {"state": "blocked", "reason": "unchanged_failed_input"}
-            if bucket["repair_used"]:
-                return {"state": "blocked", "reason": "correction_budget_exhausted"}
-            count = fetch_one(connection, "SELECT count(*) AS n FROM agent_domain_call_claims WHERE root_run_id=:root", scope)
-            if count["n"] >= 1024:
-                return {"state": "blocked", "reason": "call_retention_bound"}
-            if bucket["failed_input_sha256"] is not None:
-                execute(connection, """UPDATE agent_domain_correction_buckets SET repair_used=TRUE
-                    WHERE root_run_id=:root AND task_id=:task_id AND action=:action""", scope)
             claim_id = uuid.uuid4().hex
             execute(connection, """INSERT INTO agent_domain_call_claims
                 (claim_id,root_run_id,task_id,action,idempotency_key,request_sha256,input_sha256,evidence_sequence,agent_run_id,status)
@@ -1505,7 +1975,8 @@ class DomainCallEvidenceMixin:
         # Internal capability, never an HTTP/model-facing result. No raw request
         # is persisted. Caller alone may execute this newly claimed operation.
         return {"state": "claimed", "claim_id": claim_id, "context": context,
-                "evidence": proof["evidence_json"]}
+                "evidence": proof["evidence_json"],
+                **({"acp_observation_id": acp_observation_id} if acp_observation_id is not None else {})}
 
     def execute_domain_call(self, claim, operation):
         """Artifact and success receipt share one transaction; crashes stay charged."""
@@ -1521,6 +1992,7 @@ class DomainCallEvidenceMixin:
             if row["status"] != "claimed":
                 return {"state": "unknown"} if row["status"] == "executing" else row["result_json"]
             execute(connection, "UPDATE agent_domain_call_claims SET status='executing' WHERE claim_id=:id", {"id": claim["claim_id"]})
+        owns_callback = True
         try:
             with self._transaction() as connection:
                 self._domain_identity(connection, evidence, context, active=True)
@@ -1539,6 +2011,8 @@ class DomainCallEvidenceMixin:
             with self._transaction() as connection:
                 self._lifecycle_lock(connection, "runtime-authority:current")
                 self._lifecycle_lock(connection, "root:" + context["root"])
+                from .agent_research import _require_local_validation_root_unfenced
+                _require_local_validation_root_unfenced(connection, context["root"])
                 authority = self._current_authority_row(connection)
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
                                  {"root": context["root"]})
@@ -1552,11 +2026,7 @@ class DomainCallEvidenceMixin:
                 row = fetch_one(connection, "SELECT * FROM agent_domain_call_claims WHERE claim_id=:id FOR UPDATE", {"id": claim["claim_id"]})
                 if row is None or row["status"] != "executing":
                     raise AgentConflict("domain call claim cannot be completed twice")
-                bucket = fetch_one(connection, """SELECT repair_used FROM agent_domain_correction_buckets
-                    WHERE root_run_id=:root AND task_id=:task AND action=:action""",
-                    {"root": row["root_run_id"], "task": row["task_id"], "action": row["action"]})
-                result = {"state": "correctable_failure",
-                    "reason": "correction_failed" if bucket["repair_used"] else "domain_validation_failed"}
+                result = {"state": "correctable_failure", "reason": "domain_validation_failed"}
                 if error.validation is not None:
                     result["validation"] = error.validation
                 execute(connection, """UPDATE agent_domain_correction_buckets SET failed_input_sha256=COALESCE(failed_input_sha256,:input)
@@ -1565,6 +2035,21 @@ class DomainCallEvidenceMixin:
                 execute(connection, "UPDATE agent_domain_call_claims SET status='correctable_failure',result_json=CAST(:result AS jsonb) WHERE claim_id=:id",
                         {"id": claim["claim_id"], "result": json.dumps(result)})
             return result
+        finally:
+            # This exact callback receipt is written only by the invocation
+            # that committed claimed -> executing. It says the local callback
+            # exited; it does not classify its business outcome.
+            if (owns_callback and evidence.get("action") == "byq_strategy_validate"
+                    and isinstance(claim.get("acp_observation_id"), str)):
+                try:
+                    self._record_local_validation_callback_exit(
+                        claim["claim_id"], claim["acp_observation_id"])
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "local validation callback-exit proof missing",
+                        extra={"root_run_id": claim["context"]["root"],
+                               "claim_id": claim["claim_id"],
+                               "reason": "local_validation_callback_exit_proof_missing"})
 
     def consume_domain_call_evidence(self, value, *, trusted_owner, trusted_workspace,
                                     trusted_session_id, trusted_trace_id, conversation_id,
@@ -1590,6 +2075,8 @@ class DomainCallEvidenceMixin:
                 raise AgentUnauthorized("private call does not match the original conversation")
             self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
             self._lifecycle_lock(connection, "root:" + context["root"])
+            from .agent_research import _require_local_validation_root_unfenced
+            _require_local_validation_root_unfenced(connection, context["root"])
             self._lifecycle_lock(connection, "domain-call-session:" + context["session"])
             existing = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                 WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND sequence=:sequence""", context)
@@ -1620,10 +2107,6 @@ class DomainCallEvidenceMixin:
             if task is None or (task["owner_principal"], task.get("workspace_id"), task.get("conversation_id")) != (
                     context["owner"], context["workspace"], conversation_id):
                 raise AgentUnauthorized("private call does not match the original conversation task")
-            count = fetch_one(connection, """SELECT count(*) AS count FROM agent_domain_call_evidence
-                WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session""", context)
-            if count["count"] >= 1024:
-                raise AgentConflict("private call evidence retention bound reached")
             execute(connection, """INSERT INTO agent_domain_call_evidence
                 (owner_principal,workspace_id,session_id,trace_id,sequence,root_run_id,generation,agent_run_id,
                  task_id,action,idempotency_key,request_sha256,input_sha256,evidence_json,receipt_json)

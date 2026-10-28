@@ -1,0 +1,42 @@
+{
+  "decision": "ROOT_PASS_PACKAGING_LAYOUT_SOFTWARE_ONLY",
+  "base_sha": "f83aeabd68f6c0199eb7a030eb909c1af990cfc7",
+  "branch": "codex/dsh-acp-maintenance-candidate",
+  "scope": "One missing continuation_request.py COPY in unified Product Runner layout, one actual isolated filesystem-import test. No Product Phase advancement.",
+  "source_sha256": {
+    "services/acp_unified/Dockerfile": "a3892cc9b150b5203aad03e3b9eb637d6f61e55d898f141b2401a0212645fc91",
+    "services/acp_unified/tests/test_single_image_contract.py": "ec7626f0dedf69f03a0e2d047336c29f059d0f63cccba18b7daa73cd08835457"
+  },
+  "reason": "Product entrypoint runs system Python at /opt/byq/acp_product_runner/server.py from /. There is no PYTHONPATH=/app; contracts under /app do not close this script's imports. The matching standalone runner copy had been added, but unified role layout also requires it.",
+  "verification": {
+    "mode": "HOST_LAYOUT_IMPORT",
+    "PASS": 1,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "manifest_sha256": "993e1ab53cde27e2cd82d08791c0bbb22a8bf4ffa76380e37f800a1084e201b5",
+    "manifest_paths": 10,
+    "command": "timeout --signal=TERM --kill-after=2s 20s python3 services/acp_unified/tests/test_single_image_contract.py AcpSingleImageCandidateOverlayContract.test_task_ready_contract_is_baked_into_product_runner_import_root",
+    "raw_root": ".ci-artifacts/execution-options-20261014/background-native-startup-2b2c/packing-layout-plan-v1",
+    "plan_sha256": "1f3d31a223bff762960866ace38fd268006393a7dfdbd769697cab93d4c8b991",
+    "stderr_sha256": "f128493f81c1967730012f8cf19263779928c394b464ff28f14c62ba68fe315b",
+    "elapsed_seconds": 8.211108906,
+    "wall_limit_seconds": 60,
+    "host": "Python3.14.4 / PyYAML6.0.3; actual production interpreter NOT_RUN",
+    "test_behavior": "Stages only Dockerfile-derived Product Runner/helper files, excludes /app/repository/parent environment, imports actual server under non-main name; child timeout10s. No service launch or credential access.",
+    "syntax": "dev-check --base f83aeabd68f6c0199eb7a030eb909c1af990cfc7 rc0 local_syntax PASS1file; tool890264",
+    "tester_sha256": "9b1db11dc6511405e4833453bba226012bf5c548ed7f596bcb654ede6ae0c279",
+    "sol_final_sha256": "93e9d7a55fc56696fa54236e88926463a744aa0f2b008e055f14d7e644884337"
+  },
+  "postrun_note": "Wrong-CWD extra hash read failed outside planned steps; chained rc0 is not hash evidence. Error preserved; separate corrected read and independent RAW hashes agree. No test rerun.",
+  "NOT_RUN": [
+    "candidate image build",
+    "actual image Product Runner startup",
+    "native DSH empty-config session/new",
+    "model/provider",
+    "Job/database",
+    "Gateway/browser Product flow",
+    "push/merge/deployment"
+  ],
+  "next": "Build one current unified developer image from exact tracked commit archive, reuse available cache, preserve current test/production resources. Then installed-byte checks and one bounded keyless native startup.",
+  "overall": "NOT_READY_FOR_DEPLOYMENT"
+}

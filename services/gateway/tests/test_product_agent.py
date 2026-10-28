@@ -1040,7 +1040,7 @@ def test_restore_attaches_surviving_runtime_and_continues_sequence(monkeypatch, 
         main,
         "_adapter_post",
         lambda path, *, payload=None, timeout=20.0: adapter_calls.append((path, payload)) or {
-            "status": "ready", "boot_id": "a" * 32},
+            "status": "ready", "boot_id": "a" * 32, "sequence": 8},
     )
     collectors: list[str] = []
     monkeypatch.setattr(main, "_start_trace_collector", lambda session: collectors.append(session.session_id))
@@ -1163,7 +1163,7 @@ def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkey
     def live_attach(*_args, **kwargs):
         assert kwargs["payload"]["attach_live_only"] is True
         return {"session_id": "runtime-private", "trace_id": "trace-1", "status": "ready",
-                "boot_id": "a" * 32}
+                "boot_id": "a" * 32, "sequence": 0}
 
     monkeypatch.setattr(main, "_adapter_post", live_attach)
     collectors: list[str] = []
@@ -1273,7 +1273,7 @@ def test_resume_interrupted_adapter_generation_requires_a_new_agent_session(monk
     assert calls == ["/internal/runtime/sessions/runtime-private/resume"]
 
 
-def test_resume_failed_adapter_generation_reports_failure_without_claiming_interruption(monkeypatch, tmp_path: Path) -> None:
+def test_resume_failed_adapter_generation_without_recovery_proof_remains_unavailable(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
@@ -1293,12 +1293,16 @@ def test_resume_failed_adapter_generation_reports_failure_without_claiming_inter
         raise error
 
     monkeypatch.setattr(main, "_adapter_post", failed)
+    monkeypatch.setattr(main, "_adapter_get", lambda *_a, **_k: (_ for _ in ()).throw(
+        main.HTTPException(status_code=503, detail="recovery binding unavailable")))
     response = TestClient(main.app).post(
         "/v1/agent/sessions/conversation_1/resume",
         headers={"Authorization": f"Bearer {TOKEN}"},
     )
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "agent_session_failed"
+    assert response.status_code == 503
+    assert response.json()["detail"] == "recovery binding unavailable"
+    assert "agent_session_failed" not in response.text
+    assert "agent_session_interrupted" not in response.text
 
 
 def test_create_product_session_projects_fresh_continuity(monkeypatch, tmp_path: Path) -> None:

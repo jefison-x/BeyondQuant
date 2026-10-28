@@ -1,0 +1,82 @@
+{
+  "container_identity_before_after_equal": true,
+  "docker_operations": 6,
+  "elapsed_ms": 235,
+  "exact_ack": true,
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "individual_native_child_closed": "UNKNOWN",
+  "job_counts_equal": true,
+  "new_jobs": 0,
+  "new_models": 0,
+  "parent_child_backend_registration": "EXISTING_RECORDS_ONLY",
+  "production_changes": 0,
+  "provider": {
+    "actual_cache_read_tokens": 160896,
+    "actual_input_tokens": 222315,
+    "actual_output_tokens": 1399,
+    "attribution": "root_aggregate_only_child_unknown",
+    "declared_output_tokens": 65536,
+    "input_bytes": 741230,
+    "max_concurrent": 1,
+    "observed_elapsed_ms": 31382,
+    "provider_attempts": 8,
+    "provider_calls": 8,
+    "root_run_id": "3086d5da6842466eb09772025b4652ea",
+    "schema_version": "byq-provider-aggregate.v1",
+    "tool_payload_bytes": 667164
+  },
+  "schema": "byq-root-existing-child-direct-read.v1",
+  "sdk_run_id_and_native_file_mapping": "UNKNOWN",
+  "signed_root_process_group_cleanup": "PROVEN",
+  "source_pins_before_after_equal": true,
+  "status": "PASS_BOUNDED_INDEPENDENT_READ",
+  "root_decision": "PASS_READ_SCOPE_ONLY",
+  "independent_review": "Sol RAW PASS; Root PASS",
+  "original_batch": "Original 240-second native/collector FAIL remains FAIL. This is an independent later read, not qualification recovery.",
+  "cleanup_exit_fields": {
+    "code": 0,
+    "reason": "cancelled",
+    "signal": null
+  },
+  "commands": [
+    {
+      "label": "containers-after",
+      "returncode": 0,
+      "stdout_sha256": "8a177a63f9705696c5fc98ca96a25c062933e1bcb910f8b400a219d640967d78",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "containers-before",
+      "returncode": 0,
+      "stdout_sha256": "8a177a63f9705696c5fc98ca96a25c062933e1bcb910f8b400a219d640967d78",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "gateway-log-type",
+      "returncode": 0,
+      "stdout_sha256": "395e76cce819dc796654a6e3452873c2ceb236c5943d4ef30e9c6d8e16b6b40a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "gateway-terminal-ack-log",
+      "returncode": 0,
+      "stdout_sha256": "ec1b03ce8c0de54e0e7cc892a918b80124f3e83d8da9ed6d8bbb2213af28657c",
+      "stderr_sha256": "609bed42e2d4f3e871293e63337a080130790b9f87b31a07b748520e29b0279c"
+    },
+    {
+      "label": "job-inventory-current",
+      "returncode": 0,
+      "stdout_sha256": "1ae8ed7c7d1bc123d325b6b9b3516913eff9097e6ec525b9bd72a5a8d3e57a95",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "signed-cleanup-existing",
+      "returncode": 0,
+      "stdout_sha256": "4432c34a76f9cabf688857f6ebdd2db08aea0846d0f0196242be3eb43952bf13",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/existing-child-read-v1",
+  "job_evidence_boundary": "Counts only, at later read vs old snapshot; no assertion of unchanged table contents or causal attribution.",
+  "browser_evidence": "Recorded separately; wait failed, later AX observation restored original input/answer."
+}

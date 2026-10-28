@@ -246,7 +246,7 @@ def test_active_agent_root_blocks_reset_without_partial_deletion() -> None:
             INSERT INTO agent_runtime_turns
                 (root_run_id,owner_principal,workspace_id,session_id,trace_id,status,authority_status,
                  created_at,updated_at)
-            VALUES ('root_reset_active',:owner,:workspace,'reset-session-active-root',
+            VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',:owner,:workspace,'reset-session-active-root',
                     'reset-trace-active-root','active','active',:now,:now)
         """, {"owner": owner, "workspace": context["workspace_id"], "now": now})
 

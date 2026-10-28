@@ -1,0 +1,164 @@
+{
+  "head": "7853f5244971fa0fe6885fd7b004afb5c610b7d3",
+  "history": {
+    "v1_v2_source_holds": "Resolved before V3 admission; these source-review holds did not constitute test execution failures. Earlier prepared artifacts remain preserved."
+  },
+  "offline_substitute": {
+    "argv": [
+      "python3",
+      "-B",
+      ".ci-artifacts/market-observation-20261014/prepared-v3/test_run_read.py",
+      "-f"
+    ],
+    "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+    "elapsed_ms": 217.681076,
+    "execution_path": ".ci-artifacts/market-observation-20261014/offline-run-v1/execution.json",
+    "execution_sha256": "40c8c9c1704d4af1584bbca1fca1e5784fa7395e7e5aae8a298f914bd0973b03",
+    "fake_main_invocations": 12,
+    "interpretation": "Synthetic full-entry transport only; all 12 fake main calls passed. No real Docker, SQL, API, model, or Job calls.",
+    "methods": {
+      "errors": 0,
+      "failed": 0,
+      "passed": 9,
+      "skipped": 0
+    },
+    "status": "PASS_LIMITED_OFFLINE",
+    "stderr": {
+      "bytes": 107,
+      "sha256": "ed6fe51c726aa8f0bb72e45b6d8b6e9e133d6c52d813204a672f300a8fce1d26"
+    },
+    "stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "pins": {
+    "aggregate_sql_sha256": "f905095e6188d5990928668ecc7be3be9726a4ff75303c9fcb394f308b226875",
+    "all_execution_pins_unchanged": true,
+    "execution_head_before_after": "7853f5244971fa0fe6885fd7b004afb5c610b7d3",
+    "offline_runner_sha256": "f4e3baa240c25de552cfa7b83254171d95cd609466dc2859f4a82f9daa873538",
+    "offline_test_sha256": "9ee64d05aca288d631309cebba01a952a4ddcc53a2d25a65f418f87b5020e7c8",
+    "plan_path": ".ci-artifacts/market-observation-20261014/prepared-v3/plan.json",
+    "plan_sha256": "f57f435107976836b2bed688165bed8439b179de6dee9aedcae857a0eac70cc1",
+    "provenance_seed_sha256": "2d30a7e35c455a34a08e8358537e6311cdd0bdb41675e47cf8bf35084df883ca",
+    "schema_sql_sha256": "a3eb0eb31f257ad972ac394f65569b3c9840bb6efe3b1e6479b203007d3fef33",
+    "shared_read_helper_sha256": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3"
+  },
+  "qualification_boundary": {
+    "backend_image_qualification": "NOT_PROVEN",
+    "background_continuation": "NOT_RUN",
+    "release_or_deployment": "NOT_RUN"
+  },
+  "read_only_observation": {
+    "aggregate_rows": {
+      "adjustment_factors": 0,
+      "calendar_import_proofs": 0,
+      "corporate_actions": 0,
+      "daily_bars": 0,
+      "daily_status": 0,
+      "index_bars": 0,
+      "security_master_members": 0,
+      "session_supplements": 0,
+      "symbol_supplements": 0,
+      "trading_calendar": 0
+    },
+    "argv": [
+      "python3",
+      "-B",
+      ".ci-artifacts/market-observation-20261014/prepared-v3/run_read.py"
+    ],
+    "backend_image": {
+      "observed_image_id": "sha256:979ebeddeee01ef06f74d8046098c68e194350e09554bf05ce2b95ca028fc695",
+      "older_source_readback_image_id": "sha256:753662c496721f9cb3b411850351ba1ddfb08ec6661e7fe8716710c33661b281",
+      "status": "NOT_PROVEN_IMAGE_ID_MISMATCH"
+    },
+    "containers": {
+      "before_after_equal": true,
+      "checked_fields": [
+        "Id",
+        "Image",
+        "Name",
+        "State.StartedAt",
+        "State.Running"
+      ],
+      "ids": [
+        "a34a311372e69a438009bf3af4a86841bb8902b38ca9ed3f66cffdf157da9de7",
+        "45e645b8e0da711f41de1d0c0e10c03d6903b3087f7c0210ae39b16bbc1436b9",
+        "3fd37a6325d915ea95fe8d7b3f9f86d16ce8424297c143d59a6107d19e769533",
+        "b01cec2d1051f2fb7fd1acb91b1cb947155dd7f39024eb9c8fc3279ffbdae75e",
+        "80ba314669f8e10d470fe474d860ac5bb76a5ee69a9c7808f51c672be94931f7"
+      ]
+    },
+    "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+    "docker_read_calls": 6,
+    "elapsed_ms": 342.236993,
+    "execution_path": ".ci-artifacts/market-observation-20261014/live-execution-v3/execution.json",
+    "execution_sha256": "96c7751e8836ac80e02f566cea42bdb27c81c8acac10df42e40cd772ad23ac9c",
+    "external_timeout_seconds": 60,
+    "internal_deadline_seconds": 50,
+    "interpretation_limits": [
+      "Metadata and table-shape observation only, not data readiness or provider authenticity.",
+      "Calendar proofs are overlap counts only.",
+      "Security membership spans all snapshots for selected symbols.",
+      "Session supplements are global to the date range.",
+      "Does not establish actual browser/background/ACK qualification or image qualification."
+    ],
+    "non_actions": {
+      "build_or_pull": false,
+      "business_http": 0,
+      "business_jobs": 0,
+      "database_writes": 0,
+      "models": 0,
+      "worker_start": false
+    },
+    "result_path": ".ci-artifacts/market-observation-20261014/run-v3/result.json",
+    "result_sha256": "ae7da51fb98f62b82b585acab37a8b5e327108002ea8abc6116609ef58d41ff0",
+    "retained_images": {
+      "comparison": "Local Docker Image.Id against retained-image receipt Image.Id",
+      "environment_status": "ENV_NOT_READY_ID_MISMATCH",
+      "repo_digests": "Diagnostic only; not compared to receipt Image.Id.",
+      "signal_sandbox": {
+        "observed_image_id": "sha256:1b6cb6377ca4fd9aa0a3a1442e490a333c575733fb650969dafe690e5fe73bb5",
+        "receipt_image_id": "sha256:22bd3f7c5ab3d48d555afc5ef7a9a48e2136e9fea1a6f7f52ebb43143fd7a604"
+      },
+      "signal_worker": {
+        "observed_image_id": "sha256:35ecf87648e7762aa02c65fe2f7e57a1a32b01b67c7812276af41d7bd59588a1",
+        "receipt_image_id": "sha256:553c93dfc0587fa9b0bfef941bc9b692b790c7b534e3ea6bbcf88c7d78854cfb"
+      }
+    },
+    "returncode": 0,
+    "schema_gate": {
+      "expected_columns": 44,
+      "matched_columns": 44,
+      "mismatch_count": 0,
+      "status": "PASS"
+    },
+    "scope_interpretation": "No matching rows were returned for this requested scope; this does not establish that the full database is empty.",
+    "status": "READ_ONLY_METADATA_OBSERVATION_ONLY",
+    "stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "result": "PASS_LIMITED_METADATA_OBSERVATION_ENV_NOT_READY",
+  "review": {
+    "independent_sol_live_read_raw": "PASS",
+    "independent_sol_offline_raw": "PASS",
+    "root_decision": "PASS_LIMITED_METADATA_PREFLIGHT_ENV_NOT_READY"
+  },
+  "schema_version": "byq-f6-market-metadata-preflight.v1",
+  "scope": {
+    "date_format": "YYYYMMDD",
+    "end_date": "20260330",
+    "equity_symbols": [
+      "000001.SZ",
+      "600000.SH"
+    ],
+    "index_symbol": "000300.SH",
+    "start_date": "20260312"
+  }
+}

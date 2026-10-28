@@ -1,0 +1,35 @@
+{
+  "schema": "byq-receipt-refresh-interactive-result.v1",
+  "recorded_at": "2026-10-14T02:45:42Z",
+  "source_commit": "7d4d575771271b16f51128edd61ad5922b95e8b8",
+  "implementation_commit": "d0c3bcb8",
+  "frontend_image": "sha256:35c2a90f6a128a7098aefffde5d233825c49cb09f24d9e0beefa9613f313d16b",
+  "environment": "isolated byq-dev-e8b02b5475, localhost:32790",
+  "conversation_id": "conversation_d1970f74cbcb4703b8c182523db4c4f1",
+  "offline": {
+    "status": "PASS",
+    "targeted_tests": 5,
+    "build": "PASS",
+    "scope": "manual refresh loading/success feedback, last successful read time and stale-reply isolation"
+  },
+  "browser": {
+    "status": "PASS",
+    "scope": "one manual refresh of the existing conversation displays success feedback and last successful read time; confirmed receipt remains truthful",
+    "evidence": ".ci-artifacts/background-continuation-20261014/receipt-route-image-v1/refresh-observation.json",
+    "screenshot": ".ci-artifacts/background-continuation-20261014/receipt-route-image-v1/refresh-success.jpg",
+    "original_pending_observation_preserved": true
+  },
+  "independent_sol_review": "PASS for the scoped source, offline and actual refresh behavior",
+  "human_interactive_feedback": {
+    "answer": "能看到，正常",
+    "scope": "user reports the current page refresh verification is normal; separate browser evidence records the exact feedback and timestamp"
+  },
+  "root": "PASS for this refresh slice",
+  "limitations": {
+    "new_session_automatic_cid_route_real_browser": "NOT_RUN",
+    "background_job_continuation": "NOT_RUN in this slice",
+    "production": "NOT_RUN",
+    "overall_maintenance": "NOT_READY"
+  },
+  "retention": "Keep the test environment and browser page open for interactive acceptance; no automatic teardown."
+}

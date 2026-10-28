@@ -1,0 +1,72 @@
+{
+  "status": "PASS_SOFTWARE_SCOPED",
+  "worktree_base_head": "6a7b69f3",
+  "source_manifest_sha256": "98ccadd9263d486a7bda7adab445373be9f266b29f0f0847e14029f777d7c7b6",
+  "private_source": ".ci-artifacts/bell-approval-maintenance-20261014/backend-source-v3",
+  "source_holds_retained": [
+    "Envelope, trace, lineage, permission fields and GET write mismatch corrected before execution",
+    "Frozen permission comparison moved before grant UPDATE in the same transaction"
+  ],
+  "first_test_batch": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/backend-tests-v2",
+    "exit_code": 1,
+    "passed": 5,
+    "failed": 1,
+    "elapsed_pytest_seconds": 5.90,
+    "failure": "Test called nonexistent get_continuation_permission_ledger; stopped at first failure",
+    "stdout_sha256": "289e198cda2421535cc4c1cc4c00e1f98a22d839ba8dd5f3b23e383d9b00cc72",
+    "next_batches_at_failure": "Gateway and Frontend NOT_RUN",
+    "subsequent_source_audit": "Also corrected finish(outcome_unknown) without a prior decision claim; production state machine not relaxed"
+  },
+  "new_collection": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/backend-collect-v3",
+    "exit_code": 0,
+    "cases": 9,
+    "elapsed_pytest_seconds": 2.86,
+    "stdout_sha256": "57a27de6a8a28e8b53c2728b9bbaa78a8a8f4ec5ba6bfa9ef372e3899769b1a9",
+    "note": "Root previously mistook eight test functions for eight cases; one function has two parameterized cases"
+  },
+  "postgres_tests": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/backend-store-tests-v3",
+    "exit_code": 0,
+    "passed": 4,
+    "elapsed_pytest_seconds": 10.33,
+    "stdout_sha256": "aa19b945d40570afa2b0207d43dd19e35a8620b8d9f9a8ac3d78e128bff80b07",
+    "soft_timeout_seconds": 300,
+    "hard_timeout_seconds": 305,
+    "scope": "Real isolated PostgreSQL and Backend TestClient; three typed approvals, exact scope, idempotency, rejection facts, configuration drift, unknown/draft and read-only GET",
+    "database": "Dedicated byq_domain_test in byq-bell-test-pg-v1; no application or production database",
+    "backend_image_id": "sha256:979ebeddeee01ef06f74d8046098c68e194350e09554bf05ce2b95ca028fc695",
+    "mounts": "Frozen application/tests/contracts read-only; no business volumes"
+  },
+  "reused_contract_tests": {
+    "passed": 5,
+    "scope": "v2 contract tests and production bytes unchanged in v3; original PASS reused, original FAIL retained",
+    "contract_test_sha256": "9829af58a2a9773d70d1b6ea413a2ca524559a6eff2abd877c476d3088e72b0e",
+    "result": "Combined 9/9 software checks; not a single full-suite run"
+  },
+  "gateway_tests": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/gateway-tests-v3",
+    "exit_code": 0,
+    "passed": 3,
+    "deselected": 92,
+    "elapsed_pytest_seconds": 0.34,
+    "stdout_sha256": "70b4a06a24cf4c4a979837cd9cb8b8df016c4df1119f182e5d244cee03ec6eb9",
+    "soft_timeout_seconds": 120,
+    "hard_timeout_seconds": 125,
+    "gateway_image_id": "sha256:0f462b62f41a750dff16eb021b4352c48694e7197d10d0f27460c1ac4c6233e6",
+    "network": "none",
+    "scope": "Mock Backend boundary only: durable browser identity, confirmation header, cross-site rejection and trusted owner/workspace forwarding"
+  },
+  "stderr_sha256_all_batches": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "independent_sol_review": "PASS_SOFTWARE_SCOPED",
+  "root_acceptance": "PASS_SOFTWARE_SCOPED",
+  "model_requests": 0,
+  "business_jobs": 0,
+  "retries": 0,
+  "frontend": "NOT_RUN; source review in progress",
+  "live_product_browser": "NOT_RUN",
+  "production": "NOT_RUN",
+  "overall": "NOT_READY",
+  "environment_and_page": "KEEP_OPEN"
+}

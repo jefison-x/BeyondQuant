@@ -1,0 +1,35 @@
+{
+  "schema": "byq-next-turn-schema-read-result.v1",
+  "source_commit": "523e0802f656cd9980b83ec9b00e3ebbd4a1c9e1",
+  "scope": "Read-only schema metadata calibration for eleven fixed tables in isolated PostgreSQL",
+  "sql_sha256": "4a9e11afbf4a9b4be0b0f0a16424acedd08e63a2a4b2cc2d0b65a09f6b1ae2c9",
+  "native": {
+    "status": "PASS",
+    "docker_commands": 2,
+    "return_codes": [0, 0],
+    "deadline_seconds": 20,
+    "actual_elapsed_ms": 495,
+    "postgres_identity": "Exact ID, image, name, StartedAt and running state match the accepted fixture baseline",
+    "transaction": "READ ONLY; statement_timeout=5s",
+    "catalog_stderr_bytes": 0,
+    "schema": "public",
+    "tables": 11,
+    "columns": 183,
+    "primary_keys": 11,
+    "primary_keys_match_source": true,
+    "duplicate_tables_or_columns": false
+  },
+  "independent_sol": "PASS source and actual raw metadata",
+  "root": "PASS for schema metadata only",
+  "private_evidence": ".ci-artifacts/background-continuation-20261014/next-turn-schema-calibration-v1/",
+  "limitations": {
+    "new_turn_observer": "NOT_READY; previous prepared v2 source failures retained",
+    "new_model_turn": "NOT_RUN",
+    "background_job_continuation": "NOT_RUN",
+    "production": "NOT_RUN",
+    "overall": "NOT_READY"
+  },
+  "operation_scope": "These commands read schema metadata only. No business rows, model requests, writes or production operations were issued; this is not a global activity measurement.",
+  "permissions": "Private evidence directory is 0700 and raw files are 0600. Raw files initially used shell defaults and were restricted immediately afterward; this metadata contains no credentials.",
+  "retention": "Keep the test environment and browser page open."
+}

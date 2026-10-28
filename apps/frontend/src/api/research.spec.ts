@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { continueApproval, createTask, decideApproval, getApproval, getResearchEntity, listApprovals, listArtifacts } from "./research";
+import { continueApproval, createTask, decideApproval, getApproval, getResearchEntity, getResearchReceipts, listApprovals, listArtifacts, ResearchRequestError } from "./research";
 
 describe("research api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -20,6 +20,29 @@ describe("research api client", () => {
     );
     const approval = await getApproval("agent_approval_1");
     expect(approval).toMatchObject({ approval_id: "agent_approval_1" });
+  });
+
+  it("preserves the Product error code for receipt status handling", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: "session_invalid", message: "session is not valid", request_id: "request-1" },
+    }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getResearchReceipts("conversation_1")).rejects.toMatchObject({
+      status: 403, code: "session_invalid", message: "session is not valid",
+    } satisfies Partial<ResearchRequestError>);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/product/research/submission-watches?conversation_id=conversation_1",
+      expect.objectContaining({ credentials: "include", signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("ignores non-string Product error codes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 401, message: "request rejected" },
+    }), { status: 403 })));
+    await expect(getResearchReceipts("conversation_1")).rejects.toMatchObject({
+      status: 403, code: undefined, message: "request rejected",
+    });
   });
 
   it("creates a research task through the product boundary", async () => {

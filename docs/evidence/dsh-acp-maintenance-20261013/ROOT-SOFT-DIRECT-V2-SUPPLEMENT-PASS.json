@@ -1,0 +1,80 @@
+{
+  "binding_flags": "closed=false，native_session_close_confirmed=true，process_exit_confirmed=true；不得将不同closed概念合并。",
+  "cancelled_provider": "一次已准入请求；status0/forwardedfalse/provider_outcome_unknown/usageUNKNOWN保留；业务unknown0与provider计费UNKNOWN分别报告。",
+  "cleanup_reason": "两份signed process-group receipt reason=cancelled；新Root业务completed，不能把清理reason解释为用户取消新Root。",
+  "head": "63be22f6466879fceaa178585665185578e3d76c",
+  "independent_review": "Sol RAW PASS → Root PASS two-root read supplement",
+  "job_evidence": "11表计数均零/相同，不证明行内容不变或因果归属。",
+  "pins": {
+    "admission.json": "d5e21bd2d00db6ba3eb2cb0d315d572a331bdc2c872fd4c463c4bc5ea38652da",
+    "cleanup-4744e562a4d644f29ab20d45bca18d77.json": "a64d2b71ed0233a1be67df58e2ef86c0ff3994dc97e7c56c0957a09d9d2b3626",
+    "cleanup-5c8a4011661043caab08ef59e087b6bb.json": "5d60b71984b75bffda8fb7e87dbc3f29c399fa10bb92087d37a08d5439bdef0c",
+    "conversation-state.json": "135f429f4c79f83dbcd47f4c85fe78167724584363cb0fe1db72c3cd4bff5319",
+    "exact-acks.json": "3bfcd519681c839e6152ea5591071f176bc795900b670854bbe46b63131a6582",
+    "executed-command.json": "3bdf3097582942843e20ae6ef23978cbb4e76c31acf509e5be22d790feecca07",
+    "jobs-after.json": "f842e7ae98f33942399e0d3bc718a87018da156e112034b19590105db9b167ff",
+    "new-binding.json": "ec111763a59ef819fce8c226092ccf203abee54750efefc339a5a39c3f9bf480",
+    "new-provider-aggregate.json": "ebbb6ec9771841be9750313444ba489a0163018cfad9a403291e9d418bd73f77",
+    "old-provider-observation.json": "3a6dc4940b8c872840fdc36b5517e1a2deb1efa4bd4ce615ff56db33201c3a69",
+    "result.json": "f50782605385aaed682e0ce24825678ae5c7d9a0f107deb46396dcc83608bd99",
+    "run_read.py": "7ebcdf2d9fca8aa37642a4a236c2f36d7f3d4b6e02ce271891bad19a39c29c97",
+    "state.sql": "bb0d128acccbb7c613bd70e96508bb9d070ab1e43c6eaec57546cc6261797c8a"
+  },
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-v2-supplement",
+  "result": {
+    "binding_flags_as_captured": {
+      "4744e562a4d644f29ab20d45bca18d77": {
+        "closed": false,
+        "native_session_close_confirmed": true,
+        "process_exit_confirmed": true
+      },
+      "5c8a4011661043caab08ef59e087b6bb": {
+        "closed": false,
+        "native_session_close_confirmed": true,
+        "process_exit_confirmed": true
+      }
+    },
+    "both_authorities_closed": true,
+    "business_unknown_claim_count": 0,
+    "cancelled_provider_billing": "UNKNOWN",
+    "container_identity_unchanged": true,
+    "docker_operations": 9,
+    "elapsed_ms": 499,
+    "exact_acks": true,
+    "job_counts_unchanged": true,
+    "job_evidence_scope": "11-table count equality only",
+    "new_jobs": 0,
+    "new_models": 0,
+    "new_provider": {
+      "actual_cache_read_tokens": 26624,
+      "actual_input_tokens": 29613,
+      "actual_output_tokens": 39,
+      "attribution": "root_aggregate_only_child_unknown",
+      "declared_output_tokens": 8192,
+      "input_bytes": 102384,
+      "max_concurrent": 1,
+      "observed_elapsed_ms": 2984,
+      "provider_attempts": 1,
+      "provider_calls": 1,
+      "root_run_id": "5c8a4011661043caab08ef59e087b6bb",
+      "schema_version": "byq-provider-aggregate.v1",
+      "tool_payload_bytes": 85489
+    },
+    "roots": {
+      "4744e562a4d644f29ab20d45bca18d77": "cancelled",
+      "5c8a4011661043caab08ef59e087b6bb": "completed"
+    },
+    "signed_cleanup_both_roots": true,
+    "status": "RAW_PASS_PENDING_REVIEW"
+  },
+  "schema": "byq-root-soft-direct-supplement.v1",
+  "scope": "结合独立UI/API回执证明软取消结算后同CID下一输入可执行；不等于实际取消按钮soft语义、计费用量已知或完整维护/生产资格。",
+  "status": "PASS_INDEPENDENT_READ_SCOPE_ONLY",
+  "unknowns_not_resolved": [
+    "旧individual native child mapping/close",
+    "旧子Agent原实例恢复",
+    "provider取消请求实际billing",
+    "全局lease/全部用户隔离",
+    "生产资格"
+  ]
+}

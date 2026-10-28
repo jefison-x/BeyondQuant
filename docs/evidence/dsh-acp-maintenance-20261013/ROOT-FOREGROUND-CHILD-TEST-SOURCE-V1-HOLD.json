@@ -1,0 +1,27 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-full-entry-test-source-v1",
+  "status": "HOLD",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "capture_sha256": "840c7fcc5027d7c0b4238cf78610be8e2696e522f58a30f6622aa6cd156bd82a",
+  "scope_sha256": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+  "scope_test_sha256": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31",
+  "capture_test_sha256": "35f01a92fd932e8389c77d160d3707ddfee8a5eee292312f608b36d1e58aa658",
+  "independent_reviewer": "Sol",
+  "findings": [
+    "The complete-entry fake matches delegate-preflight argv without -i although production uses -i.",
+    "Native delegate-result metadata extraction does not use the same normalized tool name as call classification; the positive fixture must also use the actual unprefixed local delegate name.",
+    "A preflight assertion treats argv[10] as the Python source; with the exact production argv it is -c and the source is argv[11]."
+  ],
+  "prior_source_review": {
+    "status": "PASS_SOURCE_ONLY_BEFORE_TEST_GATE",
+    "preserved_additional_hold": "The earlier header set comparison accepted an unknown field when an optional field was absent. Required-subset and allowed-superset checks were repaired and the inline reader pin updated before this review."
+  },
+  "root_decision": "Repair production name normalization and the complete-entry transport fixture, freeze four files again, and obtain independent source admission before the first execution.",
+  "evidence_boundaries": [
+    "UID/GID and filesystem facts in the offline transport are synthetic, not actual container UID/DAC proof.",
+    "The cleanup response is a synthetic scoped transport result; it does not prove a daemon MAC or a native child close ACK.",
+    "The complete-entry fake retains production main, native decoding and identity/result validation algorithms."
+  ],
+  "execution": {"offline_tests": "NOT_RUN", "model_requests": 0, "new_jobs": 0, "database_queries": 0, "docker_calls": 0, "production_operations": 0}
+}

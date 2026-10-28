@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from packages.contracts.acp_product_slot import PRODUCT_ENV_ALLOWLIST
 
 from ..acp_product_slot_client import (
     ProductRunnerClient,
     ProductSlotError,
+    ProductSlotPrebindRetirement,
 )
 from ..research_judgment_acp_runner_client import RunnerClientError, RunnerExit
 from .dsh_acp import AcpTransportError, _AcpProcess
@@ -89,10 +90,25 @@ class _SlotHandle:
 
 
 class SlotAcpProcess(_AcpProcess):
-    def __init__(self, command, cwd, environment, *, registry, guard_b64=None) -> None:
+    def __init__(self, command, cwd, environment, *, registry, guard_b64=None,
+                 deadline_at_ms: int | None = None,
+                 ordinary_execution: bool = False,
+                 task_ready_execution: bool = False,
+                 prepare_start: Callable[..., Mapping[str, object]] | None = None,
+                 prelaunch_reject: Callable[..., ProductSlotPrebindRetirement] | None = None) -> None:
         super().__init__(command, cwd, environment)
+        if (type(ordinary_execution) is not bool or type(task_ready_execution) is not bool
+                or (ordinary_execution and task_ready_execution)
+                or (deadline_at_ms is not None
+                    and (type(deadline_at_ms) is not int or deadline_at_ms <= 0))):
+            raise ValueError("ACP slot start deadline is invalid")
+        self.deadline_at_ms = deadline_at_ms
+        self.ordinary_execution = ordinary_execution
+        self.task_ready_execution = task_ready_execution
         self.registry = registry
         self.guard_b64 = guard_b64
+        self.prepare_start = prepare_start
+        self.prelaunch_reject = prelaunch_reject
         self.scope: dict[str, str] = {
             "workspace_id": environment.get("BYQ_WORKSPACE_ID", ""),
             "owner_principal": environment.get("BYQ_OWNER_PRINCIPAL", ""),
@@ -117,12 +133,20 @@ class SlotAcpProcess(_AcpProcess):
             raise AcpTransportError("ACP slot is already started")
         env = self.environment
         child_env = {key: value for key, value in env.items() if key in PRODUCT_ENV_ALLOWLIST}
+        deadline_at_ms = self.deadline_at_ms
+        if (deadline_at_ms is None and not self.ordinary_execution
+                and not self.task_ready_execution):
+            # Keep the existing finite legacy/F6 runner window. Ordinary v2
+            # roots pass None only when their trusted user setting is unset.
+            deadline_at_ms = int(time.time() * 1000) + 3_600_000
         try:
             session = ProductRunnerClient(self.registry).start(
                 scope=self.scope, env=child_env,
-                deadline_at_ms=int(time.time() * 1000) + 3_600_000,
+                deadline_at_ms=deadline_at_ms,
                 expected_cwd=str(self.cwd),
                 guard_b64=self.guard_b64,
+                prepare_start=self.prepare_start,
+                prelaunch_reject=self.prelaunch_reject,
             )
         except Exception as error:
             try:

@@ -179,7 +179,6 @@ export function safeFactorValidation(payload: unknown) {
       || !["invalid_input", "object_required", "unknown_fields", "text_required", "date_format",
            "unsupported_value", "out_of_range"].includes(value.code)) return undefined;
   return { schema_version: "factor-validation-problem.v1", field: value.field, code: value.code,
-    repair_limit: 1, next_action: "correct_once",
     ...(value.field === "factor.name" && value.code === "unsupported_value"
       ? { allowed_values: ["daily_return", "momentum"] } : {}) };
 }

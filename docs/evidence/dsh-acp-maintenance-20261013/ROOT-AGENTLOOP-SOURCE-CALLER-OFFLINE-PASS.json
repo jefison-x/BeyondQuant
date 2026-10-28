@@ -1,0 +1,33 @@
+{
+  "schema": "byq-root-sdk-source-caller-offline-run.v2",
+  "returncode": 0,
+  "elapsed_ms": 232,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 666,
+  "stderr_sha256": "be11dc9e4a01f25971ac314c4bb4dff3da6bedb40f6ec94e20c3624d8cba9722",
+  "source_pins_after": {
+    ".ci-artifacts/delegated-child-20261013/agentloop-source-v2/test_acquire_sdk_source.py": "f51e329e3b65fcffe02d117aef14bd55f379bf595df0604bf11e277607a7a7f7",
+    ".ci-artifacts/delegated-child-20261013/agentloop-source-v2/offline-test-plan.json": "cc74353b8107c4cf6ee9513a7e1761cb1d233de1e4798c2007f3280d108ce908",
+    ".ci-artifacts/delegated-child-20261013/agentloop-source-v2/acquire_sdk_source.py": "ffe2d7a51a6d3343f52d2bd7f26783cd85f7a2a3a2cb95fe59cabf6619ea37ae",
+    ".ci-artifacts/delegated-child-20261013/agentloop-source-v2/manifest.json": "afcd0f0fee6c13ff2771f310feff38bdf3a3df0169fa83288b32651b5dc82e5e",
+    "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "scripts/evidence/acp-foreground-child-capture.py": "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69"
+  },
+  "pins_unchanged": true,
+  "head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "status": "PASS_OFFLINE_ONLY",
+  "selected_methods": [
+    "test_positive_full_entry_executes_frozen_node_resolver_on_synthetic_tree",
+    "test_source_pin_mismatch_stops_before_git_or_container_commands",
+    "test_node_transport_failure_preserves_partial_raw_and_stops_before_after_inspect"
+  ],
+  "unselected_methods": "NOT_RUN (V1 corresponding unchanged guards reused separately)",
+  "models": 0,
+  "jobs": 0,
+  "docker": 0,
+  "root_decision": "PASS",
+  "independent_review": "Sol SOURCE/TEST/PLAN then RAW PASS; Root PASS",
+  "source_acquisition": "NOT_RUN at this gate",
+  "reused_v1_guards": "Unchanged ESM/path/stat/byte/count/output/STOP guard algorithms, reviewed source delta. Prior seven-method PASS recorded separately in ROOT-SDK-SOURCE-CALLER-OFFLINE-PASS.json."
+}

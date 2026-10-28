@@ -14,16 +14,14 @@ Read the bounded summary first. Its deterministic drawdown window, worst-day,
 daily-risk, realized-trade, transaction-cost, benchmark, and blocked-order
 diagnostics are authoritative and sufficient for a normal review. Never fetch
 or manually aggregate raw daily-return/equity series, and never recalculate an
-engine metric row by row. Use at most two detail calls, only for small trade,
-blocked-trade, or log examples specifically needed by the user, then answer.
+engine metric row by row. Request a detail section only when its evidence is
+needed to answer the user. Do not walk `has_more` mechanically.
 
 When exact position-level causal attribution is unavailable, say so and
 separate verified aggregate evidence from hypotheses. Do not keep calculating
-to invent a cause. Track `analysis_page_budget.remaining_calls`; when only one
-call remains, stop and answer unless a single specifically missing fact is
-essential. At zero, answer immediately from evidence already collected. Never
-switch to unrelated stock-pool, ML, market-session, or audit reads merely
-because this analysis budget is exhausted.
+to invent a cause. Use only authorized, relevant evidence; never switch to
+unrelated stock-pool, ML, market-session, or audit reads to infer unavailable
+Backtest details. Preserve approval, owner, workspace, and job boundaries.
 
 Use the benchmark frozen in the selected strategy/input. New BYQ strategies use
 `000300.SH` (CSI 300) when the user does not specify a benchmark. If an older

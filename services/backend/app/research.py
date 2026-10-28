@@ -28,6 +28,7 @@ from .research_judgment import (
 )
 from .research_plan_continuation import ResearchPlanContinuationMixin
 from .research_receipts import ResearchReceiptMixin, SCHEMA_DDL as RECEIPT_SCHEMA_DDL
+from .product_approval_requests import ProductApprovalRequestMixin, SCHEMA_DDL as PRODUCT_APPROVAL_REQUEST_DDL
 
 
 MAX_JSON_BYTES = 64 * 1024
@@ -258,7 +259,7 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
 
 
 class ResearchStore(
-    ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin,
+    ProductApprovalRequestMixin, ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin,
     ResearchExecutionPlanMixin, ResearchTaskActionMixin, ResearchJudgmentMixin,
     ResearchPlanContinuationMixin, PgStoreMixin,
 ):
@@ -345,6 +346,7 @@ class ResearchStore(
         """
         CREATE INDEX IF NOT EXISTS artifacts_kind ON artifacts(kind)
         """,
+        *PRODUCT_APPROVAL_REQUEST_DDL,
         """
         CREATE TABLE IF NOT EXISTS strategy_approval_fact_archive (
             source_artifact_id TEXT PRIMARY KEY,
@@ -1383,14 +1385,14 @@ class ResearchStore(
         return self._artifact_row(row)
 
     def get_strategy_approval(
-        self, *, owner_principal: str, strategy_version_artifact_id: str
+        self, *, owner_principal: str, workspace_id: str, strategy_version_artifact_id: str
     ) -> dict[str, object] | None:
         row = self._fetch_one(
             """SELECT * FROM artifacts
-               WHERE owner_principal = :owner AND kind = 'strategy_approval'
+               WHERE owner_principal = :owner AND workspace_id = :workspace AND kind = 'strategy_approval'
                  AND content ->> 'strategy_version_artifact_id' = :version_id
                ORDER BY created_at DESC, artifact_id DESC LIMIT 1""",
-            {"owner": owner_principal, "version_id": strategy_version_artifact_id},
+            {"owner": owner_principal, "workspace": workspace_id, "version_id": strategy_version_artifact_id},
         )
         return None if row is None else self._artifact_row(row)
 

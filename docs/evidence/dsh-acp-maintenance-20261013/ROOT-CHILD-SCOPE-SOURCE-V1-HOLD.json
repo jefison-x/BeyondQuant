@@ -1,0 +1,29 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-child-scope-read-source-v1",
+  "status": "HOLD",
+  "source_head": "492b0beab4b6e35b4c19b5ee27ed4ba096ffba78",
+  "source_sha256": "44ddfa1e64806d7b7df445dbde2f5154481fdaad6befd3eb9408d19deab79401",
+  "test_sha256": "1f41e4c95226cd6e2403f14249f51bc4332b6d2e0c7720f494af611ad9c4552a",
+  "independent_reviewer": "Sol",
+  "root_decision": "HOLD; repair the complete leaf contract before test execution",
+  "findings": [
+    "Active runtime roots normally have NULL terminal fields; the original validator and fixture incorrectly required an integer terminal unknown count.",
+    "The root native-session comparison was tautological and distinct parent/child AgentRun identities were not explicitly validated.",
+    "Queries joined related rows by root ID without filtering the complete tenant scope before emitting the raw projection.",
+    "The child-ready mode accepted pending native registrations.",
+    "Negative tests did not cover actual NULL terminal shape, ingress/audit isolation, settlement state or CLI JSON boundaries."
+  ],
+  "confirmed_contracts": [
+    "An ordinary root with no tool calls may have zero native AgentRun registrations.",
+    "Ingress row status is pending, settled or unknown. A known denied authorization is stored as settled with outcome denied."
+  ],
+  "execution": {
+    "offline_tests": "NOT_RUN",
+    "database_queries": 0,
+    "model_requests": 0,
+    "new_jobs": 0,
+    "production_operations": 0
+  },
+  "browser_policy": "Reuse the current verified tab. Before opening a new test window, inspect and close the obsolete test window, then verify it is closed. Preserve unrelated user tabs."
+}

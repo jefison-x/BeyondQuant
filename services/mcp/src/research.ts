@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { safeRequestValidation } from "./request-validation.js";
 import { bindActiveWebEvidenceProducer } from "./web-evidence-provenance.js";
+import { fetchByqSignalSnapshotGet } from "./backtest.js";
 
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
 
@@ -205,11 +206,291 @@ export function fetchByqResearchTaskCreate(
   return watchedResearchCreate(backendUrl, 'research_task', "/v1/research/tasks", request, fetcher);
 }
 
-export async function fetchByqResearchGet(
+const RESEARCH_EXECUTION_NOTE =
+  "This query reports existing task state and grants no authority. Automatic continuation uses saved conversation settings and trusted events without a separate continuation permission; business actions still require their current authorization and approval.";
+
+// Fixed bounded explanations selected only from a legal handoff state/reason
+// pair. Maps are own-entry lookups, so hostile keys such as __proto__,
+// constructor or toString are never treated as facts. Missing, malformed,
+// foreign-ID or contradictory state/reason yields no note instead of copying
+// arbitrary handoff or error prose into instructions.
+const RESEARCH_HANDOFF_STATE_NOTES = new Map<string, string>([
+  ["waiting_job", "Task is waiting on an existing Domain Job. This query does not advance or resume it."],
+  ["waiting_approval", "An approval is pending. Request that human approval outside this query; this query does not grant it."],
+  ["approval_continuation_queued", "Approval continuation is queued. This query does not dispatch or resume it."],
+  ["continuation_queued", "A reserved continuation event is recorded for this task. This does not show that it was dispatched or that a new event was authorized."],
+  ["waiting_event", "No continuation event is currently pending. Automatic continuation may follow trusted future events under saved conversation settings."],
+  ["completed", "This reports a confirmed task status; validate same-task evidence before claiming completion."],
+  ["failed", "This reports the task status; this query does not change or retry it."],
+  ["cancelled", "This reports the task status; this query does not change or resume it."],
+]);
+
+const RESEARCH_HANDOFF_REASON_NOTES = new Map<string, string>([
+  ["completion_evidence_missing", "Completion evidence is missing. Reconcile existing same-task evidence; this query does not replay or complete work."],
+  ["evidence_limit_reached", "Referenced evidence exceeded the bounded snapshot. Reconcile with the existing receipts; this query does not replay writes."],
+  ["continuation_result_unconfirmed", "A continuation result is unconfirmed. Inspect the existing receipts; this query does not replay it."],
+  ["approval_binding_invalid", "An approval binding is invalid. Reconcile existing approval references; this query does not re-approve."],
+  ["approval_continuation_unconfirmed", "An approval continuation is unconfirmed. Inspect the existing receipts; this query does not resubmit it."],
+  ["task_execution_unconfirmed", "Task execution is unconfirmed. This query does not prove, resume, or attribute execution."],
+  ["conversation_binding_missing", "The conversation binding is missing. This query does not repair or recreate it."],
+  ["no_registered_executor", "No registered executor is available. This query does not register or start one."],
+  ["conversation_inactive", "The original conversation is inactive. This query does not reopen it."],
+  ["automatic_continuation_disabled", "Automatic continuation is disabled for future events in this conversation. Existing recorded events remain separately visible."],
+  ["automatic_continuation_stopped", "An explicit stop was recorded for automatic continuation. This query does not restart it."],
+  ["continuation_needs_attention", "A continuation needs attention. Keep any listed event status intact; this query does not cancel it or restart continuation."],
+  ["execution_options_invalid", "Saved conversation settings did not pass validation. Existing event records remain intact; this query does not admit new events."],
+  ["continuation_ledger_invalid", "Continuation records did not pass validation. Preserve their recorded states and reconcile; this query does not replay them."],
+]);
+
+// Legal state/reason pair sets derived from the actual Backend projection.
+const RESEARCH_NULL_REASON_STATES = new Set([
+  "waiting_job", "waiting_approval", "approval_continuation_queued",
+  "continuation_queued", "waiting_event", "completed", "failed", "cancelled",
+]);
+const RESEARCH_RECONCILE_REASONS = new Set([
+  "completion_evidence_missing", "evidence_limit_reached", "continuation_result_unconfirmed",
+  "execution_options_invalid", "continuation_ledger_invalid",
+  "approval_binding_invalid", "approval_continuation_unconfirmed",
+  "continuation_needs_attention",
+]);
+const RESEARCH_BLOCKED_REASONS = new Set([
+  "conversation_binding_missing", "conversation_inactive", "no_registered_executor",
+  "automatic_continuation_disabled", "automatic_continuation_stopped", "continuation_needs_attention",
+]);
+
+function researchContinuationNote(value: Record<string, unknown>, taskId: string): string | undefined {
+  const handoff = value.handoff;
+  if (handoff === null || typeof handoff !== "object" || Array.isArray(handoff)) return undefined;
+  const entry = handoff as Record<string, unknown>;
+  if (entry.schema_version !== "research-task-handoff.v1") return undefined;
+  if (entry.task_id !== taskId) return undefined;
+  const state = typeof entry.state === "string" ? entry.state : undefined;
+  if (state === undefined) return undefined;
+  // A legal reason is a string or null; any other type is malformed.
+  const rawReason = entry.reason;
+  if (rawReason !== null && typeof rawReason !== "string") return undefined;
+  const reason: string | null = typeof rawReason === "string" ? rawReason : null;
+  if (RESEARCH_NULL_REASON_STATES.has(state)) {
+    return reason === null ? RESEARCH_HANDOFF_STATE_NOTES.get(state) : undefined;
+  }
+  if (state === "conversation_active") {
+    return reason === "task_execution_unconfirmed"
+      ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  if (state === "needs_reconciliation") {
+    return reason !== null && RESEARCH_RECONCILE_REASONS.has(reason)
+      ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  if (state === "blocked") {
+    return reason !== null && RESEARCH_BLOCKED_REASONS.has(reason)
+      ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  return undefined;
+}
+
+// Notes attach only to a successful exact research_task entity_id GET whose
+// parsed task identity matches the requested id. The byq_research_get watch
+// branch returns its validated watch envelope directly and never reaches this
+// helper; only the existing watchedResearchCreate confirmed-registration reread
+// reuses this entity GET and therefore receives the same notes.
+function withResearchTaskNotes(response: ByqResearchResult, taskId: string): ByqResearchResult {
+  if (response.isError) return response;
+  const text = response.content[0]?.text;
+  if (typeof text !== "string") return response;
+  let payload: unknown;
+  try { payload = JSON.parse(text); } catch { return response; }
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return response;
+  const record = payload as Record<string, unknown>;
+  if (record.task_id !== taskId) return response;
+  const note = researchContinuationNote(record, taskId);
+  // Reserve continuation_note for this fixed whitelist. Never pass through a
+  // Backend value when handoff is absent, malformed or bound to another task.
+  const safeRecord = { ...record };
+  delete safeRecord.continuation_note;
+  return result({
+    ...safeRecord,
+    execution_note: RESEARCH_EXECUTION_NOTE,
+    ...(note ? { continuation_note: note } : {}),
+  }, false);
+}
+
+const ARTIFACT_STATUSES = ["draft", "validated", "superseded"];
+const CONTENT_SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const SIGNAL_SUMMARY_SCHEMA_VERSION = "signal-snapshot-summary.v1";
+const MAX_MCP_PAYLOAD_BYTES = 64 * 1024;
+// The Backend summary carries exactly these four top-level fields.
+const SIGNAL_SUMMARY_TOP_LEVEL_KEYS = new Set([
+  "schema_version", "artifact", "snapshot", "diagnostic_samples",
+]);
+// Raw execution/panel field names (plus the raw `content` body) that must never
+// reach a Product Agent. The Backend bounded projection already excludes them;
+// enforcing the same closed set here keeps the MCP boundary fail-closed.
+const FORBIDDEN_SIGNAL_SUMMARY_FIELDS = new Set([
+  "content", "bars_frame", "bars", "signals", "corporate_actions", "benchmark",
+  "symbols", "symbol_index", "date_index", "columns", "research_bars", "script",
+]);
+// Mirrors FORBIDDEN_STRATEGY_FIELDS in
+// packages/contracts/signal_snapshot_summary.py: the summary's
+// snapshot.strategy block may carry identity only, never the frozen executable
+// payload.
+const FORBIDDEN_STRATEGY_FIELDS = new Set(["script", "snapshot", "parameters", "source"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function invalidResearchResponse(): ByqResearchResult {
+  return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+}
+
+function parseResultPayload(response: ByqResearchResult): Record<string, unknown> | undefined {
+  try {
+    const value = JSON.parse(response.content[0]?.text ?? "{}");
+    return isRecord(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function containsForbiddenSignalSummaryField(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsForbiddenSignalSummaryField);
+  if (!isRecord(value)) return false;
+  for (const [key, item] of Object.entries(value)) {
+    if (FORBIDDEN_SIGNAL_SUMMARY_FIELDS.has(key) || containsForbiddenSignalSummaryField(item)) return true;
+  }
+  return false;
+}
+
+function boundedResultPayload(payload: Record<string, unknown>): ByqResearchResult {
+  // The whole Product-Agent payload (identity, wrapper and summary) must stay
+  // within the 64 KiB bound, not just the nested summary.
+  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_MCP_PAYLOAD_BYTES) {
+    return invalidResearchResponse();
+  }
+  return result(payload, false);
+}
+
+function hasExactSignalSummaryKeys(summary: Record<string, unknown>): boolean {
+  const keys = Object.keys(summary);
+  return keys.length === SIGNAL_SUMMARY_TOP_LEVEL_KEYS.size
+    && keys.every((key) => SIGNAL_SUMMARY_TOP_LEVEL_KEYS.has(key));
+}
+
+type ArtifactReference = {
+  artifactId: string;
+  type: string;
+  status: string;
+  contentSha256: string;
+  ownerPrincipal?: unknown;
+  workspaceId?: unknown;
+};
+
+// The reference contract is strictly typed: project_artifact always carries a
+// non-empty `type` plus validation.status/content_sha256. A projection without
+// that typed contract is rejected; there is no legacy fallback to the raw row.
+async function fetchArtifactReference(
+  backendUrl: string,
+  artifactId: string,
+  fetcher: Fetcher,
+): Promise<{ reference?: ArtifactReference; error?: ByqResearchResult }> {
+  const response = await requestResearch(
+    backendUrl,
+    `/v1/research/artifacts/${encodeURIComponent(artifactId)}/reference`,
+    { method: "GET" },
+    fetcher,
+  );
+  if (response.isError) return { error: response };
+  const projection = parseResultPayload(response);
+  const validation = projection?.validation;
+  if (!projection
+      || projection.artifact_id !== artifactId
+      || typeof projection.type !== "string" || !projection.type.trim()
+      || !isRecord(validation)
+      || typeof validation.status !== "string" || !ARTIFACT_STATUSES.includes(validation.status)
+      || typeof validation.content_sha256 !== "string" || !CONTENT_SHA256_PATTERN.test(validation.content_sha256)) {
+    return { error: invalidResearchResponse() };
+  }
+  return { reference: {
+    artifactId,
+    type: projection.type,
+    status: validation.status,
+    contentSha256: validation.content_sha256,
+    ownerPrincipal: projection.owner_principal,
+    workspaceId: projection.workspace_id,
+  } };
+}
+
+type SignalSnapshotReadExpectation = {
+  artifactId: string;
+  contentSha256: string;
+  status: string;
+  taskId?: string;
+  ownerPrincipal?: unknown;
+  workspaceId?: unknown;
+};
+
+type BoundedSignalSnapshot = {
+  artifactId: string;
+  taskId: unknown;
+  kind: string;
+  status: string;
+  contentSha256: string;
+  summary: Record<string, unknown>;
+};
+
+async function readBoundedSignalSnapshot(
+  backendUrl: string,
+  expected: SignalSnapshotReadExpectation,
+  fetcher: Fetcher,
+): Promise<{ value?: BoundedSignalSnapshot; error?: ByqResearchResult }> {
+  const response = await fetchByqSignalSnapshotGet(backendUrl, expected.artifactId, fetcher);
+  if (response.isError) return { error: response };
+  const payload = parseResultPayload(response);
+  const summary = payload?.summary;
+  if (!isRecord(summary)
+      || !hasExactSignalSummaryKeys(summary)
+      || containsForbiddenSignalSummaryField(summary)) {
+    return { error: invalidResearchResponse() };
+  }
+  const snapshot = summary.snapshot;
+  const diagnosticSamples = summary.diagnostic_samples;
+  const integrity = isRecord(snapshot) ? snapshot.integrity : undefined;
+  const strategy = isRecord(snapshot) ? snapshot.strategy : undefined;
+  const artifact = summary.artifact;
+  if (!isRecord(snapshot)
+      || !isRecord(diagnosticSamples)
+      || !isRecord(integrity)
+      || integrity.content_sha256 !== expected.contentSha256
+      || !isRecord(strategy)
+      || Object.keys(strategy).some((key) => FORBIDDEN_STRATEGY_FIELDS.has(key))
+      || !isRecord(artifact)
+      || summary.schema_version !== SIGNAL_SUMMARY_SCHEMA_VERSION
+      || artifact.artifact_id !== expected.artifactId
+      || artifact.kind !== "signal_snapshot"
+      || artifact.content_sha256 !== expected.contentSha256
+      || artifact.status !== expected.status
+      || (expected.taskId !== undefined && artifact.task_id !== expected.taskId)
+      || (expected.ownerPrincipal !== undefined && artifact.owner_principal !== undefined
+          && artifact.owner_principal !== expected.ownerPrincipal)
+      || (expected.workspaceId !== undefined && artifact.workspace_id !== undefined
+          && artifact.workspace_id !== expected.workspaceId)) {
+    return { error: invalidResearchResponse() };
+  }
+  return { value: {
+    artifactId: expected.artifactId,
+    taskId: artifact.task_id ?? null,
+    kind: "signal_snapshot",
+    status: expected.status,
+    contentSha256: expected.contentSha256,
+    summary,
+  } };
+}
+
+async function requestResearchEntity(
   backendUrl: string,
   entityType: ResearchEntityType,
   entityId: string,
-  fetcher: Fetcher = fetch,
+  fetcher: Fetcher,
 ): Promise<ByqResearchResult> {
   const response = await requestResearch(
     backendUrl,
@@ -218,12 +499,68 @@ export async function fetchByqResearchGet(
     fetcher,
   );
   if (response.isError) return response;
-  const value = JSON.parse(response.content[0]?.text ?? '{}');
+  const value = parseResultPayload(response);
   const key = {research_task:'task_id',experiment:'experiment_id',artifact:'artifact_id'}[entityType];
-  if (value[key] !== entityId) {
-    return result({service:'beyondquant-mcp',status:'error',backend:{status:'invalid_response'}},true);
-  }
+  if (!value || value[key] !== entityId) return invalidResearchResponse();
   return response;
+}
+
+// A non-signal Artifact keeps the original full-row read, but the raw row must
+// still agree with the typed reference so a non-signal reference cannot hand
+// back a raw signal_snapshot body.
+async function readTypedArtifactRow(
+  backendUrl: string,
+  reference: ArtifactReference,
+  fetcher: Fetcher,
+): Promise<ByqResearchResult> {
+  const raw = await requestResearchEntity(backendUrl, "artifact", reference.artifactId, fetcher);
+  if (raw.isError) return raw;
+  const value = parseResultPayload(raw);
+  if (!value || value.kind !== reference.type) return invalidResearchResponse();
+  return raw;
+}
+
+function signalSnapshotPayload(value: BoundedSignalSnapshot): Record<string, unknown> {
+  // Fixed, closed signal shape: no reference metadata/ref/owner/workspace is
+  // ever forwarded, so a poisoned reference projection cannot reach the Agent.
+  return {
+    service: "beyondquant-mcp",
+    status: value.status,
+    artifact_id: value.artifactId,
+    task_id: value.taskId,
+    kind: value.kind,
+    content_sha256: value.contentSha256,
+    summary: value.summary,
+  };
+}
+
+export async function fetchByqResearchGet(
+  backendUrl: string,
+  entityType: ResearchEntityType,
+  entityId: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqResearchResult> {
+  if (entityType === "research_task") {
+    const response = await requestResearchEntity(backendUrl, entityType, entityId, fetcher);
+    return withResearchTaskNotes(response, entityId);
+  }
+  if (entityType !== "artifact") return requestResearchEntity(backendUrl, entityType, entityId, fetcher);
+  // The typed reference decides the true artifact type before any raw read. A
+  // signal_snapshot is only ever returned as a bounded safe summary; a
+  // reference failure never falls back to the raw artifact row.
+  const reference = await fetchArtifactReference(backendUrl, entityId, fetcher);
+  if (reference.error) return reference.error;
+  const ref = reference.reference!;
+  if (ref.type !== "signal_snapshot") return readTypedArtifactRow(backendUrl, ref, fetcher);
+  const snapshot = await readBoundedSignalSnapshot(backendUrl, {
+    artifactId: ref.artifactId,
+    contentSha256: ref.contentSha256,
+    status: ref.status,
+    ownerPrincipal: ref.ownerPrincipal,
+    workspaceId: ref.workspaceId,
+  }, fetcher);
+  if (snapshot.error) return snapshot.error;
+  return boundedResultPayload(signalSnapshotPayload(snapshot.value!));
 }
 
 export function fetchByqResearchTransition(
@@ -236,7 +573,7 @@ export function fetchByqResearchTransition(
   if (!statuses.includes(request.target_status)) {
     return Promise.resolve(result({ service: 'beyondquant-mcp', status: 'error', backend: {
       status: 'research_request_invalid', validation: { field: 'target_status', allowed_values: statuses,
-        repair_limit: 1, message: 'Use a listed target_status. blocked is a task progress.stage, not a status; active and in_progress are invalid. Read the entity before choosing a legal transition.' },
+        message: 'Use a listed target_status. blocked is a task progress.stage, not a status; active and in_progress are invalid. Read the entity before choosing a legal transition.' },
     } }, true));
   }
   const collection = request.entity_type === "research_task" ? "tasks" : `${request.entity_type}s`;
@@ -362,7 +699,7 @@ export async function fetchByqResearchLookup(
       || (hasKey && (!request.idempotency_key?.trim() || request.idempotency_key.length > 128
         || (request.entity_type === "research_task" ? request.task_id !== undefined : !request.task_id?.trim())))) {
     return result({ service: "beyondquant-mcp", status: "error",
-      backend: { status: "research_request_invalid", validation: { repair_limit: 1,
+      backend: { status: "research_request_invalid", validation: {
         message: 'For entity_id lookup omit task_id and idempotency_key. For idempotency_key lookup omit entity_id; task_id is required only for artifact or experiment. Preserve the original request identity.' } } }, true);
   }
   if (hasId) return fetchByqResearchGet(backendUrl, request.entity_type, request.entity_id!, fetcher);
@@ -385,6 +722,49 @@ export async function fetchByqResearchLookup(
     idempotency_key: payload.idempotency_key, status: "outcome_unknown", retryable: false,
     next_action: "Preserve the original request identity. Query this same key later within the task budget; do not repeat the write or infer absence from a list.",
   }, false);
+  if (request.entity_type === "artifact") {
+    // The confirmed entity is a raw Artifact row. The typed reference decides
+    // the true type, and the raw row must agree on identity, parent task, kind,
+    // hash and status. A missing/wrong kind or any mismatch fails closed; the
+    // raw row is never returned for a signal_snapshot.
+    const entity = payload.entity as Record<string, unknown>;
+    const reference = await fetchArtifactReference(backendUrl, entity[entityKey] as string, fetcher);
+    if (reference.error) return reference.error;
+    const ref = reference.reference!;
+    if (entity.artifact_id !== ref.artifactId
+        || entity.task_id !== request.task_id
+        || entity.kind !== ref.type
+        || entity.status !== ref.status
+        || entity.content_sha256 !== ref.contentSha256) {
+      return invalidResearchResponse();
+    }
+    if (ref.type !== "signal_snapshot") return response;
+    const snapshot = await readBoundedSignalSnapshot(backendUrl, {
+      artifactId: ref.artifactId,
+      contentSha256: ref.contentSha256,
+      status: ref.status,
+      taskId: request.task_id,
+      ownerPrincipal: ref.ownerPrincipal,
+      workspaceId: ref.workspaceId,
+    }, fetcher);
+    if (snapshot.error) return snapshot.error;
+    const value = snapshot.value!;
+    return boundedResultPayload({
+      service: "beyondquant-mcp",
+      schema_version: payload.schema_version,
+      entity_type: payload.entity_type,
+      idempotency_key: payload.idempotency_key,
+      status: payload.status,
+      entity: {
+        artifact_id: value.artifactId,
+        task_id: value.taskId,
+        kind: value.kind,
+        status: value.status,
+        content_sha256: value.contentSha256,
+        summary: value.summary,
+      },
+    });
+  }
   return response;
 }
 

@@ -23,12 +23,23 @@ class PooledHttp:
 
     def __init__(self) -> None:
         self._local = threading.local()
-        self._clients: list[_httpx.Client] = []
+        self._clients: list[tuple[threading.Thread, _httpx.Client]] = []
         self._clients_lock = threading.Lock()
 
     def _get_client(self) -> _httpx.Client:
         client = getattr(self._local, "client", None)
         if client is None:
+            with self._clients_lock:
+                dead_clients = []
+                live_clients = []
+                for owner, pooled in self._clients:
+                    if owner.is_alive():
+                        live_clients.append((owner, pooled))
+                    else:
+                        dead_clients.append(pooled)
+                self._clients = live_clients
+            for pooled in dead_clients:
+                pooled.close()
             client = _httpx.Client(
                 # A synchronous route issues only one request at a time. Keep
                 # the per-thread budget deliberately small; aggregate
@@ -36,9 +47,9 @@ class PooledHttp:
                 limits=_httpx.Limits(max_connections=4, max_keepalive_connections=2),
                 timeout=_httpx.Timeout(8.0),
             )
-            self._local.client = client
             with self._clients_lock:
-                self._clients.append(client)
+                self._clients.append((threading.current_thread(), client))
+            self._local.client = client
         return client
 
     def get(self, *args: object, **kwargs: object) -> _httpx.Response:
@@ -55,7 +66,8 @@ class PooledHttp:
 
     def close(self) -> None:
         with self._clients_lock:
-            clients, self._clients = self._clients, []
+            entries, self._clients = self._clients, []
+        clients = [client for _owner, client in entries]
         for client in clients:
             client.close()
 

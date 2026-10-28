@@ -1,0 +1,32 @@
+{
+  "result": "NOT_QUALIFIED_OBSERVER_TIMEBOX_EXCEEDED",
+  "Root": "NOT_QUALIFIED",
+  "independent_Sol": "/root/manual_result_reviewer",
+  "session_id": "conversation_a0cb11a629dd46fe85888b7a9515be61",
+  "marker": "BYQ-CONTINUE-20261013-C",
+  "browser": "Codex In-app Browser",
+  "gateway": "http://127.0.0.1:32778",
+  "submissions": 1,
+  "declared_total_timeout_seconds": 120,
+  "response_observed_within_seconds": 37,
+  "screenshot_recorded_elapsed_seconds": 190,
+  "screenshot_timing_note": "190s is the first screenshot tool observation; the private JPEG was captured later in evidence preservation.",
+  "private_jpeg_saved_elapsed_seconds": 335.708,
+  "observations": ["Correct new marker reply is visible", "Same conversation remains logged in and accepts input", "Reload shows the previous six-line answer and the new reply once each"],
+  "model_request_limit": 8,
+  "model_request_count": "NOT_VERIFIED",
+  "job_limit": 0,
+  "jobs_created": "NOT_VERIFIED",
+  "new_root_backend_settlement": "NOT_RUN",
+  "candidate_runtime_live_qualification": "NOT_RUN",
+  "private_evidence": ".ci-artifacts/browser-continuation-20261013/",
+  "evidence_sha256": {
+    "observation.json": "31d07aa14aa675aca5df9a744d480ed7073b6c9c3991dcaf7e6ce8773a2ece08",
+    "after-reload.ax.txt": "fb358af557ef792a53e71f1eaa36db522b2d82ff2e1a89cb934d0b2e3b00a3c8",
+    "two-turns-after-reload.jpg": "d5a440757eaab951d5a3959c92a00980da37a4e99e189d353a22383853a83871"
+  },
+  "previous_v4_read_limit": "The a59e root closure receipt was captured before this input and does not prove settlement of the new input.",
+  "execution_state": "STOPPED_NO_MORE_PROMPTS",
+  "cause": "Root failed to enforce the declared whole-batch deadline across reply observation, reload and evidence closeout.",
+  "next_contract": "Prepare observers before input; check the same deadline before every UI action, include reload and evidence closeout, and stop after expiration. Preserve visible UI facts without converting them to a full PASS."
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "FAIL_STOP_TEST_FIXTURE",
+  "repository_head": "63ba926d",
+  "source_sha256_before": {
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2-contract-review/offline-plan-draft.json": "ade91aee3ee825682b9d08cdf5b46a230f49899d71a924d8804897f3e9a4069e",
+    "scripts/evidence/acp-child-scope-read.py": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scripts/evidence/acp-foreground-child-capture.py": "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69",
+    "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "scripts/evidence/test_acp_child_scope_read.py": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31",
+    "scripts/evidence/test_acp_foreground_child_capture.py": "f51db1f06faae632a6da7a696fc163e4a127d85440f7e5ca6392de616626e2b8"
+  },
+  "native_reader_sha256": "bb9de5ea6017c5c19a747c84742322a64fd7cceee734ec1b90fd8484e818775d",
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=2s",
+    "60s",
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_frozen_capture_source_matches_reviewed_pin",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_native_source_extractor_uses_return_literal_and_keeps_distinct_identities",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_native_projection_sequence_bounds_and_zero_ordering",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_preflight_capture_child_finish_full_chain_synthetic_transport",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_accepts_zero_native_user_sequences",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_skips_unknown_ignorable_event_with_opaque_metadata",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_real_main_accepts_close_runtime_root_without_terminal_binding_audits",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests.test_whole_main_fail_stop_matrix_preserves_first_stop"
+  ],
+  "planned_methods": 8,
+  "method_result": {
+    "PASS": 3,
+    "ERROR": 1,
+    "NOT_RUN": 4
+  },
+  "matrix_result": {
+    "PASS": 0,
+    "FAIL": 0,
+    "NOT_RUN": 42
+  },
+  "first_failure": {
+    "method": "test_real_main_preflight_capture_child_finish_full_chain_synthetic_transport",
+    "stage": "Fixture constructor before JSON serialization, compression or collector preflight",
+    "error": "TypeError: Object of type PosixPath is not JSON serializable",
+    "field": "cwd in both native headers",
+    "cause": "self.cwd originates from Path.resolve(); raw headers assigned it directly rather than explicit string conversion."
+  },
+  "raw": {
+    "returncode": 1,
+    "elapsed_ms": 355,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 3286,
+    "stderr_sha256": "d716769ecf5e7df1d7ca7e565c925c16c0fe191a4e96a941ea439d387f809b11"
+  },
+  "source_before_after_equal": true,
+  "independent_sol_raw_review": "FAIL_STOP confirmed",
+  "root": "FAIL_STOP",
+  "limits": {
+    "database": 0,
+    "http": 0,
+    "job": 0,
+    "model": 0,
+    "one_fail_fast_process": true,
+    "outer_timeout_seconds": 60,
+    "real_docker": 0
+  },
+  "no_retry": true,
+  "new_native_parser_execution": "NOT_RUN",
+  "repair": {
+    "test_sha256": "7699d79939b394e71d7017a512dc8f29933ee7dc551320d762546791d356e6ae",
+    "diff": "Only two header cwd fields converted using str(self.cwd); no default=str.",
+    "whole_fixture_type_audit": "Writer, Tester and independent Sol traced Path/JSON/bytes/ctypes/transport boundaries; no other current raw JSON fields contain Path or ctypes objects. Static only.",
+    "sol_test_source_review": "PASS",
+    "next_batch": "Only failed positive and four NOT_RUN WholeMain methods; reuse three unaffected PURE/SYNTHETIC PASS methods."
+  },
+  "not_claimed": [
+    "New native parser/schema PASS",
+    "Full main PASS",
+    "Product qualification",
+    "Production readiness"
+  ]
+}

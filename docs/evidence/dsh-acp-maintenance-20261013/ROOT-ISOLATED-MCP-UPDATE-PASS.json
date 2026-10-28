@@ -1,0 +1,13 @@
+{
+  "Root": "PASS",
+  "Sol": "PASS soft_real_reviewer",
+  "scope": "isolated MCP service replace and health only",
+  "head": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "image_id": "sha256:08dcc976ea506971cdafb6e860961690b3e90b56ceb6d184834c98184f80774c",
+  "elapsed_seconds": 6.26,
+  "other_isolated_services_unchanged": 10,
+  "production_records_unchanged": 17,
+  "rollback_command_preserved": true,
+  "Product_browser": "NOT_RUN",
+  "production_deployment": "NOT_RUN"
+}

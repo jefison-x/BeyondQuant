@@ -1,0 +1,29 @@
+{
+  "schema": "byq-root-delegate-persistence-checkpoint.v1",
+  "status": "UNKNOWN_MAPPING",
+  "head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "root_decision": "HOLD_REAL_QUALIFICATION",
+  "completed": [
+    "SDK source caller 7 offline methods PASS, 335ms, independent Sol/Root.",
+    "Public SDK five-package read PASS, 224ms, independent Sol/Root.",
+    "AgentLoop narrowed caller 3 offline methods PASS, 232ms, separate V1 guard reuse.",
+    "Existing tool declaration plus ToolRuntime prove value and content differ; no BYQ renderer override found."
+  ],
+  "still_unknown": [
+    "AgentLoop loader anchor and execute-to-persisted-tool/result field mapping.",
+    "Exact native child-parent file lineage and original SDK runId.",
+    "Precise event/error phase behind existing native_child_invalid.",
+    "Exact ACK, signed cleanup, budget settlement and final Job increment/refresh receipts for existing delegated-child root."
+  ],
+  "failure": "AgentLoop read from the tool resolver anchor failed; actual runtime dependency topology was not established by the synthetic fixture.",
+  "guardrails": [
+    "Do not guess SDK runId from text or substitute native child UUID for it.",
+    "Do not relax callId, scope, unknown-no-replay, exact ACK or signed cleanup.",
+    "Do not replay existing model inputs or unknown business outcomes.",
+    "Do not treat offline PASS or ROOT_OK as complete Product PASS."
+  ],
+  "next": "Resolve source/loader contract first. Reuse saved native files and backend records, and collect only missing independent ACK/cleanup/budget/Job/refresh evidence in separately bounded steps.",
+  "new_model_requests": 0,
+  "new_jobs": 0,
+  "production_changes": 0
+}

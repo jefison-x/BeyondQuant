@@ -56,12 +56,16 @@ for (const entity_type of ['research_task', 'experiment', 'artifact'] as const) 
     let calls = 0;
     const response = await fetchByqResearchLookup('http://backend', {
       entity_type, entity_id:'original',
-    }, async (_url, init) => {
+    }, async (url, init) => {
       calls++;
       assert.equal(init?.method, 'GET');
-      return json({[field]:returnedId});
+      if (entity_type === 'artifact' && url.endsWith('/reference')) {
+        return json({artifact_id:returnedId,type:'evidence',owner_principal:'owner',workspace_id:'ws',
+          validation:{status:'draft',content_sha256:'a'.repeat(64)},metadata:{},ref:{kind:'artifact',id:returnedId}});
+      }
+      return json({[field]:returnedId,...(entity_type === 'artifact' ? {kind:'evidence'} : {})});
     });
-    assert.equal(calls,1);
+    assert.equal(calls,entity_type === 'artifact' && returnedId === 'original' ? 2 : 1);
     assert.equal(response.isError,returnedId !== 'original', `${entity_type}: exact returned ID ${returnedId}`);
   }
 }

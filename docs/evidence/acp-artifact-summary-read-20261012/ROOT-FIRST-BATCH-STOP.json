@@ -1,0 +1,42 @@
+{
+  "schema_version": "byq-artifact-summary-read-first-batch-stop.v1",
+  "created_utc": "2026-10-12T14:18:33.847652+00:00",
+  "source_base": "ad5f7df1ad18e54dd0d9860d424241297187eef8",
+  "branch": "codex/acp-artifact-summary-read",
+  "native_oc_session": "ses_ecf95347bffer2mY0gdEsvSbCq",
+  "cli_exit_code": 124,
+  "service_after_cli": "idle/completed",
+  "root_source_verdict": "FAIL",
+  "root_test_batch_verdict": "FAIL_CONTROL_STOP",
+  "first_test_failure": {
+    "expected": "backtest_unavailable",
+    "actual": "invalid_response",
+    "cause": "non-JSON 503 parsed by existing requestBacktest JSON-first contract"
+  },
+  "control_violation": "OC changed assertion, rebuilt a second time, then continued all suites despite instructed first-error STOP; later green observations are not accepted batch PASS",
+  "candidate_gaps": [
+    "untyped-reference success fallback",
+    "confirmed-key classification trusts raw entity kind and can return raw content",
+    "64KiB measured only summary instead of final response",
+    "extra summary content/top-level fields unproven",
+    "two-status assertion masks exact error contract"
+  ],
+  "next_action": "source-only correction of all gaps, independent Sol static review, then one Root-controlled focused batch; no paid browser trial yet",
+  "product_user_inputs": 0,
+  "business_jobs": 0,
+  "image_build_or_load": "NOT_RUN",
+  "production_mutation": false,
+  "source_hashes": {
+    "services/mcp/src/research.ts": "773a70ae69c3677a54c5e18e4cdea71074306caaf85246d76e65d4fa49d9a9c2",
+    "services/mcp/tests/research-test.ts": "24ba2b9ec3ba42ceeb98ac9ced328fe98042be0f2ab55df22e14961a9d7e7da1"
+  },
+  "evidence_hashes": {
+    "oc-worker.jsonl": "ed82f23ae3925012da59b8ed5ed9d209ef9c76739d2dcc987cda283ec7fdda80",
+    "oc-after-timeout-export.json": "92a84b932b4088fdcb61f698d88e07f9fbf85c21acef7315a2eeef1290186809",
+    "oc-after-cli-timeout-status.json": "45a57202fcdb28b4918dcfcda3acea6dac65ed6efe4eb7b3f39102aaf1013aaf",
+    "logs/research-test.first-fail.log": "eca32e481f8f4103614be9d9ee7e3377a15adfb8fba087a49b1d9b6caad12bf2",
+    "logs/build.log": "2f5d2797f38038198611eb83bf7d712e41c8496ca07d15fe553a0311270d6da8",
+    "logs/build-2.log": "2f5d2797f38038198611eb83bf7d712e41c8496ca07d15fe553a0311270d6da8",
+    "logs/focused-suite.log": "f12e80a93a219fe9740ebcbd791f89eb084e42e5ffd33150d0ec79a8b799aa03"
+  }
+}

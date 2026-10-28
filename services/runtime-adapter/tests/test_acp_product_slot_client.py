@@ -85,6 +85,8 @@ class _FakeSlotServer(socketserver.ThreadingUnixStreamServer):
         self.secret = secret
         self.scenario = scenario
         self.connection_count = 0
+        self.started = threading.Event()
+        self.start_payload = None
         self.ready = threading.Event()
         super().__init__(str(path), _FakeSlotHandler)
 
@@ -103,6 +105,8 @@ class _FakeSlotHandler(socketserver.BaseRequestHandler):
         frame_type, payload = wire._read_frame(conn)
         assert frame_type == wire.START
         start = json.loads(payload)
+        server.start_payload = start
+        server.started.set()
         unsigned = {key: value for key, value in start.items() if key != "mac"}
         assert start["mac"] == wire.sign_runner_start(unsigned, server.secret)
         scope = start["scope"]
@@ -176,7 +180,7 @@ def _client(registry, *, timeout=1.0):
     )
 
 
-def _start(client, scope):
+def _start(client, scope, *, deadline_at_ms=None, guard_b64=None):
     return client.start(
         scope,
         {
@@ -194,9 +198,44 @@ def _start(client, scope):
             "BYQ_ROOT_RUN_ID": scope["root_run_id"],
             "OPENCODE_API_KEY": "p" * 48,
         },
-        int(time.time() * 1000) + 5000,
+        int(time.time() * 1000) + 5000 if deadline_at_ms is None else deadline_at_ms,
         _cwd(scope),
+        guard_b64=guard_b64,
     )
+
+
+def test_ordinary_start_preserves_unset_runtime_deadline(tmp_path):
+    registry, _, secrets = _registry(tmp_path)
+    client = _client(registry)
+    scope = _scope("workspace-a", "e")
+    with _serve(tmp_path / "slot-a.sock", secrets["workspace-a"]) as server:
+        session = client.start(
+            scope,
+            {
+                "BYQ_MCP_URL": "http://mcp:8300/mcp/v1",
+                "BYQ_MCP_ACP_DISCOVERY_TOKEN": "d" * 48,
+                "BYQ_MCP_ACP_SIGNING_KEY": "s" * 48,
+                "BYQ_RUNTIME_BOOT_ID": scope["runtime_boot_id"],
+                "BYQ_OWNER_PRINCIPAL": scope["owner_principal"],
+                "BYQ_WORKSPACE_ID": scope["workspace_id"],
+                "BYQ_ACTOR_PRINCIPAL": "byq-product-agent-" + scope["session_id"],
+                "BYQ_TRACE_ID": scope["trace_id"],
+                "BYQ_SESSION_ID": scope["session_id"],
+                "BYQ_PROVIDER_SESSION_ID": "123e4567-e89b-42d3-a456-426614174000",
+                "BYQ_DSH_RUN_ID": scope["generation_id"],
+                "BYQ_ROOT_RUN_ID": scope["root_run_id"],
+                "OPENCODE_API_KEY": "p" * 48,
+            },
+            None,
+            _cwd(scope),
+            guard_b64="WyJzeW50aGV0aWMtb3ZlcmxheSJd",
+        )
+        assert server.started.wait(1)
+        assert server.start_payload["deadline_at_ms"] is None
+        session.cancel()
+        receipt = session.wait_exit(1)
+        registry.cleanup(scope, receipt)
+        registry.acknowledge(scope)
 
 
 def test_same_workspace_second_root_is_rejected_before_socket_connect(tmp_path):
@@ -256,6 +295,56 @@ def test_slot_waits_for_both_cleanup_and_backend_ack_in_either_order(tmp_path):
         registry.reserve(first)
     registry.cleanup(second, wire.RunnerExit(0, None, "process_exit", "proven"))
     registry.reserve(first)
+
+
+def test_operations_counts_follow_ack_and_cleanup_fences_in_both_orders(tmp_path):
+    registry, _, _ = _registry(tmp_path)
+    first = _scope("workspace-a", "a")
+    second = _scope("workspace-b", "d")
+    expected_keys = {
+        "configured", "held", "awaiting_backend_ack", "awaiting_cleanup",
+        "scope", "source",
+    }
+
+    def counts(held, awaiting_ack, awaiting_cleanup):
+        value = registry.operations_counts()
+        assert set(value) == expected_keys
+        assert value == {
+            "configured": 2,
+            "held": held,
+            "awaiting_backend_ack": awaiting_ack,
+            "awaiting_cleanup": awaiting_cleanup,
+            "scope": "adapter_process_lifetime",
+            "source": "live_product_slot_registry",
+        }
+
+    counts(0, 0, 0)
+    registry.reserve(first)
+    counts(1, 1, 1)
+    registry.acknowledge(first)
+    counts(1, 0, 1)
+    registry.cleanup(first, wire.RunnerExit(0, None, "process_exit", "proven"))
+    counts(0, 0, 0)
+
+    registry.reserve(second)
+    registry.cleanup(second, wire.RunnerExit(0, None, "process_exit", "proven"))
+    counts(1, 1, 0)
+    registry.acknowledge(second)
+    counts(0, 0, 0)
+
+
+def test_operations_counts_keep_wrong_ack_and_unknown_cleanup_held(tmp_path):
+    registry, _, _ = _registry(tmp_path)
+    scope = _scope("workspace-a", "a")
+    registry.reserve(scope)
+    with pytest.raises(product.ProductSlotLeaseMismatch):
+        registry.acknowledge({**scope, "trace_id": "wrong-trace"})
+    with pytest.raises(product.ProductSlotUnknown):
+        registry.cleanup(scope, wire.RunnerExit(None, None, "transport_lost", "unknown"))
+    counts = registry.operations_counts()
+    assert counts["held"] == 1
+    assert counts["awaiting_backend_ack"] == 1
+    assert counts["awaiting_cleanup"] == 1
 
 
 def test_wrong_ack_and_unknown_cleanup_never_release_workspace_fence(tmp_path):

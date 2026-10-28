@@ -1,0 +1,39 @@
+{
+  "accepted_scope": [
+    "可信BYQ Root/child注册父链与共同身份",
+    "已观察只读MCP工具名称/数量/顺序、settled ingress及审计",
+    "8个provider请求的Root aggregate预算/并发1",
+    "Root completed/authority closed、unknown business0",
+    "exact终止ACK、签名整进程组cleanup、11表库存仅计数相同"
+  ],
+  "adr_basis": [
+    "Accepted ADR-0094 private proof boundary: token-derived native lineage, Backend parent binding, canonical argument digest and ingress settlement/frozen terminal cursor",
+    "Accepted ADR-0100: exact Backend terminal ACK and confirmed whole execution process cleanup"
+  ],
+  "budget_boundary": "Root aggregate only; do not claim individual child token attribution known",
+  "evidence_receipts": [
+    "ROOT-EXISTING-BYQ-PARENT-CHILD-EVIDENCE-PASS.json",
+    "ROOT-EXISTING-CHILD-DIRECT-READ-PASS.json"
+  ],
+  "head": "b333b8de7607a418a92588ee5d26f33223614b41",
+  "independent_review": "Independent Sol ADR contract audit → Root PASS defined business evidence scope",
+  "next": "停止为非必需SDK字段递归采源；背景Job完成自动续办先审现有合同与可用输入。整体维护/推广仍NOT_READY。",
+  "not_required_for_this_bounded_scope": [
+    "从delegate formatter解析SDK raw runId",
+    "必须从native文件再证明已可信绑定的parent lineage",
+    "单独individual native child close receipt"
+  ],
+  "original_failures": "原240秒委派采集批次、native读取失败均保留FAIL，不据独立补证改写为完整实时批次PASS。",
+  "remaining_unknown": [
+    "SDK raw runId",
+    "native file parent lineage",
+    "individual child native close"
+  ],
+  "schema": "byq-root-bounded-delegate-contract.v1",
+  "status": "PASS_BOUNDED_BYQ_BUSINESS_EVIDENCE_ONLY",
+  "still_required_separate_gates": [
+    "ADR-0096跨Root复用原native session: close/descendant drain/flush",
+    "ADR-0102中断后新child业务接续: existing Job/result/idempotency核对及新child身份",
+    "ADR-0094候选整体资格矩阵: 两用户/fallback拒绝/迟到身份/crash/unknown"
+  ]
+}
