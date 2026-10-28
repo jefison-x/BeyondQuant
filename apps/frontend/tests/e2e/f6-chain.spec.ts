@@ -149,7 +149,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       authorityConfirmed = true;
       observerStage = 'execution_options_ui';
       await page.goto(`/settings/agent-runtime?conversation_id=${encodeURIComponent(ids.conversation_id)}`);
-      const settings = page.getByRole('region', { name: 'Agent运行参数' });
+      const settings = page.getByRole('dialog', { name: /系统设置/ }).locator('.runtime-settings');
       await expect(settings).toContainText(ids.conversation_id);
       await expect(settings.getByRole('switch', { name: '允许自动接续' })).not.toBeChecked();
       await expect(settings).toContainText('已关闭');
