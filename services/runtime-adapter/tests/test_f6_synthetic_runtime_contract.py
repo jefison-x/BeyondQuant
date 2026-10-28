@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.research_request_gate import parse_response_usage
+from app.continuation_budget import create_acp_task_ready_execution_overlay
 from packages.contracts.conversation_rehydration import normalize_conversation_context, rehydrated_prompt
 from packages.contracts.agent_execution_options import default_agent_execution_options
 from packages.contracts.continuation_request import (
@@ -1693,15 +1694,22 @@ def test_foreground_routes_only_its_child_to_provider_and_background_keeps_proxy
 
     provider_url = "http://127.0.0.1:41001"
     proxy_url = "http://127.0.0.1:41002"
+    routable_proxy_url = "http://172.18.0.5:41002"
     official_url = "https://api.deepseek.com"
 
     class FakeProxy:
-        def __init__(self, gate, upstream):
+        def __init__(self, gate, upstream, *, bind_host="127.0.0.1", advertise_host=None):
             if upstream != official_url:
                 raise ValueError("official upstream required")
             handler = object()
             self._upstream = upstream
-            self._server = SimpleNamespace(upstream=upstream, handler=handler)
+            self._advertise_host = advertise_host or bind_host
+            self._server = SimpleNamespace(upstream=upstream, handler=handler,
+                                           server_address=(bind_host, 41002))
+
+        @property
+        def base_url(self):
+            return f"http://{self._advertise_host}:41002"
 
     class FakeCompatibility:
         def build_harness(self, *, provider, model, composition, session_root,
@@ -1714,11 +1722,15 @@ def test_foreground_routes_only_its_child_to_provider_and_background_keeps_proxy
 
     class FakeRuntimeAdapter:
         def _build_harness(self, *, continuation_budget=None, continuation_proxy_url=None,
-                           continuation_deadline_epoch_ms=None):
-            environment = {"BYQ_MCP_URL": "http://mcp:8300"}
+                           continuation_deadline_epoch_ms=None, task_ready_overlay_b64=None,
+                           task_ready_reservation_id=None, root_run_id=None):
+            environment = {"BYQ_MCP_URL": "http://mcp:8300", "BYQ_ROOT_RUN_ID": root_run_id}
             max_tokens = None
             guard_b64 = None
-            if continuation_budget is not None:
+            if task_ready_overlay_b64 is not None:
+                environment["BYQ_CONTINUATION_RESERVATION_ID"] = task_ready_reservation_id
+                guard_b64 = task_ready_overlay_b64
+            elif continuation_budget is not None:
                 guard_b64 = base64.b64encode(json.dumps([
                     {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": {
                         "baseURL": continuation_proxy_url}}}}]).encode()).decode()
@@ -1750,6 +1762,37 @@ def test_foreground_routes_only_its_child_to_provider_and_background_keeps_proxy
     assert _guard_pins_local_proxy(background["continuation_guard_b64"], proxy_url)
     assert not _guard_pins_local_proxy(background["continuation_guard_b64"], provider_url)
     assert background["max_tokens"] == 8192
+
+    routed_proxy = FakeProxy(object(), official_url, bind_host="0.0.0.0",
+                             advertise_host="172.18.0.5")
+    assert routed_proxy.base_url == routable_proxy_url
+    assert routed_proxy._server.server_address[0] == "0.0.0.0"
+    document, settlement, _ = _audit_fixture()
+    root_id = document["runtime_root"]["root_run_id"]
+    reservation_id = settlement["reservation_id"]
+    v3_overlay = base64.b64encode(create_acp_task_ready_execution_overlay(
+        proxy_base_url=routable_proxy_url,
+        provider_session_id="12345678-1234-1234-1234-123456789abc",
+        reservation_v3=settlement["reservation"], root_run_id=root_id)).decode()
+    v3_background = adapter._build_harness(
+        continuation_proxy_url=routable_proxy_url, task_ready_overlay_b64=v3_overlay,
+        task_ready_reservation_id=reservation_id, root_run_id=root_id)
+    assert v3_background["max_tokens"] is None
+    assert v3_background["environment"]["BYQ_CONTINUATION_RESERVATION_ID"] == reservation_id
+    assert _guard_pins_local_proxy(v3_background["continuation_guard_b64"],
+        routable_proxy_url, reservation_id=reservation_id, root_run_id=root_id)
+    with pytest.raises(F6FixtureRejected, match="background_request_gate_proxy_not_preserved"):
+        adapter._build_harness(continuation_proxy_url="http://172.18.0.6:41002",
+            task_ready_overlay_b64=v3_overlay, task_ready_reservation_id=reservation_id,
+            root_run_id=root_id)
+    with pytest.raises(F6FixtureRejected, match="background_request_gate_proxy_not_preserved"):
+        adapter._build_harness(continuation_proxy_url=routable_proxy_url,
+            task_ready_overlay_b64=v3_overlay,
+            task_ready_reservation_id="continuation_" + "c" * 32, root_run_id=root_id)
+    with pytest.raises(F6FixtureRejected, match="background_request_gate_proxy_not_preserved"):
+        adapter._build_harness(continuation_proxy_url=routable_proxy_url,
+            task_ready_overlay_b64=v3_overlay,
+            task_ready_reservation_id=reservation_id, root_run_id="c" * 32)
 
     with pytest.raises(F6FixtureRejected, match="background_request_gate_proxy_not_preserved"):
         adapter._build_harness(
