@@ -1526,7 +1526,7 @@ class RuntimeAdapter:
                             owner_principal=record.owner_principal,
                             session_id=record.session_id,
                             trace_id=record.trace_id,
-                        ) if first_provider == PRODUCT_TURN_PROVIDER else None
+                        ) if first_provider in {PRODUCT_TURN_PROVIDER, OFFICIAL_PRODUCT_TURN_PROVIDER} else None
                     )
                     record.harness = self._build_harness(
                         record.session_id, Path(record.recovery_cwd), trace_id=record.trace_id,
@@ -1890,7 +1890,7 @@ class RuntimeAdapter:
                     if (self._acp_product_slots and budget is None
                             and task_ready_budget is None
                             and product_turn_overlay_b64 is not None
-                            and runtime_provider == PRODUCT_TURN_PROVIDER):
+                            and runtime_provider in {PRODUCT_TURN_PROVIDER, OFFICIAL_PRODUCT_TURN_PROVIDER}):
                         search_api_key = self._resolve_search_credential(
                             owner_principal=record.owner_principal,
                             session_id=record.session_id,
@@ -7290,7 +7290,8 @@ class RuntimeAdapter:
             # not pass it to the distinct F6 continuation path above.
             if search_api_key is not None:
                 if (not self._acp or str(model_resolution.get("provider") or self._provider)
-                        != "opencode-go-chat" or not isinstance(search_api_key, str)
+                        not in {PRODUCT_TURN_PROVIDER, OFFICIAL_PRODUCT_TURN_PROVIDER}
+                        or not isinstance(search_api_key, str)
                         or not search_api_key or len(search_api_key.encode("utf-8")) > 16_384
                         or "\0" in search_api_key):
                     raise ValueError('ordinary search credential is invalid')

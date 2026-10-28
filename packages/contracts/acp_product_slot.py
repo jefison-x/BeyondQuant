@@ -150,7 +150,8 @@ def validate_product_environment(
         raise ProductSlotContractError("Product ACP signing credential is invalid")
     secrets = [env["BYQ_MCP_ACP_DISCOVERY_TOKEN"], env["BYQ_MCP_ACP_SIGNING_KEY"]]
     secrets.extend(env[key] for key in provider_keys)
-    if "DEEPSEEK_SEARCH_API_KEY" in env:
+    if ("DEEPSEEK_SEARCH_API_KEY" in env
+            and env.get("DEEPSEEK_API_KEY") != env["DEEPSEEK_SEARCH_API_KEY"]):
         secrets.append(env["DEEPSEEK_SEARCH_API_KEY"])
     if len(set(secrets)) != len(secrets):
         raise ProductSlotContractError("Product ACP credentials must be distinct")

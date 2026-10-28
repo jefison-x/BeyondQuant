@@ -422,6 +422,48 @@ def test_ordinary_product_root_uses_only_owner_resolved_search_key(slot_runtime,
     runtime.acknowledge_terminal("slot-search-explicit", receipt)
 
 
+def test_official_ordinary_roots_resolve_search_for_each_fresh_process(slot_runtime, monkeypatch):
+    import httpx
+
+    runtime, compatibility, _registry = slot_runtime
+    runtime._resolve_model = lambda **_kwargs: {
+        "source": "user_binding", "provider": "deepseek-official",
+        "model": "deepseek-flash", "api_key": "shared-official-key",
+        "profile_id": "profile_test", "profile_version": 2,
+        "credential_id": "cred_test", "credential_version": 2,
+        "binding_version": 2,
+    }
+    seen = []
+
+    def resolve(url, *, headers, json, timeout):
+        seen.append(dict(json))
+        assert url == "http://backend.test/internal/credentials/search-resolution"
+        assert headers == {"x-byq-credential-resolver-token": runtime._resolver_token}
+        return httpx.Response(200, json={"resolution": {
+            "source": "credential_store", "purpose": "web_search_api_key",
+            "provider": "deepseek", "scope": "user",
+            "owner_principal": json["owner_principal"],
+            "session_id": json["session_id"], "trace_id": json["trace_id"],
+            "credential_id": "cred_" + "c" * 32, "credential_version": 2,
+            "api_key": "shared-official-key",
+        }}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", resolve)
+    _create(runtime, "slot-official-search", "workspace_slot_a")
+    first, receipt = _run_to_idle(runtime, "slot-official-search", "first official turn")
+    first_harness = compatibility.successful_starts[-1]
+    assert first_harness.environment["DEEPSEEK_API_KEY"] == "shared-official-key"
+    assert first_harness.environment["DEEPSEEK_SEARCH_API_KEY"] == "shared-official-key"
+    runtime.acknowledge_terminal("slot-official-search", receipt)
+    second, receipt = _run_to_idle(runtime, "slot-official-search", "next official turn")
+    second_harness = compatibility.successful_starts[-1]
+    assert second != first and second_harness is not first_harness
+    assert second_harness.environment["DEEPSEEK_SEARCH_API_KEY"] == "shared-official-key"
+    assert seen == [{"owner_principal": "slot-owner", "session_id": "slot-official-search",
+                     "trace_id": "trace-slot-official-search"}] * 2
+    runtime.acknowledge_terminal("slot-official-search", receipt)
+
+
 def test_search_resolver_rejects_cross_identity_response_without_exposing_key(slot_runtime, monkeypatch):
     import httpx
 
