@@ -266,6 +266,22 @@ class AcpF6ReleaseFixtureTests(unittest.TestCase):
         self.assertEqual(output.getvalue().strip(),
                          "f6_driver_failure_diagnostic=diagnostic_unavailable")
 
+    def test_failed_f6_browser_only_projects_numeric_source_location(self) -> None:
+        report = {"suites": [{"specs": [{"tests": [{"results": [{"errors": [{
+            "stack": "private-key-canary\n at /app/tests/e2e/f6-chain.spec.ts:181:23",
+            "message": "private-cookie-canary",
+        }]}]}]}]}], "stdout": "f6-chain.spec.ts:999:999 private-body-canary"}
+        output = io.StringIO()
+        with patch.object(self.fixture.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 1, json.dumps(report), "private-stderr-canary")), patch("sys.stdout", output):
+            with self.assertRaises(self.fixture.FixtureFailure) as raised:
+                self.fixture._run(["playwright"], env={}, category="f6_product_api_browser_failed")
+        self.assertEqual(raised.exception.category, "f6_product_api_browser_failed")
+        projected = json.loads(output.getvalue().split("=", 1)[1])
+        self.assertEqual(projected, {"status": "available", "locations": [[181, 23]], "truncated": False})
+        for secret in ("private-key-canary", "private-cookie-canary", "private-body-canary", "private-stderr-canary"):
+            self.assertNotIn(secret, output.getvalue())
+
     def test_prepared_f6_user_reuses_exact_product_slot_without_second_write(self) -> None:
         driver = ROOT / "scripts/evidence/f6-chain-verification.py"
         tree = ast.parse(driver.read_text(encoding="utf-8"), filename=str(driver))

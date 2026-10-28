@@ -128,6 +128,28 @@ def _run(args: list[str], *, env: dict[str, str], cwd: Path = ROOT,
             except (OSError, UnicodeError, ValueError, TypeError, StopIteration, AttributeError):
                 pass
             print("f6_driver_failure_diagnostic=" + diagnostic, flush=True)
+        if category == "f6_product_api_browser_failed":
+            locations: list[tuple[int, int]] = []
+            try:
+                report = json.loads(result.stdout) if len(result.stdout) <= 1048576 else None
+                pending = [report] if isinstance(report, dict) else []
+                while pending:
+                    item = pending.pop()
+                    if isinstance(item, list):
+                        pending.extend(item)
+                    elif isinstance(item, dict):
+                        if isinstance(item.get("stack"), str):
+                            locations.extend((int(line), int(column)) for line, column in re.findall(
+                                r"(?<![A-Za-z0-9_.-])f6-chain\.spec\.ts:([1-9][0-9]{0,3}):([1-9][0-9]{0,3})(?![0-9])",
+                                item["stack"]))
+                        pending.extend(item[key] for key in ("suites", "specs", "tests", "results", "errors", "error") if key in item)
+            except (ValueError, TypeError):
+                locations = []
+            unique = sorted(set(locations))
+            print("f6_browser_failure_location=" + json.dumps({
+                "status": "available" if unique else "unavailable",
+                "locations": unique[:8], "truncated": len(unique) > 8,
+            }, sort_keys=True), flush=True)
         raise FixtureFailure(category)
     return result.stdout
 
