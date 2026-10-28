@@ -278,14 +278,18 @@ def test_concurrent_distinct_inputs_serialize_while_one_is_unresolved(observed):
     store = observed[0]
     store.execute_domain_call(claim(observed), invalid)
     requests = [request(observed, f"repair-{n}", f"changed-{n}", sequence=n + 3) for n in range(2)]
-    def take(value):
-        local = AgentResearchStore()
-        try:
+    locals_ = []
+    try:
+        for _ in requests:
+            locals_.append(AgentResearchStore())
+        def take(pair):
+            local, value = pair
             return local.claim_domain_call("byq_strategy_validate", value[0], **value[1])
-        finally:
+        with ThreadPoolExecutor(2) as executor:
+            results = list(executor.map(take, zip(locals_, requests)))
+    finally:
+        for local in locals_:
             local.close()
-    with ThreadPoolExecutor(2) as executor:
-        results = list(executor.map(take, requests))
     assert sorted(result["state"] for result in results) == ["blocked", "claimed"]
     assert store._fetch_one("SELECT repair_used FROM agent_domain_correction_buckets")["repair_used"] is False
 
