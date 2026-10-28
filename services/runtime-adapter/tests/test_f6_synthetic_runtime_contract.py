@@ -1392,6 +1392,36 @@ def test_native_empty_skill_catalog_update_is_supplemental_after_background_inst
             _selected_instruction([messages[0], messages[1], {"role": "user", "content": changed}])
 
 
+def test_backend_v3_background_instruction_selects_exact_current_carrier():
+    carrier = _audit_fixture()[0]["settlement"]["reservation"]
+    job_id = carrier["signal_job_id"]
+    backtest_id = "backtesttask_" + job_id.removeprefix("signaljob_")
+    source_path = _backend_instruction_path()
+    tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                 and node.name == "_v3_instruction"]
+    assert len(functions) == 1
+    namespace = {"json": json,
+                 "task_id_from_signal_job": lambda job: "backtesttask_" + job.removeprefix("signaljob_")}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(source_path), "exec"), namespace)
+    prompt = namespace["_v3_instruction"](carrier)
+    messages = [{"role": "user", "content": prompt},
+                {"role": "user", "content": _native_runtime_snapshot()},
+                {"role": "user", "content": _native_skill_catalog()}]
+    assert _selected_instruction(messages) == ("background", prompt, 0)
+    assert _background_scope(prompt) == {
+        "task_id": carrier["task_id"], "backtest_task_id": backtest_id,
+        "signal_job_id": job_id, "signal_snapshot_artifact_id": carrier["result_artifact_id"],
+    }
+    action = next_action({"messages": messages, "tools": _provider_tools()})
+    assert action is not None and action[0] == "mcp__byq__" + BG_SEQUENCE[0]
+    corrupted = prompt.replace(carrier["source_fact_sha256"], "0" * 64, 1)
+    with pytest.raises(F6FixtureRejected, match="background_scope_invalid"):
+        _background_scope(corrupted)
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([messages[0], {"role": "user", "content": "Unrelated later user turn."}])
+
+
 @pytest.mark.parametrize("context_kind", ["runtime_marker", "catalog_marker", "rehydration_marker"])
 def test_supplemental_context_with_instruction_markers_is_never_ignored(context_kind):
     fg1_prompt = _prompt_for("fg1")

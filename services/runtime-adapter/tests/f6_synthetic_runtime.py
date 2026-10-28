@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from packages.contracts.continuation_request import validate_reservation_v3
+
 
 PROJECT_PATTERN = re.compile(r"byq-ci-stack-[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
 TASK_PATTERN = re.compile(r"task_[0-9a-f]{32}\Z")
@@ -49,6 +51,7 @@ _SKILL_CATALOG_FOOTER = (
     "</system-reminder>"
 )
 _BACKGROUND_INSTRUCTION_PREFIX = "BYQ trusted read-only task-ready follow-up for exact task "
+_BACKGROUND_V3_PREFIX = "Continue the original research task using only the exact read-only Product tools. "
 _BACKGROUND_INSTRUCTION_TEMPLATE = (
     _BACKGROUND_INSTRUCTION_PREFIX + "{task_id}. "
     'First call byq_agent_run_start with role_id "quant_orchestrator" and idempotency key "task-ready-run-{signal_job_id}" to bind this turn. '
@@ -287,7 +290,7 @@ def _has_rehydration_marker(text: str) -> bool:
 
 def _has_instruction_marker(text: str) -> bool:
     return any(marker in text for marker in (
-        "F6-CI:FG1", "F6-CI:FG2", _BACKGROUND_INSTRUCTION_PREFIX,
+        "F6-CI:FG1", "F6-CI:FG2", _BACKGROUND_INSTRUCTION_PREFIX, _BACKGROUND_V3_PREFIX,
     ))
 
 
@@ -356,6 +359,7 @@ def _instruction_stages(text: str) -> list[str]:
         rf"{re.escape(_BACKGROUND_INSTRUCTION_PREFIX)}task_[0-9a-f]{{32}}\.",
         text,
     )))
+    stages.extend(["background"] * text.count(_BACKGROUND_V3_PREFIX))
     return stages
 
 
@@ -416,6 +420,37 @@ def _json_line(prompt: str, name: str) -> dict[str, Any]:
 
 
 def _background_scope(prompt: str) -> dict[str, str]:
+    if prompt.startswith(_BACKGROUND_V3_PREFIX):
+        marker = ". Reservation facts: "
+        if prompt.count(marker) != 1:
+            raise F6FixtureRejected("background_scope_missing")
+        serialized = prompt.split(marker, 1)[1]
+        try:
+            carrier = validate_reservation_v3(json.loads(serialized))
+        except (TypeError, ValueError):
+            raise F6FixtureRejected("background_scope_invalid") from None
+        job_match = SIGNAL_JOB_PATTERN.fullmatch(carrier["signal_job_id"])
+        backtest_task_id = "backtesttask_" + job_match.group(1) if job_match else None
+        expected = (
+            _BACKGROUND_V3_PREFIX
+            + "Read the original ResearchTask with byq_research_get, then read the exact derived "
+            "BacktestTask with byq_backtest_task_get. Do not create or update domain objects, "
+            "request approval, execute jobs, delegate, browse the web, or access another task. "
+            "Summarize only facts returned by those reads. Exact ResearchTask ID: "
+            + carrier["task_id"] + ". Exact BacktestTask ID: " + str(backtest_task_id)
+            + ". Exact SignalJob ID: " + carrier["signal_job_id"]
+            + ". Exact validated SignalSnapshot ID: " + carrier["result_artifact_id"]
+            + marker + json.dumps(carrier, sort_keys=True, separators=(",", ":"))
+        )
+        if (prompt != expected or carrier["owner_principal"] != "f6-chain-user"
+                or re.fullmatch(r"workspace_[0-9a-f]{32}", carrier["workspace_id"]) is None
+                or re.fullmatch(r"conversation_[0-9a-f]{32}", carrier["conversation_id"]) is None
+                or carrier["execution_profile"]["options"]["auto_continue"] is not True
+                or backtest_task_id is None):
+            raise F6FixtureRejected("background_scope_invalid")
+        return {"task_id": carrier["task_id"], "backtest_task_id": backtest_task_id,
+                "signal_job_id": carrier["signal_job_id"],
+                "signal_snapshot_artifact_id": carrier["result_artifact_id"]}
     placeholders = {
         "{task_id}": ("task_id", r"task_[0-9a-f]{32}"),
         "{signal_job_id}": ("signal_job_id", r"signaljob_[0-9a-f]{32}"),
