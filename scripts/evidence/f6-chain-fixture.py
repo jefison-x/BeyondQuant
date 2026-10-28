@@ -128,7 +128,7 @@ def _audit_readback(payload: object) -> dict[str, Any]:
                 root_parameters = {**parameters, "workspace_id": task["workspace_id"],
                                    "session_id": runtime_session_id}
                 root_rows = connection.execute(text("""
-                    SELECT root_run_id, owner_principal, workspace_id, session_id, trace_id,
+                    SELECT root_run_id, owner_principal, workspace_id, session_id, trace_id, authority_boot_id,
                            status, authority_status, terminal_sequence, terminal_event_sha256
                     FROM agent_runtime_turns
                     WHERE root_run_id = :root_run_id AND owner_principal = :owner
@@ -194,6 +194,60 @@ def _audit_readback(payload: object) -> dict[str, Any]:
                     raise SystemExit("F6 AgentRun audit event count exceeds the exact bounded contract")
                 events = [dict(row) for row in audit_rows]
 
+                fg1_callback_exit_verified = False
+                if stage == "fg1":
+                    from app.agent_research import (
+                        _local_validation_callback_exit_from_audit_row,
+                        local_validation_callback_exit_audit_id,
+                    )
+                    claim_rows = connection.execute(text("""
+                        SELECT * FROM agent_domain_call_claims
+                        WHERE root_run_id=:root_run_id AND task_id=:task_id
+                          AND agent_run_id=:agent_run_id AND action='byq_strategy_validate'
+                          AND idempotency_key=:idempotency_key LIMIT 2
+                    """), {**root_parameters, "agent_run_id": run["run_id"],
+                            "idempotency_key": "f6-ci-draft-" + os.environ["COMPOSE_PROJECT_NAME"]}).mappings().all()
+                    if len(claim_rows) != 1:
+                        raise SystemExit("exact F6 strategy validation claim is not unique")
+                    claim = dict(claim_rows[0])
+                    result = claim.get("result_json")
+                    outcome = result.get("result") if isinstance(result, dict) else None
+                    artifact = outcome.get("artifact") if isinstance(outcome, dict) else None
+                    if (claim.get("status") != "succeeded" or not isinstance(result, dict)
+                            or result.get("state") != "succeeded"
+                            or not isinstance(artifact, dict)
+                            or artifact.get("artifact_id") != draft_id
+                            or artifact.get("task_id") != task_id or artifact.get("status") != "validated"):
+                        raise SystemExit("exact F6 strategy validation result is not the expected Draft")
+                    callback_rows = connection.execute(text("""
+                        SELECT a.*,r.root_run_id AS audit_root_run_id,
+                               r.owner_principal AS audit_owner_principal,
+                               r.actor_principal AS audit_actor_principal,
+                               t.workspace_id AS audit_workspace_id
+                        FROM agent_audit a JOIN agent_runs r ON r.run_id=a.run_id
+                        JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
+                        WHERE a.audit_id=:audit_id AND a.run_id=:agent_run_id LIMIT 2
+                    """), {"audit_id": local_validation_callback_exit_audit_id(claim["claim_id"]),
+                            "agent_run_id": run["run_id"]}).mappings().all()
+                    if len(callback_rows) != 1:
+                        raise SystemExit("exact F6 strategy validation callback audit is missing")
+                    receipt = _local_validation_callback_exit_from_audit_row(
+                        dict(callback_rows[0]), claim["claim_id"])
+                    expected_scope = {"owner_principal": OWNER, "workspace_id": task["workspace_id"],
+                        "actor_principal": run["actor_principal"], "session_id": runtime_session_id,
+                        "trace_id": trace_id, "generation": run["dsh_run_id"]}
+                    if (receipt is None or receipt.get("scope") != expected_scope
+                            or receipt.get("root_run_id") != root_run_id
+                            or receipt.get("authority_boot_id") != root["authority_boot_id"]
+                            or any(receipt.get(field) != claim[field] for field in (
+                                "claim_id", "agent_run_id", "task_id", "action", "idempotency_key",
+                                "request_sha256", "input_sha256", "evidence_sequence"))):
+                        raise SystemExit("exact F6 strategy validation callback receipt differs from its claim")
+                    matching = [event for event in events if event["audit_id"] == callback_rows[0]["audit_id"]]
+                    if len(matching) != 1:
+                        raise SystemExit("exact F6 strategy validation callback is absent from the audit set")
+                    fg1_callback_exit_verified = True
+
                 settlement = None
                 if stage == "background":
                     from packages.contracts.continuation_request import (
@@ -251,8 +305,10 @@ def _audit_readback(payload: object) -> dict[str, Any]:
         "schema_version": "f6-agent-run-audit.v1", "stage": stage,
         "task": {key: task[key] for key in (
             "task_id", "owner_principal", "workspace_id", "conversation_id", "trace_id", "task_status")},
-        "runtime_root": root, "runtime_session_id": runtime_session_id,
+        "runtime_root": {key: value for key, value in root.items() if key != "authority_boot_id"},
+        "runtime_session_id": runtime_session_id,
         "agent_run": run, "events": events, "settlement": settlement,
+        **({"fg1_callback_exit_verified": fg1_callback_exit_verified} if stage == "fg1" else {}),
     }
 
 

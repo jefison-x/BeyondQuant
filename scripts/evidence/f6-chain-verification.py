@@ -639,6 +639,22 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
         actual_events.append((event["action"], event.get("outcome"),
                               event.get("resource_type"), event.get("resource_id")))
 
+    if stage == "fg1":
+        callbacks = [event for event in events
+                     if event["action"] == "local_strategy_validation_callback_exit"]
+        require(document.get("fg1_callback_exit_verified") is True and len(callbacks) == 1,
+                "structured_agent_audit_actions_or_resources_invalid")
+        callback = callbacks[0]
+        claim_id = callback.get("resource_id")
+        require(isinstance(claim_id, str) and re.fullmatch(r"[0-9a-f]{32}", claim_id)
+                and callback.get("outcome") == "callback_exited"
+                and callback.get("resource_type") == "domain_call_claim"
+                and callback.get("audit_id") == "agent_audit_" + hashlib.sha256(
+                    b"byq-local-strategy-validation-callback-exit.v1\0" + claim_id.encode("ascii")
+                ).hexdigest()[:32], "structured_agent_audit_actions_or_resources_invalid")
+        expected_events = [*expected_events, (
+            "local_strategy_validation_callback_exit", "callback_exited", "domain_call_claim", claim_id)]
+
     expected_active_binding = ("runtime_turn_binding", "active", "runtime_turn", runtime_root_id)
     expected_completed_binding = ("runtime_turn_binding", "completed", "runtime_turn", runtime_root_id)
     binding_events = [event for event in actual_events if event[0] == "runtime_turn_binding"]

@@ -1983,6 +1983,70 @@ def test_structured_audit_accepts_direct_close_or_one_exact_completed_binding_an
     assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
 
 
+def test_fg1_accepts_only_one_verified_exact_strategy_callback_exit():
+    functions = _driver_functions()
+    validate = functions["_assert_structured_agent_audit"]
+    document, _, _ = _audit_fixture()
+    document["stage"] = "fg1"
+    document["settlement"] = None
+    task_id = document["task"]["task_id"]
+    run_id = document["agent_run"]["run_id"]
+    actor = document["agent_run"]["actor_principal"]
+    draft_id = "artifact_" + "6" * 32
+    version_id = "artifact_" + "7" * 32
+    expected = [
+        ("byq_research_task_create", "authorized", None, None),
+        ("byq_research_task_create", "success", "research_task", task_id),
+        ("byq_strategy_validate", "authorized", None, None),
+        ("byq_strategy_validate", "success", "strategy_draft", draft_id),
+        ("byq_strategy_version_create", "authorized", None, None),
+        ("byq_strategy_version_create", "success", "strategy_version", version_id),
+    ]
+    document["events"] = [document["events"][0], *({
+        "audit_id": "agent_audit_" + str(index) * 32,
+        "run_id": run_id, "owner_principal": "f6-chain-user", "actor_principal": actor,
+        "action": action, "outcome": outcome,
+        "resource_type": resource_type, "resource_id": resource_id,
+    } for index, (action, outcome, resource_type, resource_id) in enumerate(expected, start=1))]
+    claim_id = "8" * 32
+    callback = {
+        "audit_id": "agent_audit_" + hashlib.sha256(
+            b"byq-local-strategy-validation-callback-exit.v1\0" + claim_id.encode("ascii")
+        ).hexdigest()[:32],
+        "run_id": run_id, "owner_principal": "f6-chain-user", "actor_principal": actor,
+        "action": "local_strategy_validation_callback_exit", "outcome": "callback_exited",
+        "resource_type": "domain_call_claim", "resource_id": claim_id,
+    }
+    document["events"].append(callback)
+    document["fg1_callback_exit_verified"] = True
+    args = {"stage": "fg1", "task_id": task_id,
+        "conversation_id": document["task"]["conversation_id"],
+        "trace_id": document["task"]["trace_id"],
+        "runtime_root_id": document["runtime_root"]["root_run_id"],
+        "expected_events": expected}
+    summary = validate(document, **args)
+    assert summary["audit_events"][-1] == {
+        "action": callback["action"], "outcome": callback["outcome"],
+        "resource_type": callback["resource_type"], "resource_id": claim_id}
+
+    for mutation in ("unverified", "missing", "duplicate", "wrong_audit_id", "extra"):
+        invalid = copy.deepcopy(document)
+        if mutation == "unverified":
+            invalid["fg1_callback_exit_verified"] = False
+        elif mutation == "missing":
+            invalid["events"].pop()
+        elif mutation == "duplicate":
+            invalid["events"].append({**callback, "audit_id": "agent_audit_" + "9" * 32})
+        elif mutation == "wrong_audit_id":
+            invalid["events"][-1]["audit_id"] = "agent_audit_" + "9" * 32
+        else:
+            invalid["events"].append({**callback, "audit_id": "agent_audit_" + "9" * 32,
+                                      "action": "unexpected_extra"})
+        with pytest.raises(DriverContractRejected) as rejected:
+            validate(invalid, **args)
+        assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+
 def test_structured_audit_separates_identity_mismatch_from_missing_terminal_proof():
     functions = _driver_functions()
     validate = functions["_assert_structured_agent_audit"]
