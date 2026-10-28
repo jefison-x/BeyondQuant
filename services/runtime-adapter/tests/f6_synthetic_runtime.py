@@ -978,9 +978,7 @@ def _route_foreground_composition_to_loopback(kwargs: dict, loopback_url: str) -
     kwargs["composition"] = target
 
 
-def _guard_pins_local_proxy(guard_b64: Any, proxy_url: str, *,
-                            reservation_id: str | None = None,
-                            root_run_id: str | None = None) -> bool:
+def _guard_pins_local_proxy(guard_b64: Any, proxy_url: str) -> bool:
     if not isinstance(guard_b64, str) or not guard_b64:
         return False
     try:
@@ -989,28 +987,11 @@ def _guard_pins_local_proxy(guard_b64: Any, proxy_url: str, *,
         return False
     if not isinstance(overlay, list):
         return False
-    proxy_pinned = False
     for entry in overlay:
         if (isinstance(entry, dict) and entry.get("id") == "llm-pi-ai"
                 and isinstance(entry.get("config"), dict)):
             chat = entry["config"].get("providers", {}).get("opencode-go-chat")
-            proxy_pinned = isinstance(chat, dict) and chat.get("baseURL") == proxy_url
-    if not proxy_pinned or reservation_id is None:
-        return proxy_pinned and reservation_id is None
-    for entry in overlay:
-        inserted = entry.get("insert") if isinstance(entry, dict) else None
-        if not isinstance(inserted, list):
-            continue
-        for item in inserted:
-            config = item.get("config") if isinstance(item, dict) and item.get("id") == "byq-continuation-budget" else None
-            key = config.get("idempotencyKey") if isinstance(config, dict) else None
-            if (isinstance(config, dict)
-                    and config.get("guardMode") == "task-ready-options"
-                    and config.get("rootRunId") == root_run_id
-                    and isinstance(key, str)
-                    and re.fullmatch(r"task-ready-event:[0-9a-f]{64}", key)
-                    and reservation_id == "continuation_" + key.removeprefix("task-ready-event:")[:32]):
-                return True
+            return isinstance(chat, dict) and chat.get("baseURL") == proxy_url
     return False
 
 
@@ -1023,20 +1004,14 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
     proxy_type = runtime_module.RequestGateProxy
     original_init = proxy_type.__init__
 
-    proxy_instances: list[Any] = []
-
-    def init_with_local_upstream(self: Any, gate: object, upstream: str, *,
-                                 bind_host: str = "127.0.0.1",
-                                 advertise_host: str | None = None) -> None:
-        original_init(self, gate, upstream, bind_host=bind_host,
-                      advertise_host=advertise_host)
+    def init_with_local_upstream(self: Any, gate: object, upstream: str) -> None:
+        original_init(self, gate, upstream)
         if upstream.rstrip("/") not in {"https://api.deepseek.com", "https://opencode.ai/zen/go/v1"}:
             raise F6FixtureRejected("continuation_proxy_official_upstream_required")
         # Preserve the actual RequestGateProxy, request gate, handler and journal;
         # only replace its official network destination with this test process.
         self._upstream = loopback_url.rstrip("/")
         self._server.upstream = self._upstream
-        proxy_instances.append(self)
 
     proxy_type.__init__ = init_with_local_upstream
 
@@ -1049,36 +1024,30 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
         os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1"))
     compatibility_type = type(compatibility_sample)
     original_compatibility_build = compatibility_type.build_harness
-    route_context: ContextVar[tuple[str | None, str, str | None, str | None] | None] = ContextVar(
+    route_context: ContextVar[tuple[str | None, bool] | None] = ContextVar(
         "f6_synthetic_provider_route", default=None)
 
     def build_under_selected_route(self: Any, *args: Any, **kwargs: Any) -> Any:
         selected = route_context.get()
         if selected is None:
             return original_compatibility_build(self, *args, **kwargs)
-        continuation_proxy_url, route, reservation_id, root_run_id = selected
+        continuation_proxy_url, continuation_enabled = selected
         environment = kwargs.get("environment")
         if not isinstance(environment, dict):
             raise F6FixtureRejected("runtime_child_environment_missing")
         max_tokens = kwargs.get("max_tokens")
         routed_environment = dict(environment)
         if continuation_proxy_url is None:
-            if route != "foreground" or max_tokens is not None or "DEEPSEEK_BASE_URL" in environment:
+            if continuation_enabled or max_tokens is not None or "DEEPSEEK_BASE_URL" in environment:
                 raise F6FixtureRejected("foreground_request_gate_state_invalid")
             routed_environment["DEEPSEEK_BASE_URL"] = loopback_url
             _route_foreground_composition_to_loopback(kwargs, loopback_url)
         else:
             # ADR-0105: the background OpenCode chat route's baseURL is pinned in
             # the runner-applied guard overlay, not in the child environment.
-            if (route not in {"legacy", "v3"}
-                    or (route == "legacy" and max_tokens is None)
-                    or (route == "v3" and (max_tokens is not None
-                        or environment.get("BYQ_CONTINUATION_RESERVATION_ID") != reservation_id
-                        or environment.get("BYQ_ROOT_RUN_ID") != root_run_id))
+            if (not continuation_enabled or max_tokens is None
                     or not _guard_pins_local_proxy(kwargs.get("continuation_guard_b64"),
-                        continuation_proxy_url,
-                        reservation_id=reservation_id if route == "v3" else None,
-                        root_run_id=root_run_id if route == "v3" else None)
+                                                   continuation_proxy_url)
                     or continuation_proxy_url == loopback_url):
                 raise F6FixtureRejected("background_request_gate_proxy_not_preserved")
         kwargs["environment"] = routed_environment
@@ -1087,34 +1056,16 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
     def build_f6_harness(self: Any, *args: Any, **kwargs: Any) -> Any:
         continuation_proxy_url = kwargs.get("continuation_proxy_url")
         continuation_budget = kwargs.get("continuation_budget")
-        task_ready_overlay = kwargs.get("task_ready_overlay_b64")
-        task_ready_reservation_id = kwargs.get("task_ready_reservation_id")
-        root_run_id = kwargs.get("root_run_id")
         continuation_deadline = kwargs.get("continuation_deadline_epoch_ms")
-        route = "v3" if task_ready_overlay is not None else (
-            "legacy" if continuation_budget is not None else "foreground")
         if continuation_proxy_url is None:
-            if route != "foreground" or continuation_deadline is not None or task_ready_reservation_id is not None:
+            if continuation_budget is not None or continuation_deadline is not None:
                 raise F6FixtureRejected("foreground_request_gate_state_invalid")
-        elif (continuation_proxy_url == loopback_url
-              or (route == "legacy" and (continuation_deadline is None
-                  or task_ready_reservation_id is not None
-                  or not isinstance(continuation_proxy_url, str)
-                  or re.fullmatch(r"http://127\.0\.0\.1:[0-9]{1,5}", continuation_proxy_url) is None))
-              or (route == "v3" and (continuation_budget is not None
-                  or not isinstance(task_ready_overlay, str) or not task_ready_overlay
-                  or not isinstance(task_ready_reservation_id, str)
-                  or re.fullmatch(r"continuation_[0-9a-f]{32}", task_ready_reservation_id) is None
-                  or not isinstance(root_run_id, str)
-                  or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None
-                  or not any(proxy.base_url == continuation_proxy_url
-                      and proxy._server.server_address[0] == "0.0.0.0"
-                      and proxy._upstream == loopback_url.rstrip("/") for proxy in proxy_instances)))
-              or route == "foreground"):
+        elif (continuation_budget is None or continuation_deadline is None
+              or not isinstance(continuation_proxy_url, str)
+              or re.fullmatch(r"http://127\.0\.0\.1:[0-9]{1,5}", continuation_proxy_url) is None
+              or continuation_proxy_url == loopback_url):
             raise F6FixtureRejected("background_request_gate_proxy_not_preserved")
-        token = route_context.set((continuation_proxy_url, route,
-            task_ready_reservation_id if route == "v3" else None,
-            root_run_id if route == "v3" else None))
+        token = route_context.set((continuation_proxy_url, continuation_budget is not None))
         try:
             return original_build(self, *args, **kwargs)
         finally:
