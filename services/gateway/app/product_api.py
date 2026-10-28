@@ -560,6 +560,13 @@ def product_data_status(request: Request) -> dict[str, object]:
     }
 
 
+@router.get("/research/approval-requests/{request_id}")
+def product_approval_request_get(request_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}",
+                            headers=_trusted_agent_headers(request))
+
+
 @router.get("/research/{entity_type}/{entity_id}")
 def product_research_entity(entity_type: str, entity_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -702,13 +709,6 @@ def product_approval_request_list(request: Request, status: str = "pending", lim
 def product_approval_request_by_key(request_key: str, request: Request) -> dict[str, object]:
     _product_principal(request)
     return _backend_request("GET", f"/v1/product/research/approval-requests/by-key/{quote(request_key, safe='')}",
-                            headers=_trusted_agent_headers(request))
-
-
-@router.get("/research/approval-requests/{request_id}")
-def product_approval_request_get(request_id: str, request: Request) -> dict[str, object]:
-    _product_principal(request)
-    return _backend_request("GET", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}",
                             headers=_trusted_agent_headers(request))
 
 

@@ -204,6 +204,35 @@ def test_product_approval_reconcile_is_explicit_post_and_forwards_confirmation(m
                      {"x-byq-owner-principal": "human", "x-byq-workspace-id": "workspace-exact"})]
 
 
+def test_approval_request_exact_get_route_precedes_generic_research(monkeypatch) -> None:
+    request_id = "approval_request_" + "a" * 32
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    trusted = {"x-byq-owner-principal": "product-user", "x-byq-workspace-id": "workspace-exact"}
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: trusted)
+    calls = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, headers))
+        return {"schema_version": "byq-product-approval-request.v1", "request": {"request_id": request_id}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    path = f"/api/product/research/approval-requests/{request_id}"
+    denied = client.get(path)
+    assert denied.status_code == 401
+    assert calls == []
+
+    headers = {"Authorization": "Bearer product-test-token"}
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["request"]["request_id"] == request_id
+    assert calls == [("GET", f"/v1/product/research/approval-requests/{request_id}", trusted)]
+    unsupported = client.get("/api/product/research/unsupported/id", headers=headers)
+    assert unsupported.status_code == 404
+    assert calls == [("GET", f"/v1/product/research/approval-requests/{request_id}", trusted)]
+
+
 def test_product_artifact_reference_passes_the_bounded_backend_projection(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
