@@ -35,6 +35,7 @@ RESERVATION_PATTERN = re.compile(r"continuation_[0-9a-f]{32}\Z")
 SESSION_PATTERN = re.compile(r"byq-session-[0-9a-f]{32}\Z")
 TRACE_PATTERN = re.compile(r"byq-trace-[0-9a-f]{32}\Z")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 _continuation_contract_path = Path(__file__).resolve().parents[2] / "packages/contracts/continuation_request.py"
 _continuation_contract = runpy.run_path(str(_continuation_contract_path))
 _execution_profile_v2 = _continuation_contract["execution_profile_v2"]
