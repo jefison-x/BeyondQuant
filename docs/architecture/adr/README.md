@@ -42,6 +42,11 @@ Its named amendments preserve business authorization, cancellation, identity,
 idempotency, unknown-result reconciliation and terminal receipts. Implementation,
 per-path real qualification and deployment remain separate gates.
 
+[ADR-0115](ADR-0115-official-ordinary-search-credential.md) is **Accepted**:
+the current owner's separate search credential reaches each fresh ordinary
+official DeepSeek or OpenCode Go Product child. Only the official model/search
+pair may share a value; internal and Go credentials remain distinct.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的

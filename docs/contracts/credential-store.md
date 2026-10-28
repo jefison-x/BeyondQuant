@@ -94,11 +94,11 @@ OpenCode Go/Zen 的 provider family 只用于 credential/profile ownership。Bac
 
 普通模型 credential resolver 仅处理 `model_api_key`。搜索凭据使用独立的私有 resolver operation，并固定解析当前 owner 的 `web_search_api_key`、`deepseek`、`user` 记录；其 service authentication 和 owner/session/trace 校验不得弱化。明文只送给可信 Runtime Adapter，不能进入 Gateway、浏览器、MCP/DSH payload、持久 session、receipt、日志或异常。
 
-普通 ACP Go root 在真正创建每个新 DSH 子进程前重新解析搜索凭据。旧进程必须先经过已有关闭/退出确认门；同一 native session 可复用历史和 cwd，但下一 root 使用新进程和最新 credential snapshot。正在执行的 root 仍可能持有启动时的旧 snapshot，因此修改 BYQ 配置不等同于立即撤销正在进行的 provider 请求；需要立即失效时，应在 provider 侧撤销旧 Key。F6 不执行搜索凭据 lookup 或注入。当前 root 的取消/轮换与原生搜索调用的即时撤销仍是开放边界，本文不据此声称已证明立即撤销。
+普通 ACP Go 或官方 DeepSeek root 在真正创建每个新 DSH 子进程前重新解析当前 owner 独立存储的搜索凭据。旧进程必须先经过已有关闭/退出确认门；同一 native session 可复用历史和 cwd，但下一 root 使用新进程和最新 credential snapshot。正在执行的 root 仍可能持有启动时的旧 snapshot，因此修改 BYQ 配置不等同于立即撤销正在进行的 provider 请求；需要立即失效时，应在 provider 侧撤销旧 Key。F6 不执行搜索凭据 lookup 或注入。当前 root 的取消/轮换与原生搜索调用的即时撤销仍是开放边界，本文不据此声称已证明立即撤销。
 
 ADR-0111 的 native web-search 配额仍是 OPEN：上游要求每个请求的 `maxTokens` 与 `maxUses` 为正整数。移除 BYQ 对上游默认值的覆盖只会恢复上游 defaults，不能证明这些默认值无限，也不能证明会话累计使用不受限。此凭据切片不修改 SDK、不引入大整数，也不据此声称搜索配额或使用结算已经完成。
 
-`DEEPSEEK_API_KEY`、`OPENCODE_API_KEY` 及 `TUSHARE_TOKEN` 的既有环境/bootstrap 配置路径仍存在。特别是普通 ACP Go 模型路由当前仍从其模型配置路径构造 `OPENCODE_API_KEY` 子进程环境；旧的“OpenCode 不提供 environment fallback”表述不代表此现实路径已经迁移。选定 user model binding 后，仍不得回退到环境/system model credential。搜索 Key 不得复用这些模型或 system 值，也不得复制 Go 模型 Key 到搜索变量。
+`DEEPSEEK_API_KEY`、`OPENCODE_API_KEY` 及 `TUSHARE_TOKEN` 的既有环境/bootstrap 配置路径仍存在。特别是普通 ACP Go 模型路由当前仍从其模型配置路径构造 `OPENCODE_API_KEY` 子进程环境；旧的“OpenCode 不提供 environment fallback”表述不代表此现实路径已经迁移。选定 user model binding 后，仍不得回退到环境/system model credential。搜索 Key 不得从模型或 system 值回退，也不得复制 Go 模型 Key 到搜索变量。按 Accepted ADR-0115，仅分别解析的官方 DeepSeek 模型凭据与搜索凭据允许值相同；Go 模型、MCP discovery/signing、resolver 及其他内部凭据仍须与搜索凭据区分。
 
 维护者已明确：未来应废除仅针对“模型 API Key”的系统 `.env` 配置，改由前端和加密 CredentialStore 管理模型凭据。该模型 Key 迁移尚未完成；本搜索凭据切片不删除当前 Go 模型配置路径，也不等同于完成该迁移。其他启动和业务环境设置不在这项 future requirement 范围内。Environment values 不自动导入，其 mask 也不用于 public response。
 

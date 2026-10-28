@@ -588,6 +588,7 @@ def test_close_retains_transport_handle_until_process_exit_is_confirmed(tmp_path
     ("provider", "selected_key", "expected_deepseek", "expected_opencode", "explicit_search_key"),
     [
         ("deepseek-official", "DEEPSEEK_API_KEY", "selected-deepseek", None, None),
+        ("deepseek-official", "DEEPSEEK_API_KEY", "selected-deepseek", None, "selected-deepseek"),
         ("opencode-zen", "OPENCODE_API_KEY", None, "selected-opencode", None),
         ("opencode-go-chat", "OPENCODE_API_KEY", None, "selected-opencode", "explicit-search-key"),
     ],

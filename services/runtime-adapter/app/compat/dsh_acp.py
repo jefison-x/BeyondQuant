@@ -1457,7 +1457,7 @@ class DshAcpCompatibility:
             if selected_key is not None and selected_key in harness.environment:
                 environment[selected_key] = harness.environment[selected_key]
             search_key = harness.environment.get("DEEPSEEK_SEARCH_API_KEY")
-            if harness.provider == "opencode-go-chat" and isinstance(search_key, str) and search_key:
+            if harness.provider in {"opencode-go-chat", "deepseek-official"} and isinstance(search_key, str) and search_key:
                 environment["DEEPSEEK_SEARCH_API_KEY"] = search_key
             if harness.environment.get(_ACP_IDENTITY_MODE_ENV) == _ACP_JUDGMENT_ROOT_MODE:
                 for key in _ACP_JUDGMENT_PROCESS_ENV:

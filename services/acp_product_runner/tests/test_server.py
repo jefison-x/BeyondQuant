@@ -260,14 +260,27 @@ def test_scope_and_environment_contract_are_closed() -> None:
         )
 
 
-def test_search_credential_is_optional_distinct_and_errors_are_redacted() -> None:
+def test_search_credential_is_optional_with_only_official_model_value_reuse() -> None:
     scope = _scope()
     env = _environment(scope)
     search_key = "synthetic-search-secret"
     env["DEEPSEEK_SEARCH_API_KEY"] = search_key
     assert slot.validate_product_environment(env, scope)["DEEPSEEK_SEARCH_API_KEY"] == search_key
+    same_official = {**env, "DEEPSEEK_SEARCH_API_KEY": env["DEEPSEEK_API_KEY"]}
+    assert slot.validate_product_environment(same_official, scope) == same_official
+    for internal in ("BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY"):
+        with pytest.raises(slot.ProductSlotContractError, match="distinct"):
+            slot.validate_product_environment(
+                {**env, "DEEPSEEK_SEARCH_API_KEY": env[internal]}, scope,
+            )
+    go_model = {key: value for key, value in env.items() if key != "DEEPSEEK_API_KEY"}
+    go_model["OPENCODE_API_KEY"] = "go-model-key"
+    with pytest.raises(slot.ProductSlotContractError, match="distinct"):
+        slot.validate_product_environment(
+            {**go_model, "DEEPSEEK_SEARCH_API_KEY": "go-model-key"}, scope,
+        )
 
-    for bad_value in ("", "provider-key-qualification-only", object()):
+    for bad_value in ("", object()):
         invalid = {**env, "DEEPSEEK_SEARCH_API_KEY": bad_value}
         with pytest.raises(slot.ProductSlotContractError) as error:
             slot.validate_product_environment(invalid, scope)
