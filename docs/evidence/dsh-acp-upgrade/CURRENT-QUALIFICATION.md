@@ -1,5 +1,17 @@
 # Product DSH ACP candidate: current qualification ledger
 
+## 2026-10-31 forward recovery and fresh-Root terminal closeout
+
+The [current closeout record](../../clean-break/phase17-closeout-20261031.md)
+binds the Runtime/Gateway cursor correction, ordinary fresh-Root boundary
+retirement, retained browser failures and exact bounded R2 recovery. Local
+tests passed 15 Runtime and 12 Gateway cases, with independent regression and
+Sol review. Final normal Root `b96e0add383a447db824faa426ae4497` completed and
+received its exact Backend ACK at sequence 26; native close/process exit are
+confirmed and held/awaiting slots are zero. This is scoped maintenance,
+not universal recovery or a new Phase verdict. Current-head hosted CI,
+push/PR, merge and operating-stack deployment are NOT_RUN.
+
 ## 2026-10-27 retained-environment maintenance checkpoint
 
 This is DSH/ACP maintenance at candidate HEAD `c3c2780d81075e111b964ccc5047765e48adb260` plus the frozen uncommitted source hashes in the [maintenance journal](../dsh-acp-maintenance-20261013/20261017-process-loss-admission.md). It does not advance the Product Phase or replace historical production/release evidence.

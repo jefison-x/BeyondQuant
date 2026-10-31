@@ -3005,7 +3005,6 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
         if (state != "settled" or not isinstance(boundary, dict) or set(boundary) != fields
                 or boundary.get("schema_version") != "byq-acp-recovery-boundary.v1"
                 or type(boundary.get("binding_sequence")) is not int
-                or boundary["binding_sequence"] != body.get("sequence")
                 or boundary.get("previous_boot_id") != body.get("previous_boot_id")
                 or boundary.get("previous_authority_epoch") != body.get("previous_authority_epoch")
                 or type(boundary.get("runtime_authority_epoch")) is not int
@@ -3014,6 +3013,12 @@ def _validate_recovery_binding(body: object, session: ProductSession) -> dict[st
                 or type(boundary.get("next_sequence")) is not int
                 or boundary["next_sequence"] != boundary["binding_sequence"] + 1
                 or boundary.get("state") not in {"pending", "acknowledged"}
+                or (boundary["state"] == "pending"
+                    and boundary["binding_sequence"] != body.get("sequence"))
+                or (boundary["state"] == "acknowledged"
+                    and body.get("sequence") not in {
+                        boundary["next_sequence"], boundary["next_sequence"] + 1,
+                    })
                 or not isinstance(boundary.get("event_sha256"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", boundary["event_sha256"]) is None
                 or not hmac.compare_digest(hashlib.sha256(event_raw).hexdigest(), boundary["event_sha256"])
@@ -3474,14 +3479,39 @@ def _append_and_ack_recovery_boundary(
         binding = _validate_recovery_binding(_adapter_get(
             f"/internal/runtime/sessions/{session.session_id}/recovery-binding", timeout=5.0), session)
     if (not isinstance(boundary, dict) or binding.get("state") != "settled"
-            or binding.get("recovery_boundary") not in (None, boundary)
             or not isinstance(binding.get("settlement_receipt"), dict)
             or (receipt is not None and receipt != binding.get("settlement_receipt"))
-            or boundary.get("runtime_boot_id") != runtime_reply.get("boot_id")):
+            or boundary.get("runtime_boot_id") != runtime_reply.get("boot_id")
+            or type(runtime_reply.get("sequence")) is not int
+            or runtime_reply["sequence"] != boundary.get("next_sequence")):
         raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid")
+    prior_boundary = binding.get("recovery_boundary")
+    if prior_boundary is None:
+        binding = _validate_recovery_binding({**binding, "recovery_boundary": boundary}, session)
+    elif prior_boundary == boundary:
+        binding = _validate_recovery_binding(binding, session)
+    elif isinstance(prior_boundary, dict) and prior_boundary.get("state") == "acknowledged":
+        binding = _validate_recovery_binding(binding, session)
+        if (boundary.get("state") != "pending"
+                or boundary.get("binding_sequence") != binding.get("sequence")
+                or boundary.get("previous_boot_id") != binding.get("previous_boot_id")
+                or boundary.get("previous_authority_epoch") != binding.get("previous_authority_epoch")):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
+        latest = _validate_recovery_binding(_adapter_get(
+            f"/internal/runtime/sessions/{session.session_id}/recovery-binding", timeout=5.0), session)
+        stable_fields = (
+            "schema_version", "state", "session_id", "trace_id", "owner_principal",
+            "workspace_id", "root_run_id", "previous_boot_id", "previous_authority_epoch",
+            "settlement_receipt",
+        )
+        if (any(latest.get(field) != binding.get(field) for field in stable_fields)
+                or latest.get("sequence") != boundary.get("binding_sequence")
+                or latest.get("recovery_boundary") != boundary):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
+        binding = latest
+    else:
+        raise HTTPException(status_code=502, detail="runtime recovery boundary changed")
     receipt = binding["settlement_receipt"]
-    if binding.get("recovery_boundary") is None:
-        _validate_recovery_binding({**binding, "recovery_boundary": boundary}, session)
     try:
         event_raw = base64.b64decode(boundary["event_json_b64"], validate=True)
         event = json.loads(event_raw.decode("utf-8"))
@@ -3508,6 +3538,7 @@ def _append_and_ack_recovery_boundary(
     if (acknowledged.get("session_id") != session.session_id
             or acknowledged.get("trace_id") != session.trace_id
             or acknowledged.get("boot_id") != runtime_reply.get("boot_id")
+            or acknowledged.get("sequence") != boundary["next_sequence"]
             or acknowledged.get("recovery_boundary") != {**boundary, "state": "acknowledged"}):
         raise HTTPException(status_code=502, detail="runtime recovery boundary ACK is invalid")
     return acknowledged

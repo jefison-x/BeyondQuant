@@ -1,5 +1,14 @@
 # Phase 17 — Final Golden evidence reconciliation (2026-10-02)
 
+## Later closeout checkpoint — 2026-10-31
+
+The [current reconciliation](phase17-closeout-20261031.md) records the later
+maintenance releases, the maintainer's old-conversation scope clarification,
+and the retained test environment after reboot. Completed release gates must
+not be scheduled again from the older failed attempts below. Historical
+Golden evidence retains its original source and acceptance limits; Phase 17
+remains open until the applicable final phase gate passes.
+
 ## Current verdict and authority
 
 **Final A–F/F6 evidence mapping: scoped LOCAL PASS — Tester → independent Reviewer → Root.**

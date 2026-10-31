@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -74,6 +77,38 @@ def _trace_event(sequence: int) -> dict[str, object]:
         "kind": "session.progress",
         "payload": {},
     }
+
+
+def _recovery_boundary(
+    binding_sequence: int, receipt: dict[str, object], *, state: str = "pending",
+) -> tuple[dict[str, object], dict[str, object]]:
+    event = {
+        **_trace_event(binding_sequence + 1),
+        "kind": "session.reattached",
+        "payload": {
+            "schema_version": "runtime-recovery-boundary-event.v1",
+            "root_run_id": ROOT_ID,
+            "settlement_receipt_sha256": hashlib.sha256(json.dumps(
+                receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+            "prior_sequence": binding_sequence,
+            "runtime_boot_id": NEW_BOOT_ID,
+            "authority_epoch": 1,
+        },
+    }
+    event_raw = json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+    boundary = {
+        "schema_version": "byq-acp-recovery-boundary.v1",
+        "binding_sequence": binding_sequence,
+        "previous_boot_id": OLD_BOOT_ID,
+        "previous_authority_epoch": 7,
+        "runtime_boot_id": NEW_BOOT_ID,
+        "runtime_authority_epoch": 1,
+        "next_sequence": binding_sequence + 1,
+        "event_json_b64": base64.b64encode(event_raw).decode("ascii"),
+        "event_sha256": hashlib.sha256(event_raw).hexdigest(),
+        "state": state,
+    }
+    return boundary, event
 
 
 def test_restore_transfers_exact_backend_proof_before_adapter_recovery(monkeypatch, tmp_path: Path) -> None:
@@ -229,6 +264,127 @@ def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_p
         f"/internal/runtime/sessions/{SESSION_ID}/recover",
         {"receipt": binding["settlement_receipt"], "initial_sequence": 9, "trace_tail": 9},
     )
+
+
+def test_restore_replaces_acked_boundary_after_exact_release_tail(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "_catalog_request", _conversation_catalog)
+    store = TraceStore(tmp_path)
+    terminal = {**_trace_event(7), "kind": "session.result", "payload": {"run_id": ROOT_ID}}
+    receipt = main.lifecycle_receipt(main.project_lifecycle_event(terminal, SESSION_ID, TRACE_ID))
+    old_boundary, old_boundary_event = _recovery_boundary(8, receipt, state="acknowledged")
+    binding = _binding("settled")
+    binding["settlement_receipt"] = receipt
+    binding["sequence"] = 9
+    binding["recovery_boundary"] = old_boundary
+    session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
+
+    # ACK advances the binding to next_sequence; the following real release
+    # advances it once more while the ACKed event remains immutable.
+    assert main._validate_recovery_binding(binding, session) == binding
+    binding["sequence"] = 10
+    assert main._validate_recovery_binding(binding, session) == binding
+    with pytest.raises(main.HTTPException):
+        main._validate_recovery_binding({**binding, "sequence": 11}, session)
+    with pytest.raises(main.HTTPException):
+        main._validate_recovery_binding({**binding, "owner_principal": "mallory"}, session)
+
+    new_boundary, new_boundary_event = _recovery_boundary(10, receipt)
+    latest_binding = {**binding, "recovery_boundary": new_boundary}
+    for event in (
+        terminal,
+        {**_trace_event(8), "kind": "session.closed", "payload": {"reason": "released"}},
+        old_boundary_event,
+        {**_trace_event(10), "kind": "session.closed", "payload": {"reason": "released"}},
+    ):
+        store.append(event)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_runtime_root_rows", lambda _session: [{
+        "root_run_id": ROOT_ID,
+        "status": "completed",
+        "authority_status": "closed",
+        "terminal_sequence": receipt["sequence"],
+        "terminal_event_sha256": receipt["event_sha256"],
+        "terminal_acp_ingress_sequence": 0,
+        "terminal_acp_ingress_sha256": "a" * 64,
+        "terminal_unknown_claim_count": 0,
+        "terminal_unknown_claims_sha256": "e" * 64,
+    }])
+    monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
+
+    binding_reads: list[dict[str, object]] = []
+
+    def adapter_get(path, **_kwargs):
+        assert path == f"/internal/runtime/sessions/{SESSION_ID}/recovery-binding"
+        value = binding if not binding_reads else latest_binding
+        binding_reads.append(value)
+        return value
+
+    monkeypatch.setattr(main, "_adapter_get", adapter_get)
+    calls: list[tuple[str, dict[str, object] | None]] = []
+    acknowledged = {**new_boundary, "state": "acknowledged"}
+
+    def adapter_post(path, *, payload=None, timeout=20.0):
+        calls.append((path, payload))
+        if payload and payload.get("attach_live_only") is True:
+            raise main.HTTPException(status_code=404, detail="runtime session not found")
+        if payload and payload.get("boundary_ack_sha256") is not None:
+            return {
+                "session_id": SESSION_ID,
+                "trace_id": TRACE_ID,
+                "boot_id": NEW_BOOT_ID,
+                "sequence": new_boundary["next_sequence"],
+                "recovery_boundary": acknowledged,
+            }
+        if payload is not None:
+            assert payload == {"receipt": receipt, "initial_sequence": 10, "trace_tail": 10}
+        return {
+            "session_id": SESSION_ID,
+            "trace_id": TRACE_ID,
+            "boot_id": NEW_BOOT_ID,
+            "sequence": new_boundary["next_sequence"],
+            "status": "idle",
+            "active_prompt": False,
+            "continuity": "reattached",
+            "resumed_from_run_id": None,
+            "recovery_boundary": new_boundary,
+        }
+
+    monkeypatch.setattr(main, "_adapter_post", adapter_post)
+    restored = main._restore_product_session(CONVERSATION_ID, PRINCIPAL, WORKSPACE_ID)
+
+    assert restored.boot_id == NEW_BOOT_ID
+    assert len(binding_reads) == 2
+    assert binding_reads == [binding, latest_binding]
+    assert latest_binding["sequence"] == new_boundary["binding_sequence"] == 10
+    assert new_boundary["next_sequence"] == 11
+    assert new_boundary["previous_boot_id"] == OLD_BOOT_ID
+    assert new_boundary["previous_authority_epoch"] == 7
+    assert latest_binding["root_run_id"] == ROOT_ID
+    assert latest_binding["settlement_receipt"] == receipt
+    assert store.read(SESSION_ID)[-1] == new_boundary_event
+    assert [path for path, _payload in calls] == [
+        "/internal/runtime/sessions",
+        f"/internal/runtime/sessions/{SESSION_ID}/recover",
+        f"/internal/runtime/sessions/{SESSION_ID}/recover",
+    ]
+    assert calls[-1] == (
+        f"/internal/runtime/sessions/{SESSION_ID}/recover",
+        {"receipt": receipt, "initial_sequence": 11, "trace_tail": 11,
+         "boundary_ack_sha256": new_boundary["event_sha256"]},
+    )
+    assert not any(path.endswith("/prompt") for path, _payload in calls)
+
+    with pytest.raises(main.HTTPException, match="runtime recovery boundary is invalid"):
+        main._append_and_ack_recovery_boundary(
+            main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID),
+            {"boot_id": "f" * 32, "recovery_boundary": new_boundary}, receipt, latest_binding,
+        )
+    bad_digest = {**latest_binding, "recovery_boundary": {
+        **new_boundary, "event_sha256": "0" * 64,
+    }}
+    with pytest.raises(main.HTTPException):
+        main._validate_recovery_binding(bad_digest, session)
 
 
 def test_settled_acp_recovery_requires_frozen_backend_cursor_and_no_unknown_claim(monkeypatch) -> None:

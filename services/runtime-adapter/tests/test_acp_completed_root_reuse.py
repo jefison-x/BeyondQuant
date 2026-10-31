@@ -124,7 +124,8 @@ def acp_adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapt
     runtime.require_current_backend_authority = lambda: 7
     compatibility.runtime = runtime
     def backend_get(url, *, headers, timeout):
-        record = runtime._get("reuse-session")
+        active_runtime = compatibility.runtime or runtime
+        record = active_runtime._get("reuse-session")
         assert url.endswith(f"/internal/runtime-authority/sessions/{quote(record.session_id, safe='')}/roots")
         assert headers == {
             "Authorization": "Bearer synthetic-runtime-authority-token",
@@ -335,7 +336,7 @@ def test_idle_release_preserves_settled_public_session_without_native_resume(acp
         )
         assert restarted._read_acp_binding("reuse-session")["recovery_boundary"]["state"] == "acknowledged"
 
-        restarted.submit_prompt(
+        next_root = restarted.submit_prompt(
             "reuse-session", "next user input",
             conversation_context=[
                 {"role": "user", "content": "first"},
@@ -349,6 +350,156 @@ def test_idle_release_preserves_settled_public_session_without_native_resume(acp
         assert fresh_prompt.count("[BYQ_CONVERSATION_REHYDRATION]") == 1
         assert fresh_prompt.count('"completed answer"') == 1
         assert fresh_prompt.count("next user input") == 1
+
+        next_record = restarted._get("reuse-session")
+        terminal_receipt = next_record.terminal_receipts[next_root]
+        assert next_record.sequence == terminal_receipt["sequence"]
+        assert next_root in next_record.pending_terminal_receipts
+        next_harness = compat.harnesses[-1]
+        assert restarted.acknowledge_terminal("reuse-session", terminal_receipt) == {
+            "receipt": terminal_receipt,
+        }
+        assert next_root not in next_record.pending_terminal_receipts
+        assert next_record.current_generation.native_session_close_confirmed is True
+        assert next_record.current_generation.process_exit_confirmed is True
+        assert next_harness.closed is True
+        assert compat.closed_processes[-1] is next_harness
+        next_binding = restarted._read_acp_binding("reuse-session")
+        assert next_binding["root_run_id"] == next_root
+        assert next_binding["settlement_receipt"] == terminal_receipt
+        assert "recovery_boundary" not in next_binding
+        assert next_binding["previous_boot_id"] == restarted.boot_id
+        assert next_binding["previous_authority_epoch"] == next_record.authority_epoch == 8
+        assert next_binding["runtime_generation"] == next_record.runtime_generation
+        assert next_binding["native_session_id"] == next_record.runtime_session_id
+        assert next_binding["cwd"] == str(Path(next_record.recovery_cwd).resolve())
+        assert next_binding["sequence"] == terminal_receipt["sequence"]
+        assert next_binding["cleanup_unconfirmed"] is False
+    finally:
+        restarted.close()
+
+
+def test_acknowledged_recovery_boundary_tracks_idle_release_tail(acp_adapter):
+    runtime = acp_adapter
+    compat = runtime._compatibility
+    record, root, receipt = _create_and_complete(runtime, compat)
+
+    assert runtime.acknowledge_terminal("reuse-session", receipt) == {"receipt": receipt}
+    runtime.release_session("reuse-session", preserve_conversation=True)
+
+    restarted = RuntimeAdapter(compat)
+    restarted.require_current_backend_authority = lambda: 8
+    compat.runtime = restarted
+    try:
+        original_binding = restarted._read_acp_binding("reuse-session")
+        original_boot_id = original_binding["previous_boot_id"]
+        original_authority_epoch = original_binding["previous_authority_epoch"]
+        recovery = restarted.recovery_binding("reuse-session")
+        recovered = restarted.recover_acp_session(
+            "reuse-session", receipt, recovery["sequence"],
+        )
+        first_boundary = recovered["recovery_boundary"]
+        assert first_boundary["state"] == "pending"
+        with pytest.raises(SessionConflict, match="recovery boundary must be acknowledged"):
+            restarted.release_session("reuse-session", preserve_conversation=True)
+        with pytest.raises(SessionConflict, match="recovery boundary ACK does not match"):
+            restarted.recover_acp_session(
+                "reuse-session", receipt, first_boundary["next_sequence"],
+                trace_tail=first_boundary["next_sequence"], boundary_ack_sha256="0" * 64,
+            )
+        released_record = restarted._get("reuse-session")
+        acknowledged_event = next(
+            event for event in released_record.history
+            if event["kind"] == "session.reattached"
+        )
+
+        restarted.recover_acp_session(
+            "reuse-session", receipt, first_boundary["next_sequence"],
+            trace_tail=first_boundary["next_sequence"],
+            boundary_ack_sha256=first_boundary["event_sha256"],
+        )
+        acked_binding = restarted._read_acp_binding("reuse-session")
+        assert acked_binding["recovery_boundary"] == {
+            **first_boundary, "state": "acknowledged",
+        }
+        assert acked_binding["previous_boot_id"] == original_boot_id
+        assert acked_binding["previous_authority_epoch"] == original_authority_epoch
+        assert acked_binding["root_run_id"] == root
+        assert acked_binding["settlement_receipt"] == receipt
+        assert acked_binding["sequence"] == first_boundary["next_sequence"]
+
+        restarted.release_session("reuse-session", preserve_conversation=True)
+        release_tail = released_record.sequence
+        release_event = released_record.history[-1]
+        assert release_event["kind"] == "session.closed"
+        assert release_event["sequence"] == release_tail
+
+        # The Gateway supplies the actual append-only trace tail. The prior
+        # ACKed boundary remains immutable while the release advances cursor.
+        after_release = restarted._read_acp_binding("reuse-session")
+        assert after_release["recovery_boundary"] == acked_binding["recovery_boundary"]
+        assert after_release["sequence"] == release_tail
+        assert after_release["root_run_id"] == root
+        assert after_release["settlement_receipt"] == receipt
+        assert after_release["previous_boot_id"] == original_boot_id
+        assert after_release["previous_authority_epoch"] == original_authority_epoch
+
+        foreign_boot = RuntimeAdapter(compat)
+        foreign_boot.require_current_backend_authority = lambda: 8
+        foreign_boot.boot_id = "f" * 32
+        try:
+            assert foreign_boot.boot_id != restarted.boot_id
+            with pytest.raises(SessionConflict, match="another trace or Runtime boot"):
+                foreign_boot.recover_acp_session(
+                    "reuse-session", receipt, release_tail, trace_tail=release_tail,
+                )
+        finally:
+            foreign_boot.close()
+
+        with pytest.raises(SessionConflict, match="acknowledged recovery boundary requires"):
+            restarted.recover_acp_session(
+                "reuse-session", receipt, release_tail + 1,
+                trace_tail=release_tail + 1,
+            )
+        recovered_again = restarted.recover_acp_session(
+            "reuse-session", receipt, release_tail, trace_tail=release_tail,
+        )
+        next_boundary = recovered_again["recovery_boundary"]
+        assert next_boundary["state"] == "pending"
+        assert next_boundary["binding_sequence"] == release_tail
+        assert next_boundary["next_sequence"] == release_tail + 1
+        assert next_boundary["previous_boot_id"] == original_boot_id
+        assert next_boundary["previous_authority_epoch"] == original_authority_epoch
+        assert next_boundary["runtime_boot_id"] == restarted.boot_id
+        assert next_boundary["runtime_authority_epoch"] == 8
+        assert next_boundary["event_sha256"] != first_boundary["event_sha256"]
+        next_record = restarted._get("reuse-session")
+        assert acknowledged_event in released_record.history
+        assert next_record.history[-1]["sequence"] == release_tail + 1
+        assert next_record.history[-1]["kind"] == "session.reattached"
+        assert next_record.history[-1]["payload"]["root_run_id"] == root
+        assert next_record.history[-1]["payload"]["prior_sequence"] == release_tail
+        assert next_record.history[-1]["payload"]["authority_epoch"] == 8
+        with pytest.raises(SessionConflict, match="recovery boundary must be acknowledged"):
+            restarted.release_session("reuse-session", preserve_conversation=True)
+        with pytest.raises(SessionConflict, match="recovery boundary ACK does not match"):
+            restarted.recover_acp_session(
+                "reuse-session", receipt, next_boundary["next_sequence"],
+                trace_tail=next_boundary["next_sequence"], boundary_ack_sha256="0" * 64,
+            )
+        pending_binding = restarted._read_acp_binding("reuse-session")
+        assert pending_binding["recovery_boundary"]["state"] == "pending"
+        assert pending_binding["sequence"] == release_tail
+        restarted.recover_acp_session(
+            "reuse-session", receipt, next_boundary["next_sequence"],
+            trace_tail=next_boundary["next_sequence"],
+            boundary_ack_sha256=next_boundary["event_sha256"],
+        )
+        acked_again = restarted._read_acp_binding("reuse-session")
+        assert acked_again["recovery_boundary"]["state"] == "acknowledged"
+        assert acked_again["sequence"] == next_boundary["next_sequence"]
+        assert not compat.resumed
+        assert all(not harness.prompts for harness in compat.harnesses[1:])
     finally:
         restarted.close()
 
