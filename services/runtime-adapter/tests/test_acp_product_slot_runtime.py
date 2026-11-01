@@ -668,6 +668,12 @@ def test_task_ready_v3_profile_model_mismatch_is_rejected_before_start(slot_runt
                 "deepseek-official", "deepseek-flash")
     assert (record.model_resolution["provider"], record.model_resolution["model"]) == (
         "opencode-go-chat", "deepseek-v4.1-flash")
+    generation = record.current_generation
+    harness = record.harness
+    active_run = record.active_run
+    assert generation is not None
+    assert harness is not None
+    assert active_run is None
 
     with pytest.raises(ValueError, match="task-ready profile does not match the native model route"):
         runtime.submit_prompt(
@@ -679,7 +685,9 @@ def test_task_ready_v3_profile_model_mismatch_is_rejected_before_start(slot_runt
     assert compatibility.successful_starts == []
     assert record.status == SessionStatus.READY
     assert record.process_used is False
-    assert record.current_generation is None
+    assert record.current_generation is generation
+    assert record.harness is harness
+    assert record.active_run is active_run
     assert record.continuation_request_gate is None
     assert record.continuation_request_proxy is None
     assert workspace not in registry._leases
