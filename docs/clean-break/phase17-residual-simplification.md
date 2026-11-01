@@ -1,6 +1,11 @@
 # Phase 17 — Residual simplification and final Golden acceptance
 
-Status: **OPEN**. Development is authorized by the maintainer's next-step
+Current status: **PASS within the final Phase 17 scope**; see the
+[2026-11-02 applicability and acceptance](phase17-final-acceptance-20261102.md).
+The OPEN progress, grants and pending tests below are historical checkpoints;
+later accepted ADRs and the final record determine current routing.
+
+Original entry status: **OPEN**. Development is authorized by the maintainer's next-step
 instruction after Phase 16 merged. This record distinguishes source slices
 from the final Golden and repository gates; it makes no final fidelity claim.
 

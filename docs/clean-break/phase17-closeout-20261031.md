@@ -1,5 +1,9 @@
 # Phase 17 closeout reconciliation — 2026-10-31
 
+The [2026-11-02 final Phase 17 acceptance](phase17-final-acceptance-20261102.md)
+supersedes this checkpoint's pending phase verdict. The ordinary/recovery evidence,
+original failures and preservation boundaries below remain unchanged.
+
 This is a development and evidence closeout. It does not advance the Product
 phase, authorize a formal release, or authorize another pre-release deployment.
 Engineering uses Codex under the current maintainer instruction; OpenCode is

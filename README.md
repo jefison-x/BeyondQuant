@@ -8,6 +8,10 @@
 
 <!-- byq:clean-break-current-phase=17 -->
 
+Clean Break Phase 17 has passed its [scoped final technical acceptance](docs/clean-break/phase17-final-acceptance-20261102.md).
+No new Phase 18 plan, image release or operating deployment is implied; known
+maintenance follow-ups and historical evidence limits remain recorded there.
+
 > **个人非商业研究源码公开项目，不是 OSI 开源项目。**
 > 仅允许自然人为本人进行非商业学习、研究和模拟测试；**禁止机构使用、商业使用和任何
 > 实盘交易，包括个人自有资金实盘及将软件输出用于真实交易。**
