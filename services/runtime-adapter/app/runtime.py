@@ -1762,10 +1762,11 @@ class RuntimeAdapter:
                         "recovery_boundary",
                     )
                 }
-                if qualified_prebind:
+                if self._acp:
                     replacement_predecessor_raw, replacement_predecessor_sha256 = (
                         self._capture_prestart_predecessor(
-                            record, expected_root_id=previous_process_root_id))
+                            record, expected_root_id=previous_process_root_id,
+                            require_native_session_close=(qualified_prebind or reuse_native)))
                 if self._acp_product_slots:
                     from .acp_product_slot_client import ProductSlotBusy
                     # Recheck immediately before replacement START in case a
@@ -1929,17 +1930,13 @@ class RuntimeAdapter:
                     record.cleanup_harness = harness
                     record.cleanup_unconfirmed = True
                     try:
-                        if qualified_prebind:
-                            prestart_binding_sha256 = self._persist_acp_binding(
-                                record, clear_qualified=True,
-                                root_run_id=root_id, runtime_generation=generation,
-                                cwd=str(session_root), starting_new_root=True,
-                                expected_previous=(replacement_predecessor_raw,
-                                                   replacement_predecessor_sha256),
-                            )
-                        else:
-                            prestart_binding_sha256 = self._persist_acp_binding(
-                                record, clear_qualified=True)
+                        prestart_binding_sha256 = self._persist_acp_binding(
+                            record, clear_qualified=True,
+                            root_run_id=root_id, runtime_generation=generation,
+                            cwd=str(session_root), starting_new_root=True,
+                            expected_previous=(replacement_predecessor_raw,
+                                               replacement_predecessor_sha256),
+                        )
                     except BaseException:
                         if qualified_prebind:
                             record.cleanup_harness = harness
@@ -4745,6 +4742,9 @@ class RuntimeAdapter:
                 raise SessionConflict(f"session {session_id} has an active prompt")
             if self._acp and record.pending_terminal_receipts:
                 raise SessionConflict("Backend terminal receipt must be acknowledged before ACP release")
+            if (self._acp and record.recovery_boundary is not None
+                    and record.recovery_boundary.get("state") != "acknowledged"):
+                raise SessionConflict("recovery boundary must be acknowledged before ACP release")
             if record.cleanup_unconfirmed:
                 raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
             if record.conversation_ended and preserve_conversation:
@@ -4943,7 +4943,9 @@ class RuntimeAdapter:
         }
         if record.recovery_boundary is not None and not starting_new_root:
             boundary = record.recovery_boundary
-            value["sequence"] = boundary["binding_sequence"]
+            value["sequence"] = (
+                boundary["binding_sequence"] if boundary["state"] == "pending"
+                else record.sequence)
             value["previous_boot_id"] = boundary["previous_boot_id"]
             value["previous_authority_epoch"] = boundary["previous_authority_epoch"]
             value["recovery_boundary"] = dict(boundary)
@@ -5459,6 +5461,7 @@ class RuntimeAdapter:
 
     def _capture_prestart_predecessor(
         self, record: RuntimeSession, *, expected_root_id: str,
+        require_native_session_close: bool = True,
     ) -> tuple[bytes | None, str | None]:
         """Freeze the exact safe predecessor before replacing a Runtime fence."""
         path = self._acp_binding_path(record.session_id, record.workspace_id)
@@ -5525,7 +5528,8 @@ class RuntimeAdapter:
                 if not operator_retired and (
                         parsed.get("settlement_receipt") != record.settlement_receipt
                         or not parsed.get("settlement_receipt")
-                        or parsed.get("native_session_close_confirmed") is not True
+                        or (require_native_session_close
+                            and parsed.get("native_session_close_confirmed") is not True)
                         or parsed.get("process_exit_confirmed") is not True
                         or parsed.get("domain_call_sequence")
                         != parsed.get("domain_call_drained_sequence")):
@@ -5999,7 +6003,6 @@ class RuntimeAdapter:
                     or boundary.get("schema_version") != _ACP_RECOVERY_BOUNDARY_SCHEMA
                     or type(boundary.get("binding_sequence")) is not int
                     or not 0 <= boundary["binding_sequence"] < 2**63 - 1
-                    or boundary["binding_sequence"] != value["sequence"]
                     or boundary.get("previous_boot_id") != value["previous_boot_id"]
                     or boundary.get("previous_authority_epoch") != value["previous_authority_epoch"]
                     or type(boundary.get("previous_authority_epoch")) is not int
@@ -6009,6 +6012,12 @@ class RuntimeAdapter:
                     or type(boundary.get("next_sequence")) is not int
                     or boundary["next_sequence"] != boundary["binding_sequence"] + 1
                     or boundary.get("state") not in {"pending", "acknowledged"}
+                    or (boundary["state"] == "pending"
+                        and boundary["binding_sequence"] != value["sequence"])
+                    or (boundary["state"] == "acknowledged"
+                        and value["sequence"] not in {
+                            boundary["next_sequence"], boundary["next_sequence"] + 1,
+                        })
                     or not isinstance(boundary.get("event_json_b64"), str)
                     or not isinstance(boundary.get("event_sha256"), str)
                     or _ACP_HEX64.fullmatch(boundary["event_sha256"]) is None
@@ -6428,15 +6437,27 @@ class RuntimeAdapter:
                 if existing.recovery_boundary is not None:
                     boundary = existing.recovery_boundary
                     binding = self._read_acp_binding(session_id)
+                    pending_boundary = boundary["state"] == "pending"
+                    boundary_cursor = (boundary["binding_sequence"] if pending_boundary
+                                       else boundary["next_sequence"])
+                    permitted_tails = (
+                        {boundary["binding_sequence"], boundary["next_sequence"]}
+                        if pending_boundary else {boundary["next_sequence"]}
+                    )
+                    expected_initial = (
+                        max(trace_tail, boundary["binding_sequence"])
+                        if pending_boundary else boundary["next_sequence"]
+                    )
                     if (receipt != existing.settlement_receipt
                             or binding.get("recovery_boundary") != boundary
                             or boundary.get("runtime_boot_id") != self.boot_id
                             or boundary.get("runtime_authority_epoch") != self.require_current_backend_authority()
-                            or boundary.get("binding_sequence") != binding.get("sequence")
+                            or boundary_cursor != binding.get("sequence")
                             or boundary.get("previous_boot_id") != binding.get("previous_boot_id")
                             or boundary.get("previous_authority_epoch") != binding.get("previous_authority_epoch")
-                            or trace_tail not in {boundary.get("binding_sequence"), boundary.get("next_sequence")}
-                            or initial_sequence != max(trace_tail, boundary.get("binding_sequence", -1))):
+                            or trace_tail not in permitted_tails
+                            or initial_sequence != expected_initial
+                            or (not pending_boundary and existing.sequence != boundary_cursor)):
                         raise SessionConflict("recovery boundary retry does not match its durable binding")
                     if boundary_ack_sha256 is not None:
                         if (not hmac.compare_digest(boundary_ack_sha256, boundary["event_sha256"])
@@ -6461,6 +6482,7 @@ class RuntimeAdapter:
                                     raise SessionConflict("recovery boundary binding changed")
                                 acknowledged = dict(boundary)
                                 acknowledged["state"] = "acknowledged"
+                                current["sequence"] = boundary["next_sequence"]
                                 current["recovery_boundary"] = acknowledged
                                 payload = json.dumps(current, sort_keys=True, separators=(",", ":")).encode()
                                 self._replace_acp_binding_payload(path, payload)
@@ -6470,6 +6492,7 @@ class RuntimeAdapter:
                                            != boundary["runtime_authority_epoch"]):
                                     raise SessionConflict("recovery boundary ACK persistence is uncertain")
                                 existing.recovery_boundary = acknowledged
+                                existing.sequence = boundary["next_sequence"]
                             finally:
                                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
                                 os.close(lock_fd)
@@ -6569,12 +6592,18 @@ class RuntimeAdapter:
                 or initial_sequence >= 2**63):
             raise SessionConflict("recovery event sequence is not proven")
         if boundary is not None:
-            if (boundary["runtime_boot_id"] != self.boot_id
-                    or boundary["runtime_authority_epoch"] != self.require_current_backend_authority()
-                    or receipt != binding["settlement_receipt"]
-                    or trace_tail not in {boundary["binding_sequence"], boundary["next_sequence"]}
-                    or initial_sequence != max(trace_tail, boundary["binding_sequence"])):
+            if (receipt != binding["settlement_receipt"]
+                    or boundary["runtime_boot_id"] != self.boot_id
+                    or boundary["runtime_authority_epoch"] != self.require_current_backend_authority()):
                 raise SessionConflict("durable recovery boundary belongs to another trace or Runtime boot")
+            if boundary["state"] == "pending":
+                if (trace_tail not in {boundary["binding_sequence"], boundary["next_sequence"]}
+                        or initial_sequence != max(trace_tail, boundary["binding_sequence"])):
+                    raise SessionConflict(
+                        "durable recovery boundary belongs to another trace or Runtime boot")
+            elif (trace_tail != binding["sequence"]
+                    or initial_sequence != binding["sequence"]):
+                raise SessionConflict("acknowledged recovery boundary requires its exact durable tail")
         elif trace_tail != binding["sequence"] or initial_sequence != binding["sequence"]:
             raise SessionConflict("recovery trace does not meet its durable binding")
         if binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]:
@@ -6637,7 +6666,8 @@ class RuntimeAdapter:
             session_id=session_id, trace_id=binding["trace_id"], boot_id=self.boot_id,
             owner_principal=binding["owner_principal"], workspace_id=binding["workspace_id"],
             model_resolution=model_resolution, status=SessionStatus.IDLE,
-            sequence=(boundary["binding_sequence"] if boundary is not None else initial_sequence),
+            sequence=(boundary["binding_sequence"] if boundary is not None
+                      and boundary["state"] == "pending" else initial_sequence),
             continuity=continuity.REATTACHED,
             authority_epoch=self.require_current_backend_authority(),
             recovery_cwd=binding["cwd"], settlement_receipt=dict(receipt) if settled else None,
@@ -6705,7 +6735,7 @@ class RuntimeAdapter:
                     )
                 else:
                     self._persist_acp_binding(record)
-        if boundary is None and settled:
+        if (boundary is None or boundary["state"] == "acknowledged") and settled:
             binding = self._read_acp_binding(session_id)
             if binding["settlement_receipt"] != record.settlement_receipt:
                 raise SessionConflict("settled recovery receipt was not durably persisted")
@@ -6755,18 +6785,20 @@ class RuntimeAdapter:
                     or (persisted_settled and binding["schema_version"] == _ACP_ROOT_BINDING_V2_SCHEMA
                         and hashlib.sha256(binding_raw).hexdigest() != qualified_binding_sha256)):
                 raise SessionConflict("ACP recovery binding changed before trace boundary")
+            disk_binding_without_boundary = dict(disk_binding)
+            disk_binding_without_boundary.pop("recovery_boundary", None)
             record.recovery_boundary = boundary
             candidate = self._acp_binding_value(record)
             candidate_without_boundary = dict(candidate)
             candidate_without_boundary.pop("recovery_boundary", None)
-            if candidate_without_boundary != disk_binding:
+            if candidate_without_boundary != disk_binding_without_boundary:
                 record.recovery_boundary = None
                 raise SessionConflict("recovery boundary would alter the original ACP binding")
             self._persist_acp_binding(record, expected_previous=(
                 binding_raw, hashlib.sha256(binding_raw).hexdigest()))
             persisted_boundary = self._read_acp_binding(session_id)
             if ({key: value for key, value in persisted_boundary.items()
-                 if key != "recovery_boundary"} != disk_binding
+                 if key != "recovery_boundary"} != disk_binding_without_boundary
                     or persisted_boundary.get("recovery_boundary") != boundary):
                 raise SessionConflict("recovery boundary changed the original ACP binding")
             self._publish(record, event)

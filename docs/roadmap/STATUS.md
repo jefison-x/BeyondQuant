@@ -2,6 +2,26 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
+### Current closeout checkpoint — 2026-10-31
+
+The Product phase remains **Clean Break Phase 17**. The later ACP maintenance
+and search-credential fixes have passed their named CI, image and pre-release
+browser gates; older release failures below are historical, not instructions
+to repeat those completed releases. See the [current closeout reconciliation](../clean-break/phase17-closeout-20261031.md)
+for the evidence boundaries and remaining stage gate.
+
+The maintainer has explicitly excluded the recorded old-conversation recovery
+sample from the completed search-fix release's blockers. Preserve its failure
+without adding legacy compatibility or replaying it. That one sample does not
+decide overall recovery acceptance; the final phase gate must determine
+applicability using current-version behavior. The running `beyondquant` stack is a
+pre-release operating environment; no formal v1.0 release is claimed.
+
+Phase 17 is not marked complete by these maintenance releases. Final phase
+acceptance must reconcile applicable Golden evidence and current contracts;
+Phase 18 is not started. The dated narratives below retain their original
+scope and outcomes.
+
 <!-- byq:clean-break-current-phase=17 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100

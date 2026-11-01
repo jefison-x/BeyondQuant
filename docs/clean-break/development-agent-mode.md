@@ -13,18 +13,16 @@ Reference studied: [GPT6-SolMedium-LunaMax profile](https://github.com/donvito/c
 | Role | Model / effort | Work | Output |
 |---|---|---|---|
 | Root | `gpt-6-sol` / `medium` | Architecture owner; scope, risks, boundaries, phase acceptance | Explicit PASS/FAIL and next gate |
-| Explorer | OpenCode service | Read-only bounded code/ownership investigation | Findings, evidence, paths, duplication, risks |
-| Worker | OpenCode service | One assigned subsystem and writer | Diff, tests, risks |
-| Researcher | OpenCode service | Necessary DSH/API/dependency facts | Primary sources, versions, implications |
-| Tester | OpenCode service | Focused test execution | PASS/FAIL, commands, failures |
+| Explorer | Configured Codex Explorer role | Read-only bounded code/ownership investigation | Findings, evidence, paths, duplication, risks |
+| Worker | Configured Codex Worker role | One assigned subsystem and writer | Diff, tests, risks |
+| Researcher | Configured Codex Researcher role | Necessary DSH/API/dependency facts | Primary sources, versions, implications |
+| Tester | Configured Codex Tester role | Focused test execution | PASS/FAIL, commands, failures |
 | Reviewer | `gpt-6-sol` / `medium` | Independently inspect actual diff, interfaces, schema and tests | Functional, Tests, Architecture PASS/FAIL |
 
-Engineering tasks use native `opencode serve` plus `opencode run --attach`
-with an explicit `--dir` and `--session`. Reuse the same session for the same
-task, and separate unrelated tasks. Luna is a fallback on explicit user request
-or after an explained OpenCode failure. See the default in [AGENTS.md](../../AGENTS.md).
-The local service is managed with `systemctl --user start byq-opencode.service`;
-credentials remain in the private user environment file, outside Git.
+Engineering tasks use Codex and its configured roles. OpenCode is not required;
+invoke it only if the maintainer explicitly requests it. Codex role use does
+not depend on an OpenCode attempt or failure. Keep programming costs bounded.
+See the routing in [AGENTS.md](../../AGENTS.md).
 
 The configured ceiling is four *subagents* (Root is separate). Normal use is one or two agents; independent read-only investigations can fill the ceiling. This particular hosted session exposes only four total concurrency slots, so it can run Root plus three subagents. A small task stays with Root. One subsystem has one writer, and concurrent writers must have nonoverlapping ownership or isolated worktrees. Reviewer must not rely on Worker summaries. Root issues the final phase acceptance.
 
