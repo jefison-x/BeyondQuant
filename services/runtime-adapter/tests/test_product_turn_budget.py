@@ -48,7 +48,7 @@ def _body(**changes):
     return json.dumps(value, separators=(",", ":")).encode()
 
 
-def _task_ready_carrier(options=None, *, revision=7):
+def _task_ready_carrier(options=None, *, revision=7, **route):
     from packages.contracts.agent_execution_options import default_agent_execution_options
     from packages.contracts.continuation_request import continuation_reservation_v3
 
@@ -60,7 +60,7 @@ def _task_ready_carrier(options=None, *, revision=7):
         signal_job_id="signaljob_" + "3" * 32,
         result_artifact_id="artifact_" + "4" * 32,
         result_artifact_content_sha256="5" * 64,
-        options=values, options_revision=revision,
+        options=values, options_revision=revision, **route,
     )
 
 
@@ -103,6 +103,50 @@ def test_task_ready_overlay_preserves_nulls_and_uses_tightest_output_cap():
         {"id": "deepseek-v4.1-flash"}
     ]
     assert no_cap[4]["insert"][0]["config"]["requestLimits"]["max_runtime_seconds"] is None
+
+
+@pytest.mark.parametrize('cap', [None, 96])
+def test_official_task_ready_overlay_is_root_bound_and_uses_only_selected_provider(tmp_path, cap):
+    import base64
+    from app.continuation_budget import create_acp_task_ready_execution_overlay
+    from app.compat.dsh_acp import (
+        AcpTransportError, _prepare_private_product_home, _write_continuation_guard,
+    )
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
+    options = default_agent_execution_options()
+    options['max_output_tokens_total'] = cap
+    carrier = _task_ready_carrier(options, provider='deepseek-official', model='deepseek-flash')
+    overlay = json.loads(create_acp_task_ready_execution_overlay(
+        proxy_base_url='http://127.0.0.1:41337',
+        provider_session_id='11111111-2222-4333-8444-555555555555',
+        reservation_v3=carrier, root_run_id='a' * 32,
+    ))
+    expected_model = {'id': 'deepseek-flash'}
+    if cap is not None:
+        expected_model['maxTokens'] = cap
+    assert overlay[2] == {'id': 'llm-deepseek', 'config': {
+        'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': 'http://127.0.0.1:41337',
+        'retryPolicy': {'mode': 'normal', 'maxRetries': 0}, 'models': [expected_model],
+    }}
+    assert overlay[3] == {'id': 'llm-pi-ai', 'disabled': True}
+    home = tmp_path / 'valid'
+    home.mkdir(mode=0o700)
+    _prepare_private_product_home(home)
+    encode = lambda value: base64.b64encode(json.dumps(value).encode()).decode()
+    _write_continuation_guard(home, encode(overlay), root_run_id='a' * 32)
+    saved = json.loads((home / 'continuation-guard.patch.json').read_text())
+    config = saved[4]['insert'][0]['config']
+    assert config['executionProfile'] == carrier['execution_profile']
+    assert config['journalPath'] == str(home / ('continuation-tool-guard-' + 'a' * 32 + '.jsonl'))
+    assert 'deadlineEpochMs' not in config
+    overlay[2]['config']['retryPolicy']['maxRetries'] = False
+    bad_home = tmp_path / 'invalid'
+    bad_home.mkdir(mode=0o700)
+    _prepare_private_product_home(bad_home)
+    with pytest.raises(AcpTransportError, match='task-ready route'):
+        _write_continuation_guard(bad_home, encode(overlay), root_run_id='a' * 32)
+    assert not (bad_home / 'continuation-guard.patch.json').exists()
 
 
 def test_task_ready_overlay_rejects_javascript_unsafe_profile_values():

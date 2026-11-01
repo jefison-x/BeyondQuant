@@ -7,6 +7,14 @@ from packages.contracts.product_turn_request import product_turn_execution_limit
 from packages.contracts.continuation_request import (
     ALLOWED_DOMAIN_TOOLS,
     ALLOWED_HARNESS_TOOLS,
+    ALLOWED_MODEL,
+    ALLOWED_PROVIDER,
+    OFFICIAL_MODEL,
+    OFFICIAL_PROFILE_ID,
+    OFFICIAL_PROFILE_VERSION,
+    OFFICIAL_PROVIDER,
+    OFFICIAL_UPSTREAM_BASE_URL,
+    OFFICIAL_UPSTREAM_REQUEST_TARGET,
     PROFILE_ID,
     PROFILE_ID_V2,
     RESERVATION_SCHEMA_VERSION,
@@ -14,6 +22,7 @@ from packages.contracts.continuation_request import (
     USAGE_SCHEMA_VERSION,
     USAGE_SCHEMA_VERSION_V2,
     continuation_request_usage_v2,
+    continuation_reservation_identity_v3,
     continuation_reservation_v3,
     exceeded_request_limits_v2,
     execution_profile_v2,
@@ -105,6 +114,31 @@ def test_profile_v2_binds_full_options_revision_closed_route_and_tool_sets():
     assert changed["profile_sha256"] != profile["profile_sha256"]
     assert validate_execution_profile_v2(profile) == profile
 
+    # Calls that omit route arguments retain the historical v2 carrier and
+    # profile hash byte-for-byte.
+    import hashlib
+    import json
+    from packages.contracts.agent_execution_options import SCHEMA_VERSION
+
+    legacy_binding = {
+        "profile_id": PROFILE_ID_V2,
+        "profile_version": 2,
+        "options_schema_version": SCHEMA_VERSION,
+        "options_revision": 0,
+        "options": default_agent_execution_options(),
+        "provider": ALLOWED_PROVIDER,
+        "model": ALLOWED_MODEL,
+        "upstream_base_url": "https://opencode.ai/zen/go/v1",
+        "upstream_request_target": "/chat/completions",
+        "allowed_domain_tools": sorted(ALLOWED_DOMAIN_TOOLS),
+        "allowed_harness_tools": sorted(ALLOWED_HARNESS_TOOLS),
+    }
+    assert profile == {
+        **legacy_binding,
+        "profile_sha256": hashlib.sha256(json.dumps(
+            legacy_binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+    }
+
     for tampered in (
         {**profile, "provider": "other-provider"},
         {**profile, "upstream_base_url": "https://other.invalid"},
@@ -117,6 +151,69 @@ def test_profile_v2_binds_full_options_revision_closed_route_and_tool_sets():
     ):
         with pytest.raises(ValueError):
             validate_execution_profile_v2(tampered)
+
+
+def test_official_deepseek_route_is_a_closed_versioned_profile():
+    options = default_agent_execution_options()
+    profile = execution_profile_v2(
+        options, revision=3, provider=OFFICIAL_PROVIDER, model=OFFICIAL_MODEL,
+    )
+    assert profile["profile_id"] == OFFICIAL_PROFILE_ID == "task-ready-read.official-deepseek.v1"
+    assert profile["profile_version"] == OFFICIAL_PROFILE_VERSION == 1
+    assert profile["provider"] == OFFICIAL_PROVIDER == "deepseek-official"
+    assert profile["model"] == OFFICIAL_MODEL == "deepseek-flash"
+    assert profile["upstream_base_url"] == OFFICIAL_UPSTREAM_BASE_URL == "https://api.deepseek.com/anthropic"
+    assert profile["upstream_request_target"] == OFFICIAL_UPSTREAM_REQUEST_TARGET == "/v1/messages"
+    assert profile["options"] == options and profile["options_revision"] == 3
+    assert all(value is None for value in request_limits_v2(options).values())
+    assert validate_execution_profile_v2(profile) == profile
+
+    for wrong_route in (
+        {"provider": OFFICIAL_PROVIDER, "model": ALLOWED_MODEL},
+        {"provider": ALLOWED_PROVIDER, "model": OFFICIAL_MODEL},
+        {"provider": "deepseek", "model": OFFICIAL_MODEL},
+        {"provider": OFFICIAL_PROVIDER, "model": "deepseek-chat"},
+        {"provider": [OFFICIAL_PROVIDER], "model": OFFICIAL_MODEL},
+    ):
+        with pytest.raises(ValueError):
+            execution_profile_v2(options, revision=3, **wrong_route)
+    for tampered in (
+        {**profile, "profile_version": 2},
+        {**profile, "upstream_base_url": "https://api.deepseek.com"},
+        {**profile, "upstream_request_target": "/messages"},
+        {**profile, "provider": ALLOWED_PROVIDER},
+        {**profile, "model": ALLOWED_MODEL},
+        {**profile, "profile_sha256": "0" * 64},
+    ):
+        with pytest.raises(ValueError):
+            validate_execution_profile_v2(tampered)
+
+
+def test_v3_route_variants_preserve_stable_event_identity_and_carrier_shape():
+    common = {
+        "owner_principal": "owner-a",
+        "workspace_id": "workspace-a",
+        "conversation_id": "conversation-a",
+        "task_id": "task_" + "a" * 32,
+        "signal_job_id": "signaljob_" + "c" * 32,
+        "result_artifact_id": "artifact_" + "d" * 32,
+        "result_artifact_content_sha256": "e" * 64,
+    }
+    identity = continuation_reservation_identity_v3(**common)
+    legacy = continuation_reservation_v3(
+        **common, event_key=identity["event_key"], options={}, options_revision=0,
+    )
+    official = continuation_reservation_v3(
+        **common, event_key=identity["event_key"], options={}, options_revision=0,
+        provider=OFFICIAL_PROVIDER, model=OFFICIAL_MODEL,
+    )
+    assert set(legacy) == set(official)
+    assert legacy["schema_version"] == official["schema_version"] == RESERVATION_SCHEMA_VERSION_V3
+    assert legacy["idempotency_key"] == official["idempotency_key"] == identity["idempotency_key"]
+    assert legacy["source_fact_sha256"] == official["source_fact_sha256"] == identity["source_fact_sha256"]
+    assert legacy["request_limits"] == official["request_limits"]
+    assert legacy["execution_profile"]["profile_sha256"] != official["execution_profile"]["profile_sha256"]
+    assert official["execution_profile"]["profile_id"] == OFFICIAL_PROFILE_ID
 
 
 def test_profile_and_limits_reject_boolean_integers_unknown_options_and_drift():

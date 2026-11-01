@@ -1518,19 +1518,24 @@ class CredentialStore(PgStoreMixin):
                           "profile_status":None if profile is None else profile["status"]})
         return self._public_binding(committed,owner_principal,agent)
 
-    def resolve_model(self, owner: object, agent_id: object) -> dict[str, object] | None:
+    def _resolve_model_binding(
+        self, owner: object, agent_id: object, *, include_envelope: bool,
+    ) -> tuple[str, dict[str, object], str] | None:
         owner_principal = _principal(owner)
         agent = _text(agent_id, field="agent_id", maximum=64)
         if agent not in _AGENT_IDS:
             raise CredentialNotFound("Agent binding not found")
+        envelope_columns = (
+            ", c.envelope_version, c.envelope_key_id, c.envelope_nonce, c.envelope_ciphertext"
+            if include_envelope else ""
+        )
         row = self._fetch_one(
             """SELECT b.profile_id, b.version AS binding_version,
                       p.version AS profile_version, p.provider, p.model, p.temperature,
                       p.reasoning_enabled, p.status AS profile_status,
                       c.credential_id, c.version AS credential_version,
                       c.purpose, c.scope, c.owner_principal,
-                      c.status AS credential_status, c.envelope_version,
-                      c.envelope_key_id, c.envelope_nonce, c.envelope_ciphertext
+                      c.status AS credential_status""" + envelope_columns + """
                FROM agent_model_bindings b
                LEFT JOIN model_profiles p ON p.profile_id = b.profile_id
                LEFT JOIN credentials c ON c.credential_id = p.credential_id
@@ -1567,6 +1572,21 @@ class CredentialStore(PgStoreMixin):
             raise CredentialUnavailable(
                 "selected model is not available for the configured runtime"
             )
+        return owner_principal, row, runtime_provider
+
+    def resolve_model_route(self, owner: object, agent_id: object) -> dict[str, object] | None:
+        """Resolve the selected runtime route without reading or decrypting its key."""
+        selected = self._resolve_model_binding(owner, agent_id, include_envelope=False)
+        if selected is None:
+            return None
+        _owner_principal, row, runtime_provider = selected
+        return {"provider": runtime_provider, "model": row["model"]}
+
+    def resolve_model(self, owner: object, agent_id: object) -> dict[str, object] | None:
+        selected = self._resolve_model_binding(owner, agent_id, include_envelope=True)
+        if selected is None:
+            return None
+        owner_principal, row, runtime_provider = selected
         secret = self.cipher.decrypt(
             {
                 "envelope_version": row["envelope_version"],

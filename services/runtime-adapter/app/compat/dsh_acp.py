@@ -360,7 +360,7 @@ def _task_ready_guard_config(value: object) -> dict | None:
 
 
 def _validate_task_ready_overlay(value: object, *, root_run_id: str) -> dict:
-    """Validate the closed unactivated task-ready overlay and return its profile."""
+    """Validate either closed task-ready overlay and return its exact profile."""
     import ipaddress as _ipaddress
 
     if not isinstance(value, list) or len(value) != 5:
@@ -377,14 +377,19 @@ def _validate_task_ready_overlay(value: object, *, root_run_id: str) -> dict:
             or default_provider.get("id") != "llm-deepseek"
             or not isinstance(default_provider.get("config"), dict)):
         raise AcpTransportError("ACP task-ready guard is invalid")
-    if (not isinstance(route, dict) or set(route) != {"id", "config"}
-            or route.get("id") != "llm-pi-ai"):
-        raise AcpTransportError("ACP task-ready route is invalid")
-    route_config = route.get("config")
-    providers = route_config.get("providers") if isinstance(route_config, dict) else None
-    if not isinstance(route_config, dict) or set(route_config) != {"providers"}:
-        raise AcpTransportError("ACP task-ready route is invalid")
-    chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+    official = route == {"id": "llm-pi-ai", "disabled": True} and type(route.get("disabled")) is bool
+    providers = None
+    if official:
+        chat = default_provider["config"]
+    else:
+        if (not isinstance(route, dict) or set(route) != {"id", "config"}
+                or route.get("id") != "llm-pi-ai"):
+            raise AcpTransportError("ACP task-ready route is invalid")
+        route_config = route.get("config")
+        providers = route_config.get("providers") if isinstance(route_config, dict) else None
+        if not isinstance(route_config, dict) or set(route_config) != {"providers"}:
+            raise AcpTransportError("ACP task-ready route is invalid")
+        chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
     headers = chat.get("headers") if isinstance(chat, dict) else None
     retry_policy = chat.get("retryPolicy") if isinstance(chat, dict) else None
     models = chat.get("models") if isinstance(chat, dict) else None
@@ -403,23 +408,28 @@ def _validate_task_ready_overlay(value: object, *, root_run_id: str) -> dict:
                          _ipaddress.ip_network("192.168.0.0/16"))))
         except ValueError:
             local = False
-    if (not isinstance(providers, dict) or set(providers) != {"opencode-go-chat"}
-            or not isinstance(chat, dict)
-            or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
-            or chat.get("api") != "openai-completions"
-            or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+    if official:
+        route_valid = (set(chat) == {"apiKeyEnv", "baseURL", "retryPolicy", "models"}
+                       and chat.get("apiKeyEnv") == "DEEPSEEK_API_KEY")
+    else:
+        route_valid = (isinstance(chat, dict)
+            and isinstance(providers, dict) and set(providers) == {"opencode-go-chat"}
+            and set(chat) == {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
+            and chat.get("api") == "openai-completions"
+            and chat.get("apiKeyEnv") == "OPENCODE_API_KEY"
+            and isinstance(headers, dict) and set(headers) == {"x-opencode-session"}
+            and isinstance(headers.get("x-opencode-session"), str)
+            and re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                             headers["x-opencode-session"]) is not None)
+    if (not route_valid
             or not isinstance(retry_policy, dict)
             or set(retry_policy) != {"mode", "maxRetries"}
             or retry_policy.get("mode") != "normal"
             or type(retry_policy.get("maxRetries")) is not int
             or retry_policy["maxRetries"] != 0
-            or not isinstance(headers, dict) or set(headers) != {"x-opencode-session"}
-            or not isinstance(headers.get("x-opencode-session"), str)
-            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                            headers["x-opencode-session"]) is None
             or not isinstance(models, list) or len(models) != 1
             or not isinstance(models[0], dict)
-            or models[0].get("id") != "deepseek-v4.1-flash"
+            or models[0].get("id") != ("deepseek-flash" if official else "deepseek-v4.1-flash")
             or matched is None or not local or int(matched[2]) > 65535):
         raise AcpTransportError("ACP task-ready route is invalid")
     if (not isinstance(insert, dict) or set(insert) != {"insert"}
@@ -448,6 +458,8 @@ def _validate_task_ready_overlay(value: object, *, root_run_id: str) -> dict:
             config["executionProfile"], config["requestLimits"])
     except (TypeError, ValueError):
         raise AcpTransportError("ACP task-ready profile or limits are invalid") from None
+    if profile['provider'] != ('deepseek-official' if official else 'opencode-go-chat'):
+        raise AcpTransportError("ACP task-ready route differs from its profile")
     # The pure carrier checker establishes only structure and self-digests.
     # Backend still has to recheck live source facts and business authority.
     cap_values = [profile["options"][field] for field in (
@@ -456,12 +468,12 @@ def _validate_task_ready_overlay(value: object, *, root_run_id: str) -> dict:
     output_cap = min(cap_values) if cap_values else None
     expected_default = {} if output_cap is None else {"maxTokens": output_cap}
     default_config = default_provider["config"]
-    if (set(default_config) != set(expected_default)
+    if not official and (set(default_config) != set(expected_default)
             or (output_cap is not None and
                 (type(default_config.get("maxTokens")) is not int
                  or default_config["maxTokens"] != output_cap))):
         raise AcpTransportError("ACP task-ready registered provider output cap is invalid")
-    expected_model = {"id": "deepseek-v4.1-flash"}
+    expected_model = {"id": profile['model']}
     if output_cap is not None:
         expected_model["maxTokens"] = output_cap
     if (models != [expected_model]

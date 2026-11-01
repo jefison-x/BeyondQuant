@@ -17,12 +17,10 @@ from pathlib import Path
 from packages.contracts.continuation_request import (
     ALLOWED_DOMAIN_TOOLS,
     ALLOWED_HARNESS_TOOLS,
-    ALLOWED_MODEL as TASK_READY_MODEL,
     ALLOWED_PROVIDER as TASK_READY_PROVIDER,
+    OFFICIAL_PROFILE_ID as OFFICIAL_TASK_READY_PROFILE_ID,
     PROFILE_ID,
     RESERVATION_SCHEMA_VERSION,
-    UPSTREAM_BASE_URL as TASK_READY_UPSTREAM_BASE_URL,
-    UPSTREAM_REQUEST_TARGET as TASK_READY_UPSTREAM_REQUEST_TARGET,
     request_limits,
     validate_limits,
     validate_profile_binding,
@@ -368,7 +366,7 @@ def create_acp_task_ready_execution_overlay(
 ) -> bytes:
     """Encode one task-ready carrier as a closed, root-bound ACP overlay.
 
-    The two DSH model rows carry only the user-derived optional output cap.
+    DSH model rows carry only the user-derived optional output cap.
     An unset cap remains unset, and this encoder creates no runtime deadline.
     The carrier is structural input; Backend must separately recheck its facts
     and business authority before dispatch.
@@ -376,11 +374,7 @@ def create_acp_task_ready_execution_overlay(
     reservation = validate_reservation_v3(reservation_v3)
     profile, limits = validate_task_ready_javascript_values_v2(
         reservation['execution_profile'], reservation['request_limits'])
-    if (profile['provider'] != TASK_READY_PROVIDER
-            or profile['model'] != TASK_READY_MODEL
-            or profile['upstream_base_url'] != TASK_READY_UPSTREAM_BASE_URL
-            or profile['upstream_request_target'] != TASK_READY_UPSTREAM_REQUEST_TARGET
-            or not isinstance(root_run_id, str)
+    if (not isinstance(root_run_id, str)
             or re.fullmatch(r'[0-9a-f]{32}', root_run_id) is None):
         raise ValueError('task-ready execution identity is invalid')
     if not isinstance(proxy_base_url, str):
@@ -397,22 +391,35 @@ def create_acp_task_ready_execution_overlay(
     ) if profile['options'][field] is not None]
     output_cap = min(output_values) if output_values else None
     default_adapter_config = {} if output_cap is None else {'maxTokens': output_cap}
-    model_config: dict[str, object] = {'id': TASK_READY_MODEL}
+    model_config: dict[str, object] = {'id': profile['model']}
     if output_cap is not None:
         model_config['maxTokens'] = output_cap
+    if profile['profile_id'] == OFFICIAL_TASK_READY_PROFILE_ID:
+        provider_overlay = [
+            {'id': 'llm-deepseek', 'config': {
+                'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'models': [model_config],
+            }},
+            {'id': 'llm-pi-ai', 'disabled': True},
+        ]
+    else:
+        provider_overlay = [
+            {'id': 'llm-deepseek', 'config': default_adapter_config},
+            {'id': 'llm-pi-ai', 'config': {'providers': {
+                TASK_READY_PROVIDER: {
+                    'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+                    'baseURL': proxy_base_url,
+                    'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                    'headers': {'x-opencode-session': provider_session_id},
+                    'models': [model_config],
+                },
+            }}},
+        ]
     overlay = [
         {'id': 'web-search-deepseek', 'disabled': True},
         {'id': 'tool-web', 'disabled': True},
-        {'id': 'llm-deepseek', 'config': default_adapter_config},
-        {'id': 'llm-pi-ai', 'config': {'providers': {
-            TASK_READY_PROVIDER: {
-                'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
-                'baseURL': proxy_base_url,
-                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
-                'headers': {'x-opencode-session': provider_session_id},
-                'models': [model_config],
-            },
-        }}},
+        *provider_overlay,
         {'insert': [{'id': 'byq-continuation-budget',
                      'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
                      'config': {

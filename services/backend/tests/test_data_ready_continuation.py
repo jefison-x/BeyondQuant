@@ -19,6 +19,10 @@ from app.research import IdempotencyConflict, ResearchStore
 from app.user_auth import UserAuthStore
 from packages.contracts.agent_execution_options import default_agent_execution_options
 from packages.contracts.continuation_request import (
+    ALLOWED_MODEL,
+    ALLOWED_PROVIDER,
+    OFFICIAL_MODEL,
+    OFFICIAL_PROVIDER,
     continuation_request_usage_v2,
     continuation_reservation_v3,
     unknown_actual_usage_v2,
@@ -55,6 +59,11 @@ def setup_ready(monkeypatch, tmp_path, *, outcome='completed'):
     conversation = catalog.create(owner, session_id, trace_id)['conversation_id']
     catalog.close()
     store, backtests, jobs, client, payload = setup_creation(monkeypatch, tmp_path, owner=owner)
+    # Isolated ResearchStore tests inject the same two-field result returned by
+    # CredentialStore.resolve_model_route; production wires the real resolver.
+    store.task_ready_model_route_resolver = lambda _owner: {
+        'provider': ALLOWED_PROVIDER, 'model': ALLOWED_MODEL,
+    }
     task_binding = store._fetch_one('SELECT conversation_id FROM research_tasks WHERE task_id=:task',
         {'task': payload['task_id']})
     assert task_binding['conversation_id'] == conversation
@@ -1106,6 +1115,7 @@ def test_v3_concurrent_claims_persist_one_reservation(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task = fixture['store'], fixture['payload']['task_id']
     other = ResearchStore()
+    other.task_ready_model_route_resolver = store.task_ready_model_route_resolver
     barrier = threading.Barrier(2, timeout=5)
     arrivals = []
     original_task_helper = type(store)._continuation_task
@@ -1738,6 +1748,104 @@ def test_v3_settlement_recomputes_runtime_digest_and_requires_exact_closed_root(
             reservation_id=entry['reservation_id'], idempotency_key=carrier['idempotency_key'],
             status='settled', request_usage=usage, settlement_sha256=digest,
             outcome='completed') == settled
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_new_official_route_snapshot_is_persisted_and_old_event_returns_before_reresolution(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store = fixture['store']
+    try:
+        store.task_ready_model_route_resolver = lambda _owner: {
+            'provider': OFFICIAL_PROVIDER, 'model': OFFICIAL_MODEL,
+        }
+        entry = reserve_v3(fixture)
+        profile = entry['reservation']['execution_profile']
+        assert profile['profile_id'] == 'task-ready-read.official-deepseek.v1'
+        assert profile['provider'] == OFFICIAL_PROVIDER
+        assert profile['model'] == OFFICIAL_MODEL
+        assert profile['upstream_base_url'] == 'https://api.deepseek.com/anthropic'
+        assert profile['upstream_request_target'] == '/v1/messages'
+        assert profile['options_revision'] == 0
+        assert all(value is None for value in entry['reservation']['request_limits'].values())
+
+        before = continuation_budget(store, fixture['payload']['task_id'])
+        assert before == [entry]
+        existing_intent = store.peek_default_continuation_v3(
+            fixture['conversation'], trusted_context=fixture['context'])
+        assert existing_intent['reservation']['execution_profile'] == profile
+        store.task_ready_model_route_resolver = lambda _owner: pytest.fail(
+            'an existing reservation must return before current route resolution')
+        replay = reserve_v3(fixture)
+        assert replay == entry
+        assert continuation_budget(store, fixture['payload']['task_id']) == before
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_new_ready_reservation_fails_closed_without_a_trusted_model_route(monkeypatch, tmp_path):
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store = fixture['store']
+    try:
+        store.task_ready_model_route_resolver = None
+        with pytest.raises(ValueError, match='trusted selected model route'):
+            reserve_v3(fixture)
+        assert continuation_budget(store, fixture['payload']['task_id']) is None
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_backend_claim_uses_owner_binding_route_and_rejects_client_route_fields(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from app import main
+    from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION_V3
+
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store = fixture['store']
+    owner = fixture['owner']
+    calls = []
+
+    class RouteResolver:
+        @staticmethod
+        def resolve_model_route(resolved_owner, agent_id):
+            calls.append((resolved_owner, agent_id))
+            assert resolved_owner == owner
+            assert agent_id == 'byq-product'
+            return {'provider': OFFICIAL_PROVIDER, 'model': OFFICIAL_MODEL}
+
+    monkeypatch.setattr(main, 'research_store', store)
+    monkeypatch.setattr(main, 'credential_store', RouteResolver())
+    store.task_ready_model_route_resolver = lambda resolved_owner: main.credential_store.resolve_model_route(
+        resolved_owner, 'byq-product')
+    headers = {
+        'x-byq-owner-principal': owner,
+        'x-byq-actor-principal': owner,
+        'x-byq-workspace-id': fixture['context']['workspace_id'],
+    }
+    client = TestClient(main.app)
+    path = f"/internal/task-continuation/{fixture['conversation']}"
+    try:
+        peek = client.post(path + '/peek', headers=headers,
+            json={'provider': ALLOWED_PROVIDER, 'model': ALLOWED_MODEL})
+        assert peek.status_code == 200 and peek.json()['status'] == 'eligible'
+        base = {'reservation_schema_version': RESERVATION_SCHEMA_VERSION_V3,
+            'signal_job_id': fixture['job_id']}
+        rejected = client.post(path + '/claim', headers=headers,
+            json={**base, 'provider': ALLOWED_PROVIDER, 'model': ALLOWED_MODEL})
+        assert rejected.status_code == 422
+        assert calls == [(owner, 'byq-product')]
+        claimed = client.post(path + '/claim', headers=headers, json=base)
+        assert claimed.status_code == 200, claimed.text
+        profile = claimed.json()['reservation']['execution_profile']
+        assert profile['provider'] == OFFICIAL_PROVIDER
+        assert profile['model'] == OFFICIAL_MODEL
+        assert calls == [(owner, 'byq-product'), (owner, 'byq-product')]
     finally:
         store.close()
         fixture['backtests'].close()

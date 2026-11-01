@@ -406,6 +406,8 @@ user_store = UserAuthStore.from_env()
 feedback_store = ProductFeedbackStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
+research_store.task_ready_model_route_resolver = lambda owner: credential_store.resolve_model_route(
+    owner, "byq-product")
 operations_store = OperationsStore.from_env()
 plugin_center_store = PluginCenterStore.from_env()
 market_data_store = MarketDataStore.from_env()
@@ -2336,6 +2338,8 @@ def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ResearchPersistenceError as error:
         raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+    except (CredentialUnavailable, CredentialPersistenceError) as error:
+        raise HTTPException(status_code=503, detail="selected model route is unavailable") from error
 
 
 def _optimization_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:

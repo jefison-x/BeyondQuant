@@ -142,6 +142,26 @@ _EVENT_IDEMPOTENCY_SCHEMA_VERSION = 'task-ready-event-idempotency.v1'
 
 _DOMAIN_TOOL_NAMES_V2 = tuple(sorted(ALLOWED_DOMAIN_TOOLS))
 _HARNESS_TOOL_NAMES_V2 = tuple(sorted(ALLOWED_HARNESS_TOOLS))
+OFFICIAL_PROFILE_ID = 'task-ready-read.official-deepseek.v1'
+OFFICIAL_PROFILE_VERSION = 1
+OFFICIAL_PROVIDER = 'deepseek-official'
+OFFICIAL_MODEL = 'deepseek-flash'
+OFFICIAL_UPSTREAM_BASE_URL = 'https://api.deepseek.com/anthropic'
+OFFICIAL_UPSTREAM_REQUEST_TARGET = '/v1/messages'
+_EXECUTION_ROUTES_V2 = {
+    (ALLOWED_PROVIDER, ALLOWED_MODEL): {
+        'profile_id': PROFILE_ID_V2,
+        'profile_version': PROFILE_VERSION_V2,
+        'upstream_base_url': UPSTREAM_BASE_URL,
+        'upstream_request_target': UPSTREAM_REQUEST_TARGET,
+    },
+    (OFFICIAL_PROVIDER, OFFICIAL_MODEL): {
+        'profile_id': OFFICIAL_PROFILE_ID,
+        'profile_version': OFFICIAL_PROFILE_VERSION,
+        'upstream_base_url': OFFICIAL_UPSTREAM_BASE_URL,
+        'upstream_request_target': OFFICIAL_UPSTREAM_REQUEST_TARGET,
+    },
+}
 _PROFILE_V2_FIELDS = frozenset({
     'profile_id', 'profile_version', 'options_schema_version', 'options_revision',
     'options', 'provider', 'model', 'upstream_base_url', 'upstream_request_target',
@@ -158,8 +178,11 @@ def _json_copy(value: object) -> dict:
     return json.loads(json.dumps(value))
 
 
-def execution_profile_v2(options: object, *, revision: int) -> dict:
-    """Bind a trusted option snapshot to the closed F6 route and tool sets.
+def execution_profile_v2(
+    options: object, *, revision: int,
+    provider: str = ALLOWED_PROVIDER, model: str = ALLOWED_MODEL,
+) -> dict:
+    """Bind trusted options to one of two finite F6 routes and closed tool sets.
 
     This is structural profile identity only. It is not a continuation grant or
     proof that a matching business event is eligible for dispatch.
@@ -167,16 +190,21 @@ def execution_profile_v2(options: object, *, revision: int) -> dict:
     normalized = validate_agent_execution_options(options)
     if type(revision) is not int or revision < 0:
         raise ValueError('execution options revision is invalid')
+    if not isinstance(provider, str) or not isinstance(model, str):
+        raise ValueError('continuation execution route is not qualified')
+    route = _EXECUTION_ROUTES_V2.get((provider, model))
+    if route is None:
+        raise ValueError('continuation execution route is not qualified')
     binding = {
-        'profile_id': PROFILE_ID_V2,
-        'profile_version': PROFILE_VERSION_V2,
+        'profile_id': route['profile_id'],
+        'profile_version': route['profile_version'],
         'options_schema_version': AGENT_EXECUTION_OPTIONS_SCHEMA_VERSION,
         'options_revision': revision,
         'options': normalized,
-        'provider': ALLOWED_PROVIDER,
-        'model': ALLOWED_MODEL,
-        'upstream_base_url': UPSTREAM_BASE_URL,
-        'upstream_request_target': UPSTREAM_REQUEST_TARGET,
+        'provider': provider,
+        'model': model,
+        'upstream_base_url': route['upstream_base_url'],
+        'upstream_request_target': route['upstream_request_target'],
         # Domain tools are read-only. Harness lifecycle calls remain required
         # for the existing F6 flow and do not add domain-action authority.
         'allowed_domain_tools': list(_DOMAIN_TOOL_NAMES_V2),
@@ -190,7 +218,10 @@ def validate_execution_profile_v2(value: object) -> dict:
         raise ValueError('continuation execution profile v2 is invalid')
     revision = value.get('options_revision')
     options = validate_agent_execution_options(value.get('options'))
-    expected = execution_profile_v2(options, revision=revision)
+    expected = execution_profile_v2(
+        options, revision=revision,
+        provider=value.get('provider'), model=value.get('model'),
+    )
     if value != expected:
         raise ValueError('continuation execution profile v2 is unqualified')
     return expected
@@ -294,19 +325,24 @@ def _event_idempotency_key_v1(value: dict) -> str:
     return 'task-ready-event:' + _canonical_sha256(identity)
 
 
-def continuation_reservation_v3(
+def continuation_reservation_identity_v3(
     *, owner_principal: str, workspace_id: str, conversation_id: str, task_id: str,
-    event_key: str, signal_job_id: str, result_artifact_id: str,
-    result_artifact_content_sha256: str, options: object, options_revision: int,
+    signal_job_id: str, result_artifact_id: str,
+    result_artifact_content_sha256: str, event_key: str | None = None,
 ) -> dict:
-    """Create a pure carrier for one data-ready event; no grant or TTL is added."""
+    """Build stable source facts without consulting options or a model route.
+
+    The omitted ``event_key`` form derives the canonical task-ready event key.
+    This lets Backend recognize an already persisted reservation before it
+    reads current options or resolves the user's current model selection.
+    """
     value = {
         'schema_version': RESERVATION_SCHEMA_VERSION_V3,
         'owner_principal': owner_principal,
         'workspace_id': workspace_id,
         'conversation_id': conversation_id,
         'task_id': task_id,
-        'event_key': event_key,
+        'event_key': event_key or 'ready-v1:' + '0' * 64,
         'signal_job_id': signal_job_id,
         'signal_job_status': 'completed',
         'result_artifact_id': result_artifact_id,
@@ -314,9 +350,41 @@ def continuation_reservation_v3(
         'result_artifact_status': 'validated',
         'result_artifact_content_sha256': result_artifact_content_sha256,
     }
+    for field in ('owner_principal', 'workspace_id', 'conversation_id'):
+        _require_nonempty_text(value[field], field)
+    for field, pattern in (
+        ('task_id', _TASK_ID_RE), ('signal_job_id', _SIGNAL_JOB_ID_RE),
+        ('result_artifact_id', _ARTIFACT_ID_RE),
+        ('result_artifact_content_sha256', _SHA256_RE),
+    ):
+        if pattern.fullmatch(_require_nonempty_text(value[field], field)) is None:
+            raise ValueError(f'invalid continuation {field}')
+    idempotency_key = _event_idempotency_key_v1(value)
+    if event_key is None:
+        value['event_key'] = 'ready-v1:' + idempotency_key.removeprefix('task-ready-event:')
+    elif _READY_EVENT_RE.fullmatch(_require_nonempty_text(event_key, 'event_key')) is None:
+        raise ValueError('invalid continuation event_key')
     value['source_fact_sha256'] = _canonical_sha256(_source_facts_v1(value))
-    value['idempotency_key'] = _event_idempotency_key_v1(value)
-    profile = execution_profile_v2(options, revision=options_revision)
+    value['idempotency_key'] = idempotency_key
+    return value
+
+
+def continuation_reservation_v3(
+    *, owner_principal: str, workspace_id: str, conversation_id: str, task_id: str,
+    event_key: str, signal_job_id: str, result_artifact_id: str,
+    result_artifact_content_sha256: str, options: object, options_revision: int,
+    provider: str = ALLOWED_PROVIDER, model: str = ALLOWED_MODEL,
+) -> dict:
+    """Create a pure carrier for one data-ready event; no grant or TTL is added."""
+    value = continuation_reservation_identity_v3(
+        owner_principal=owner_principal, workspace_id=workspace_id,
+        conversation_id=conversation_id, task_id=task_id, event_key=event_key,
+        signal_job_id=signal_job_id, result_artifact_id=result_artifact_id,
+        result_artifact_content_sha256=result_artifact_content_sha256,
+    )
+    profile = execution_profile_v2(
+        options, revision=options_revision, provider=provider, model=model,
+    )
     value['execution_profile'] = profile
     value['request_limits'] = request_limits_v2(profile['options'])
     return validate_reservation_v3(value)

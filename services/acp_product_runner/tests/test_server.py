@@ -68,10 +68,11 @@ def _environment(scope: dict[str, str]) -> dict[str, str]:
     return env
 
 
-def _task_ready_environment(scope: dict[str, str]) -> dict[str, str]:
+def _task_ready_environment(scope: dict[str, str], *, official: bool = False) -> dict[str, str]:
     env = _environment(scope)
-    env.pop("DEEPSEEK_API_KEY")
-    env["OPENCODE_API_KEY"] = "opencode-key-qualification-only"
+    if not official:
+        env.pop("DEEPSEEK_API_KEY")
+        env["OPENCODE_API_KEY"] = "opencode-key-qualification-only"
     return env
 
 
@@ -773,11 +774,15 @@ def _ordinary_options_overlay(options=None, *, revision=4):
         overlay, sort_keys=True, separators=(",", ":")).encode()).decode(), overlay
 
 
-def _task_ready_options_overlay(options=None, *, revision=4, root="a" * 32):
+def _task_ready_options_overlay(options=None, *, revision=4, root="a" * 32,
+                                provider=None, model=None):
     import base64
 
     from packages.contracts.agent_execution_options import default_agent_execution_options
-    from packages.contracts.continuation_request import continuation_reservation_v3
+    from packages.contracts.continuation_request import (
+        ALLOWED_MODEL, ALLOWED_PROVIDER, OFFICIAL_MODEL, OFFICIAL_PROVIDER,
+        continuation_reservation_v3,
+    )
     from packages.contracts.product_turn_request import product_turn_execution_limits
 
     values = default_agent_execution_options() if options is None else options
@@ -789,6 +794,7 @@ def _task_ready_options_overlay(options=None, *, revision=4, root="a" * 32):
         result_artifact_id="artifact_" + "4" * 32,
         result_artifact_content_sha256="5" * 64,
         options=values, options_revision=revision,
+        provider=provider or ALLOWED_PROVIDER, model=model or ALLOWED_MODEL,
     )
     profile = carrier["execution_profile"]
     limits = product_turn_execution_limits(values)
@@ -796,22 +802,34 @@ def _task_ready_options_overlay(options=None, *, revision=4, root="a" * 32):
         "max_output_tokens_per_call", "max_output_tokens_total",
     ) if values[field] is not None]
     output_cap = min(output_values) if output_values else None
-    default_config = {} if output_cap is None else {"maxTokens": output_cap}
-    model = {"id": "deepseek-v4.1-flash"}
+    route_provider = provider or ALLOWED_PROVIDER
+    route_model = model or ALLOWED_MODEL
+    model_config = {"id": route_model}
     if output_cap is not None:
-        model["maxTokens"] = output_cap
-    overlay = [
-        {"id": "web-search-deepseek", "disabled": True},
-        {"id": "tool-web", "disabled": True},
-        {"id": "llm-deepseek", "config": default_config},
-        {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": {
+        model_config["maxTokens"] = output_cap
+    if (route_provider, route_model) == (OFFICIAL_PROVIDER, OFFICIAL_MODEL):
+        default_config = {
+            "apiKeyEnv": "DEEPSEEK_API_KEY",
+            "baseURL": "http://172.31.7.9:41337",
+            "retryPolicy": {"mode": "normal", "maxRetries": 0},
+            "models": [model_config],
+        }
+        provider_route = {"id": "llm-pi-ai", "disabled": True}
+    else:
+        default_config = {} if output_cap is None else {"maxTokens": output_cap}
+        provider_route = {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": {
             "api": "openai-completions",
             "apiKeyEnv": "OPENCODE_API_KEY",
             "baseURL": "http://172.31.7.9:41337",
             "retryPolicy": {"mode": "normal", "maxRetries": 0},
             "headers": {"x-opencode-session": "123e4567-e89b-42d3-a456-426614174000"},
-            "models": [model],
-        }}}},
+            "models": [model_config],
+        }}}}
+    overlay = [
+        {"id": "web-search-deepseek", "disabled": True},
+        {"id": "tool-web", "disabled": True},
+        {"id": "llm-deepseek", "config": default_config},
+        provider_route,
         {"insert": [{"id": "byq-continuation-budget",
                      "name": "file:///opt/byq/runtime/byq-continuation-budget.js",
                      "config": {
@@ -873,7 +891,7 @@ def test_ordinary_v2_profile_omits_implicit_output_cap_and_keeps_total_only_decl
 def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runtime(monkeypatch):
     ordinary_b64, _ = _ordinary_options_overlay()
     request, challenge = _signed_start(deadline_at_ms=None, guard_b64=ordinary_b64)
-    _scope_result, _env, deadline, _nonce, _guard = slot._ProductRequestHandler._validate_start(
+    _scope_result, _env, deadline, _nonce, _guard, _binding = slot._ProductRequestHandler._validate_start(
         request, challenge, SECRET)
     assert deadline is None
 
@@ -894,7 +912,7 @@ def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runt
     )
     with monkeypatch.context() as clock_patch:
         clock_patch.setattr(slot, "time", fixed_clock)
-        _scope_result, _env, finite_deadline, _nonce, _guard = (
+        _scope_result, _env, finite_deadline, _nonce, _guard, _binding = (
             slot._ProductRequestHandler._validate_start(
                 finite_request, finite_challenge, SECRET))
     assert finite_deadline is not None
@@ -921,14 +939,14 @@ def test_task_ready_guard_binds_exact_profile_limits_and_signed_root():
     task_ready_env = _task_ready_environment(_scope())
     request, challenge = _signed_start(
         deadline_at_ms=None, guard_b64=guard_b64, env=task_ready_env)
-    _scope_result, _env, deadline, _nonce, _guard = (
+    _scope_result, _env, deadline, _nonce, _guard, _binding = (
         slot._ProductRequestHandler._validate_start(request, challenge, SECRET))
     assert deadline is None
 
     unexpected_provider_env = _environment(_scope())
     credential_request, credential_challenge = _signed_start(
         deadline_at_ms=None, guard_b64=guard_b64, env=unexpected_provider_env)
-    with pytest.raises(slot.ProductSlotError, match="unselected provider credential"):
+    with pytest.raises(slot.ProductSlotError, match="credential does not match"):
         slot._ProductRequestHandler._validate_start(
             credential_request, credential_challenge, SECRET)
 
@@ -965,6 +983,69 @@ def test_task_ready_guard_binds_exact_profile_limits_and_signed_root():
         slot._validate_guard(bad_cap_b64)
 
 
+def test_task_ready_official_guard_binds_messages_route_options_and_exact_key():
+    import base64
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import (
+        OFFICIAL_MODEL, OFFICIAL_PROFILE_ID, OFFICIAL_PROVIDER,
+    )
+
+    guard_b64, overlay = _task_ready_options_overlay(
+        provider=OFFICIAL_PROVIDER, model=OFFICIAL_MODEL)
+    validated = slot._validate_guard(guard_b64)
+    assert validated[2]["config"] == {
+        "apiKeyEnv": "DEEPSEEK_API_KEY",
+        "baseURL": "http://172.31.7.9:41337",
+        "retryPolicy": {"mode": "normal", "maxRetries": 0},
+        "models": [{"id": OFFICIAL_MODEL}],
+    }
+    assert validated[3] == {"id": "llm-pi-ai", "disabled": True}
+    profile = validated[4]["insert"][0]["config"]["executionProfile"]
+    assert (profile["profile_id"], profile["provider"], profile["model"]) == (
+        OFFICIAL_PROFILE_ID, OFFICIAL_PROVIDER, OFFICIAL_MODEL)
+
+    task_ready_env = _task_ready_environment(_scope(), official=True)
+    request, challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=guard_b64, env=task_ready_env)
+    _scope_result, _env, deadline, _nonce, _guard, _binding = (
+        slot._ProductRequestHandler._validate_start(request, challenge, SECRET))
+    assert deadline is None
+
+    for bad_overlay in (
+        (lambda value: value[2]["config"].update({"apiKeyEnv": "OPENCODE_API_KEY"})),
+        (lambda value: value[3].update({"disabled": False})),
+        (lambda value: value[3].update({"disabled": 1})),
+        (lambda value: value[2]["config"]["models"][0].update({"id": "deepseek-chat"})),
+        (lambda value: value[2]["config"].update({"upstream": "https://api.deepseek.com"})),
+    ):
+        changed = json.loads(json.dumps(overlay))
+        bad_overlay(changed)
+        encoded = base64.b64encode(json.dumps(
+            changed, sort_keys=True, separators=(",", ":")).encode()).decode()
+        with pytest.raises(slot.ProductSlotError):
+            slot._validate_guard(encoded)
+
+    wrong_key = _task_ready_environment(_scope())
+    wrong_request, wrong_challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=guard_b64, env=wrong_key)
+    with pytest.raises(slot.ProductSlotError, match="credential does not match"):
+        slot._ProductRequestHandler._validate_start(
+            wrong_request, wrong_challenge, SECRET)
+    both_keys = dict(task_ready_env, OPENCODE_API_KEY="unselected-key")
+    both_request, both_challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=guard_b64, env=both_keys)
+    with pytest.raises(slot.ProductSlotError, match="credential does not match"):
+        slot._ProductRequestHandler._validate_start(
+            both_request, both_challenge, SECRET)
+
+    capped_options = {**default_agent_execution_options(), "max_output_tokens_per_call": 31}
+    capped_b64, capped_overlay = _task_ready_options_overlay(
+        capped_options, provider=OFFICIAL_PROVIDER, model=OFFICIAL_MODEL)
+    assert slot._validate_guard(capped_b64)[2]["config"]["models"] == [
+        {"id": OFFICIAL_MODEL, "maxTokens": 31}]
+    assert "maxTokens" not in capped_overlay[2]["config"]
+
+
 def test_task_ready_start_honors_only_explicit_user_runtime(monkeypatch):
     from packages.contracts.agent_execution_options import default_agent_execution_options
     import base64
@@ -974,7 +1055,7 @@ def test_task_ready_start_honors_only_explicit_user_runtime(monkeypatch):
     task_ready_env = _task_ready_environment(_scope())
     request, challenge = _signed_start(
         deadline_at_ms=None, guard_b64=guard_b64, env=task_ready_env)
-    _scope_result, _env, deadline, _nonce, _guard = (
+    _scope_result, _env, deadline, _nonce, _guard, _binding = (
         slot._ProductRequestHandler._validate_start(request, challenge, SECRET))
     assert deadline is None
     unexpected_deadline, unexpected_challenge = _signed_start(
@@ -998,7 +1079,7 @@ def test_task_ready_start_honors_only_explicit_user_runtime(monkeypatch):
     )
     with monkeypatch.context() as clock_patch:
         clock_patch.setattr(slot, "time", fixed_clock)
-        _scope_result, _env, finite_deadline, _nonce, _guard = (
+        _scope_result, _env, finite_deadline, _nonce, _guard, _binding = (
             slot._ProductRequestHandler._validate_start(
                 finite_request, finite_challenge, SECRET))
     assert finite_deadline is not None

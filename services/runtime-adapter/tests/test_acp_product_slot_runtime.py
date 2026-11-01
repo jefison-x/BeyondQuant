@@ -549,7 +549,8 @@ def _f6_reservation(owner: str, workspace: str, suffix: str) -> dict:
 
 def _task_ready_reservation(
         owner: str, workspace: str, conversation: str,
-        *, identity_marker: str | None = None) -> dict:
+        *, identity_marker: str | None = None,
+        provider: str = "opencode-go-chat", model: str = "deepseek-v4.1-flash") -> dict:
     from packages.contracts.agent_execution_options import default_agent_execution_options
     from packages.contracts.continuation_request import continuation_reservation_v3
 
@@ -573,10 +574,12 @@ def _task_ready_reservation(
         )
     probe = continuation_reservation_v3(
         **fields, event_key="ready-v1:" + "0" * 64,
+        provider=provider, model=model,
     )
     return continuation_reservation_v3(
         **fields,
         event_key="ready-v1:" + probe["idempotency_key"].removeprefix("task-ready-event:"),
+        provider=provider, model=model,
     )
 
 
@@ -646,6 +649,40 @@ def test_task_ready_v3_uses_ordinary_product_acp_without_f6_flag(slot_runtime, m
     assert settled["idempotency_key"] == reservation["idempotency_key"]
     assert settled["request_usage"]["execution_profile"] == reservation["execution_profile"]
     assert settled["request_usage"]["request_limits"] == reservation["request_limits"]
+
+
+def test_task_ready_v3_profile_model_mismatch_is_rejected_before_start(slot_runtime, monkeypatch):
+    runtime, compatibility, registry = slot_runtime
+    monkeypatch.delenv("BYQ_F6_EXECUTOR_ENABLED", raising=False)
+    session_id = "task-ready-v3-route-mismatch"
+    workspace = "workspace_slot_a"
+    _create(runtime, session_id, workspace)
+    record = runtime._get(session_id)
+    reservation = _task_ready_reservation(
+        "slot-owner", workspace, "conversation-" + session_id,
+        provider="deepseek-official", model="deepseek-flash",
+    )
+    reservation_id = _task_ready_reservation_id(reservation)
+    assert (reservation["execution_profile"]["provider"],
+            reservation["execution_profile"]["model"]) == (
+                "deepseek-official", "deepseek-flash")
+    assert (record.model_resolution["provider"], record.model_resolution["model"]) == (
+        "opencode-go-chat", "deepseek-v4.1-flash")
+
+    with pytest.raises(ValueError, match="task-ready profile does not match the native model route"):
+        runtime.submit_prompt(
+            session_id, "route mismatch must fail before START", conversation_context=[],
+            idempotency_key=reservation_id, continuation_budget=reservation,
+        )
+
+    assert compatibility.start_attempts == []
+    assert compatibility.successful_starts == []
+    assert record.status == SessionStatus.READY
+    assert record.process_used is False
+    assert record.current_generation is None
+    assert record.continuation_request_gate is None
+    assert record.continuation_request_proxy is None
+    assert workspace not in registry._leases
 
 
 def test_task_ready_receipt_requires_each_close_ack_and_provider_fact(slot_runtime):

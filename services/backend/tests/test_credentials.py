@@ -272,6 +272,35 @@ def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
     store.close()
 
 
+def test_model_route_resolution_is_nonsecret_and_uses_the_selected_official_binding(monkeypatch) -> None:
+    store = _store()
+    try:
+        credential = store.create_credential("alice", _credential_payload(), actor="alice")
+        profile = store.create_profile("alice", {
+            "credential_id": credential["credential_id"],
+            "key_name": "official-route",
+            "display_name": "Official DeepSeek",
+            "provider": "deepseek",
+            "model": "deepseek-flash",
+        })
+        store.bind("alice", "byq-product", profile["profile_id"])
+
+        def forbidden_decrypt(*_args, **_kwargs):
+            pytest.fail("route resolution must not decrypt a credential")
+
+        monkeypatch.setattr(store.cipher, "decrypt", forbidden_decrypt)
+        route = store.resolve_model_route("alice", "byq-product")
+        assert route == {"provider": "deepseek-official", "model": "deepseek-flash"}
+        assert store.resolve_model_route("bob", "byq-product") is None
+
+        store.revoke_credential(credential["credential_id"], "alice", actor="alice",
+            expected_version=1, request_id="route-revoke")
+        with pytest.raises(CredentialUnavailable):
+            store.resolve_model_route("alice", "byq-product")
+    finally:
+        store.close()
+
+
 def test_opencode_go_credential_resolves_to_the_reviewed_protocol_route() -> None:
     store = _store()
     credential = store.create_credential(

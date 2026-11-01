@@ -113,6 +113,73 @@ def _stop(server, thread):
     thread.join(timeout=2)
 
 
+@pytest.mark.parametrize('terminal', [True, False])
+def test_official_task_ready_messages_proxy_pins_route_headers_and_actual_usage(terminal):
+    profile = execution_profile_v2(_options(), revision=19,
+        provider='deepseek-official', model='deepseek-flash')
+    posts = []
+    events = [
+        {'type': 'message_start', 'message': {'usage': {'input_tokens': 7}}},
+        {'type': 'message_delta', 'usage': {'output_tokens': 3}},
+    ]
+    if terminal:
+        events.append({'type': 'message_stop'})
+    data = ''.join('data: ' + json.dumps(event) + '\n\n' for event in events).encode()
+
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers['content-length']))
+            posts.append((self.path, self.headers.get('anthropic-version'), json.loads(body)))
+            self.send_response(200)
+            self.send_header('content-type', 'text/event-stream')
+            self.send_header('content-length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    server, thread, upstream = _serve(Provider)
+    try:
+        gate = build_task_ready_v2_request_gate(request_id='official-test', execution_profile=profile)
+        assert gate.task_ready_official and gate.task_ready_v2 and not gate.product_turn_official
+        with RequestGateProxy(gate, profile['upstream_base_url']) as proxy:
+            proxy._server.upstream = upstream
+            response = httpx.post(proxy.base_url + '/v1/messages',
+                content=_body(model='deepseek-flash'),
+                headers={'anthropic-version': '2023-06-01'}, timeout=3)
+            assert response.status_code == (200 if terminal else 502)
+        assert len(posts) == 1
+        assert posts[0][0:2] == ('/v1/messages', '2023-06-01')
+        usage = gate.request_usage(tool_calls=0)
+        assert usage['execution_profile'] == profile
+        assert usage['admission_usage']['provider_calls'] == 1
+        if terminal:
+            assert usage['actual_usage']['input_tokens'] == 7
+            assert usage['actual_usage']['output_tokens'] == 3
+            assert usage['actual_usage']['cache_read_tokens'] is None
+            assert gate.settlement_state() == SETTLED_OK
+        else:
+            assert usage['actual_usage']['input_tokens'] is None
+            assert usage['actual_usage']['output_tokens'] is None
+            assert gate.settlement_state() == UNKNOWN_OR_UNPAIRED
+            with pytest.raises(RequestGateBlocked):
+                gate.before_request(_body(model='deepseek-flash'))
+        assert len(posts) == 1
+        for path in ('/chat/completions', '/v1/messages?other=1'):
+            rejected = build_task_ready_v2_request_gate(request_id='official-wrong-path', execution_profile=profile)
+            with RequestGateProxy(rejected, profile['upstream_base_url']) as proxy:
+                proxy._server.upstream = upstream
+                assert httpx.post(proxy.base_url + path, content=_body(model='deepseek-flash'), timeout=3).status_code == 403
+            assert rejected.request_usage(tool_calls=0)['admission_usage']['provider_calls'] == 0
+        wrong_model = build_task_ready_v2_request_gate(request_id='official-wrong-model', execution_profile=profile)
+        with pytest.raises(RequestGateBlocked, match='model_route_unqualified'):
+            wrong_model.before_request(_body())
+        assert len(posts) == 1
+    finally:
+        _stop(server, thread)
+
+
 def test_task_ready_v2_builder_validates_exact_profile_and_limits(monkeypatch):
     profile = _profile()
     gate = build_task_ready_v2_request_gate(
