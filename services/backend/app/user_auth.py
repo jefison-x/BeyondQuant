@@ -26,6 +26,7 @@ _PASSWORD_CHANGE_FAILURE_LIMIT = 5
 _PASSWORD_CHANGE_WINDOW = timedelta(minutes=15)
 _PASSWORD_CHANGE_LOCKOUT = timedelta(minutes=15)
 _UI_PREFERENCES_SCHEMA = "ui-preferences.v1"
+_AGENT_EXECUTION_OPTIONS_SCHEMA = "agent-execution-options.v1"
 _COLOR_MODES = {"system", "light", "dark"}
 _ACCENT_THEMES = {"emerald", "ocean", "indigo", "amber", "graphite"}
 
@@ -145,6 +146,37 @@ def _utc_timestamp(value: object) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _agent_execution_options_projection(
+    owner_principal: str, row: dict[str, Any] | None,
+) -> dict[str, object]:
+    from packages.contracts.agent_execution_options import (
+        default_agent_execution_options,
+        validate_agent_execution_options,
+    )
+
+    if row is None:
+        revision = 0
+        options = default_agent_execution_options()
+        updated_at = None
+    else:
+        revision = row.get("revision")
+        if type(revision) is not int or revision < 1:
+            raise UserAuthPersistenceError("stored agent execution options revision is invalid")
+        try:
+            options = validate_agent_execution_options(row.get("options_json"))
+        except (TypeError, ValueError) as exc:
+            raise UserAuthPersistenceError("stored agent execution options are invalid") from exc
+        updated_at = row.get("updated_at")
+    return {
+        "schema_version": _AGENT_EXECUTION_OPTIONS_SCHEMA,
+        "scope": "user",
+        "owner_principal": owner_principal,
+        "revision": revision,
+        "options": options,
+        "updated_at": updated_at,
+    }
+
+
 class UserAuthStore(PgStoreMixin):
     SCHEMA_DDL: list[str] = [
         """
@@ -193,6 +225,15 @@ class UserAuthStore(PgStoreMixin):
             color_mode TEXT NOT NULL CHECK (color_mode IN ('system', 'light', 'dark')),
             accent_theme TEXT NOT NULL CHECK (accent_theme IN ('emerald', 'ocean', 'indigo', 'amber', 'graphite')),
             version INTEGER NOT NULL CHECK (version > 0),
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_agent_execution_options (
+            user_id TEXT PRIMARY KEY REFERENCES users(user_id),
+            schema_version TEXT NOT NULL CHECK (schema_version = 'agent-execution-options.v1'),
+            revision BIGINT NOT NULL CHECK (revision > 0),
+            options_json JSONB NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL
         )
         """,
@@ -395,6 +436,74 @@ class UserAuthStore(PgStoreMixin):
             )
         assert updated is not None
         return self._ui_preferences_row(updated)
+
+    def get_agent_execution_options(self, user_id: object) -> dict[str, object]:
+        user_id = _user_id(user_id)
+        user = self._fetch_one(
+            "SELECT username, status FROM users WHERE user_id = :user_id",
+            {"user_id": user_id},
+        )
+        if user is None:
+            raise UserNotFound("user not found")
+        if user["status"] != "active":
+            raise UserForbidden("active user required")
+        row = self._fetch_one(
+            "SELECT revision, options_json, updated_at FROM user_agent_execution_options "
+            "WHERE user_id = :user_id",
+            {"user_id": user_id},
+        )
+        return _agent_execution_options_projection(str(user["username"]), row)
+
+    def update_agent_execution_options(self, user_id: object, payload: object) -> dict[str, object]:
+        from packages.contracts.agent_execution_options import validate_execution_options_update
+
+        user_id = _user_id(user_id)
+        expected_revision, options = validate_execution_options_update(payload)
+        now = _now().isoformat()
+        try:
+            with self._transaction() as connection:
+                user = fetch_one(
+                    connection,
+                    "SELECT username, status FROM users WHERE user_id = :user_id FOR UPDATE",
+                    {"user_id": user_id},
+                )
+                if user is None:
+                    raise UserNotFound("user not found")
+                if user["status"] != "active":
+                    raise UserForbidden("active user required")
+                current = fetch_one(
+                    connection,
+                    "SELECT revision FROM user_agent_execution_options WHERE user_id = :user_id FOR UPDATE",
+                    {"user_id": user_id},
+                )
+                revision = 0 if current is None else current["revision"]
+                if type(revision) is not int or revision < 0:
+                    raise UserAuthPersistenceError("stored agent execution options revision is invalid")
+                if revision != expected_revision:
+                    raise UserConflict("agent execution options revision is stale")
+                next_revision = revision + 1
+                if current is None:
+                    execute(connection, """INSERT INTO user_agent_execution_options
+                        (user_id, schema_version, revision, options_json, updated_at)
+                        VALUES (:user_id, :schema_version, :revision, :options, :updated_at)""",
+                        {"user_id": user_id, "schema_version": _AGENT_EXECUTION_OPTIONS_SCHEMA,
+                         "revision": next_revision, "options": options, "updated_at": now})
+                else:
+                    updated = execute(connection, """UPDATE user_agent_execution_options
+                        SET revision=:next_revision, options_json=:options, updated_at=:updated_at
+                        WHERE user_id=:user_id AND revision=:expected_revision
+                        RETURNING revision""",
+                        {"user_id": user_id, "next_revision": next_revision,
+                         "options": options, "updated_at": now,
+                         "expected_revision": expected_revision})
+                    if not updated:
+                        raise UserConflict("agent execution options revision is stale")
+                row = fetch_one(connection, """SELECT revision, options_json, updated_at
+                    FROM user_agent_execution_options WHERE user_id=:user_id""",
+                    {"user_id": user_id})
+            return _agent_execution_options_projection(str(user["username"]), row)
+        except SQLAlchemyError as exc:
+            raise UserAuthPersistenceError("agent execution options could not be updated") from exc
 
     def list_users(self, *, actor_role: str | None = None) -> dict[str, object]:
         if actor_role not in {"admin"}:

@@ -65,23 +65,12 @@ export const systemSettingsGroups: SystemSettingsGroup[] = [
 
 export const systemSettingsItems = systemSettingsGroups.flatMap((group) => group.items);
 
-export const agentRuntimeSettingsItem: SystemSettingsItem = {
-  path: "/settings/agent-runtime",
-  label: "Agent运行参数",
-  description: "按会话设置自动接续",
-  icon: Tools,
-};
-
-const ownerSettingsGroups: SystemSettingsGroup[] = [
-  { label: "会话设置", items: [agentRuntimeSettingsItem] },
-];
-
 export function systemSettingsGroupsForRole(isAdmin: boolean): SystemSettingsGroup[] {
-  return isAdmin ? [...systemSettingsGroups, ...ownerSettingsGroups] : ownerSettingsGroups;
+  return isAdmin ? systemSettingsGroups : [];
 }
 
 export function findSystemSettingsItem(path: string): SystemSettingsItem {
-  return [...systemSettingsItems, agentRuntimeSettingsItem].find((item) => item.path === path) ?? systemSettingsItems[0];
+  return systemSettingsItems.find((item) => item.path === path) ?? systemSettingsItems[0];
 }
 
 const legacySections: Record<string, string> = {

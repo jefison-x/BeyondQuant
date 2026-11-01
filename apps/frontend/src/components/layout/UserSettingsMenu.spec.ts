@@ -48,6 +48,8 @@ describe("UserSettingsMenu", () => {
     expect(wrapper.text()).toContain("Alice 的个人工作区");
     expect(wrapper.text()).toContain("仅你本人可访问 · 无需切换");
     expect(wrapper.text()).not.toContain("反馈与建议");
+    expect(wrapper.text()).toContain("智能助手偏好");
+    expect(wrapper.text()).not.toContain("系统设置");
     expect(wrapper.text()).not.toMatch(/邀请|成员管理|切换工作区|创建工作区/);
     expect(wrapper.html()).not.toContain("workspace_alice");
   });

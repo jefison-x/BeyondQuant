@@ -1250,13 +1250,13 @@ class ResearchContinuationMixin:
                     or artifact['status'] != 'validated'):
                 raise ValueError('signal snapshot is not validated for the exact task')
 
-            options_row = fetch_one(connection, '''SELECT revision, options_json
-                FROM product_conversation_execution_options
-                WHERE conversation_id=:conversation AND owner_principal=:owner
-                  AND workspace_id=:workspace FOR SHARE''',
-                {'conversation': conversation['conversation_id'], 'owner': task['owner_principal'],
-                 'workspace': task['workspace_id']})
+            options_row = fetch_one(connection, '''SELECT o.revision, o.options_json
+                FROM users u LEFT JOIN user_agent_execution_options o ON o.user_id=u.user_id
+                WHERE u.username=:owner AND u.status='active' FOR SHARE OF u''',
+                {'owner': task['owner_principal']})
             if options_row is None:
+                raise ValueError('active user settings owner is unavailable')
+            if options_row['revision'] is None:
                 options, options_revision = default_agent_execution_options(), 0
             else:
                 options_revision = options_row['revision']

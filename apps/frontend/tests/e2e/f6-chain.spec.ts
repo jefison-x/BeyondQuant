@@ -133,8 +133,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         kind: 'signal_snapshot', status: 'validated',
       });
       expect(snapshot.executionOptions).toMatchObject({
-        schema_version: 'agent-execution-options.v1', conversation_id: ids.conversation_id,
-        owner_principal: 'f6-chain-user', workspace_id: ids.workspace_id,
+        schema_version: 'agent-execution-options.v1', scope: 'user',
+        owner_principal: 'f6-chain-user',
         revision: 1, options: { auto_continue: false },
       });
       expect(Object.entries(snapshot.executionOptions.options).filter(([key]) => key !== 'auto_continue')
@@ -148,9 +148,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         && message.content.includes('No domain writes were made.'))).toBe(true);
       authorityConfirmed = true;
       observerStage = 'execution_options_ui';
-      await page.goto(`/settings/agent-runtime?conversation_id=${encodeURIComponent(ids.conversation_id)}`);
-      const settings = page.getByRole('dialog', { name: /系统设置/ }).locator('.runtime-settings');
-      await expect(settings).toContainText(ids.conversation_id);
+      await page.goto('/user/agent-policy');
+      const settings = page.locator('.runtime-settings');
+      await expect(settings).toContainText('本账号所有会话');
       await expect(settings.getByRole('switch', { name: '允许自动接续' })).not.toBeChecked();
       await expect(settings).toContainText('已关闭');
       await page.reload();

@@ -52,7 +52,7 @@ export async function readF6Snapshot(page: Page, currentIds: Record<string, stri
         get(`/api/product/research/tasks/${encodeURIComponent(ids.task_id)}`),
         get(`/api/product/signal-producer/jobs/${encodeURIComponent(ids.signal_job_id)}`),
         get(`/api/product/research/artifacts/${encodeURIComponent(ids.signal_snapshot_artifact_id)}`),
-        get(`/api/product/agent/conversations/${encodeURIComponent(ids.conversation_id)}/execution-options`),
+        get(`/api/product/settings/agent-execution-options`),
         get(`/v1/agent/sessions/${encodeURIComponent(ids.conversation_id)}`),
       ]);
       return { task, job: jobBody.job, artifact, executionOptions, conversation };

@@ -7369,9 +7369,10 @@ class RuntimeAdapter:
     def _load_product_execution_profile(
         self, record: RuntimeSession, root_run_id: str, *, runtime_generation: str,
     ) -> dict[str, object]:
-        """Load the exact trusted conversation settings for one ordinary root.
+        """Load current user settings after proving this root's conversation.
 
-        Both reads are owner/workspace scoped and fenced to this Adapter boot.
+        The conversation read proves owner/workspace and this Adapter boot;
+        the settings read returns the same owner's account-wide revision.
         Any missing identity, transport error, malformed projection or scope
         mismatch stops before a provider proxy or DSH root is started; no error
         path falls back to unbounded defaults.
@@ -7417,21 +7418,19 @@ class RuntimeAdapter:
             conversation_id = conversation.get("conversation_id")
             validate_identifier(conversation_id, field="conversation_id")
             options_response = httpx.get(
-                f"{base}/v1/product/conversations/"
-                f"{quote(conversation_id, safe='')}/execution-options",
+                f"{base}/v1/users/agent-execution-options",
                 headers=headers, timeout=2.0,
             )
             options_response.raise_for_status()
             projection = options_response.json()
             if (not isinstance(projection, dict)
                     or set(projection) != {
-                        "schema_version", "conversation_id", "owner_principal",
-                        "workspace_id", "revision", "options", "updated_at",
+                        "schema_version", "scope", "owner_principal",
+                        "revision", "options", "updated_at",
                     }
                     or projection.get("schema_version") != "agent-execution-options.v1"
-                    or projection.get("conversation_id") != conversation_id
+                    or projection.get("scope") != "user"
                     or projection.get("owner_principal") != owner
-                    or projection.get("workspace_id") != workspace
                     or type(projection.get("revision")) is not int
                     or projection["revision"] < 0
                     or (projection.get("updated_at") is not None

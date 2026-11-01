@@ -5,9 +5,15 @@ import {
   legacySystemSettingsRouteName,
   systemSettingsGroups,
   systemSettingsItems,
+  systemSettingsGroupsForRole,
 } from "./systemSettingsNavigation";
 
 describe("system settings navigation", () => {
+  it("keeps personal Agent preferences out of the administrator surface", () => {
+    expect(systemSettingsGroupsForRole(false)).toEqual([]);
+    expect(systemSettingsGroupsForRole(true).flatMap(group => group.items)
+      .some(item => item.path === "/settings/agent-runtime")).toBe(false);
+  });
   it("defines the closed Phase 45 administrator surface", () => {
     expect(systemSettingsGroups.map((group) => group.label)).toEqual([
       "系统",

@@ -11,7 +11,6 @@ import pytest
 
 from app import main
 from app.backtest_task import task_id_from_signal_job
-from app.conversation_catalog import ConversationCatalogStore
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION_V3
 from tests import test_data_ready_continuation as data_ready
@@ -357,29 +356,21 @@ def test_v3_source_origin_reserves_exact_human_and_agent_jobs(monkeypatch, tmp_p
         conversation_id = fixture["conversation"]
         task_id = fixture["payload"]["task_id"]
         job_id = fixture["job_id"]
-        catalog = ConversationCatalogStore()
-        try:
-            raw_ledger_baseline = continuation_budget(store, task_id)
-            assert raw_ledger_baseline is None
-            catalog.update_execution_options(
-                trusted_context["owner_principal"], trusted_context["workspace_id"],
-                conversation_id, {
-                    "schema_version": "agent-execution-options.v1",
-                    "expected_revision": 0,
-                    "options": {"auto_continue": False},
-                })
-            assert store.peek_default_continuation_v3(
-                conversation_id, trusted_context=trusted_context) == {"status": "waiting"}
-            assert continuation_budget(store, task_id) == raw_ledger_baseline
-            catalog.update_execution_options(
-                trusted_context["owner_principal"], trusted_context["workspace_id"],
-                conversation_id, {
-                    "schema_version": "agent-execution-options.v1",
-                    "expected_revision": 1,
-                    "options": {"auto_continue": True},
-                })
-        finally:
-            catalog.close()
+        raw_ledger_baseline = continuation_budget(store, task_id)
+        assert raw_ledger_baseline is None
+        data_ready.update_user_execution_options(fixture, {
+            "schema_version": "agent-execution-options.v1",
+            "expected_revision": 0,
+            "options": {"auto_continue": False},
+        })
+        assert store.peek_default_continuation_v3(
+            conversation_id, trusted_context=trusted_context) == {"status": "waiting"}
+        assert continuation_budget(store, task_id) == raw_ledger_baseline
+        data_ready.update_user_execution_options(fixture, {
+            "schema_version": "agent-execution-options.v1",
+            "expected_revision": 1,
+            "options": {"auto_continue": True},
+        })
     else:
         fixture = _create_agent_job(monkeypatch, tmp_path, source_kind,
             origin="child" if source_kind == "agent_child_v2_closed_old_boot" else "root",

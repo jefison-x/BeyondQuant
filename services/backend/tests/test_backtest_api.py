@@ -516,11 +516,11 @@ def test_backtest_delete_survives_result_gc_failure(monkeypatch, tmp_path) -> No
     jobs.close()
 
 
-def _create_strategy_chain(client: TestClient, *, key: str) -> dict[str, object]:
+def _create_strategy_chain(client: TestClient, *, key: str, owner: str = "product-user") -> dict[str, object]:
     task = client.post(
         "/v1/research/tasks",
         json={
-            "owner_principal": "product-user", "title": f"Snapshot {key}",
+            "owner_principal": owner, "title": f"Snapshot {key}",
             "objective": "Create validated strategy chain", "trace_id": f"byq-trace-{key}",
             "idempotency_key": f"task-{key}",
         },
@@ -543,7 +543,7 @@ def _create_strategy_chain(client: TestClient, *, key: str) -> dict[str, object]
         "/v1/research/strategies/approvals",
         json={
             "task_id": task["task_id"], "strategy_version_artifact_id": version["artifact"]["artifact_id"],
-            "reviewer_principal": "product-user", "decision": "approved", "trace_id": f"byq-trace-{key}",
+            "reviewer_principal": owner, "decision": "approved", "trace_id": f"byq-trace-{key}",
             "idempotency_key": f"approval-{key}",
         },
     ).json()
@@ -565,7 +565,7 @@ def _snapshot_input() -> dict[str, object]:
     }
 
 
-def _fresh_harness(monkeypatch, tmp_path) -> tuple[ResearchStore, BacktestJobStore, LocalObjectStore, TestClient]:
+def _fresh_harness(monkeypatch, tmp_path, *, owner: str = "product-user") -> tuple[ResearchStore, BacktestJobStore, LocalObjectStore, TestClient]:
     store = ResearchStore()
     jobs = BacktestJobStore()
     objects = LocalObjectStore(tmp_path / "objects")
@@ -573,7 +573,7 @@ def _fresh_harness(monkeypatch, tmp_path) -> tuple[ResearchStore, BacktestJobSto
     monkeypatch.setattr(main, "backtest_store", jobs)
     monkeypatch.setattr(main, "backtest_objects", objects)
     client = TestClient(main.app)
-    client.headers.update(_owner_headers("product-user"))
+    client.headers.update(_owner_headers(owner))
     return store, jobs, objects, client
 
 

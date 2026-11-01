@@ -1,38 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import {
-  AGENT_EXECUTION_OPTIONS_SCHEMA,
-  getAgentExecutionOptions,
-  isAgentExecutionOptionsRecord,
-  listAgentSessions,
-  updateAgentExecutionOptions,
+  AGENT_EXECUTION_OPTIONS_SCHEMA, getAgentExecutionOptions,
+  isAgentExecutionOptionsRecord, updateAgentExecutionOptions,
 } from "@/api/agent";
 import type { AgentExecutionOptions, AgentExecutionOptionsRecord } from "@/api/agent";
-import type { AgentSession } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
 
-const route = useRoute();
-const router = useRouter();
 const auth = useAuthStore();
-const sessions = ref<AgentSession[]>([]);
-const sessionTotal = ref(0);
-const sessionOffset = ref(0);
-const sessionsLoading = ref(false);
-const sessionsError = ref("");
-const selectedConversationId = ref("");
-const requestedConversationId = ref("");
-const selectedSessionMissing = ref(false);
 const options = ref<AgentExecutionOptionsRecord | null>(null);
-const optionsFor = ref("");
-const optionsLoadingFor = ref("");
 const optionsError = ref("");
 const saveNotice = ref("");
-const savingConversationIds = ref(new Set<string>());
+const optionsLoading = ref(false);
+const savingOwners = ref(new Set<string>());
 const updateOperations = new Map<string, symbol>();
 let optionsGeneration = 0;
-let sessionListGeneration = 0;
 let disposed = false;
+const principalScope = () => auth.user?.subject ?? "";
+const optionsSaving = computed(() => savingOwners.value.has(principalScope()));
 
 type NumericOptionKey = Exclude<keyof AgentExecutionOptions, "auto_continue">;
 
@@ -63,7 +48,7 @@ const parameterGroups: Array<{
   {
     label: "自动接续与执行时长",
     fields: [
-      { key: "max_continuations", label: "自动接续次数上限", unit: "次", description: "同一会话、任务和参数版本后续自动接续事件数。" },
+      { key: "max_continuations", label: "自动接续次数上限", unit: "次", description: "每个会话任务在同一用户参数版本下的后续自动接续事件数。" },
       { key: "max_runtime_seconds", label: "单轮时长上限", unit: "秒", description: "单轮执行的最长时长。" },
       { key: "max_no_progress_seconds", label: "单轮无进展时限", unit: "秒", description: "单轮执行无进展的最长时间。" },
       { key: "max_child_runtime_seconds", label: "子 Agent 时长上限", unit: "秒", description: "分别作用于每个子 Agent 执行。" },
@@ -75,12 +60,6 @@ const parameterGroups: Array<{
 const numericOptionKeys = parameterGroups.flatMap((group) => group.fields.map((field) => field.key));
 const draftAutoContinue = ref<boolean | null>(null);
 const draftNumericValues = ref<Record<NumericOptionKey, string> | null>(null);
-
-const selectedSession = computed(() => sessions.value.find((item) => item.session_id === selectedConversationId.value));
-const hasMoreSessions = computed(() => sessionOffset.value < sessionTotal.value);
-const optionsLoading = computed(() => optionsLoadingFor.value === selectedConversationId.value
-  && Boolean(selectedConversationId.value));
-const optionsSaving = computed(() => savingConversationIds.value.has(selectedConversationId.value));
 
 function resetDraft(value: AgentExecutionOptions | null): void {
   draftAutoContinue.value = value?.auto_continue ?? null;
@@ -125,158 +104,35 @@ const draftChanged = computed(() => {
   });
 });
 
-function returnPath(): string {
-  if (selectedConversationId.value) return `/agent?session=${encodeURIComponent(selectedConversationId.value)}`;
-  const candidate = typeof route.query.returnTo === "string" ? route.query.returnTo : "";
-  if (!candidate.startsWith("/") || candidate.startsWith("//")) return "/agent";
-  try {
-    const parsed = new URL(candidate, window.location.origin);
-    if (parsed.origin === window.location.origin && !parsed.pathname.startsWith("/settings/")
-        && !parsed.pathname.startsWith("/admin") && parsed.pathname !== "/login") return candidate;
-  } catch { /* use the Agent entry when the return path is malformed */ }
-  return "/agent";
+
+function isCurrentTarget(generation: number, owner: string): boolean {
+  return !disposed && generation === optionsGeneration && owner === principalScope();
 }
 
-function principalScope(): string {
-  const user = auth.user;
-  if (!user?.subject || !user.workspace?.workspace_id) return "";
-  return JSON.stringify([user.subject, user.workspace.workspace_id]);
-}
-
-function conversationFromPath(value: unknown): string {
-  if (typeof value !== "string" || !value.startsWith("/")) return "";
-  try {
-    const parsed = new URL(value, window.location.origin);
-    if (parsed.origin !== window.location.origin || parsed.pathname !== "/agent") return "";
-    return parsed.searchParams.get("session") ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function requestedSessionFromRoute(): string {
-  return (typeof route.query.conversation_id === "string" && route.query.conversation_id)
-    || conversationFromPath(route.query.returnTo);
-}
-
-function sameOwnerScope(record: AgentExecutionOptionsRecord, scope: string): boolean {
-  if (!scope || !auth.user) return false;
-  return record.owner_principal === auth.user.subject
-    && record.workspace_id === auth.user.workspace.workspace_id;
-}
-
-function isCurrentOptionsTarget(conversationId: string, generation: number, scope: string): boolean {
-  return !disposed && generation === optionsGeneration
-    && conversationId === selectedConversationId.value
-    && scope === principalScope();
-}
-
-function isCurrentSessionListTarget(generation: number, scope: string): boolean {
-  return !disposed && generation === sessionListGeneration && scope === principalScope();
-}
-
-function sessionLabel(session: AgentSession): string {
-  const title = session.title?.trim() || "新投研对话";
-  const updated = session.updated_at?.slice(0, 16).replace("T", " ");
-  return updated ? `${title} · ${updated}` : title;
-}
-
-async function loadOptions(conversationId: string, generation: number, scope: string): Promise<void> {
-  optionsLoadingFor.value = conversationId;
+async function loadOptions(generation: number, owner: string): Promise<void> {
+  optionsLoading.value = true;
   options.value = null;
-  optionsFor.value = "";
   resetDraft(null);
   optionsError.value = "";
   saveNotice.value = "";
   try {
-    const current = await getAgentExecutionOptions(conversationId, auth.token);
-    if (!isCurrentOptionsTarget(conversationId, generation, scope)) return;
-    if (!isAgentExecutionOptionsRecord(current, conversationId) || !sameOwnerScope(current, scope)) {
-      throw new Error("返回的会话参数与当前账户或工作区不匹配");
-    }
+    const current = await getAgentExecutionOptions(auth.token);
+    if (!isCurrentTarget(generation, owner)) return;
+    if (!isAgentExecutionOptionsRecord(current, owner)) throw new Error("返回的用户参数与当前账户不匹配");
     options.value = current;
-    optionsFor.value = conversationId;
     resetDraft(current.options);
   } catch (error) {
-    if (isCurrentOptionsTarget(conversationId, generation, scope)) {
-      optionsError.value = `自动接续状态未知：${error instanceof Error ? error.message : "读取失败"}。请重试读取。`;
+    if (isCurrentTarget(generation, owner)) {
+      optionsError.value = `当前用户参数状态未知：${error instanceof Error ? error.message : "读取失败"}。请重试读取。`;
     }
   } finally {
-    if (generation === optionsGeneration && optionsLoadingFor.value === conversationId) optionsLoadingFor.value = "";
-  }
-}
-
-function updateConversationRoute(conversationId: string): void {
-  const query = { ...route.query };
-  if (conversationId) {
-    query.conversation_id = conversationId;
-    query.returnTo = `/agent?session=${encodeURIComponent(conversationId)}`;
-  } else {
-    delete query.conversation_id;
-  }
-  void router.replace({ path: route.path, query });
-}
-
-watch(selectedConversationId, (conversationId) => {
-  const generation = ++optionsGeneration;
-  options.value = null;
-  optionsFor.value = "";
-  optionsLoadingFor.value = "";
-  resetDraft(null);
-  optionsError.value = "";
-  saveNotice.value = "";
-  selectedSessionMissing.value = Boolean(!conversationId && requestedConversationId.value
-    && !sessions.value.some((item) => item.session_id === requestedConversationId.value));
-  updateConversationRoute(conversationId);
-  if (!conversationId || !sessions.value.some((item) => item.session_id === conversationId)) return;
-  const scope = principalScope();
-  if (!scope) {
-    optionsError.value = "当前账户或工作区身份不可用；自动接续状态未知。";
-    return;
-  }
-  void loadOptions(conversationId, generation, scope);
-}, { flush: "sync" });
-
-async function loadSessions(): Promise<void> {
-  const scope = principalScope();
-  const generation = sessionListGeneration;
-  if (sessionsLoading.value || !scope) return;
-  sessionsLoading.value = true;
-  sessionsError.value = "";
-  try {
-    const response = await listAgentSessions(auth.token, { limit: 50, offset: sessionOffset.value });
-    if (!isCurrentSessionListTarget(generation, scope)) return;
-    if (!Array.isArray(response.sessions) || !Number.isSafeInteger(response.total) || response.total < 0) {
-      throw new Error("会话列表格式无效");
-    }
-    const known = new Set(sessions.value.map((item) => item.session_id));
-    const page = response.sessions.filter((item) => typeof item?.session_id === "string" && item.session_id.length > 0);
-    sessions.value = [...sessions.value, ...page.filter((item) => !known.has(item.session_id))];
-    sessionTotal.value = response.total;
-    sessionOffset.value += response.sessions.length;
-    if (!selectedConversationId.value) {
-      const candidate = requestedConversationId.value;
-      if (candidate && sessions.value.some((item) => item.session_id === candidate)) {
-        selectedConversationId.value = candidate;
-        selectedSessionMissing.value = false;
-      } else if (candidate) {
-        selectedSessionMissing.value = true;
-      }
-    }
-  } catch (error) {
-    if (isCurrentSessionListTarget(generation, scope)) {
-      sessionsError.value = `无法读取本人会话列表：${error instanceof Error ? error.message : "请求失败"}`;
-    }
-  } finally {
-    if (isCurrentSessionListTarget(generation, scope)) sessionsLoading.value = false;
+    if (isCurrentTarget(generation, owner)) optionsLoading.value = false;
   }
 }
 
 function retryOptions(): void {
-  const conversationId = selectedConversationId.value;
-  if (!conversationId || !sessions.value.some((item) => item.session_id === conversationId)) return;
-  const generation = ++optionsGeneration;
-  void loadOptions(conversationId, generation, principalScope());
+  const owner = principalScope();
+  if (owner && !optionsSaving.value) void loadOptions(++optionsGeneration, owner);
 }
 
 function setDraftAutoContinue(value: unknown): void {
@@ -301,109 +157,75 @@ function clearNumericDraft(): void {
 }
 
 function cancelDraft(): void {
-  if (options.value && optionsFor.value === selectedConversationId.value) resetDraft(options.value.options);
+  if (options.value) resetDraft(options.value.options);
   optionsError.value = "";
   saveNotice.value = "";
 }
 
 async function saveOptions(): Promise<void> {
-  const conversationId = selectedConversationId.value;
+  const owner = principalScope();
   const generation = optionsGeneration;
-  const scope = principalScope();
   const current = options.value;
   const updatedOptions = draftValidation.value.options;
-  if (!conversationId || !current || !updatedOptions || !scope
-      || optionsFor.value !== conversationId || !sameOwnerScope(current, scope)
-      || !sessions.value.some((item) => item.session_id === conversationId)
-      || !draftChanged.value || updateOperations.has(conversationId)) return;
-
-  const operation = Symbol(conversationId);
-  updateOperations.set(conversationId, operation);
-  savingConversationIds.value = new Set([...savingConversationIds.value, conversationId]);
+  if (!owner || !current || !isAgentExecutionOptionsRecord(current, owner)
+      || !updatedOptions || !draftChanged.value || updateOperations.has(owner)) return;
+  const operation = Symbol(owner);
+  updateOperations.set(owner, operation);
+  savingOwners.value = new Set([...savingOwners.value, owner]);
   optionsError.value = "";
   saveNotice.value = "";
   try {
-    const updated = await updateAgentExecutionOptions(conversationId, {
+    const updated = await updateAgentExecutionOptions({
       schema_version: AGENT_EXECUTION_OPTIONS_SCHEMA,
       expected_revision: current.revision,
       options: updatedOptions,
     }, auth.token);
-    if (!isCurrentOptionsTarget(conversationId, generation, scope)) return;
-    if (!isAgentExecutionOptionsRecord(updated, conversationId) || !sameOwnerScope(updated, scope)) {
-      throw new Error("返回的会话参数无法验证");
-    }
+    if (!isCurrentTarget(generation, owner)) return;
+    if (!isAgentExecutionOptionsRecord(updated, owner)) throw new Error("返回的用户参数无法验证");
     options.value = updated;
-    optionsFor.value = conversationId;
     resetDraft(updated.options);
-    saveNotice.value = "会话参数已保存";
+    saveNotice.value = "用户运行参数已保存，适用于所有会话的后续执行";
   } catch (error) {
-    if (!isCurrentOptionsTarget(conversationId, generation, scope)) return;
+    if (!isCurrentTarget(generation, owner)) return;
     const detail = error instanceof Error ? error.message : "保存结果未知";
-    // Reconcile a lost/stale PUT response with one authoritative GET; never replay the write.
+    // One authoritative read reconciles a lost or stale response; never replay the write.
     try {
-      const currentAfterSave = await getAgentExecutionOptions(conversationId, auth.token);
-      if (!isCurrentOptionsTarget(conversationId, generation, scope)) return;
-      if (!isAgentExecutionOptionsRecord(currentAfterSave, conversationId) || !sameOwnerScope(currentAfterSave, scope)) {
-        throw new Error("当前会话参数无法验证");
-      }
-      options.value = currentAfterSave;
-      optionsFor.value = conversationId;
-      resetDraft(currentAfterSave.options);
-      optionsError.value = `保存结果未确认：${detail}。已重新读取当前值；如需更改，请再次操作。`;
+      const latest = await getAgentExecutionOptions(auth.token);
+      if (!isCurrentTarget(generation, owner)) return;
+      if (!isAgentExecutionOptionsRecord(latest, owner)) throw new Error("当前用户参数无法验证");
+      options.value = latest;
+      resetDraft(latest.options);
+      optionsError.value = `保存结果未确认：${detail}。已读取最新用户参数，请核对后再操作。`;
     } catch (readError) {
-      if (!isCurrentOptionsTarget(conversationId, generation, scope)) return;
+      if (!isCurrentTarget(generation, owner)) return;
       options.value = null;
-      optionsFor.value = "";
       resetDraft(null);
       optionsError.value = `保存结果未确认，当前值也无法读取：${readError instanceof Error ? readError.message : detail}。请重试读取。`;
     }
   } finally {
-    if (updateOperations.get(conversationId) === operation) {
-      updateOperations.delete(conversationId);
-      const saving = new Set(savingConversationIds.value);
-      saving.delete(conversationId);
-      savingConversationIds.value = saving;
+    if (updateOperations.get(owner) === operation) {
+      updateOperations.delete(owner);
+      const pending = new Set(savingOwners.value);
+      pending.delete(owner);
+      savingOwners.value = pending;
     }
-    if (!disposed && generation !== optionsGeneration
-        && conversationId === selectedConversationId.value && scope === principalScope()) {
-      await loadOptions(conversationId, optionsGeneration, scope);
+    if (!disposed && generation !== optionsGeneration && owner === principalScope()) {
+      void loadOptions(++optionsGeneration, owner);
     }
   }
 }
 
-watch(() => principalScope(), (scope, previousScope) => {
-  if (scope === previousScope) return;
-  sessionListGeneration += 1;
-  optionsGeneration += 1;
-  sessions.value = [];
-  sessionTotal.value = 0;
-  sessionOffset.value = 0;
-  sessionsLoading.value = false;
-  sessionsError.value = "";
-  requestedConversationId.value = "";
-  selectedSessionMissing.value = false;
-  selectedConversationId.value = "";
+watch(principalScope, (owner) => {
+  const generation = ++optionsGeneration;
   options.value = null;
-  optionsFor.value = "";
-  optionsLoadingFor.value = "";
+  optionsLoading.value = false;
   resetDraft(null);
   optionsError.value = "";
   saveNotice.value = "";
-  savingConversationIds.value = new Set();
-  void router.replace({ path: route.path, query: { returnTo: "/agent" } });
-  if (scope) void loadSessions();
-}, { flush: "sync" });
+  if (owner) void loadOptions(generation, owner);
+}, { immediate: true, flush: "sync" });
 
-onMounted(async () => {
-  requestedConversationId.value = requestedSessionFromRoute();
-  await loadSessions();
-});
-
-onBeforeUnmount(() => {
-  disposed = true;
-  optionsGeneration += 1;
-  sessionListGeneration += 1;
-});
+onBeforeUnmount(() => { disposed = true; optionsGeneration += 1; });
 </script>
 
 <template>
@@ -411,9 +233,8 @@ onBeforeUnmount(() => {
     <header class="runtime-heading">
       <div>
         <h2>Agent运行参数</h2>
-        <p>按会话设置自动接续；不影响其他会话。</p>
+        <p>一份用户设置，适用于本账号所有会话的后续执行。</p>
       </div>
-      <el-button text @click="router.push(returnPath())">返回原页面</el-button>
     </header>
 
     <el-alert
@@ -424,41 +245,12 @@ onBeforeUnmount(() => {
     />
 
     <div class="setting-card">
-      <el-form-item label="选定会话">
-        <el-select
-          v-model="selectedConversationId"
-          class="session-select"
-          clearable
-          filterable
-          placeholder="请选择本人会话"
-          aria-label="选定会话"
-          :loading="sessionsLoading"
-        >
-          <el-option
-            v-for="session in sessions"
-            :key="session.session_id"
-            :label="sessionLabel(session)"
-            :value="session.session_id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-button v-if="hasMoreSessions" text :loading="sessionsLoading" @click="loadSessions">加载更多会话</el-button>
-      <p v-if="sessionsError" class="error-copy" role="alert">{{ sessionsError }} <el-button text @click="loadSessions">重试读取</el-button></p>
-      <p v-else-if="selectedSessionMissing" class="warning-copy" role="status">
-        当前已读取的本人会话列表中尚未找到原会话；未读取或修改其参数。{{ hasMoreSessions ? "可继续加载历史会话，或手动选择一个会话。" : "请从当前列表中手动选择会话。" }}
-      </p>
-      <p v-if="selectedSession" class="selected-session" aria-live="polite">
-        当前会话：{{ selectedSession.title?.trim() || "新投研对话" }} · {{ selectedConversationId }}
-      </p>
-    </div>
-
-    <div v-if="selectedConversationId && selectedSession" class="setting-card">
-      <p v-if="optionsLoading" role="status">正在读取所选会话的当前参数；读取完成前状态未知。</p>
-      <template v-else-if="options && optionsFor === selectedConversationId && draftNumericValues">
+      <p v-if="optionsLoading" role="status">正在读取当前用户的运行参数；读取完成前状态未知。</p>
+      <template v-else-if="options && draftNumericValues">
         <div class="setting-row">
           <div>
             <strong>自动接续</strong>
-            <p>只作用于后续自动接续事件；不会取消已运行任务，也不改变它保存的参数快照。</p>
+            <p>所有会话共用此配置。保存后用于后续执行；已经开始的任务保留原参数快照。</p>
           </div>
           <div class="setting-value">
             <el-switch
@@ -515,10 +307,10 @@ onBeforeUnmount(() => {
       </template>
       <p v-else role="status">当前参数状态未知；未使用本地默认值。</p>
       <p v-if="optionsError" class="error-copy" role="alert">{{ optionsError }}</p>
-      <el-button v-if="optionsError && !optionsLoading" text @click="retryOptions">重新读取会话参数</el-button>
+      <el-button v-if="optionsError && !optionsLoading" text @click="retryOptions">重新读取用户参数</el-button>
     </div>
 
-    <el-empty v-else-if="!sessionsLoading && !sessionsError && sessions.length === 0" description="当前没有可设置的会话" />
+    <p class="parameter-note">原会话级参数保留为历史记录，不再单独覆盖此用户配置。</p>
   </section>
 </template>
 
@@ -528,8 +320,6 @@ onBeforeUnmount(() => {
 .runtime-heading h2 { color: var(--byq-text); font-size: 20px; margin: 0 0 5px; }
 .runtime-heading p, .setting-row p, .parameter-note, .selected-session, .parameter-actions > span, .parameter-grid small { color: var(--byq-text-muted); font-size: 12px; line-height: 1.6; margin: 0; }
 .setting-card { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 12px; padding: 16px; }
-.session-select { max-width: 520px; width: 100%; }
-.selected-session { overflow-wrap: anywhere; }
 .setting-row { align-items: center; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 .setting-row strong { color: var(--byq-text); font-size: 14px; }
 .setting-row p { margin-top: 4px; max-width: 580px; }

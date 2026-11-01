@@ -33,10 +33,6 @@ function safeReturnPath(): string {
     !candidate.startsWith("/settings/") &&
     !candidate.startsWith("/admin")
   ) return candidate;
-  const conversationId = typeof route.query.conversation_id === "string" ? route.query.conversation_id : "";
-  if (route.path === "/settings/agent-runtime" && conversationId) {
-    return `/agent?session=${encodeURIComponent(conversationId)}`;
-  }
   return "/agent";
 }
 

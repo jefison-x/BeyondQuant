@@ -47,19 +47,10 @@ async function handleCommand(command: string) {
     const returnTo = route.path.startsWith("/settings/")
       ? (typeof route.query.returnTo === "string" ? route.query.returnTo : "/agent")
       : route.fullPath;
-    const contextPath = route.path.startsWith("/settings/") ? returnTo : route.fullPath;
-    let conversationId = typeof route.query.conversation_id === "string" ? route.query.conversation_id : "";
-    try {
-      const contextUrl = new URL(contextPath, window.location.origin);
-      if (contextUrl.origin === window.location.origin && contextUrl.pathname === "/agent") {
-        conversationId ||= contextUrl.searchParams.get("session") ?? "";
-      }
-    } catch { /* an invalid return path will be rejected by the settings layout */ }
-    const query: Record<string, string> = { returnTo };
-    if (conversationId) query.conversation_id = conversationId;
+    if (!auth.isAdmin) return;
     await router.push({
-      path: auth.isAdmin ? "/settings/system/overview" : "/settings/agent-runtime",
-      query,
+      path: "/settings/system/overview",
+      query: { returnTo },
     });
     return;
   }
@@ -95,7 +86,7 @@ async function handleCommand(command: string) {
           <el-dropdown-item command="/user/agent-policy"><el-icon><SetUp /></el-icon>智能助手偏好</el-dropdown-item>
           <el-dropdown-item command="/user/research"><el-icon><Bell /></el-icon>审批历史</el-dropdown-item>
           <el-dropdown-item command="/user/reset" divided><el-icon><RefreshLeft /></el-icon>重置工作区</el-dropdown-item>
-          <el-dropdown-item command="system-settings"><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
+          <el-dropdown-item v-if="auth.isAdmin" command="system-settings"><el-icon><Tools /></el-icon>系统设置</el-dropdown-item>
           <el-dropdown-item command="logout" divided>
             <el-icon><SwitchButton /></el-icon>
             退出登录

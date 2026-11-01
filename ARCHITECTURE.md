@@ -32,6 +32,11 @@ Engineering Codex/Dev MCP → isolated worktree/tests/PR (separate plane)
   at rest where persisted, and be resolved only by trusted BYQ services. Logs,
   build/release artifacts and backups MUST NOT contain plaintext secrets.
   The repository license's prohibition on live trading remains in force.
+- Agent execution options belong to the durable BYQ user and apply across that
+  user's conversations and workspaces. New executions read the current user
+  revision; existing execution snapshots and unknown outcomes remain immutable.
+  Users manage their own options in personal assistant preferences under
+  [ADR-0111](docs/architecture/adr/ADR-0111-automatic-continuation-execution-parameters.md).
 - Persistent results use Artifact IDs. DB state is current truth; events notify;
   structured audit observes. Business financial/authorization records remain
   authoritative domain facts. Approval levels are AUTO, DECISION and ACTION.

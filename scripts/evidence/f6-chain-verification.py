@@ -542,9 +542,9 @@ def _validate_settlement_identity(candidate: object, options_view: dict) -> dict
     require(carrier["execution_profile"] == _execution_profile_v2(
                 options_view["options"], revision=options_view["revision"])
             and carrier["request_limits"] == _request_limits_v2(options_view["options"])
-            and carrier["conversation_id"] == options_view["conversation_id"]
+            and carrier["conversation_id"] == state["identities"].get("conversation_id")
             and carrier["owner_principal"] == options_view["owner_principal"]
-            and carrier["workspace_id"] == options_view["workspace_id"]
+            and carrier["workspace_id"] == state["identities"].get("workspace_id")
             and carrier["task_id"] == state["identities"].get("task_id"),
             "background_execution_options_binding_changed")
     runtime_root_id = candidate.get("run_id")
@@ -1093,11 +1093,10 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
 
 
 def _permission_view(api_call, conversation_id: str, *, timeout: float = 15) -> dict[str, object]:
-    view = api_call("GET", f"/api/product/agent/conversations/{conversation_id}/execution-options", timeout=timeout)
+    view = api_call("GET", "/api/product/settings/agent-execution-options", timeout=timeout)
     require(isinstance(view, dict) and view.get("schema_version") == "agent-execution-options.v1"
-            and view.get("conversation_id") == conversation_id
+            and view.get("scope") == "user"
             and view.get("owner_principal") == "f6-chain-user"
-            and view.get("workspace_id") == state["identities"].get("workspace_id")
             and type(view.get("revision")) is int and view["revision"] >= 0
             and isinstance(view.get("options"), dict),
             "execution_options_identity_changed")
@@ -1196,7 +1195,7 @@ def _revoke_exact_grant(api_call) -> None:
     state["options_disable_attempted"] = True
     state["mutation_attempts"].append("execution_options_disable")
     try:
-        updated = api_call("PUT", f"/api/product/agent/conversations/{conversation_id}/execution-options",
+        updated = api_call("PUT", "/api/product/settings/agent-execution-options",
             {"schema_version": "agent-execution-options.v1", "expected_revision": view["revision"],
              "options": expected_options}, expected=200, timeout=20)
         require(isinstance(updated, dict) and updated.get("revision") == view["revision"] + 1
