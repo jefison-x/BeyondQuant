@@ -1,6 +1,6 @@
 # ADR-0116 — 官方 DeepSeek 的 ACP F6 资格
 
-- Status: **Accepted — 实现与真实资格待验收** (2026-11-01).
+- Status: **Accepted — 实现通过定向门禁；真实资格待验收** (2026-11-01).
 - Acceptance: 维护者在该精确方案独立审查通过后回复：“接受 ADR-0116，继续实施验收”。接受范围为本文件的官方 DeepSeek F6 profile、隔离实现和真实验收；不授权发布、运行栈部署或 Product Phase 推进。
 - Scope: 在固定官方 DSH ACP rc.2 上，为现有官方 DeepSeek 路线增加一个独立的 F6 接续 profile。
 - Accepted extension: ADR-0103/0105 的精确 provider/model 接纳范围；保留 ADR-0111 的自动接续与执行参数语义。
@@ -76,3 +76,11 @@ OpenCode Go 额度已耗尽，不能把旧路线当作本轮真实验收入口�
 维护者已明确接受本 ADR，授权实施该扩展和相应隔离真实验收。
 提交、push/PR、merge、release
 与运行栈部署继续遵循各自授权；不将过去 PR #418 的合并例外作为本任务权限。
+
+## 实现检查点
+
+实现提交 `771cd22c`，测试断言修正提交 `dd1ae266`。独立审查对源码、受影响
+定向测试和架构给出 PASS；四个必要测试角色已局部更新并健康，旧容器和卷保留。
+当前验收窗口尚未完成原账号正常登录，真实模型/SignalJob/F6 链为 **NOT_RUN**，
+不由本实现检查点宣称官方 F6 已有真实资格。详见
+[本轮证据和限制](../../evidence/acp-official-deepseek-f6-20261101.md)。
