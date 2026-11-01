@@ -137,10 +137,31 @@ ID/镜像未变。原页URL和旧回复均直接读回；本轮结果页保留�
 ResearchTask 仍 planned，派生回测只到 ready_to_execute，没有提交回测 Job；信号夹具
 覆盖19个交易日/38个数据单元、缺失0，不构成研究任务完成、策略质量或真实行情证明。
 原 Runner 广检及采集失败、部分旧日志 NOT_CAPTURED 保留，不覆盖为全套PASS。
-当前没有 push/PR/hosted CI、merge、release 或运行栈部署；Phase17保持 OPEN，未启动
+上述本地验收检查点没有 push/PR/hosted CI、merge、release 或运行栈部署；Phase17保持 OPEN，未启动
 Phase18。
 
 最终门禁：Tester `real-f6-evidence-review.md` → 独立 Sol Reviewer
 `real-f6-independent-review.md` → Root，均为本次有界真实 F6 与单请求 UI 收据 PASS。
 这些结论保留上述合成数据、planned任务状态、逐 Root native flag直接留档缺口及
 原始 FAIL/NOT_CAPTURED 边界，不扩展为整体 Product、全局监测或发布资格。
+
+## PR #419 首次 CI 与夹具修正 — 2026-11-02
+
+维护者随后明确授权“推送合并”。Draft PR #419 的首个精确 head
+`722935503a80187f2bc889126676233d62cdee93` 对应 CI run `41353802963`：
+六个组件 lane 通过；Backend 同一模块19项失败，Integration 在105项离线 F6
+合同通过后未观察到后台 Root，均保留为 FAIL，不用本地真实链抵消。
+
+源码核对显示旧 keyless F6 用户夹具和 Agent 接续单测缺少新增合同要求的 owner
+模型路线绑定；另一个单测把随机会话 ID 的前缀误当完整 ID。修正只补齐既有测试
+夹具：精确绑定合成 Runtime 使用的旧 provider/model，用同一 CI 环境加密配置
+写入并解析无效于真实上游的合成凭据，模型发现使用本地 callback；身份断言继续
+核对实际完整会话 ID。生产缺绑定拒绝规则不变。远端只保存了闭合失败分类，
+未直接留档其隐藏异常分支；最终是否解决集成失败由新 head 的远端 CI 判定。
+这次修正不重跑已完成真实模型/Job 链，不修改测试页面、原数据或运行栈。
+
+独立测试在新增隔离测试数据库执行：单模块首轮22 PASS / 1 FAIL（测试会话 ID
+超过64字符），缩短测试前缀后仅复测该失败节点1 PASS；原失败保留，不改写为
+整模块重跑通过。既有 `user` 夹具连续两次执行均 exit0、返回相同 workspace，
+同环境凭据解密及精确模型路线校验通过。最初挂载遮住镜像插件注册表导致的
+collection失败（0 tests / 0 schema resets）也保留。上述定向检查不替代新 head CI。

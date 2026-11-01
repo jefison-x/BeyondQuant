@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 import math
 import os
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from app import main
 from app.backtest_task import task_id_from_signal_job
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
-from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION_V3
+from packages.contracts.continuation_request import (
+    ALLOWED_MODEL,
+    ALLOWED_PROVIDER,
+    RESERVATION_SCHEMA_VERSION_V3,
+)
 from tests import test_data_ready_continuation as data_ready
 from tests.test_acp_backtest_task_submission import (
     _close_setup,
@@ -135,6 +139,13 @@ def _create_agent_job(monkeypatch, tmp_path, label: str, *, origin: str = "root"
                       negative_zero_case: bool = False):
     monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "test-runtime-authority")
     fixture = _setup_acp_task(monkeypatch, tmp_path, label)
+    expected_owner = fixture["context"]["x-byq-owner-principal"]
+
+    def resolve_test_model_route(owner):
+        assert owner == expected_owner
+        return {"provider": ALLOWED_PROVIDER, "model": ALLOWED_MODEL}
+
+    fixture["research"].task_ready_model_route_resolver = resolve_test_model_route
     if origin == "child" or negative_zero_case:
         aborted = _abort_tool(
             fixture["agent_store"], fixture["context"], fixture["identity"],
@@ -710,11 +721,14 @@ def test_v3_source_recheck_rejects_changed_facts_without_ledger_mutation(
 def test_authorize_tool_admits_exact_source_after_start_and_two_reads(
         monkeypatch, tmp_path, source_kind):
     if source_kind == "human_v1":
-        runtime_session = f"session-authorize-{uuid4().hex}"
+        session_prefix = f"session-auth-{uuid4().hex[:8]}"
         assert data_ready.TRACE == "byq-trace-task-receipt"
-        monkeypatch.setattr(data_ready, "SESSION", runtime_session)
+        monkeypatch.setattr(data_ready, "SESSION", session_prefix)
         fixture = setup_ready(monkeypatch, tmp_path)
-        assert fixture["context"]["session_id"] == runtime_session
+        runtime_session = fixture["context"]["session_id"]
+        assert runtime_session.startswith(session_prefix + "-")
+        runtime_session_suffix = runtime_session.removeprefix(session_prefix + "-")
+        assert UUID(runtime_session_suffix).hex == runtime_session_suffix
         assert fixture["context"]["trace_id"] == data_ready.TRACE
         store = fixture["store"]
         trusted_context = trusted_v3_tool_context(fixture)
@@ -746,6 +760,13 @@ def test_authorize_tool_admits_exact_source_after_start_and_two_reads(
             trusted_context=trusted_context,
         )
         runtime_root = _open_authorize_runtime_root(fixture, trusted_context, source_kind)
+        if source_kind == "human_v1":
+            root_scope = runtime_root["store"]._fetch_one(
+                "SELECT session_id FROM agent_runtime_turns WHERE root_run_id=:root",
+                {"root": runtime_root["root_run_id"]},
+            )
+            assert root_scope is not None
+            assert root_scope["session_id"] == runtime_session
         reservation_id = claimed["receipt"]["reservation_id"]
         expected = {
             "schema_version": "continuation-action-admission.v1",
