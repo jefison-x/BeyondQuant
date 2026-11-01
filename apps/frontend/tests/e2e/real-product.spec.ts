@@ -724,7 +724,7 @@ async function legacyFeedbackBookmarkJourney({ page, baseURL }: { page: Page; ba
 }
 
 for (const viewport of ['desktop', 'mobile'] as const) {
-  test(`F6 real Product API auto-continuation option persists and remains owner-scoped (${viewport})`, async ({ page, browser, baseURL }, testInfo) => {
+  test(`User Agent settings real Product API persistence and owner isolation (${viewport})`, async ({ page, browser, baseURL }, testInfo) => {
     await page.setViewportSize(viewport === 'desktop' ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
     const unexpected = new Set<string>();
     const errors: string[] = [];
@@ -737,17 +737,11 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/login');
-    await page.getByLabel('用户名').fill(`f6-browser-${viewport}`);
-    await page.getByLabel('密码').fill('test-password-123');
+    await page.getByLabel('用户名').fill(process.env.BYQ_USER_OPTIONS_USERNAME ?? `f6-browser-${viewport}`);
+    await page.getByLabel('密码').fill(process.env.BYQ_USER_OPTIONS_PASSWORD ?? 'test-password-123');
     await page.getByRole('button', { name: '进入' }).click();
     await expect(page).toHaveURL(/\/agent$/);
     const identity = await (await page.request.get('/api/product/auth/me')).json();
-    const sessionsResponse = await page.request.get('/v1/agent/sessions');
-    expect(sessionsResponse.status()).toBe(200);
-    const sessions = (await sessionsResponse.json()).sessions as Array<{ session_id: string }>;
-    expect(sessions).toHaveLength(1);
-    const conversationId = sessions[0].session_id;
-    expect(conversationId).toMatch(/^conversation_[0-9a-f]{32}$/);
     const optionsPath = `/api/product/settings/agent-execution-options`;
     const initialResponse = await page.request.get(optionsPath);
     expect(initialResponse.status()).toBe(200);
@@ -759,6 +753,7 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await page.goto('/user/agent-policy');
     const settings = page.locator('.runtime-settings');
     await expect(settings).toContainText('本账号所有会话');
+    await expect(settings.getByRole('combobox')).toHaveCount(0);
     const autoContinue = settings.getByRole('switch', { name: '允许自动接续' });
     await expect(autoContinue).toBeChecked();
     await settings.locator('.setting-value .el-switch').click();
@@ -782,8 +777,8 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     try {
       const otherPage = await other.newPage();
       await otherPage.goto('/login');
-      await otherPage.getByLabel('用户名').fill(`f6-browser-${viewport === 'desktop' ? 'mobile' : 'desktop'}`);
-      await otherPage.getByLabel('密码').fill('test-password-123');
+      await otherPage.getByLabel('用户名').fill(process.env.BYQ_USER_OPTIONS_PEER_USERNAME ?? `f6-browser-${viewport === 'desktop' ? 'mobile' : 'desktop'}`);
+      await otherPage.getByLabel('密码').fill(process.env.BYQ_USER_OPTIONS_PEER_PASSWORD ?? 'test-password-123');
       await otherPage.getByRole('button', { name: '进入' }).click();
       await expect(otherPage).toHaveURL(/\/agent$/);
       const otherOptions = await otherPage.request.get(optionsPath);
@@ -793,6 +788,12 @@ for (const viewport of ['desktop', 'mobile'] as const) {
       expect(otherSettings).toMatchObject({ scope: 'user', options: { auto_continue: true } });
       expect((await (await page.request.get(optionsPath)).json()).options.auto_continue).toBe(false);
     } finally { await other.close(); }
+    const restored = await page.request.put(optionsPath, {
+      headers: { Origin: origin },
+      data: { schema_version: 'agent-execution-options.v1', expected_revision: updated.revision, options: initial.options },
+    });
+    expect(restored.status()).toBe(200);
+    expect((await restored.json()).options).toEqual(initial.options);
     expect([...unexpected]).toEqual([]);
     expect(errors).toEqual([]);
   });
