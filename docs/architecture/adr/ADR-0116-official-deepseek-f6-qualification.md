@@ -1,9 +1,9 @@
 # ADR-0116 — 官方 DeepSeek 的 ACP F6 资格
 
-- Status: **Proposed** (2026-11-01).
-- Acceptance: 尚无维护者对本决策的接受记录；本文件不放行实现或真实 F6。
+- Status: **Accepted — 实现与真实资格待验收** (2026-11-01).
+- Acceptance: 维护者在该精确方案独立审查通过后回复：“接受 ADR-0116，继续实施验收”。接受范围为本文件的官方 DeepSeek F6 profile、隔离实现和真实验收；不授权发布、运行栈部署或 Product Phase 推进。
 - Scope: 在固定官方 DSH ACP rc.2 上，为现有官方 DeepSeek 路线增加一个独立的 F6 接续 profile。
-- Proposed extension: ADR-0103/0105 的精确 provider/model 接纳范围；保留 ADR-0111 的自动接续与执行参数语义。
+- Accepted extension: ADR-0103/0105 的精确 provider/model 接纳范围；保留 ADR-0111 的自动接续与执行参数语义。
 - Non-scope: Judgment、任意 provider router、新 Harness、DSH fork、旧结果重放、Product Phase 推进、发布或运行栈部署。
 
 ## 已确认的缺口
@@ -23,7 +23,7 @@ OpenCode Go 额度已耗尽，不能把旧路线当作本轮真实验收入口�
 普通真实回复/ACK 和 hosted synthetic F6 均保留其原范围，不作为本次真实 F6 PASS。
 旧真实 F6 的已提交或未知输入、Job、reservation、receipt 及失败证据保持原样。
 
-## 拟接受的最小决策
+## 接受的最小决策
 
 1. 保留旧 F6 profile 的内容、版本、哈希和历史解释，新增独立版本化的
    `task-ready-read.official-deepseek.v1` profile。只接纳
@@ -73,6 +73,6 @@ OpenCode Go 额度已耗尽，不能把旧路线当作本轮真实验收入口�
 
 ## 授权边界
 
-用户已要求继续当前真实 F6；本 Proposed ADR 使必要的 provider 资格扩展可审阅。
-维护者接受后才实施该扩展和相应隔离真实验收。提交、push/PR、merge、release
+维护者已明确接受本 ADR，授权实施该扩展和相应隔离真实验收。
+提交、push/PR、merge、release
 与运行栈部署继续遵循各自授权；不将过去 PR #418 的合并例外作为本任务权限。
