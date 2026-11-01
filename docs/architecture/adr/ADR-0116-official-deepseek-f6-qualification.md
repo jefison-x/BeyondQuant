@@ -1,6 +1,6 @@
 # ADR-0116 — 官方 DeepSeek 的 ACP F6 资格
 
-- Status: **Accepted — 实现通过定向门禁；真实资格待验收** (2026-11-01).
+- Status: **Accepted — 有界真实 F6 链通过；行情为合成夹具范围** (2026-11-01).
 - Acceptance: 维护者在该精确方案独立审查通过后回复：“接受 ADR-0116，继续实施验收”。接受范围为本文件的官方 DeepSeek F6 profile、隔离实现和真实验收；不授权发布、运行栈部署或 Product Phase 推进。
 - Scope: 在固定官方 DSH ACP rc.2 上，为现有官方 DeepSeek 路线增加一个独立的 F6 接续 profile。
 - Accepted extension: ADR-0103/0105 的精确 provider/model 接纳范围；保留 ADR-0111 的自动接续与执行参数语义。
@@ -81,6 +81,11 @@ OpenCode Go 额度已耗尽，不能把旧路线当作本轮真实验收入口�
 
 实现提交 `771cd22c`，测试断言修正提交 `dd1ae266`。独立审查对源码、受影响
 定向测试和架构给出 PASS；四个必要测试角色已局部更新并健康，旧容器和卷保留。
-当前验收窗口尚未完成原账号正常登录，真实模型/SignalJob/F6 链为 **NOT_RUN**，
-不由本实现检查点宣称官方 F6 已有真实资格。详见
+先前独立浏览器401并非原账号未登录；原 IAB 登录现已复用，没有重置密码。
+本轮实际完成2次前台、1次自动后台、1个 SignalJob、3个终态 Root；单请求用量与
+刷新后的只读 UI 一致。Tester、独立 Reviewer 和 Root 对此有界真实链给出 PASS。
+Runtime/Runner执行源为 `771cd22c`，必要的资源选择修正为 `a4524b55`，只读收据
+投影/UI为 `83b18aab`。数据为明确标注的既有合成行情夹具，不证明真实Tushare、
+策略质量、整个研究任务完成或 Phase17关闭；前两 Root native close逐项标志未直接
+存档，仅有严格复用门和实际后续复用支持的机制推断。详见
 [本轮证据和限制](../../evidence/acp-official-deepseek-f6-20261101.md)。
