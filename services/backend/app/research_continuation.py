@@ -879,10 +879,40 @@ class ResearchContinuationMixin:
         return ResearchContinuationMixin._permission_blocked_reason(task, conversation)
 
     @staticmethod
+    def _automatic_request_view(task):
+        """Project the latest validated v3 request without legacy accounting."""
+        rows = task.get('continuation_budget') or []
+        if not isinstance(rows, list):
+            return None
+        latest = next((row for row in reversed(rows)
+            if _is_v3_ledger_entry(row)
+            or (isinstance(row, dict) and isinstance(row.get('reservation'), dict)
+                and row['reservation'].get('schema_version') == RESERVATION_SCHEMA_VERSION_V3)), None)
+        if latest is None:
+            return None
+        entry = _validate_v3_ledger_entry(latest)
+        reservation = entry['reservation']
+        return {
+            'schema_version': 'task-ready-request-view.v1',
+            'reservation_id': entry['reservation_id'],
+            'task_id': reservation['task_id'],
+            'signal_job_id': entry['signal_job_id'],
+            'result_artifact_id': reservation['result_artifact_id'],
+            'status': entry['status'],
+            'dispatch_attempts': entry.get('dispatch_attempts', 0),
+            'run_id': entry.get('run_id'),
+            'outcome': entry.get('outcome'),
+            'execution_profile': reservation['execution_profile'],
+            'request_usage': entry.get('request_usage'),
+            'settlement_sha256': entry.get('settlement_sha256'),
+        }
+
+    @staticmethod
     def _continuation_view(task, conversation):
+        automatic_request = ResearchContinuationMixin._automatic_request_view(task)
         ledger = task.get("continuation_permission")
         if ledger is None:
-            return {
+            view = {
                 'schema_version': PERMISSION_SCHEMA_VERSION,
                 'task_id': task['task_id'],
                 'permission': None,
@@ -893,6 +923,9 @@ class ResearchContinuationMixin:
                 'can_start': False,
                 'blocked_reason': 'permission_missing',
             }
+            if automatic_request is not None:
+                view['automatic_request'] = automatic_request
+            return view
         public = {key: value for key, value in ledger.items() if key not in {"idempotency_key", "request_sha256", "handoff_version"}}
         rows = task.get('continuation_budget') or []
         if _is_v2_permission(ledger):
@@ -931,7 +964,7 @@ class ResearchContinuationMixin:
                     reason = 'continuation_request_exhausted'
                 elif reason is None:
                     reason = task.get('continuation_blocked_reason') or 'waiting_for_event'
-            return {
+            view = {
                 'schema_version': PERMISSION_SCHEMA_VERSION,
                 'task_id': task['task_id'],
                 'permission': public,
@@ -942,6 +975,9 @@ class ResearchContinuationMixin:
                 'blocked_event_key': task.get('continuation_blocked_event_key'),
                 'blocked_reason_detail': task.get('continuation_blocked_reason'),
             }
+            if automatic_request is not None:
+                view['automatic_request'] = automatic_request
+            return view
         # A v3 event carrier is not a v1 token-budget receipt. Keep historical
         # legacy projections from interpreting its shape or accounting fields.
         legacy_rows = [row for row in rows if not _is_v3_ledger_entry(row)]
@@ -974,10 +1010,13 @@ class ResearchContinuationMixin:
                 reason = task.get('continuation_blocked_reason') or 'waiting_for_event'
         if not _is_v2_permission(ledger):
             reason = 'legacy_continuation_read_only'
-        return {"schema_version": "task-continuation-permission.v1", "task_id": task["task_id"],
+        view = {"schema_version": "task-continuation-permission.v1", "task_id": task["task_id"],
                 "permission": public, "budget": budget, "can_start": False, "blocked_reason": reason,
                 "blocked_event_key": task.get("continuation_blocked_event_key"),
                 "blocked_reason_detail": task.get("continuation_blocked_reason")}
+        if automatic_request is not None:
+            view['automatic_request'] = automatic_request
+        return view
 
     def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict,
                                        expected_frozen_request: dict | None = None) -> dict:

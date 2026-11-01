@@ -7,6 +7,7 @@ from packages.contracts.product_turn_request import product_turn_execution_limit
 from packages.contracts.continuation_request import (
     ALLOWED_DOMAIN_TOOLS,
     ALLOWED_HARNESS_TOOLS,
+    PERMISSION_SCHEMA_VERSION,
     ALLOWED_MODEL,
     ALLOWED_PROVIDER,
     OFFICIAL_MODEL,
@@ -37,6 +38,7 @@ from packages.contracts.continuation_request import (
     validate_request_usage_v2,
     validate_reservation_v3,
 )
+from app.research_continuation import ResearchContinuationMixin
 
 
 def _reservation(**changes):
@@ -54,6 +56,43 @@ def _reservation(**changes):
     }
     value.update(changes)
     return continuation_reservation_v3(**value)
+
+
+def _settled_v3_ledger_entry(*, job_suffix="c"):
+    common = {
+        "owner_principal": "owner-a",
+        "workspace_id": "workspace-a",
+        "conversation_id": "conversation-a",
+        "task_id": "task_" + "a" * 32,
+        "signal_job_id": "signaljob_" + job_suffix * 32,
+        "result_artifact_id": "artifact_" + job_suffix * 32,
+        "result_artifact_content_sha256": "e" * 64,
+    }
+    identity = continuation_reservation_identity_v3(**common)
+    reservation = continuation_reservation_v3(
+        **common, event_key=identity["event_key"], options={}, options_revision=0,
+    )
+    usage = continuation_request_usage_v2(
+        execution_profile=reservation["execution_profile"],
+        admission_usage=unknown_admission_usage_v2(),
+        actual_usage=unknown_actual_usage_v2(),
+    )
+    entry = {
+        "schema_version": "task-continuation-ledger-entry.v1",
+        "reservation_id": "continuation_" + reservation["idempotency_key"].removeprefix(
+            "task-ready-event:")[:32],
+        "event_key": reservation["event_key"],
+        "signal_job_id": reservation["signal_job_id"],
+        "status": "settled",
+        "created_at": "2026-11-01T00:00:00+00:00",
+        "reservation": reservation,
+        "dispatch_attempts": 1,
+        "run_id": "f" * 32,
+        "request_usage": usage,
+        "settlement_sha256": "d" * 64,
+        "outcome": "completed",
+    }
+    return entry, usage
 
 
 def _known_admission(**changes):
@@ -214,6 +253,88 @@ def test_v3_route_variants_preserve_stable_event_identity_and_carrier_shape():
     assert legacy["request_limits"] == official["request_limits"]
     assert legacy["execution_profile"]["profile_sha256"] != official["execution_profile"]["profile_sha256"]
     assert official["execution_profile"]["profile_id"] == OFFICIAL_PROFILE_ID
+
+
+def test_continuation_view_projects_only_the_latest_validated_v3_request():
+    earlier, _ = _settled_v3_ledger_entry(job_suffix="c")
+    latest, usage = _settled_v3_ledger_entry(job_suffix="d")
+    task = {
+        "task_id": latest["reservation"]["task_id"],
+        "continuation_permission": None,
+        "continuation_budget": [earlier, latest],
+    }
+
+    view = ResearchContinuationMixin._continuation_view(task, {})
+    automatic = view["automatic_request"]
+    assert set(automatic) == {
+        "schema_version", "reservation_id", "task_id", "signal_job_id",
+        "result_artifact_id", "status", "dispatch_attempts", "run_id",
+        "outcome", "execution_profile", "request_usage", "settlement_sha256",
+    }
+    assert automatic == {
+        "schema_version": "task-ready-request-view.v1",
+        "reservation_id": latest["reservation_id"],
+        "task_id": latest["reservation"]["task_id"],
+        "signal_job_id": latest["signal_job_id"],
+        "result_artifact_id": latest["reservation"]["result_artifact_id"],
+        "status": "settled",
+        "dispatch_attempts": 1,
+        "run_id": "f" * 32,
+        "outcome": "completed",
+        "execution_profile": latest["reservation"]["execution_profile"],
+        "request_usage": usage,
+        "settlement_sha256": "d" * 64,
+    }
+    assert view["permission"] is None
+    assert view["blocked_reason"] == "permission_missing"
+    assert "budget" not in view
+    assert not ({"prompt", "instruction", "idempotency_key", "owner_principal"}
+                & set(automatic))
+
+
+def test_continuation_view_preserves_old_payload_without_v3_and_fails_closed_on_invalid_latest():
+    empty_task = {
+        "task_id": "task_" + "a" * 32,
+        "continuation_permission": None,
+        "continuation_budget": [],
+    }
+    unchanged = ResearchContinuationMixin._continuation_view(empty_task, {})
+    assert set(unchanged) == {
+        "schema_version", "task_id", "permission", "available_profile",
+        "request_state", "can_start", "blocked_reason",
+    }
+    assert "automatic_request" not in unchanged
+
+    valid, _ = _settled_v3_ledger_entry(job_suffix="c")
+    invalid_latest = {**valid, "schema_version": "tampered-ledger-version"}
+    task = {**empty_task, "continuation_budget": [valid, invalid_latest]}
+    with pytest.raises(ValueError, match="continuation ledger entry v3 is invalid"):
+        ResearchContinuationMixin._continuation_view(task, {})
+
+
+def test_legacy_permission_view_adds_v3_read_projection_without_legacy_usage_accounting():
+    entry, _ = _settled_v3_ledger_entry()
+    permission = {
+        "schema_version": PERMISSION_SCHEMA_VERSION,
+        "idempotency_key": "legacy-request-confirmation",
+        "request_sha256": "a" * 64,
+        "grant_version": 1,
+        "max_turns": 1,
+        "revoked_at": None,
+        "expires_at": "2999-01-01T00:00:00+00:00",
+        "execution_profile": profile_binding(),
+        "request_limits": request_limits(),
+    }
+    task = {
+        "task_id": entry["reservation"]["task_id"],
+        "status": "running",
+        "continuation_permission": permission,
+        "continuation_budget": [entry],
+    }
+    view = ResearchContinuationMixin._continuation_view(task, {"status": "active"})
+    assert view["request_state"]["requests_reserved"] == 0
+    assert view["request_state"]["request_identity"] is None
+    assert view["automatic_request"]["reservation_id"] == entry["reservation_id"]
 
 
 def test_profile_and_limits_reject_boolean_integers_unknown_options_and_drift():

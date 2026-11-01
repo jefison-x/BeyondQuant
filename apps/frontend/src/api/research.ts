@@ -1,3 +1,5 @@
+import type { AgentExecutionOptions } from './agent';
+
 const ROOT = "/api/product";
 
 export interface ResearchReceipt {
@@ -117,7 +119,40 @@ export interface ContinuationV2Permission {
   revoked_at: string | null;
 }
 
+export interface AutomaticContinuationRequest {
+  schema_version: 'task-ready-request-view.v1';
+  task_id: string;
+  reservation_id: string;
+  signal_job_id: string;
+  result_artifact_id: string;
+  status: 'reserved' | 'accepted' | 'outcome_unknown' | 'settled' | 'rejected' | 'cancelled';
+  dispatch_attempts: number;
+  run_id: string | null;
+  outcome: string | null;
+  settlement_sha256: string | null;
+  execution_profile: {
+    profile_id: 'task-ready-read.v2' | 'task-ready-read.official-deepseek.v1';
+    profile_version: number;
+    profile_sha256: string;
+    provider: 'opencode-go-chat' | 'deepseek-official';
+    model: 'deepseek-v4.1-flash' | 'deepseek-flash';
+    options_revision: number;
+    options: AgentExecutionOptions;
+  };
+  request_usage: null | {
+    schema_version: 'continuation-request-usage.v2';
+    actual_usage: {
+      input_tokens: number | null;
+      cache_read_tokens: number | null;
+      output_tokens: number | null;
+      provider_attempts: number | null;
+      completeness: 'known' | 'partial' | 'unknown';
+    };
+  };
+}
+
 interface ContinuationPermissionViewBase {
+  automatic_request?: AutomaticContinuationRequest;
   task_id: string;
   can_start: boolean;
   blocked_reason: string;
