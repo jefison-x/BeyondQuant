@@ -95,6 +95,8 @@ from packages.contracts.agent_execution_options import validate_agent_execution_
 from packages.contracts.continuation_request import (
     ALLOWED_MODEL as CONTINUATION_MODEL,
     ALLOWED_PROVIDER as CONTINUATION_PROVIDER,
+    OFFICIAL_PROVIDER as OFFICIAL_CONTINUATION_PROVIDER,
+    OFFICIAL_MODEL as OFFICIAL_CONTINUATION_MODEL,
     UPSTREAM_BASE_URL as CONTINUATION_UPSTREAM,
     exceeded_request_limits,
     exceeded_request_limits_v2,
@@ -237,6 +239,18 @@ def _continuation_route_qualified(model_resolution: dict, provider: str, model: 
     resolved_provider = str(model_resolution.get("provider") or provider)
     resolved_model = model_resolution.get("model", model)
     return resolved_provider == CONTINUATION_PROVIDER and resolved_model == CONTINUATION_MODEL
+
+
+def _task_ready_route(model_resolution: dict, provider: str, model: str) -> tuple[str, str]:
+    return (str(model_resolution.get('provider') or provider),
+            str(model_resolution.get('model') or model))
+
+
+def _task_ready_route_qualified(model_resolution: dict, provider: str, model: str) -> bool:
+    return _task_ready_route(model_resolution, provider, model) in {
+        (CONTINUATION_PROVIDER, CONTINUATION_MODEL),
+        (OFFICIAL_CONTINUATION_PROVIDER, OFFICIAL_CONTINUATION_MODEL),
+    }
 
 
 def _task_ready_reservation_id(reservation_v3: object) -> str:
@@ -1451,6 +1465,10 @@ class RuntimeAdapter:
                         raise ValueError('task-ready reservation identity does not match the prompt key')
                     if not self.task_ready_qualified(record):
                         raise ValueError('task-ready executor is not qualified')
+                    profile = task_ready_budget['execution_profile']
+                    if (profile['provider'], profile['model']) != _task_ready_route(
+                            record.model_resolution, self._provider, self._model):
+                        raise ValueError('task-ready profile does not match the native model route')
                 else:
                     if not self.continuation_qualified(record):
                         raise ValueError('continuation executor is not enabled')
@@ -1814,7 +1832,7 @@ class RuntimeAdapter:
                                 session_root / 'continuation-provider-request.jsonl'),
                         )
                         request_proxy = RequestGateProxy(
-                            request_gate, CONTINUATION_UPSTREAM,
+                            request_gate, task_ready_budget['execution_profile']['upstream_base_url'],
                             bind_host="0.0.0.0",
                             advertise_host=_continuation_proxy_advertise_host(),
                         )
@@ -6974,7 +6992,7 @@ class RuntimeAdapter:
         if (not self._root_scoped or not self._acp_product_slots
                 or not record.owner_principal or not record.workspace_id
                 or not bool(record.model_resolution.get('api_key'))
-                or not _continuation_route_qualified(
+                or not _task_ready_route_qualified(
                     record.model_resolution, self._provider, self._model)):
             return False
         return self._compatibility.family == ACP_COMPATIBILITY_FAMILY
@@ -7369,9 +7387,10 @@ class RuntimeAdapter:
     def _load_product_execution_profile(
         self, record: RuntimeSession, root_run_id: str, *, runtime_generation: str,
     ) -> dict[str, object]:
-        """Load the exact trusted conversation settings for one ordinary root.
+        """Load current user settings after proving this root's conversation.
 
-        Both reads are owner/workspace scoped and fenced to this Adapter boot.
+        The conversation read proves owner/workspace and this Adapter boot;
+        the settings read returns the same owner's account-wide revision.
         Any missing identity, transport error, malformed projection or scope
         mismatch stops before a provider proxy or DSH root is started; no error
         path falls back to unbounded defaults.
@@ -7417,21 +7436,19 @@ class RuntimeAdapter:
             conversation_id = conversation.get("conversation_id")
             validate_identifier(conversation_id, field="conversation_id")
             options_response = httpx.get(
-                f"{base}/v1/product/conversations/"
-                f"{quote(conversation_id, safe='')}/execution-options",
+                f"{base}/v1/users/agent-execution-options",
                 headers=headers, timeout=2.0,
             )
             options_response.raise_for_status()
             projection = options_response.json()
             if (not isinstance(projection, dict)
                     or set(projection) != {
-                        "schema_version", "conversation_id", "owner_principal",
-                        "workspace_id", "revision", "options", "updated_at",
+                        "schema_version", "scope", "owner_principal",
+                        "revision", "options", "updated_at",
                     }
                     or projection.get("schema_version") != "agent-execution-options.v1"
-                    or projection.get("conversation_id") != conversation_id
+                    or projection.get("scope") != "user"
                     or projection.get("owner_principal") != owner
-                    or projection.get("workspace_id") != workspace
                     or type(projection.get("revision")) is not int
                     or projection["revision"] < 0
                     or (projection.get("updated_at") is not None

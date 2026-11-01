@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .pooled_http import pooled_http as httpx
 from .user_session import SESSION_COOKIE, ProductAuthError, login as login_user, logout as logout_user, resolve_principal, resolve_user
+from packages.contracts.agent_execution_options import validate_agent_execution_options
 
 
 SERVICE = "byq-gateway"
@@ -637,33 +638,71 @@ def product_research_submission_watches(conversation_id: str, request: Request):
     return _backend_request('GET', f"/v1/product/research/submission-watches/{quote(conversation_id,safe='')}", headers=headers)
 
 
-def _human_execution_options_headers(request: Request) -> dict[str, str]:
-    """Execution options are ordinary user settings, never model-writable."""
+def _agent_execution_options_user_headers(
+    request: Request, *, write: bool = False,
+) -> tuple[dict[str, str], str]:
     if SESSION_COOKIE not in request.cookies:
         raise ProductError(401, "product_human_identity_required", "durable user login required")
-    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+    if write and request.headers.get("sec-fetch-site", "").lower() == "cross-site":
         raise ProductError(403, "product_cross_site_write_rejected", "cross-site configuration writes are rejected")
-    headers = _trusted_agent_headers(request)
-    headers["x-byq-product-human-actor"] = "true"
-    return headers
+    try:
+        user = resolve_user(request)
+    except ProductAuthError as exc:
+        raise ProductError(exc.status_code, exc.code, exc.message) from exc
+    user_id = user.get("user_id")
+    owner_principal = user.get("username")
+    if not isinstance(user_id, str) or not isinstance(owner_principal, str):
+        raise ProductError(502, "backend_invalid_response", "authenticated user identity is invalid")
+    if (not GATEWAY_SERVICE_TOKEN or len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32
+            or GATEWAY_SERVICE_TOKEN in {PRODUCT_TOKEN, os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")}):
+        raise ProductError(503, "product_service_unavailable", "Agent settings service is unavailable")
+    headers = {
+        "authorization": f"Bearer {GATEWAY_SERVICE_TOKEN}",
+        "x-byq-owner-user-id": user_id,
+    }
+    if write:
+        headers.update({
+            "x-byq-actor-principal": owner_principal,
+            "x-byq-product-human-actor": "true",
+        })
+    return headers, owner_principal
 
 
-@router.get("/agent/conversations/{conversation_id}/execution-options")
-def agent_conversation_execution_options(conversation_id: str, request: Request) -> dict[str, object]:
-    return _backend_request(
-        "GET", f"/v1/product/conversations/{quote(conversation_id, safe='')}/execution-options",
-        headers=_trusted_agent_headers(request),
-    )
-
-
-@router.put("/agent/conversations/{conversation_id}/execution-options")
-def update_agent_conversation_execution_options(
-    conversation_id: str, payload: dict, request: Request,
+def _validate_user_agent_execution_options(
+    body: object, *, owner_principal: str,
 ) -> dict[str, object]:
-    return _backend_request(
-        "PUT", f"/v1/product/conversations/{quote(conversation_id, safe='')}/execution-options",
-        payload=payload, headers=_human_execution_options_headers(request),
-    )
+    fields = {"schema_version", "scope", "owner_principal", "revision", "options", "updated_at"}
+    if (not isinstance(body, dict) or set(body) != fields
+            or body.get("schema_version") != "agent-execution-options.v1"
+            or body.get("scope") != "user"
+            or body.get("owner_principal") != owner_principal
+            or type(body.get("revision")) is not int or body["revision"] < 0
+            or (body.get("updated_at") is not None and not isinstance(body.get("updated_at"), str))):
+        raise ProductError(502, "backend_invalid_response", "Backend returned invalid user Agent settings")
+    try:
+        options = validate_agent_execution_options(body.get("options"))
+    except (TypeError, ValueError) as exc:
+        raise ProductError(502, "backend_invalid_response", "Backend returned invalid user Agent options") from exc
+    if options != body["options"]:
+        raise ProductError(502, "backend_invalid_response", "Backend returned noncanonical user Agent options")
+    return body
+
+
+@router.get("/settings/agent-execution-options")
+def product_agent_execution_options(request: Request) -> dict[str, object]:
+    headers, owner_principal = _agent_execution_options_user_headers(request)
+    body = _backend_request("GET", "/v1/users/agent-execution-options", headers=headers)
+    return _validate_user_agent_execution_options(body, owner_principal=owner_principal)
+
+
+@router.put("/settings/agent-execution-options")
+def update_product_agent_execution_options(
+    request: Request, payload: dict,
+) -> dict[str, object]:
+    headers, owner_principal = _agent_execution_options_user_headers(request, write=True)
+    body = _backend_request("PUT", "/v1/users/agent-execution-options",
+                            payload=payload, headers=headers)
+    return _validate_user_agent_execution_options(body, owner_principal=owner_principal)
 
 
 def _continuation_permission_headers(request: Request) -> dict[str, str]:

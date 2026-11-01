@@ -6,6 +6,7 @@ import { listApprovals } from "@/api/research";
 import type { AgentPolicyRule, AgentPolicyStatus } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
+import AgentRuntimeSettingsView from "./AgentRuntimeSettingsView.vue";
 
 import {useAuthStore} from '@/stores/auth';
 import {beginPolicySubmission,readPolicySubmission,finishPolicySubmission,validatePolicyResult,confirmPolicyReceipt,type PolicySubmission,type PolicyOperation} from '@/api/policySubmission';
@@ -141,6 +142,7 @@ function statusLabel(value: unknown) {
 
 <template>
   <section class="my-space-page">
+    <AgentRuntimeSettingsView />
     <el-alert v-if="pendingPolicy" title="有一笔审批策略操作尚未确认" type="warning" :closable="false" show-icon>
       <el-button :loading="saving" @click="recoverPolicy">核对原审批策略操作</el-button>
       <el-button :loading="saving" @click="retryPolicy">使用原审批策略操作重试</el-button>

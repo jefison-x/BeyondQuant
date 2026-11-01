@@ -406,6 +406,8 @@ user_store = UserAuthStore.from_env()
 feedback_store = ProductFeedbackStore.from_env()
 user_policy_store = UserPolicyStore.from_env()
 credential_store = CredentialStore.from_env()
+research_store.task_ready_model_route_resolver = lambda owner: credential_store.resolve_model_route(
+    owner, "byq-product")
 operations_store = OperationsStore.from_env()
 plugin_center_store = PluginCenterStore.from_env()
 market_data_store = MarketDataStore.from_env()
@@ -595,40 +597,6 @@ def get_conversation(conversation_id: str, request: Request) -> dict[str, object
     })
 
 
-def _execution_options_context(request: Request) -> tuple[str, str]:
-    owner = _conversation_owner(request)
-    workspace_id = request.headers.get("x-byq-workspace-id")
-    if not workspace_id:
-        raise HTTPException(status_code=401, detail="trusted workspace context required")
-    return owner, workspace_id
-
-
-def _human_execution_options_context(request: Request) -> tuple[str, str]:
-    owner, workspace_id = _execution_options_context(request)
-    if (request.headers.get("x-byq-product-human-actor") != "true"
-            or request.headers.get("x-byq-actor-principal") != owner):
-        raise HTTPException(status_code=403, detail="trusted human conversation actor required")
-    return owner, workspace_id
-
-
-@app.get("/v1/product/conversations/{conversation_id}/execution-options")
-def get_conversation_execution_options(conversation_id: str, request: Request) -> dict[str, object]:
-    owner, workspace_id = _execution_options_context(request)
-    return _conversation_call(lambda: conversation_store.get_execution_options(
-        owner, workspace_id, conversation_id
-    ))
-
-
-@app.put("/v1/product/conversations/{conversation_id}/execution-options")
-def put_conversation_execution_options(
-    conversation_id: str, payload: dict[str, Any], request: Request,
-) -> dict[str, object]:
-    owner, workspace_id = _human_execution_options_context(request)
-    return _conversation_call(lambda: conversation_store.update_execution_options(
-        owner, workspace_id, conversation_id, payload
-    ))
-
-
 @app.post("/v1/product/conversations/{conversation_id}/messages", status_code=201)
 def append_conversation_message(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     owner = _conversation_owner(request)
@@ -689,6 +657,9 @@ def _require_gateway_service_bearer(request: Request) -> None:
         raise HTTPException(status_code=503, detail="Gateway Backend service credential is unavailable")
     if len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32:
         raise HTTPException(status_code=503, detail="Gateway Backend service credential is too short")
+    if GATEWAY_SERVICE_TOKEN in {RUNTIME_AUTHORITY_TOKEN, MCP_BACKEND_PROOF_TOKEN,
+                                 MCP_ACP_JUDGMENT_PROOF_TOKEN}:
+        raise HTTPException(status_code=503, detail="Gateway Backend service credential is not distinct")
     supplied = request.headers.get("authorization", "")
     expected = f"Bearer {GATEWAY_SERVICE_TOKEN}"
     if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
@@ -2367,6 +2338,8 @@ def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ResearchPersistenceError as error:
         raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+    except (CredentialUnavailable, CredentialPersistenceError) as error:
+        raise HTTPException(status_code=503, detail="selected model route is unavailable") from error
 
 
 def _optimization_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
@@ -6715,6 +6688,50 @@ def get_user_ui_preferences(user_id: str, request: Request) -> dict[str, object]
     if owner_user_id != user_id:
         raise HTTPException(status_code=403, detail="UI preferences read is owner-scoped")
     return _user_call(lambda: {"preferences": user_store.get_ui_preferences(user_id)})
+
+
+def _agent_execution_options_user_id(request: Request) -> str:
+    user_id = request.headers.get("x-byq-owner-user-id")
+    if user_id:
+        # Gateway resolves this id from the caller's durable session.
+        _require_gateway_service_bearer(request)
+        return user_id
+    # Runtime supplies its existing trusted owner/Workspace pair. Verify that
+    # binding before resolving the corresponding persistent user id.
+    _require_runtime_authority_bearer(request)
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace_id = request.headers.get("x-byq-workspace-id")
+    if not owner or not workspace_id:
+        raise HTTPException(status_code=401, detail="trusted user identity required")
+    try:
+        return workspace_tenancy_store.resolve_context(owner, workspace_id)["owner_user_id"]
+    except ValueError as error:
+        raise HTTPException(status_code=401, detail="trusted user identity required") from error
+
+
+@app.get("/v1/users/agent-execution-options")
+def get_user_agent_execution_options(request: Request) -> dict[str, object]:
+    user_id = _agent_execution_options_user_id(request)
+    return _user_call(lambda: user_store.get_agent_execution_options(user_id))
+
+
+@app.put("/v1/users/agent-execution-options")
+def put_user_agent_execution_options(
+    payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    _require_gateway_service_bearer(request)
+    user_id = request.headers.get("x-byq-owner-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="trusted user identity required")
+
+    def update() -> dict[str, object]:
+        user = user_store.get_user(user_id)
+        if (request.headers.get("x-byq-product-human-actor") != "true"
+                or request.headers.get("x-byq-actor-principal") != user["username"]):
+            raise UserForbidden("agent execution options require the authenticated user")
+        return user_store.update_agent_execution_options(user_id, payload)
+
+    return _user_call(update)
 
 
 @app.put("/v1/users/{user_id}/ui-preferences")

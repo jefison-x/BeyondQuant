@@ -18,6 +18,7 @@ from packages.contracts.continuation_request import (
     PERMISSION_SCHEMA_VERSION,
     RESERVATION_SCHEMA_VERSION,
     RESERVATION_SCHEMA_VERSION_V3,
+    continuation_reservation_identity_v3,
     continuation_reservation_v3,
     exceeded_request_limits,
     exceeded_request_limits_v2,
@@ -739,7 +740,8 @@ class ResearchContinuationMixin:
             event_key=carrier['event_key'], signal_job_id=job['job_id'],
             result_artifact_id=artifact['artifact_id'],
             result_artifact_content_sha256=artifact['content_sha256'],
-            options=profile['options'], options_revision=profile['options_revision'])
+            options=profile['options'], options_revision=profile['options_revision'],
+            provider=profile['provider'], model=profile['model'])
         if current != carrier:
             raise ValueError('exact SignalJob source facts changed after reservation')
 
@@ -877,10 +879,40 @@ class ResearchContinuationMixin:
         return ResearchContinuationMixin._permission_blocked_reason(task, conversation)
 
     @staticmethod
+    def _automatic_request_view(task):
+        """Project the latest validated v3 request without legacy accounting."""
+        rows = task.get('continuation_budget') or []
+        if not isinstance(rows, list):
+            return None
+        latest = next((row for row in reversed(rows)
+            if _is_v3_ledger_entry(row)
+            or (isinstance(row, dict) and isinstance(row.get('reservation'), dict)
+                and row['reservation'].get('schema_version') == RESERVATION_SCHEMA_VERSION_V3)), None)
+        if latest is None:
+            return None
+        entry = _validate_v3_ledger_entry(latest)
+        reservation = entry['reservation']
+        return {
+            'schema_version': 'task-ready-request-view.v1',
+            'reservation_id': entry['reservation_id'],
+            'task_id': reservation['task_id'],
+            'signal_job_id': entry['signal_job_id'],
+            'result_artifact_id': reservation['result_artifact_id'],
+            'status': entry['status'],
+            'dispatch_attempts': entry.get('dispatch_attempts', 0),
+            'run_id': entry.get('run_id'),
+            'outcome': entry.get('outcome'),
+            'execution_profile': reservation['execution_profile'],
+            'request_usage': entry.get('request_usage'),
+            'settlement_sha256': entry.get('settlement_sha256'),
+        }
+
+    @staticmethod
     def _continuation_view(task, conversation):
+        automatic_request = ResearchContinuationMixin._automatic_request_view(task)
         ledger = task.get("continuation_permission")
         if ledger is None:
-            return {
+            view = {
                 'schema_version': PERMISSION_SCHEMA_VERSION,
                 'task_id': task['task_id'],
                 'permission': None,
@@ -891,6 +923,9 @@ class ResearchContinuationMixin:
                 'can_start': False,
                 'blocked_reason': 'permission_missing',
             }
+            if automatic_request is not None:
+                view['automatic_request'] = automatic_request
+            return view
         public = {key: value for key, value in ledger.items() if key not in {"idempotency_key", "request_sha256", "handoff_version"}}
         rows = task.get('continuation_budget') or []
         if _is_v2_permission(ledger):
@@ -929,7 +964,7 @@ class ResearchContinuationMixin:
                     reason = 'continuation_request_exhausted'
                 elif reason is None:
                     reason = task.get('continuation_blocked_reason') or 'waiting_for_event'
-            return {
+            view = {
                 'schema_version': PERMISSION_SCHEMA_VERSION,
                 'task_id': task['task_id'],
                 'permission': public,
@@ -940,6 +975,9 @@ class ResearchContinuationMixin:
                 'blocked_event_key': task.get('continuation_blocked_event_key'),
                 'blocked_reason_detail': task.get('continuation_blocked_reason'),
             }
+            if automatic_request is not None:
+                view['automatic_request'] = automatic_request
+            return view
         # A v3 event carrier is not a v1 token-budget receipt. Keep historical
         # legacy projections from interpreting its shape or accounting fields.
         legacy_rows = [row for row in rows if not _is_v3_ledger_entry(row)]
@@ -972,10 +1010,13 @@ class ResearchContinuationMixin:
                 reason = task.get('continuation_blocked_reason') or 'waiting_for_event'
         if not _is_v2_permission(ledger):
             reason = 'legacy_continuation_read_only'
-        return {"schema_version": "task-continuation-permission.v1", "task_id": task["task_id"],
+        view = {"schema_version": "task-continuation-permission.v1", "task_id": task["task_id"],
                 "permission": public, "budget": budget, "can_start": False, "blocked_reason": reason,
                 "blocked_event_key": task.get("continuation_blocked_event_key"),
                 "blocked_reason_detail": task.get("continuation_blocked_reason")}
+        if automatic_request is not None:
+            view['automatic_request'] = automatic_request
+        return view
 
     def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict,
                                        expected_frozen_request: dict | None = None) -> dict:
@@ -1250,45 +1291,26 @@ class ResearchContinuationMixin:
                     or artifact['status'] != 'validated'):
                 raise ValueError('signal snapshot is not validated for the exact task')
 
-            options_row = fetch_one(connection, '''SELECT revision, options_json
-                FROM product_conversation_execution_options
-                WHERE conversation_id=:conversation AND owner_principal=:owner
-                  AND workspace_id=:workspace FOR SHARE''',
-                {'conversation': conversation['conversation_id'], 'owner': task['owner_principal'],
-                 'workspace': task['workspace_id']})
-            if options_row is None:
-                options, options_revision = default_agent_execution_options(), 0
-            else:
-                options_revision = options_row['revision']
-                if type(options_revision) is not int or options_revision < 1:
-                    raise ValueError('stored execution options revision is invalid')
-                options = validate_agent_execution_options(options_row['options_json'])
-
-            # The contract idempotency key is independent of event_key and
-            # options. A valid placeholder lets the existing canonicalizer
-            # provide its stable digest without duplicating its private schema.
-            carrier_args = {
-                'owner_principal': task['owner_principal'],
-                'workspace_id': task['workspace_id'],
-                'conversation_id': conversation['conversation_id'],
-                'task_id': task['task_id'],
-                'signal_job_id': job['job_id'],
-                'result_artifact_id': artifact['artifact_id'],
-                'result_artifact_content_sha256': artifact['content_sha256'],
-                'options': options,
-                'options_revision': options_revision,
-            }
-            placeholder = continuation_reservation_v3(
-                **carrier_args, event_key=DATA_READY_EVENT_PREFIX + '0' * 64)
-            idempotency_key = placeholder['idempotency_key']
+            # Stable source identity is independent of the user's current
+            # options and model route. Resolve it before reading either so an
+            # existing reservation remains tied to its original snapshot.
+            identity = continuation_reservation_identity_v3(
+                owner_principal=task['owner_principal'],
+                workspace_id=task['workspace_id'],
+                conversation_id=conversation['conversation_id'],
+                task_id=task['task_id'],
+                signal_job_id=job['job_id'],
+                result_artifact_id=artifact['artifact_id'],
+                result_artifact_content_sha256=artifact['content_sha256'],
+            )
+            idempotency_key = identity['idempotency_key']
             if not idempotency_key.startswith(_V3_IDEMPOTENCY_PREFIX):
                 raise ValueError('continuation event idempotency identity is invalid')
             identity_digest = idempotency_key.removeprefix(_V3_IDEMPOTENCY_PREFIX)
             if re.fullmatch(r'[0-9a-f]{64}', identity_digest) is None:
                 raise ValueError('continuation event idempotency identity is invalid')
-            event_key = DATA_READY_EVENT_PREFIX + identity_digest
-            reservation = continuation_reservation_v3(**carrier_args, event_key=event_key)
-            if reservation['idempotency_key'] != idempotency_key:
+            event_key = identity['event_key']
+            if event_key != DATA_READY_EVENT_PREFIX + identity_digest:
                 raise ValueError('continuation event identity changed during validation')
             reservation_id = 'continuation_' + identity_digest[:32]
 
@@ -1307,9 +1329,9 @@ class ResearchContinuationMixin:
                     continue
                 existing = _validate_v3_ledger_entry(stored)
                 prior = existing['reservation']
-                if prior['idempotency_key'] != reservation['idempotency_key']:
+                if prior['idempotency_key'] != identity['idempotency_key']:
                     continue
-                if prior['source_fact_sha256'] != reservation['source_fact_sha256']:
+                if prior['source_fact_sha256'] != identity['source_fact_sha256']:
                     raise IdempotencyConflict('signal Job source facts conflict with its existing reservation')
                 if revoked:
                     current_rows = task.get('continuation_budget') or []
@@ -1382,6 +1404,43 @@ class ResearchContinuationMixin:
                     raise ValueError('legacy data-ready notification lineage is ambiguous')
                 if lineage[0]['job_id'] == signal_job_id:
                     raise ValueError('signal Job was already consumed by a legacy notification')
+
+            options_row = fetch_one(connection, '''SELECT o.revision, o.options_json
+                FROM users u LEFT JOIN user_agent_execution_options o ON o.user_id=u.user_id
+                WHERE u.username=:owner AND u.status='active' FOR SHARE OF u''',
+                {'owner': task['owner_principal']})
+            if options_row is None:
+                raise ValueError('active user settings owner is unavailable')
+            if options_row['revision'] is None:
+                options, options_revision = default_agent_execution_options(), 0
+            else:
+                options_revision = options_row['revision']
+                if type(options_revision) is not int or options_revision < 1:
+                    raise ValueError('stored execution options revision is invalid')
+                options = validate_agent_execution_options(options_row['options_json'])
+
+            resolver = getattr(self, 'task_ready_model_route_resolver', None)
+            if not callable(resolver):
+                raise ValueError('trusted selected model route is unavailable')
+            route = resolver(task['owner_principal'])
+            if (not isinstance(route, dict) or set(route) != {'provider', 'model'}
+                    or not isinstance(route.get('provider'), str)
+                    or not isinstance(route.get('model'), str)):
+                raise ValueError('trusted selected model route is unavailable')
+            reservation = continuation_reservation_v3(
+                owner_principal=task['owner_principal'],
+                workspace_id=task['workspace_id'],
+                conversation_id=conversation['conversation_id'],
+                task_id=task['task_id'], event_key=event_key,
+                signal_job_id=job['job_id'],
+                result_artifact_id=artifact['artifact_id'],
+                result_artifact_content_sha256=artifact['content_sha256'],
+                options=options, options_revision=options_revision,
+                provider=route['provider'], model=route['model'],
+            )
+            if (reservation['idempotency_key'] != identity['idempotency_key']
+                    or reservation['source_fact_sha256'] != identity['source_fact_sha256']):
+                raise ValueError('continuation event identity changed during validation')
 
             if self._event_blocked_by_needs_attention(task, event_key):
                 raise ValueError('signal event is blocked by continuation needs_attention')

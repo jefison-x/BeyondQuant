@@ -58,18 +58,18 @@ describe("agent api client", () => {
     expect(String(fetchMock.mock.calls[0][1]?.body)).not.toContain("deepseek");
   });
 
-  it("reads authoritative conversation execution options through Product API", async () => {
+  it("reads authoritative user execution options through Product API", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      schema_version: "agent-execution-options.v1", conversation_id: "conversation/1",
-      owner_principal: "alice", workspace_id: "workspace-a", revision: 0,
+      schema_version: "agent-execution-options.v1", scope: "user",
+      owner_principal: "alice", revision: 0,
       options: { auto_continue: true }, updated_at: null,
     })));
     vi.stubGlobal("fetch", fetchMock);
 
-    await getAgentExecutionOptions("conversation/1", "test-token");
+    await getAgentExecutionOptions("test-token");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/product/agent/conversations/conversation%2F1/execution-options",
+      "/api/product/settings/agent-execution-options",
       expect.objectContaining({ credentials: "include" }),
     );
   });
@@ -98,16 +98,16 @@ describe("agent api client", () => {
       },
     };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      schema_version: "agent-execution-options.v1", conversation_id: "conversation-1",
-      owner_principal: "alice", workspace_id: "workspace-a", revision: 5,
+      schema_version: "agent-execution-options.v1", scope: "user",
+      owner_principal: "alice", revision: 5,
       options: payload.options, updated_at: "2026-10-15T00:00:00Z",
     })));
     vi.stubGlobal("fetch", fetchMock);
 
-    await updateAgentExecutionOptions("conversation-1", payload, "test-token");
+    await updateAgentExecutionOptions(payload, "test-token");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/product/agent/conversations/conversation-1/execution-options",
+      "/api/product/settings/agent-execution-options",
       expect.objectContaining({
         method: "PUT",
         credentials: "include",

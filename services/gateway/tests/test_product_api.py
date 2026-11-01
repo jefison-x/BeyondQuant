@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app import product_api
 from app import user_session
+from packages.contracts.agent_execution_options import default_agent_execution_options
 
 
 def test_training_approval_projection_preserves_only_matching_trusted_preview() -> None:
@@ -105,58 +106,60 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
-def test_execution_options_get_uses_exact_backend_scope_without_human_only_gate(monkeypatch):
+def test_user_agent_settings_use_durable_user_identity_without_workspace_scope(monkeypatch):
     calls = []
-    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
-    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "alice")
-    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
-        "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
-    })
+    user = {"user_id": "user_" + "a" * 32, "username": "ordinary-user", "role": "user"}
+    gateway_token = "g" * 48
+    monkeypatch.setattr(product_api, "GATEWAY_SERVICE_TOKEN", gateway_token)
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "p" * 48)
+    monkeypatch.setenv("BYQ_RUNTIME_AUTHORITY_TOKEN", "r" * 48)
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: user)
 
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append((method, path, payload, headers))
-        return {"schema_version": "agent-execution-options.v1", "revision": 0, "options": {}}
+        options = default_agent_execution_options()
+        revision = 0
+        if method == "PUT":
+            options.update(payload["options"])
+            revision = 1
+        return {"schema_version": "agent-execution-options.v1", "scope": "user",
+                "owner_principal": "ordinary-user", "revision": revision,
+                "options": options, "updated_at": None}
 
     monkeypatch.setattr(product_api, "_backend_request", backend)
     client = TestClient(main.app)
-    response = client.get("/api/product/agent/conversations/conversation_exact/execution-options",
-                          headers={"Authorization": "Bearer product-test-token"})
-    assert response.status_code == 200
-    assert response.json()["revision"] == 0
-    assert calls == [("GET", "/v1/product/conversations/conversation_exact/execution-options", None,
-                      {"x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact"})]
-
-
-def test_execution_options_put_requires_durable_human_cookie_and_same_site(monkeypatch):
-    calls = []
-    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
-        "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
-        "x-byq-actor-principal": "alice",
-    })
-
-    def backend(method, path, payload=None, *, headers=None, params=None):
-        calls.append((method, path, payload, headers))
-        return {"schema_version": "agent-execution-options.v1", "revision": 1, "options": {}}
-
-    monkeypatch.setattr(product_api, "_backend_request", backend)
-    client = TestClient(main.app)
-    path = "/api/product/agent/conversations/conversation_exact/execution-options"
-    payload = {"schema_version": "agent-execution-options.v1", "expected_revision": 0,
-               "options": {"auto_continue": False}}
-    denied = client.put(path, json=payload)
-    assert denied.status_code == 401
+    path = "/api/product/settings/agent-execution-options"
+    assert client.get(path).status_code == 401
     assert calls == []
 
-    client.cookies.set(product_api.SESSION_COOKIE, "opaque-test-session")
+    client.cookies.set(product_api.SESSION_COOKIE, "opaque-user-session")
+    read = client.get(path)
+    assert read.status_code == 200
+    assert read.json()["scope"] == "user"
+    assert "conversation_id" not in read.json() and "workspace_id" not in read.json()
+    assert calls == [("GET", "/v1/users/agent-execution-options", None,
+                      {"authorization": f"Bearer {gateway_token}",
+                       "x-byq-owner-user-id": user["user_id"]})]
+    assert client.get("/api/product/agent/conversations/conversation_exact/execution-options").status_code == 404
+    assert len(calls) == 1
+
+    payload = {"schema_version": "agent-execution-options.v1", "expected_revision": 0,
+               "options": {"auto_continue": False, "max_tool_calls": 4}}
     cross_site = client.put(path, json=payload, headers={"sec-fetch-site": "cross-site"})
     assert cross_site.status_code == 403
-    assert calls == []
-
+    assert len(calls) == 1
     changed = client.put(path, json=payload, headers={"sec-fetch-site": "same-origin"})
     assert changed.status_code == 200
-    assert calls == [("PUT", "/v1/product/conversations/conversation_exact/execution-options", payload,
-                      {"x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
-                       "x-byq-actor-principal": "alice", "x-byq-product-human-actor": "true"})]
+    assert changed.json()["revision"] == 1
+    assert calls[-1] == ("PUT", "/v1/users/agent-execution-options", payload, {
+        "authorization": f"Bearer {gateway_token}",
+        "x-byq-owner-user-id": user["user_id"],
+        "x-byq-actor-principal": "ordinary-user",
+        "x-byq-product-human-actor": "true",
+    })
+    monkeypatch.setattr(product_api, "GATEWAY_SERVICE_TOKEN", "r" * 48)
+    assert client.get(path).status_code == 503
+    assert len(calls) == 2
 
 
 def test_typed_approval_writes_require_browser_confirmation_and_reject_cross_site(monkeypatch):

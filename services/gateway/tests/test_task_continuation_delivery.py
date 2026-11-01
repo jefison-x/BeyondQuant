@@ -74,7 +74,8 @@ def fixture(monkeypatch):
 
 
 def v3_fixture(monkeypatch, *, eligible=False, adapter_receipt=None, reconcile_state='outcome_unknown',
-        signal_job_id='signaljob_' + 'c' * 32, result_artifact_id='artifact_' + 'd' * 32):
+        signal_job_id='signaljob_' + 'c' * 32, result_artifact_id='artifact_' + 'd' * 32,
+        official=False):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     task_id = 'task_' + 'b' * 32
@@ -82,6 +83,8 @@ def v3_fixture(monkeypatch, *, eligible=False, adapter_receipt=None, reconcile_s
         conversation_id=context['conversation_id'], task_id=task_id, signal_job_id=signal_job_id,
         result_artifact_id=result_artifact_id, result_artifact_content_sha256='e' * 64,
         options=default_agent_execution_options(), options_revision=7)
+    if official:
+        carrier_args.update(provider='deepseek-official', model='deepseek-flash')
     placeholder = continuation_reservation_v3(**carrier_args, event_key='ready-v1:' + '0' * 64)
     digest = placeholder['idempotency_key'].split(':', 1)[1]
     carrier = continuation_reservation_v3(**carrier_args, event_key='ready-v1:' + digest)
@@ -554,9 +557,10 @@ def test_v3_cancel_marker_is_exact_durable_idempotent_and_survives_restart(tmp_p
     assert restarted.pending_cancel(context) is None
 
 
-def test_v3_consumer_claims_and_dispatches_exact_missing_record_once(monkeypatch):
+@pytest.mark.parametrize('official', [False, True])
+def test_v3_consumer_claims_and_dispatches_exact_missing_record_once(monkeypatch, official):
     (context, candidate, intent, carrier, reservation_id, state, backend_calls,
-     writes, _reads, prompts, _session) = v3_fixture(monkeypatch, eligible=True)
+     writes, _reads, prompts, _session) = v3_fixture(monkeypatch, eligible=True, official=official)
 
     main._consume_admitted_task_continuation(context)
 

@@ -79,6 +79,80 @@ beforeEach(() => {
   confirmRevoke.mockResolvedValue('confirmed');
 });
 
+function automaticView(actualUsage: Record<string, unknown> | null = {
+  input_tokens: 7, cache_read_tokens: 2, output_tokens: 3, provider_attempts: 1, completeness: 'known',
+}) {
+  return { ...missingV2, automatic_request: {
+    schema_version: 'task-ready-request-view.v1', task_id: TASK_ONE,
+    reservation_id: `continuation_${'f'.repeat(32)}`,
+    signal_job_id: `signaljob_${'e'.repeat(32)}`, result_artifact_id: ARTIFACT_CODE,
+    status: 'settled', outcome: 'completed', dispatch_attempts: 1,
+    execution_profile: {
+      profile_id: 'task-ready-read.official-deepseek.v1', profile_version: 1,
+      provider: 'deepseek-official', model: 'deepseek-flash', options_revision: 7,
+      options: { max_provider_calls: null, max_tool_calls: null, max_runtime_seconds: null },
+    },
+    request_usage: actualUsage === null ? null : {
+      schema_version: 'continuation-request-usage.v2', actual_usage: actualUsage,
+    },
+  } };
+}
+
+it('shows default automatic request usage and immutable user options without offering another grant', async () => {
+  read.mockResolvedValue(automaticView());
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  await flushPromises();
+  expect(wrapper.text()).toContain('deepseek-official / deepseek-flash');
+  expect(wrapper.text()).toContain('用户参数版本 7');
+  expect(wrapper.text()).toContain('已结算；结果：已完成；派发 1 次');
+  expect(wrapper.text()).toContain('模型调用上限：不限');
+  expect(wrapper.text()).toContain('输入 7 token，缓存读取 2 token');
+  expect(wrapper.text()).toContain('输出 3 token；模型尝试 1 次；完整性：完整');
+  expect(wrapper.find('form').exists()).toBe(false);
+  expect(wrapper.text()).not.toContain('180000');
+  await wrapper.get('[data-test="refresh-permission"]').trigger('click');
+  await flushPromises();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(submitRequest).not.toHaveBeenCalled();
+  expect(revoke).not.toHaveBeenCalled();
+});
+
+it('keeps automatic unknown usage distinct from proven zero', async () => {
+  read.mockResolvedValueOnce(automaticView({ input_tokens: null, cache_read_tokens: null,
+    output_tokens: null, provider_attempts: null, completeness: 'unknown' }));
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  await flushPromises();
+  expect(wrapper.text()).toContain('输入 未知 token');
+  expect(wrapper.text()).not.toContain('输入 0 token');
+  read.mockResolvedValueOnce(automaticView({ input_tokens: 0, cache_read_tokens: 0,
+    output_tokens: 0, provider_attempts: 0, completeness: 'known' }));
+  await wrapper.get('[data-test="refresh-permission"]').trigger('click');
+  await flushPromises();
+  expect(wrapper.text()).toContain('输入 0 token');
+  expect(wrapper.text()).toContain('完整性：完整');
+});
+
+it('never displays missing automatic usage as zero or falls back to another grant', async () => {
+  read.mockResolvedValue(automaticView(null));
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  await flushPromises();
+  expect(wrapper.text()).toContain('尚未取得请求用量收据，不代表零消耗');
+  expect(wrapper.find('form').exists()).toBe(false);
+  expect(submitRequest).not.toHaveBeenCalled();
+});
+
+it('rejects a mismatched automatic task without showing another task or grant controls', async () => {
+  const result = automaticView();
+  result.automatic_request.task_id = TASK_TWO;
+  read.mockResolvedValue(result);
+  const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
+  await flushPromises();
+  expect(wrapper.text()).toContain('自动接续记录的任务身份无法核对');
+  expect(wrapper.text()).not.toContain(ARTIFACT_CODE);
+  expect(wrapper.find('form').exists()).toBe(false);
+  expect(submitRequest).not.toHaveBeenCalled();
+});
+
 it('loads the trusted profile without creating a grant or inventing limits', async () => {
   const wrapper = shallowMount(ContinuationPermissionPanel, { global, props: { taskId: TASK_ONE, artifacts: [] } });
   await flushPromises();

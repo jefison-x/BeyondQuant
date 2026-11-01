@@ -100,11 +100,12 @@ def _driver_functions():
         "state": {"checks": {}, "identities": {
                   "signal_job_id": AUDIT_SIGNAL_JOB_ID,
                   "signal_snapshot_artifact_id": AUDIT_SIGNAL_ARTIFACT_ID,
-                  "task_id": "task_" + "d" * 32}, "audit_summaries": {},
+                  "task_id": "task_" + "d" * 32,
+                  "conversation_id": "conversation_" + "5" * 32,
+                  "workspace_id": "workspace_" + "4" * 32}, "audit_summaries": {},
                   "mutation_attempts": [], "uncertain_actions": [],
                   "execution_options_before": {"schema_version": "agent-execution-options.v1",
-                      "conversation_id": "conversation_" + "5" * 32, "owner_principal": "f6-chain-user",
-                      "workspace_id": "workspace_" + "4" * 32,
+                      "scope": "user", "owner_principal": "f6-chain-user",
                       "revision": 0, "options": default_agent_execution_options()},
                   "options_disable_attempted": False,
                   "worker_cleanup_attempted": False, "failure_category": None},
@@ -144,8 +145,7 @@ def _base_failure_state(**identity_overrides):
     return {"checks": {}, "identities": identities, "audit_summaries": {},
             "mutation_attempts": [], "uncertain_actions": [],
             "execution_options_before": {"schema_version": "agent-execution-options.v1",
-                "conversation_id": identities["conversation_id"], "owner_principal": "f6-chain-user",
-                "workspace_id": identities["workspace_id"], "revision": 0,
+                "scope": "user", "owner_principal": "f6-chain-user", "revision": 0,
                 "options": default_agent_execution_options()},
             "options_disable_attempted": False, "worker_cleanup_attempted": False,
             "failure_category": None}
@@ -420,7 +420,7 @@ def _failure_projection(functions, *, status="completed", revoked=True):
             "outcome": "completed",
             "settlement_sha256": "2" * 64, "dispatch_attempts": 1,
         }
-    response[f"/api/product/agent/conversations/{session_id}/execution-options"] = {
+    response["/api/product/settings/agent-execution-options"] = {
         **functions["state"]["execution_options_before"],
         "revision": 1 if revoked else 0,
         "options": {**default_agent_execution_options(), "auto_continue": not revoked},
@@ -485,8 +485,7 @@ def test_failure_reconcile_confirms_only_complete_closed_scope_and_keeps_usage_u
     assert [call[:2] for call in calls] == [
         ("GET", "/v1/agent/sessions/" + functions["state"]["identities"]["conversation_id"]),
         ("GET", "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"]),
-        ("GET", "/api/product/agent/conversations/" + functions["state"]["identities"]["conversation_id"]
-         + "/execution-options"),
+        ("GET", "/api/product/settings/agent-execution-options"),
         ("GET", "/api/product/signal-producer/jobs/" + functions["state"]["identities"]["signal_job_id"]),
     ]
     assert all(0 < call[2] <= 4 for call in calls)
@@ -533,8 +532,7 @@ def test_accepted_root_without_terminal_proof_stays_unknown_after_exact_reads():
     assert [call[1] for call in calls] == [
         "/v1/agent/sessions/" + functions["state"]["identities"]["conversation_id"],
         "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"],
-        "/api/product/agent/conversations/" + functions["state"]["identities"]["conversation_id"]
-        + "/execution-options",
+        "/api/product/settings/agent-execution-options",
     ]
 
 
@@ -569,10 +567,10 @@ def test_observer_stops_immediately_on_proven_session_task_options_or_job_identi
         response[f"/api/product/research/tasks/{identities['task_id']}"]["workspace_id"] = (
             "workspace_" + "f" * 32)
     elif bad_identity == "options_owner":
-        path = f"/api/product/agent/conversations/{identities['conversation_id']}/execution-options"
+        path = "/api/product/settings/agent-execution-options"
         response[path]["owner_principal"] = "other-user"
     elif bad_identity == "options_revision":
-        path = f"/api/product/agent/conversations/{identities['conversation_id']}/execution-options"
+        path = "/api/product/settings/agent-execution-options"
         response[path]["revision"] = 2
     else:
         response[f"/api/product/signal-producer/jobs/{identities['signal_job_id']}" ]["job"]["owner_principal"] = "other-user"
@@ -680,8 +678,7 @@ def test_one_exact_options_cas_preserves_unknown_request_state():
     functions = _driver_functions()
     state = functions["state"] = _base_failure_state()
     state["uncertain_actions"] = ["foreground_agent_turn_1", "execution_options_disable"]
-    conversation_id = state["identities"]["conversation_id"]
-    options_path = f"/api/product/agent/conversations/{conversation_id}/execution-options"
+    options_path = "/api/product/settings/agent-execution-options"
     request_state = {
         "requests_reserved": 1, "requests_remaining": 0, "unconfirmed_requests": 1,
         "request_identity": {"status": "outcome_unknown", "run_id": None,

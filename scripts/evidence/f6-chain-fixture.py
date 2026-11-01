@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Dedicated F6 CI fixture and read-only AgentRun/audit observer.
 
-The only write action creates the isolated CI user/workspace. The audit action
-uses a transaction explicitly marked READ ONLY and is scoped to that owner,
-Product conversation, ResearchTask, Runtime root, and (for BG) exact receipt.
+The write action creates the isolated CI user/workspace and synthetic model
+binding. Discovery is stubbed locally; the runtime provider is scoped to the
+synthetic loopback fixture. The audit action uses a READ ONLY transaction
+scoped to that owner, conversation, task, Runtime root,
+and (for BG) exact receipt.
 """
 from __future__ import annotations
 
@@ -319,8 +321,87 @@ def main() -> None:
     action = sys.argv[1]
     if action == "user":
         from tests.workspace_helpers import trusted_agent_context
+        from app.credentials import CredentialCipher, CredentialStore
+        from packages.contracts.continuation_request import ALLOWED_MODEL, ALLOWED_PROVIDER
 
         context = trusted_agent_context(OWNER)
+        synthetic_key = "f6-ci-synthetic-route-only"
+        cipher = CredentialCipher.from_env()
+        if not cipher.configured:
+            raise SystemExit("F6 synthetic model binding requires configured credential encryption")
+        credentials = CredentialStore(cipher=cipher)
+        expected_route = {"provider": ALLOWED_PROVIDER, "model": ALLOWED_MODEL}
+        try:
+            route = credentials.resolve_model_route(OWNER, "byq-product")
+            if route != expected_route:
+                credential = credentials.create_credential(
+                    OWNER,
+                    {
+                        "purpose": "model_api_key",
+                        "provider": "opencode-go",
+                        "scope": "user",
+                        "label": "F6 synthetic route fixture",
+                        "secret": synthetic_key,
+                        "idempotency_key": "f6-task-ready-route-v1",
+                    },
+                    actor=OWNER,
+                )
+
+                def fixture_model_list(url: str, token: str, timeout: float) -> tuple[int, bytes]:
+                    if (url != "https://opencode.ai/zen/go/v1/models"
+                            or token != synthetic_key or timeout <= 0):
+                        raise SystemExit("unexpected F6 synthetic model discovery request")
+                    return 200, json.dumps({"data": [{"id": ALLOWED_MODEL}]}).encode()
+
+                discovery = credentials.discover_models(
+                    credential["credential_id"], owner=OWNER, fetch=fixture_model_list,
+                )
+                supported_route = next((
+                    item for item in discovery["models"]
+                    if item.get("model") == ALLOWED_MODEL
+                    and item.get("runtime_provider") == ALLOWED_PROVIDER
+                    and item.get("supported") is True
+                ), None)
+                if supported_route is None:
+                    raise SystemExit("F6 synthetic model route is not supported")
+
+                profile = next((
+                    row for row in credentials.list_profiles(OWNER)
+                    if row["key_name"] == "f6-task-ready-route"
+                ), None)
+                if profile is None:
+                    profile = credentials.create_profile(OWNER, {
+                        "credential_id": credential["credential_id"],
+                        "key_name": "f6-task-ready-route",
+                        "display_name": "F6 synthetic task-ready route",
+                        "provider": "opencode-go",
+                        "model": ALLOWED_MODEL,
+                    })
+                elif (profile["credential_id"] != credential["credential_id"]
+                        or profile["provider"] != "opencode-go"
+                        or profile["model"] != ALLOWED_MODEL
+                        or profile["status"] != "active"):
+                    raise SystemExit("F6 synthetic model profile changed")
+
+                binding = next(
+                    row for row in credentials.list_bindings(OWNER)
+                    if row["agent_id"] == "byq-product"
+                )
+                if binding["profile_id"] != profile["profile_id"]:
+                    credentials.bind(
+                        OWNER, "byq-product", profile["profile_id"],
+                        expected_version=binding["version"], actor=OWNER,
+                    )
+                route = credentials.resolve_model_route(OWNER, "byq-product")
+                if route != expected_route:
+                    raise SystemExit("F6 synthetic task-ready route differs from Runtime")
+            resolved = credentials.resolve_model(OWNER, "byq-product")
+            if (resolved is None
+                    or {"provider": resolved["provider"], "model": resolved["model"]} != expected_route
+                    or resolved["api_key"] != synthetic_key):
+                raise SystemExit("F6 synthetic model binding cannot be resolved by the Runtime credential keyring")
+        finally:
+            credentials.close()
         workspace_id = context["x-byq-workspace-id"]
         print(json.dumps({"owner": OWNER, "workspace_id": workspace_id}, sort_keys=True))
         return

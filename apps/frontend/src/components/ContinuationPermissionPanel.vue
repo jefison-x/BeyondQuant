@@ -106,7 +106,21 @@ const permissionProfile = computed<ContinuationAvailableProfile | null>(() => {
   return { execution_profile: permission.execution_profile, request_limits: permission.request_limits };
 });
 const displayedProfile = computed(() => permissionProfile.value ?? availableProfile.value);
+const hasAutomaticRecord = computed(() => view.value?.automatic_request !== undefined);
+const automaticRequest = computed(() => {
+  const value = view.value?.automatic_request;
+  return value?.schema_version === 'task-ready-request-view.v1' && value.task_id === props.taskId
+    ? value : null;
+});
+const automaticUsage = computed(() => automaticRequest.value?.request_usage?.schema_version === 'continuation-request-usage.v2'
+  ? automaticRequest.value.request_usage.actual_usage : null);
+const automaticStates = { reserved: '已预留', accepted: '已接纳', outcome_unknown: '结果未确认',
+  settled: '已结算', rejected: '已拒绝', cancelled: '已取消' };
+function optionLimit(value: number | null): string { return value === null ? '不限' : String(value); }
 const status = computed(() => {
+  if (hasAutomaticRecord.value) return automaticRequest.value
+    ? '自动接续遵守用户级执行参数；本页只读核对原请求，不创建许可或重放。'
+    : '自动接续记录的任务身份无法核对，请刷新。';
   if (view.value && view.value.schema_version !== PROFILE_SCHEMA) {
     return '旧版许可与预算记录仅供查看；不会创建、升级或重放后台请求。';
   }
@@ -118,7 +132,7 @@ const status = computed(() => {
 });
 const canCreate = computed(() => {
   const current = view.value;
-  return current?.schema_version === PROFILE_SCHEMA && current.permission === null
+  return !hasAutomaticRecord.value && current?.schema_version === PROFILE_SCHEMA && current.permission === null
     && current.request_state.requests_reserved === 0 && current.request_state.unconfirmed_requests === 0
     && current.request_state.requests_remaining === 1 && availableProfile.value !== null;
 });
@@ -320,15 +334,28 @@ onBeforeUnmount(() => {
 
 <template>
   <section aria-label="任务后台续接许可" class="continuation-panel" v-loading="busy">
-    <h3>后台续接许可</h3>
+    <h3>{{ hasAutomaticRecord ? '自动接续记录' : '后台续接许可' }}</h3>
     <p class="task-identity">任务：{{ taskId }}</p>
-    <p>申请只进入人工审批；批准本身不会创建 Job。匹配的任务完成事件可能按批准的执行档案和资源预算自动启动一次后台续接。</p>
+    <p v-if="!hasAutomaticRecord">申请只进入人工审批；批准本身不会创建 Job。匹配的任务完成事件可能按批准的执行档案和资源预算自动启动一次后台续接。</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="mutationNeedsRefresh" title="授权操作结果尚未核对。本页面不会自动重发，请先刷新许可状态。" type="warning" :closable="false" />
     <el-alert v-if="lastRequestStatus" :title="lastRequestStatus === 'pending' ? '续接申请已进入待审批队列；当前没有创建许可或启动请求。' : '申请结果需要在审批中心核对；不会自动重发。'" type="info" :closable="false" />
     <p v-if="view" role="status">{{ status }}</p>
 
-    <template v-if="view?.schema_version === PROFILE_SCHEMA && view.permission">
+    <section v-if="automaticRequest" aria-label="自动接续实际用量">
+      <p>请求状态：{{ automaticStates[automaticRequest.status] }}；结果：{{ automaticRequest.outcome === 'completed' ? '已完成' : automaticRequest.outcome ?? '未确认' }}；派发 {{ automaticRequest.dispatch_attempts }} 次。</p>
+      <p>模型：{{ automaticRequest.execution_profile.provider }} / {{ automaticRequest.execution_profile.model }}；用户参数版本 {{ automaticRequest.execution_profile.options_revision }}。</p>
+      <p>信号 Job：{{ automaticRequest.signal_job_id }}；结果 Artifact：{{ automaticRequest.result_artifact_id }}</p>
+      <p>本请求的模型调用上限：{{ optionLimit(automaticRequest.execution_profile.options.max_provider_calls) }}；工具调用上限：{{ optionLimit(automaticRequest.execution_profile.options.max_tool_calls) }}；执行时长上限：{{ optionLimit(automaticRequest.execution_profile.options.max_runtime_seconds) }}。</p>
+      <p v-if="automaticUsage" aria-label="实际用量记录">
+        实际用量：输入 {{ usageValue(automaticUsage.input_tokens) }} token，缓存读取 {{ usageValue(automaticUsage.cache_read_tokens) }} token，
+        输出 {{ usageValue(automaticUsage.output_tokens) }} token；模型尝试 {{ usageValue(automaticUsage.provider_attempts) }} 次；完整性：{{ usageCompleteness(automaticUsage.completeness) }}。
+      </p>
+      <p v-else>实际用量：未知；尚未取得请求用量收据，不代表零消耗。</p>
+      <p>已运行请求保留原用户参数快照；本页不修改设置、审批或请求。</p>
+    </section>
+
+    <template v-if="!hasAutomaticRecord && view?.schema_version === PROFILE_SCHEMA && view.permission">
       <p>请求档案：{{ view.permission.execution_profile.profile_id }} v{{ view.permission.execution_profile.profile_version }}；指纹 {{ view.permission.execution_profile.profile_sha256 }}</p>
       <p v-if="view.permission.turn_timeout_seconds">接续处理等待上限：{{ view.permission.turn_timeout_seconds }} 秒；许可到期：{{ formatChinaTime(view.permission.expires_at) }}</p>
       <p v-else>许可到期：{{ formatChinaTime(view.permission.expires_at) }}</p>
@@ -350,7 +377,7 @@ onBeforeUnmount(() => {
       <el-button v-if="view.permission.revoked_at === null" :disabled="busy || mutationNeedsRefresh" type="danger" plain @click="revoke">撤销后台续接许可</el-button>
     </template>
 
-    <template v-else-if="view?.schema_version === 'task-continuation-permission.v1'">
+    <template v-else-if="!hasAutomaticRecord && view?.schema_version === 'task-continuation-permission.v1'">
       <template v-if="view.permission">
         <p>旧版许可：总额度 {{ view.permission.token_limit }} token；到期：{{ formatChinaTime(view.permission.expires_at) }}</p>
         <p v-if="view.budget">历史预算记录：可用 {{ view.budget.available_tokens }}；预留 {{ view.budget.reserved_tokens }}；记账 {{ view.budget.charged_tokens }} token；剩余回合 {{ view.budget.turns_remaining }}。</p>
@@ -360,7 +387,7 @@ onBeforeUnmount(() => {
       <p v-else>当前接口尚未提供新版授权档案，无法创建许可。请刷新后核对。</p>
     </template>
 
-    <template v-else-if="view?.schema_version === PROFILE_SCHEMA && !view.permission">
+    <template v-else-if="!hasAutomaticRecord && view?.schema_version === PROFILE_SCHEMA && !view.permission">
       <el-form v-if="canCreate" label-position="top" @submit.prevent="submit">
         <p>系统提供的请求上限如下。申请仅针对本任务已验证的策略版本；人工批准本身不会创建 Job，匹配的任务完成事件可能按批准的执行档案和资源预算自动启动一次后台续接。</p>
         <p>请求档案：{{ availableProfile?.execution_profile.profile_id }} v{{ availableProfile?.execution_profile.profile_version }}；指纹 {{ availableProfile?.execution_profile.profile_sha256 }}</p>
@@ -393,7 +420,7 @@ onBeforeUnmount(() => {
       <p v-else>当前许可已有请求或未确认结果，不能创建第二个后台请求。请刷新状态核对。</p>
     </template>
 
-    <el-button :disabled="busy" data-test="refresh-permission" @click="refresh">刷新许可状态</el-button>
+    <el-button :disabled="busy" data-test="refresh-permission" @click="refresh">{{ hasAutomaticRecord ? '刷新接续记录' : '刷新许可状态' }}</el-button>
   </section>
 </template>
 

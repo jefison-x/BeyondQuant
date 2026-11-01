@@ -1,11 +1,11 @@
-"""User-owned, per-conversation execution options (Accepted ADR-0111).
+"""User-owned execution options shared by all of that user's conversations.
 
 These are optional BYQ execution parameters, not approval or continuation grants.
 ``None`` means that BYQ imposes no bound for that dimension. Counts, totals,
 and root runtime apply to one Root execution; ``*_per_call`` values are per
 provider call; concurrency is the peak provider-call count in that execution.
 ``max_continuations`` is the number of future automatic continuation events
-for the same conversation/task and options revision, measured from trusted
+for each conversation/task and user-options revision, measured from trusted
 continuation receipts. It is an optional parameter, not a token balance or
 permission. Child runtime and no-progress values apply independently to each
 child execution. Output-token totals are the sum of per-call declared output

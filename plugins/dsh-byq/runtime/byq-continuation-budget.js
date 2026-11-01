@@ -67,6 +67,7 @@ const TASK_READY_EXECUTION_PROFILE_VERSION = 2;
 const TASK_READY_OPTIONS_SCHEMA = 'agent-execution-options.v1';
 const TASK_READY_UPSTREAM_BASE_URL = 'https://opencode.ai/zen/go/v1';
 const TASK_READY_UPSTREAM_REQUEST_TARGET = '/chat/completions';
+const OFFICIAL_TASK_READY_PROFILE_ID = 'task-ready-read.official-deepseek.v1';
 // Domain tools are read-only; the three harness lifecycle tools preserve the
 // existing F6 flow and do not grant additional domain actions.
 const TASK_READY_DOMAIN_TOOLS = Object.freeze([
@@ -130,15 +131,21 @@ function validTaskReadyProfile(profile) {
     'options_revision', 'options_schema_version', 'profile_id', 'profile_sha256',
     'profile_version', 'provider', 'upstream_base_url', 'upstream_request_target',
   ].sort().join(',');
-  if (!isRecord(profile) || Object.keys(profile).sort().join(',') !== profileFields
-      || profile.profile_id !== TASK_READY_EXECUTION_PROFILE_ID
-      || profile.profile_version !== TASK_READY_EXECUTION_PROFILE_VERSION
+  if (!isRecord(profile)) return false;
+  const official = profile.profile_id === OFFICIAL_TASK_READY_PROFILE_ID;
+  const routeValid = official
+    ? profile.profile_version === 1
+      && profile.provider === 'deepseek-official' && profile.model === 'deepseek-flash'
+      && profile.upstream_base_url === 'https://api.deepseek.com/anthropic'
+      && profile.upstream_request_target === '/v1/messages'
+    : profile.profile_id === TASK_READY_EXECUTION_PROFILE_ID
+      && profile.profile_version === TASK_READY_EXECUTION_PROFILE_VERSION
+      && profile.provider === 'opencode-go-chat' && profile.model === 'deepseek-v4.1-flash'
+      && profile.upstream_base_url === TASK_READY_UPSTREAM_BASE_URL
+      && profile.upstream_request_target === TASK_READY_UPSTREAM_REQUEST_TARGET;
+  if (Object.keys(profile).sort().join(',') !== profileFields || !routeValid
       || profile.options_schema_version !== TASK_READY_OPTIONS_SCHEMA
       || !Number.isSafeInteger(profile.options_revision) || profile.options_revision < 0
-      || profile.provider !== 'opencode-go-chat'
-      || profile.model !== 'deepseek-v4.1-flash'
-      || profile.upstream_base_url !== TASK_READY_UPSTREAM_BASE_URL
-      || profile.upstream_request_target !== TASK_READY_UPSTREAM_REQUEST_TARGET
       || !Array.isArray(profile.allowed_domain_tools)
       || JSON.stringify(profile.allowed_domain_tools) !== JSON.stringify(TASK_READY_DOMAIN_TOOLS)
       || !Array.isArray(profile.allowed_harness_tools)

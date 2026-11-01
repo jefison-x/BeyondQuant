@@ -56,7 +56,7 @@ const softCancelRunId = ref("");
 const activeRunId = ref("");
 const agentMessageRunIds = new WeakMap<object, string>();
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
-const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。可在系统设置中关闭后续自动接续。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
+const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。可在智能助手偏好中关闭后续自动接续。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
 // A known, fully-settled model-budget exhaustion closes the failed root but
 // leaves the live conversation promptable. The browser must not treat it as a

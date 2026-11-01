@@ -55,11 +55,7 @@ const router = createRouter({
         },
         {
           path: "settings/agent-runtime",
-          component: () => import("@/components/layout/SystemSettingsLayout.vue"),
-          meta: { title: "Agent运行参数", kicker: "会话设置", subtitle: "配置本人会话的自动接续" },
-          children: [
-            { path: "", name: "agent-runtime-settings", component: () => import("@/views/AgentRuntimeSettingsView.vue") },
-          ],
+          redirect: "/user/agent-policy",
         },
         { path: "system-status", redirect: "/settings/system/overview", meta: { requiresAdmin: true } },
         {
@@ -136,7 +132,7 @@ const router = createRouter({
             { path: "assets", name: "user-assets", component: () => import("@/views/AssetsView.vue"), meta: { title: "资产管理", kicker: "用户中心", subtitle: "资产清单与安全导入导出" } },
             { path: "paper-trading", redirect: (to) => ({ path: "/paper-trading", query: to.query, hash: to.hash }) },
             { path: "models", name: "user-models", component: () => import("@/views/ModelsView.vue"), meta: { title: "模型配置", kicker: "用户中心", subtitle: "写入保密凭据、模型档案和 Agent 绑定" } },
-            { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "智能助手偏好", kicker: "用户中心", subtitle: "个人审批偏好和操作边界" } },
+            { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "智能助手偏好", kicker: "用户中心", subtitle: "用户运行参数、审批偏好与操作边界" } },
             { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "审批历史", kicker: "用户中心", subtitle: "已决审批记录与只读领域详情" } },
             { path: "reset", name: "user-workspace-reset", component: () => import("@/views/WorkspaceResetView.vue"), meta: { title: "重置工作区", kicker: "用户中心", subtitle: "重置运行时或清理当前工作区数据" } },
           ],

@@ -51,6 +51,10 @@ def test_continuation_qualification_requires_fixed_acp_and_existing_business_gat
     [
         ("synthetic", "opencode-go-chat", "deepseek-v4.1-flash",
          "dsh-v0.2.0-rc.2-acp", True, True, "owner-a", "workspace-a", True),
+        ("synthetic", "deepseek-official", "deepseek-flash",
+         "dsh-v0.2.0-rc.2-acp", True, True, "owner-a", "workspace-a", True),
+        ("synthetic", "deepseek-official", "deepseek-v4.1-flash",
+         "dsh-v0.2.0-rc.2-acp", True, True, "owner-a", "workspace-a", False),
         ("", "opencode-go-chat", "deepseek-v4.1-flash",
          "dsh-v0.2.0-rc.2-acp", True, True, "owner-a", "workspace-a", False),
         ("synthetic", "other", "deepseek-v4.1-flash",

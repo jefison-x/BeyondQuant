@@ -212,8 +212,8 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     (tmp_path / "composition.yml").write_text("[]\n", encoding="utf-8")
     runtime = RuntimeAdapter(compatibility)
     runtime.require_current_backend_authority = lambda: 7
-    runtime._test_execution_options_by_session = {}
-    runtime._test_execution_revision_by_session = {}
+    runtime._test_execution_options_by_owner = {}
+    runtime._test_execution_revision_by_owner = {}
     runtime._test_execution_projection_overrides = {}
     runtime._test_backend_reads = []
     runtime._test_search_resolution_reads = []
@@ -265,21 +265,15 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             conversation_scopes[conversation_id] = (session_id, scope)
             return httpx.Response(
                 200, json={"conversation": scope}, request=httpx.Request("GET", url))
-        prefix = "/v1/product/conversations/"
-        suffix = "/execution-options"
-        assert path.startswith(prefix) and path.endswith(suffix)
-        conversation_id = unquote(path[len(prefix):-len(suffix)])
-        assert conversation_id in conversation_scopes
-        path_session, scope = conversation_scopes[conversation_id]
-        assert path_session == session_id
-        options = runtime._test_execution_options_by_session.get(
-            session_id, default_agent_execution_options())
+        assert path == "/v1/users/agent-execution-options"
+        assert any(scope["runtime_session_id"] == session_id for _, scope in conversation_scopes.values())
+        options = runtime._test_execution_options_by_owner.get(
+            owner, default_agent_execution_options())
         projection = {
             "schema_version": "agent-execution-options.v1",
-            "conversation_id": conversation_id,
+            "scope": "user",
             "owner_principal": owner,
-            "workspace_id": workspace_id,
-            "revision": runtime._test_execution_revision_by_session.get(session_id, 4),
+            "revision": runtime._test_execution_revision_by_owner.get(owner, 4),
             "options": options,
             "updated_at": None,
         }
@@ -555,7 +549,8 @@ def _f6_reservation(owner: str, workspace: str, suffix: str) -> dict:
 
 def _task_ready_reservation(
         owner: str, workspace: str, conversation: str,
-        *, identity_marker: str | None = None) -> dict:
+        *, identity_marker: str | None = None,
+        provider: str = "opencode-go-chat", model: str = "deepseek-v4.1-flash") -> dict:
     from packages.contracts.agent_execution_options import default_agent_execution_options
     from packages.contracts.continuation_request import continuation_reservation_v3
 
@@ -579,10 +574,12 @@ def _task_ready_reservation(
         )
     probe = continuation_reservation_v3(
         **fields, event_key="ready-v1:" + "0" * 64,
+        provider=provider, model=model,
     )
     return continuation_reservation_v3(
         **fields,
         event_key="ready-v1:" + probe["idempotency_key"].removeprefix("task-ready-event:"),
+        provider=provider, model=model,
     )
 
 
@@ -652,6 +649,48 @@ def test_task_ready_v3_uses_ordinary_product_acp_without_f6_flag(slot_runtime, m
     assert settled["idempotency_key"] == reservation["idempotency_key"]
     assert settled["request_usage"]["execution_profile"] == reservation["execution_profile"]
     assert settled["request_usage"]["request_limits"] == reservation["request_limits"]
+
+
+def test_task_ready_v3_profile_model_mismatch_is_rejected_before_start(slot_runtime, monkeypatch):
+    runtime, compatibility, registry = slot_runtime
+    monkeypatch.delenv("BYQ_F6_EXECUTOR_ENABLED", raising=False)
+    session_id = "task-ready-v3-route-mismatch"
+    workspace = "workspace_slot_a"
+    _create(runtime, session_id, workspace)
+    record = runtime._get(session_id)
+    reservation = _task_ready_reservation(
+        "slot-owner", workspace, "conversation-" + session_id,
+        provider="deepseek-official", model="deepseek-flash",
+    )
+    reservation_id = _task_ready_reservation_id(reservation)
+    assert (reservation["execution_profile"]["provider"],
+            reservation["execution_profile"]["model"]) == (
+                "deepseek-official", "deepseek-flash")
+    assert (record.model_resolution["provider"], record.model_resolution["model"]) == (
+        "opencode-go-chat", "deepseek-v4.1-flash")
+    generation = record.current_generation
+    harness = record.harness
+    active_run = record.active_run
+    assert generation is not None
+    assert harness is not None
+    assert active_run is None
+
+    with pytest.raises(ValueError, match="task-ready profile does not match the native model route"):
+        runtime.submit_prompt(
+            session_id, "route mismatch must fail before START", conversation_context=[],
+            idempotency_key=reservation_id, continuation_budget=reservation,
+        )
+
+    assert compatibility.start_attempts == []
+    assert compatibility.successful_starts == []
+    assert record.status == SessionStatus.READY
+    assert record.process_used is False
+    assert record.current_generation is generation
+    assert record.harness is harness
+    assert record.active_run is active_run
+    assert record.continuation_request_gate is None
+    assert record.continuation_request_proxy is None
+    assert workspace not in registry._leases
 
 
 def test_task_ready_receipt_requires_each_close_ack_and_provider_fact(slot_runtime):
@@ -2114,7 +2153,7 @@ def test_ordinary_path_authorized_model_first_submit_opens_product_turn_gate(slo
     assert gate.execution_profile["model"] == "deepseek-v4.1-flash"
     reads = runtime._test_backend_reads
     assert [url.rsplit("/", 1)[-1] for url, _headers, _timeout in reads] == [
-        "ord-authorized", "execution-options",
+        "ord-authorized", "agent-execution-options",
     ]
     assert len({headers["X-BYQ-Root-Run-ID"] for _url, headers, _timeout in reads}) == 1
     assert all(headers["X-BYQ-Owner-Principal"] == "slot-owner"
@@ -2125,7 +2164,7 @@ def test_ordinary_path_authorized_model_first_submit_opens_product_turn_gate(slo
 def test_ordinary_options_scope_mismatch_fails_before_proxy_or_runner_start(slot_runtime, monkeypatch):
     runtime, compatibility, _registry_value = slot_runtime
     runtime._test_execution_projection_overrides["ord-options-scope"] = {
-        "workspace_id": "workspace_slot_b",
+        "owner_principal": "another-user",
     }
     from app import runtime as runtime_module
     opened = []
@@ -2307,7 +2346,7 @@ def test_ordinary_submit_loopback_gate_cap_posts0_and_root_journal(slot_runtime,
     from packages.contracts.agent_execution_options import default_agent_execution_options
     options = default_agent_execution_options()
     options["max_tool_payload_bytes_per_call"] = 131072
-    runtime._test_execution_options_by_session["ord-loopback"] = options
+    runtime._test_execution_options_by_owner["slot-owner"] = options
     from app import runtime as runtime_module
     captured = {}
     original_proxy = runtime_module.RequestGateProxy
@@ -2689,8 +2728,8 @@ def test_postdispatch_product_runtime_limit_starts_only_a_fresh_root_after_ack(s
     from packages.contracts.agent_execution_options import default_agent_execution_options
     options = default_agent_execution_options()
     options["max_runtime_seconds"] = 60
-    runtime._test_execution_options_by_session["ord-post-runtime"] = options
-    runtime._test_execution_revision_by_session["ord-post-runtime"] = 11
+    runtime._test_execution_options_by_owner["slot-owner"] = options
+    runtime._test_execution_revision_by_owner["slot-owner"] = 11
     compatibility.block_prompt = True
     _create(runtime, "ord-post-runtime", "workspace_slot_a")
     root = runtime.submit_prompt("ord-post-runtime", "first", conversation_context=[])
@@ -2727,8 +2766,8 @@ def test_postdispatch_product_runtime_limit_starts_only_a_fresh_root_after_ack(s
     # The explicit next instruction starts a distinct root with a new trusted
     # revision. It cannot inherit the stopped native transcript or request gate.
     runtime.acknowledge_terminal("ord-post-runtime", record.terminal_receipts[root])
-    runtime._test_execution_options_by_session["ord-post-runtime"] = default_agent_execution_options()
-    runtime._test_execution_revision_by_session["ord-post-runtime"] = 12
+    runtime._test_execution_options_by_owner["slot-owner"] = default_agent_execution_options()
+    runtime._test_execution_revision_by_owner["slot-owner"] = 12
     compatibility.block_prompt = False
     compatibility.prompt_started.clear()
     second_root = runtime.submit_prompt(
@@ -2752,8 +2791,8 @@ def test_postdispatch_runtime_limit_exception_starts_only_a_fresh_root_after_ack
     original_run = compatibility.run_prepared_prompt
     options = default_agent_execution_options()
     options["max_runtime_seconds"] = 60
-    runtime._test_execution_options_by_session["ord-exc-runtime"] = options
-    runtime._test_execution_revision_by_session["ord-exc-runtime"] = 21
+    runtime._test_execution_options_by_owner["slot-owner"] = options
+    runtime._test_execution_revision_by_owner["slot-owner"] = 21
 
     def arm_runtime_stop(gate):
         with gate._lock:
@@ -2791,7 +2830,7 @@ def test_postdispatch_runtime_limit_exception_starts_only_a_fresh_root_after_ack
         runtime.submit_prompt("ord-exc-runtime", "second", conversation_context=[])
 
     runtime.acknowledge_terminal("ord-exc-runtime", record.terminal_receipts[first_root])
-    runtime._test_execution_revision_by_session["ord-exc-runtime"] = 22
+    runtime._test_execution_revision_by_owner["slot-owner"] = 22
     monkeypatch.setattr(compatibility, "run_prepared_prompt", original_run)
     compatibility.prompt_started.clear()
     second_root = runtime.submit_prompt(

@@ -419,6 +419,37 @@ function rehashTaskReadyProfile(profile) {
     .update(canonicalJson(binding), 'utf8').digest('hex') };
 }
 
+test('official task-ready guard binds its finite Messages profile and preserves tool restrictions', () => {
+  const config = taskReadyConfig();
+  config.executionProfile = rehashTaskReadyProfile({
+    ...config.executionProfile,
+    profile_id: 'task-ready-read.official-deepseek.v1', profile_version: 1,
+    provider: 'deepseek-official', model: 'deepseek-flash',
+    upstream_base_url: 'https://api.deepseek.com/anthropic',
+    upstream_request_target: '/v1/messages',
+  });
+  const rows = [];
+  const guard = createToolGuard(config, row => rows.push(row));
+  for (let call = 0; call < 20; call += 1) {
+    assert.equal(guard.beforeExecute({ name: ALLOWED_TOOL_NAMES[call % ALLOWED_TOOL_NAMES.length] }).kind, 'allow');
+  }
+  assert.equal(rows.filter(row => row.phase === 'tool').length, 20);
+  assert.equal(rows[0].profile_sha256, config.executionProfile.profile_sha256);
+  assert.equal(rows[0].root_run_id, config.rootRunId);
+  assert.deepEqual(guard.beforeExecute({ name: 'mcp__byq__byq_artifact_create' }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_UNQUALIFIED',
+  });
+  for (const changes of [
+    { model: 'deepseek-v4.1-flash' }, { provider: 'opencode-go-chat' },
+    { upstream_request_target: '/chat/completions' },
+    { upstream_base_url: 'https://api.deepseek.com' }, { profile_version: 2 },
+    { allowed_domain_tools: ['byq_artifact_create', 'byq_research_get'] },
+  ]) {
+    const invalid = { ...config, executionProfile: rehashTaskReadyProfile({ ...config.executionProfile, ...changes }) };
+    assert.throws(() => createToolGuard(invalid, () => {}), /TASK_READY_GUARD_INVALID/);
+  }
+});
+
 test('task-ready-options v2 keeps the restricted F6 tools and leaves null limits unbounded', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'byq-task-ready-'));
   const journalPath = join(directory, 'guard.jsonl');

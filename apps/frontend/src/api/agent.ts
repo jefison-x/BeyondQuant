@@ -27,9 +27,8 @@ export interface AgentExecutionOptions {
 
 export interface AgentExecutionOptionsRecord {
   schema_version: typeof AGENT_EXECUTION_OPTIONS_SCHEMA;
-  conversation_id: string;
+  scope: "user";
   owner_principal: string;
-  workspace_id: string;
   revision: number;
   options: AgentExecutionOptions;
   updated_at: string | null;
@@ -50,14 +49,13 @@ const executionOptionLimitFields = [
 
 export function isAgentExecutionOptionsRecord(
   value: unknown,
-  conversationId: string,
+  ownerPrincipal: string,
 ): value is AgentExecutionOptionsRecord {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   if (record.schema_version !== AGENT_EXECUTION_OPTIONS_SCHEMA
-      || record.conversation_id !== conversationId
-      || typeof record.owner_principal !== "string"
-      || typeof record.workspace_id !== "string"
+      || record.scope !== "user"
+      || record.owner_principal !== ownerPrincipal
       || typeof record.revision !== "number" || !Number.isSafeInteger(record.revision) || record.revision < 0
       || typeof record.options !== "object" || record.options === null) return false;
   const options = record.options as Record<string, unknown>;
@@ -154,22 +152,20 @@ export function cancelSession(sessionId: string, mode: "soft" | "hard", token: s
 }
 
 export function getAgentExecutionOptions(
-  conversationId: string,
   token: string,
 ): Promise<AgentExecutionOptionsRecord> {
   return jsonRequest<AgentExecutionOptionsRecord>(
-    `${PRODUCT_ROOT}/agent/conversations/${encodeURIComponent(conversationId)}/execution-options`,
+    `${PRODUCT_ROOT}/settings/agent-execution-options`,
     token,
   );
 }
 
 export function updateAgentExecutionOptions(
-  conversationId: string,
   payload: AgentExecutionOptionsUpdate,
   token: string,
 ): Promise<AgentExecutionOptionsRecord> {
   return jsonRequest<AgentExecutionOptionsRecord>(
-    `${PRODUCT_ROOT}/agent/conversations/${encodeURIComponent(conversationId)}/execution-options`,
+    `${PRODUCT_ROOT}/settings/agent-execution-options`,
     token,
     { method: "PUT", body: JSON.stringify(payload) },
   );

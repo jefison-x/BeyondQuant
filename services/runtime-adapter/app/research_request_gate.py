@@ -34,6 +34,7 @@ from packages.contracts.continuation_request import (
     ALLOWED_MODEL as CONTINUATION_MODEL,
     USAGE_SCHEMA_VERSION as CONTINUATION_USAGE_SCHEMA,
     PROFILE_ID_V2 as TASK_READY_PROFILE_ID_V2,
+    OFFICIAL_PROFILE_ID as OFFICIAL_TASK_READY_PROFILE_ID,
     continuation_request_usage_v2,
     request_limits as continuation_request_limits,
     request_limits_v2 as task_ready_request_limits_v2,
@@ -364,13 +365,17 @@ class ResearchRequestGate:
         self.product_turn = False
         self.product_turn_v2 = False
         self.product_turn_official = False
+        self.task_ready_official = False
         self.task_ready_v2 = False
         self.execution_profile = None
         if execution_profile is not None:
             if (isinstance(execution_profile, dict)
-                    and execution_profile.get("profile_id") == TASK_READY_PROFILE_ID_V2):
+                    and execution_profile.get("profile_id") in {
+                        TASK_READY_PROFILE_ID_V2, OFFICIAL_TASK_READY_PROFILE_ID}):
                 self.execution_profile = validate_task_ready_execution_profile_v2(execution_profile)
                 self.task_ready_v2 = True
+                self.task_ready_official = (
+                    self.execution_profile['profile_id'] == OFFICIAL_TASK_READY_PROFILE_ID)
             elif (isinstance(execution_profile, dict)
                     and execution_profile.get("profile_id") == OFFICIAL_PRODUCT_EXECUTION_PROFILE_ID):
                 self.execution_profile = validate_official_product_turn_execution_profile(
@@ -386,6 +391,7 @@ class ResearchRequestGate:
                     except ValueError:
                         self.execution_profile = validate_product_turn_profile(execution_profile)
                         self.product_turn = True
+        self.official_messages = self.product_turn_official or self.task_ready_official
         self.continuation_mode = self.execution_profile is not None
         self._optional_execution = (
             self.product_turn_v2 or self.product_turn_official or self.task_ready_v2)
@@ -811,7 +817,7 @@ class ResearchRequestGate:
                 receipt, status=status, body=body, outcome_unknown=outcome_unknown)
         elapsed_ms = max(0, int((self._monotonic() - receipt.get("_started", self._monotonic()))
                                 * 1000))
-        actual = parse_response_usage(body, official_messages=self.product_turn_official)
+        actual = parse_response_usage(body, official_messages=self.official_messages)
         declared_max = int(receipt.get("declared_max_output_tokens") or 0)
         now_ms = int(self._wall() * 1000)
         late = now_ms >= self.limits["deadline_at_ms"]
@@ -942,7 +948,7 @@ class ResearchRequestGate:
             self._reject_continuation_request("budget_invalid", input_bytes=len(body))
         if not isinstance(parsed, dict):
             self._reject_continuation_request("budget_invalid", input_bytes=len(body))
-        expected_model = (self.execution_profile["model"] if self.product_turn_official
+        expected_model = (self.execution_profile["model"] if self.official_messages
                           else CONTINUATION_MODEL)
         if parsed.get("model") != expected_model:
             self._reject_continuation_request("model_route_unqualified", input_bytes=len(body))
@@ -1091,10 +1097,10 @@ class ResearchRequestGate:
     ) -> dict:
         elapsed_ms = max(0, int((self._monotonic()
             - receipt.get("_started", self._monotonic())) * 1000))
-        actual = parse_response_usage(body, official_messages=self.product_turn_official)
+        actual = parse_response_usage(body, official_messages=self.official_messages)
         declared = receipt.get("declared_max_output_tokens")
         total_elapsed_ms = max(0, int((self._monotonic() - self._continuation_started) * 1000))
-        if (self.product_turn_official and (
+        if (self.official_messages and (
                 outcome_unknown or (200 <= status < 300 and (
                     actual["actual_input_tokens"] == UNKNOWN
                     or actual["actual_output_tokens"] == UNKNOWN)))):
@@ -1545,7 +1551,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
         request = urllib.request.Request(
             upstream.rstrip("/") + self.path, data=body, method="POST",
             headers=forwarded_request_headers(
-                self.headers, official_messages=gate.product_turn_official))
+                self.headers, official_messages=gate.official_messages))
         status = 502
         data = b""
         content_type = "application/json"

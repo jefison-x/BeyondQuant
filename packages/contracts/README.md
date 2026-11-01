@@ -11,5 +11,5 @@ Typed envelope factory 见 [`workflow_trace.py`](workflow_trace.py)。
 证据或数值。
 
 普通会话执行参数及其无上限缺省语义见
-[`agent_execution_options.py`](agent_execution_options.py)。它们是用户级会话配置，
+[`agent_execution_options.py`](agent_execution_options.py)。同一用户的所有会话共用一份配置，
 不构成续接许可或审批。

@@ -148,12 +148,13 @@ class ResearchHandoffMixin:
                 WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace''',
                 {**params, 'conversation': task.get('conversation_id')})
             if conversation is not None:
-                options_row = fetch_one(connection, '''SELECT revision, options_json
-                    FROM product_conversation_execution_options
-                    WHERE conversation_id=:conversation AND owner_principal=:owner
-                      AND workspace_id=:workspace''',
-                    {**params, 'conversation': conversation['conversation_id']})
-                if options_row is not None:
+                options_row = fetch_one(connection, '''SELECT o.revision, o.options_json
+                    FROM users u LEFT JOIN user_agent_execution_options o ON o.user_id=u.user_id
+                    WHERE u.username=:owner AND u.status='active' ''',
+                    {'owner': task['owner_principal']})
+                if options_row is None:
+                    options_invalid = True
+                elif options_row['revision'] is not None:
                     try:
                         revision = options_row['revision']
                         if type(revision) is not int or revision < 1:

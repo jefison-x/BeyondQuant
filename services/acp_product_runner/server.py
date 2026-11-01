@@ -66,6 +66,10 @@ from packages.contracts.product_turn_request import (
     validate_product_turn_execution_profile,
 )
 from packages.contracts.continuation_request import (
+    ALLOWED_MODEL as TASK_READY_GO_MODEL,
+    ALLOWED_PROVIDER as TASK_READY_GO_PROVIDER,
+    OFFICIAL_MODEL as TASK_READY_OFFICIAL_MODEL,
+    OFFICIAL_PROVIDER as TASK_READY_OFFICIAL_PROVIDER,
     validate_task_ready_javascript_values_v2,
 )
 
@@ -166,35 +170,6 @@ def _validate_task_ready_guard(value: object) -> dict:
             or default_provider.get("id") != "llm-deepseek"
             or not isinstance(default_provider.get("config"), dict)):
         raise ProductSlotError("task-ready provider overlay is invalid")
-    route_config = route.get("config") if isinstance(route, dict) else None
-    providers = route_config.get("providers") if isinstance(route_config, dict) else None
-    if not isinstance(route_config, dict) or set(route_config) != {"providers"}:
-        raise ProductSlotError("task-ready route overlay is invalid")
-    chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
-    headers = chat.get("headers") if isinstance(chat, dict) else None
-    retry_policy = chat.get("retryPolicy") if isinstance(chat, dict) else None
-    models = chat.get("models") if isinstance(chat, dict) else None
-    if (not isinstance(route, dict) or set(route) != {"id", "config"}
-            or route.get("id") != "llm-pi-ai"
-            or not isinstance(providers, dict) or set(providers) != {"opencode-go-chat"}
-            or not isinstance(chat, dict)
-            or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
-            or chat.get("api") != "openai-completions"
-            or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
-            or not _valid_local_proxy_url(chat.get("baseURL"))
-            or not isinstance(retry_policy, dict)
-            or set(retry_policy) != {"mode", "maxRetries"}
-            or retry_policy.get("mode") != "normal"
-            or type(retry_policy.get("maxRetries")) is not int
-            or retry_policy["maxRetries"] != 0
-            or not isinstance(headers, dict) or set(headers) != {"x-opencode-session"}
-            or not isinstance(headers.get("x-opencode-session"), str)
-            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                            headers["x-opencode-session"]) is None
-            or not isinstance(models, list) or len(models) != 1
-            or not isinstance(models[0], dict)
-            or models[0].get("id") != "deepseek-v4.1-flash"):
-        raise ProductSlotError("task-ready route overlay is invalid")
     if (not isinstance(insert, dict) or set(insert) != {"insert"}
             or not isinstance(insert["insert"], list) or len(insert["insert"]) != 1):
         raise ProductSlotError("task-ready tool guard is invalid")
@@ -224,19 +199,69 @@ def _validate_task_ready_guard(value: object) -> dict:
         "max_output_tokens_per_call", "max_output_tokens_total",
     ) if profile["options"][field] is not None]
     output_cap = min(output_values) if output_values else None
-    expected_default = {} if output_cap is None else {"maxTokens": output_cap}
-    default_config = default_provider["config"]
-    if (set(default_config) != set(expected_default)
-            or (output_cap is not None and
-                (type(default_config.get("maxTokens")) is not int
-                 or default_config["maxTokens"] != output_cap))):
-        raise ProductSlotError("task-ready registered provider output cap is invalid")
-    expected_model = {"id": "deepseek-v4.1-flash"}
+    expected_model = {"id": profile["model"]}
     if output_cap is not None:
         expected_model["maxTokens"] = output_cap
-    if (models != [expected_model]
-            or (output_cap is not None and type(models[0].get("maxTokens")) is not int)):
-        raise ProductSlotError("task-ready model output cap is invalid")
+
+    route_pair = (profile["provider"], profile["model"])
+    if route_pair == (TASK_READY_GO_PROVIDER, TASK_READY_GO_MODEL):
+        route_config = route.get("config") if isinstance(route, dict) else None
+        providers = route_config.get("providers") if isinstance(route_config, dict) else None
+        chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+        headers = chat.get("headers") if isinstance(chat, dict) else None
+        retry_policy = chat.get("retryPolicy") if isinstance(chat, dict) else None
+        models = chat.get("models") if isinstance(chat, dict) else None
+        if (not isinstance(route_config, dict) or set(route_config) != {"providers"}
+                or not isinstance(route, dict) or set(route) != {"id", "config"}
+                or route.get("id") != "llm-pi-ai"
+                or not isinstance(providers, dict) or set(providers) != {TASK_READY_GO_PROVIDER}
+                or not isinstance(chat, dict)
+                or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
+                or chat.get("api") != "openai-completions"
+                or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+                or not _valid_local_proxy_url(chat.get("baseURL"))
+                or not isinstance(retry_policy, dict)
+                or set(retry_policy) != {"mode", "maxRetries"}
+                or retry_policy.get("mode") != "normal"
+                or type(retry_policy.get("maxRetries")) is not int
+                or retry_policy["maxRetries"] != 0
+                or not isinstance(headers, dict) or set(headers) != {"x-opencode-session"}
+                or not isinstance(headers.get("x-opencode-session"), str)
+                or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                                headers["x-opencode-session"]) is None
+                or not isinstance(models, list) or len(models) != 1
+                or models != [expected_model]
+                or (output_cap is not None and type(models[0].get("maxTokens")) is not int)):
+            raise ProductSlotError("task-ready route overlay is invalid")
+        expected_default = {} if output_cap is None else {"maxTokens": output_cap}
+        default_config = default_provider["config"]
+        if (set(default_config) != set(expected_default)
+                or (output_cap is not None
+                    and (type(default_config.get("maxTokens")) is not int
+                         or default_config["maxTokens"] != output_cap))):
+            raise ProductSlotError("task-ready registered provider output cap is invalid")
+    elif route_pair == (TASK_READY_OFFICIAL_PROVIDER, TASK_READY_OFFICIAL_MODEL):
+        config = default_provider["config"]
+        retry_policy = config.get("retryPolicy")
+        models = config.get("models")
+        if (set(config) != {"apiKeyEnv", "baseURL", "retryPolicy", "models"}
+                or config.get("apiKeyEnv") != "DEEPSEEK_API_KEY"
+                or not _valid_local_proxy_url(config.get("baseURL"))
+                or not isinstance(retry_policy, dict)
+                or set(retry_policy) != {"mode", "maxRetries"}
+                or retry_policy.get("mode") != "normal"
+                or type(retry_policy.get("maxRetries")) is not int
+                or retry_policy["maxRetries"] != 0
+                or not isinstance(models, list) or models != [expected_model]
+                or (output_cap is not None and type(models[0].get("maxTokens")) is not int)
+                or not isinstance(route, dict)
+                or set(route) != {"id", "disabled"}
+                or route.get("id") != "llm-pi-ai"
+                or type(route.get("disabled")) is not bool
+                or route["disabled"] is not True):
+            raise ProductSlotError("task-ready official route overlay is invalid")
+    else:
+        raise ProductSlotError("task-ready route profile is not qualified")
     return value
 
 
@@ -244,11 +269,11 @@ def _validate_guard(encoded: object) -> dict:
     """Return a closed legacy, ordinary, or task-ready guard overlay.
 
     Legacy F6 keeps its two disabled web tools and fixed DeepSeek output cap.
-    Task-ready keeps those tools disabled and the default adapter registered,
-    while applying only an optional user-derived cap to the selected Go route;
-    a null user ceiling stays uncapped by this BYQ overlay. Arbitrary plugin
-    config and extra entries are refused. The model and browser cannot supply
-    any of these trusted guard profiles.
+    Task-ready keeps those tools disabled and selects only its qualified Go or
+    official DeepSeek route, applying optional output caps from user options;
+    null ceilings stay uncapped by this BYQ overlay. Arbitrary plugin config
+    and extra entries are refused. The model and browser cannot supply these
+    trusted guard profiles.
     """
     if not isinstance(encoded, str) or not encoded \
             or len(encoded) > ((MAX_GUARD_BYTES + 2) // 3) * 4:
@@ -1977,9 +2002,15 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             if task_ready_config["rootRunId"] != scope["root_run_id"]:
                 raise ProductSlotError("task-ready guard root differs from signed Product scope")
             raw_env = value.get("env")
-            if isinstance(raw_env, dict) and "DEEPSEEK_API_KEY" in raw_env:
-                raise ProductSlotError(
-                    "task-ready START contains an unselected provider credential")
+            profile = task_ready_config["executionProfile"]
+            if (profile["provider"], profile["model"]) == (
+                    TASK_READY_OFFICIAL_PROVIDER, TASK_READY_OFFICIAL_MODEL):
+                selected_key, other_key = "DEEPSEEK_API_KEY", "OPENCODE_API_KEY"
+            else:
+                selected_key, other_key = "OPENCODE_API_KEY", "DEEPSEEK_API_KEY"
+            if (not isinstance(raw_env, dict) or selected_key not in raw_env
+                    or other_key in raw_env):
+                raise ProductSlotError("task-ready START credential does not match selected provider")
             max_runtime = task_ready_config["executionProfile"]["options"][
                 "max_runtime_seconds"]
             if max_runtime is None:

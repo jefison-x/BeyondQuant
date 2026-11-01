@@ -31,17 +31,21 @@ for (const width of [1440, 390]) {
       if (path === '/api/auth/login') { authenticated = true; body = { user, session_id: 'offline-session' }; }
       else if (path === '/api/auth/me') { status = authenticated ? 200 : 401; body = authenticated ? user : { error: { message: 'unauthenticated' } }; }
       else if (path === '/v1/agent/sessions') body = { sessions: [{ session_id: conversationId, trace_id: 'trace-1', title: 'F6 会话' }], total: 1, limit: 50, offset: 0 };
-      else if (path === `/api/product/agent/conversations/${conversationId}/execution-options`) {
+      else if (path === '/api/product/settings/agent-execution-options') {
         if (request.method() === 'PUT') {
           const sent = request.postDataJSON();
           mutations.push(sent);
           if (sent.expected_revision !== revision) status = 409;
           else { revision += 1; currentOptions = sent.options; }
         }
-        body = { schema_version: 'agent-execution-options.v1', conversation_id: conversationId,
-          owner_principal: user.subject, workspace_id: user.workspace.workspace_id,
+        body = { schema_version: 'agent-execution-options.v1', scope: 'user',
+          owner_principal: user.subject,
           revision, options: currentOptions, updated_at: null };
       }
+      else if (path === '/api/product/settings/agent-policy') body = {
+        platform_policy: { automation_enabled: false, paused: false, default_decision_mode: 'manual', max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
+        approval_inbox: { pending: 0 }, personal_policy: {}, rules: [], presets: [], audit: [],
+      };
       else if (path.endsWith('/continuation-permission')) { permissionRequests += 1; status = 404; }
       await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     });
@@ -50,16 +54,16 @@ for (const width of [1440, 390]) {
     await page.getByLabel('密码').fill('offline-password');
     await page.getByRole('button', { name: '进入' }).click();
     await expect(page).toHaveURL(/\/agent$/);
-    await page.goto(`/settings/agent-runtime?conversation_id=${conversationId}`);
-    const settings = page.getByRole('dialog', { name: /系统设置/ });
-    await expect(settings.locator('.runtime-settings').getByRole('heading', { name: 'Agent运行参数' })).toBeVisible();
+    await page.goto('/user/agent-policy');
+    const settings = page.locator('.runtime-settings');
+    await expect(settings.getByRole('heading', { name: 'Agent运行参数' })).toBeVisible();
     await expect(settings.getByText('自动接续默认开启', { exact: false })).toBeVisible();
     const autoContinue = settings.getByRole('switch', { name: '允许自动接续' });
     await expect(autoContinue).toBeChecked();
     await settings.locator('.setting-value .el-switch').click();
     await expect(autoContinue).not.toBeChecked();
     await settings.getByRole('button', { name: '保存参数' }).click();
-    await expect(settings.getByText('会话参数已保存')).toBeVisible();
+    await expect(settings.getByText('用户运行参数已保存', { exact: false })).toBeVisible();
     expect(mutations).toEqual([{ schema_version: 'agent-execution-options.v1',
       expected_revision: 0, options: { ...options, auto_continue: false } }]);
     expect(permissionRequests).toBe(0);

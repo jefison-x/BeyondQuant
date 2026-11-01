@@ -949,8 +949,9 @@ test("mobile shell uses a drawer and keeps account destinations reachable", asyn
   await page.getByRole("button", { name: "打开产品导航" }).click();
   await page.getByTitle(/用户设置/).click();
   await expect(page.getByRole("menuitem", { name: "资产管理" })).toBeVisible();
-  await page.getByRole("menuitem", { name: "系统设置" }).click();
-  await expect(page).toHaveURL(/\/settings\/agent-runtime\?returnTo=/);
+  await expect(page.getByRole("menuitem", { name: "系统设置" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "智能助手偏好" }).click();
+  await expect(page).toHaveURL(/\/user\/agent-policy$/);
   await expect(page.locator(".runtime-settings").getByRole("heading", { name: "Agent运行参数" })).toBeVisible();
 });
 
