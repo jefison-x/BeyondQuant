@@ -874,7 +874,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           <div class="wizard-hint">名称用于目录识别，不影响不可变输入、回测结果或幂等身份。</div>
         </el-form-item>
         <el-form-item label="已批准策略版本">
-          <el-select v-model="selectedOption" filterable placeholder="选择已批准的策略版本" style="width: 100%">
+          <el-select v-model="selectedOption" value-key="strategy_version_artifact_id" filterable placeholder="选择已批准的策略版本" style="width: 100%">
             <el-option
               v-for="opt in options"
               :key="String(opt.strategy_version_artifact_id)"
@@ -902,6 +902,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
         <el-form-item label="信号快照（ADR-0017 冻结输入）">
           <el-select
             v-model="selectedSnapshot"
+            value-key="artifact_id"
             filterable
             placeholder="选择匹配该策略的信号快照"
             style="width: 100%"
@@ -918,7 +919,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
         </el-form-item>
         <el-divider content-position="left">隔离生成信号</el-divider>
         <el-form-item label="不可变股票池快照">
-          <el-select v-model="selectedPool" filterable placeholder="选择活动股票池" style="width: 100%">
+          <el-select v-model="selectedPool" value-key="pool_id" filterable placeholder="选择活动股票池" style="width: 100%">
             <el-option
               v-for="pool in pools"
               :key="String(pool.pool_id)"
