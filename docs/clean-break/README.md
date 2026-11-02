@@ -6,7 +6,7 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 
 - [Phase 17 final acceptance](phase17-final-acceptance-20261102.md) — current scoped PASS; supersedes earlier pending-phase routing without rewriting failures.
 - [Maintenance release/deployment reconciliation](../evidence/maintenance-release-20261102.md) — completed post-phase CI, trusted images and six-service pre-release deployment, with explicit limits.
-- [Historical work closeout register](../evidence/project-history-closeout-20261102.md) — retained Drafts, branches/worktrees and consolidated maintainer decisions; no Phase 18 work.
+- [Historical work closeout register](../evidence/project-history-closeout-20261102.md) — authorized historical PR/branch cleanup, encrypted archives and protected environment/rollback paths; no Phase 18 work.
 - [Development agent mode](development-agent-mode.md) — Phase 0 configuration and role contract.
 - [Environment inventory](environment-inventory.md) — Phase 1–2 freeze and read-only environment facts.
 - [Archive and environment plan](archive-and-environment-plan.md) — Phase 3 backup and Phase 8–9 plan.

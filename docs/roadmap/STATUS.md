@@ -24,8 +24,10 @@ complete global aggregation and complete product parity are unqualified.
 Real F6 is qualified in the retained test environment; operating F6 remains
 disabled and was not executed. No formal v1.0 release is claimed.
 The [history closeout register](../evidence/project-history-closeout-20261102.md)
-separates completed delivery from retained branches/worktrees, the old functional
-Draft and dependency PRs still awaiting disposition. It does not reopen Phase 17.
+records the maintainer-authorized closure of historical PRs/branches and removal
+of unused worktrees after encrypted archival. Mounted test sources and original
+rollback material remain protected. Closure is not delivery of the abandoned
+candidate features and does not reopen Phase 17.
 **Next phase: none defined or authorized. Phase 18 is NOT_STARTED.**
 
 ### Dated closeout checkpoint — 2026-10-31

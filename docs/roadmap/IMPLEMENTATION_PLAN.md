@@ -19,9 +19,10 @@ Clean Break Phase 17 has passed its [accepted final scope](../clean-break/phase1
 The sequence above describes the completed program, not an instruction to restart
 Phase 7 or select an old Next phase. Subsequent maintenance and its pre-release
 image/deployment gates are reconciled in the [release record](../evidence/maintenance-release-20261102.md).
-The maintainer's current task is documentation and historical Draft/branch/worktree
-classification under the [closeout register](../evidence/project-history-closeout-20261102.md),
-with all uncommitted changes, test resources and current pages retained.
+The maintainer subsequently authorized closing/removing the listed historical
+Drafts, branches and unused worktrees. The [closeout register](../evidence/project-history-closeout-20261102.md)
+records completion, encrypted preservation of uncommitted changes, retained
+environment/rollback paths and the absence of browser mutations.
 No Product Phase is advanced: Phase 18 is undefined, unauthorized and NOT_STARTED.
 
 ## Historical implementation plan (non-normative)
