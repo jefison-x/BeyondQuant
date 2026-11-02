@@ -12,13 +12,22 @@ DeepSeek real F6, and all-lanes hosted PR CI with the repository merge gate.
 Existing failures and limited/unknown evidence keep their original scope.
 
 Later [maintenance evidence](../evidence/feedback-runner-maintenance-20261102.md)
-records Hub acceptance by maintainer confirmation and locally passing Runner
-tests. The minimal usage fix now derives a partial summary from validated stored
-continuation receipts and passed local targeted checks with an existing real
-receipt. Ordinary Product roots and research Judgment remain uncovered; complete
-global aggregation is unqualified. Hosted CI and live browser verification of
-this candidate remain NOT_RUN. No complete product parity, trusted image release
-or operating-stack deployment is claimed.
+records Hub acceptance by maintainer confirmation, passing Runner tests and the
+minimal partial usage fix based on validated stored continuation receipts.
+The [release/deployment reconciliation](../evidence/maintenance-release-20261102.md)
+records passing exact-head hosted CI and real Product browser checks, the merged
+maintenance PR, successful trusted-main Release Images qualification/publication,
+and the healthy six-service pre-release operating deployment. Its retained
+signature/SBOM and preservation receipts remain separate from browser evidence.
+Ordinary Product roots and research Judgment remain uncovered by usage accounting;
+complete global aggregation and complete product parity are unqualified.
+Real F6 is qualified in the retained test environment; operating F6 remains
+disabled and was not executed. No formal v1.0 release is claimed.
+The [history closeout register](../evidence/project-history-closeout-20261102.md)
+records the maintainer-authorized closure of historical PRs/branches and removal
+of unused worktrees after encrypted archival. Mounted test sources and original
+rollback material remain protected. Closure is not delivery of the abandoned
+candidate features and does not reopen Phase 17.
 **Next phase: none defined or authorized. Phase 18 is NOT_STARTED.**
 
 ### Dated closeout checkpoint — 2026-10-31

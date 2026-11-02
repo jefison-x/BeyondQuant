@@ -1,5 +1,18 @@
 # Feedback status and Runner test maintenance — 2026-11-02
 
+## Later release checkpoint — 2026-11-02
+
+The local checkpoint below is retained as recorded. Subsequently PR #421 passed
+all 12 hosted CI checks and real Product browser acceptance, merged under the
+maintainer's exact-head one-time squash exception, and passed trusted-main image
+qualification/publication and the bounded operating deployment. See the
+[release/deployment reconciliation](maintenance-release-20261102.md) for source/run
+identities and remaining coverage limits. The earlier NOT_RUN statements below
+describe the local checkpoint, not the current deployment state. No formal Hub
+flow was newly executed; its acceptance remains maintainer confirmation.
+
+## Historical local checkpoint
+
 Status: **PASS for isolated local feedback verification, Runner test maintenance
 and the local partial receipt-based usage fix.**
 Hub acceptance: **COMPLETE — maintainer confirmation, 2026-11-02** (“hub标记验收完毕”).

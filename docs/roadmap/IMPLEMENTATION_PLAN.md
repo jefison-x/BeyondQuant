@@ -13,6 +13,18 @@ the verified final old-DB archive and exact inventory classification. Product
 functionality must later pass real Product API/browser and Golden Scenarios from
 fresh schema/workspace; old data is not migrated.
 
+### Current checkpoint — 2026-11-02
+
+Clean Break Phase 17 has passed its [accepted final scope](../clean-break/phase17-final-acceptance-20261102.md).
+The sequence above describes the completed program, not an instruction to restart
+Phase 7 or select an old Next phase. Subsequent maintenance and its pre-release
+image/deployment gates are reconciled in the [release record](../evidence/maintenance-release-20261102.md).
+The maintainer subsequently authorized closing/removing the listed historical
+Drafts, branches and unused worktrees. The [closeout register](../evidence/project-history-closeout-20261102.md)
+records completion, encrypted preservation of uncommitted changes, retained
+environment/rollback paths and the absence of browser mutations.
+No Product Phase is advanced: Phase 18 is undefined, unauthorized and NOT_STARTED.
+
 ## Historical implementation plan (non-normative)
 
 ## ADR-0084 current execution override（2026-09-21）
