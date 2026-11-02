@@ -2,7 +2,24 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-### Current closeout checkpoint — 2026-10-31
+### Final Phase 17 technical acceptance — 2026-11-02
+
+**Clean Break Phase 17: PASS within its accepted BYQ 0.10 scope.** The
+[final acceptance reconciliation](../clean-break/phase17-final-acceptance-20261102.md)
+records Tester → independent Sol Reviewer → Root acceptance of the retained
+Golden A–F evidence, affected user-wide execution settings, current official
+DeepSeek real F6, and all-lanes hosted PR CI with the repository merge gate.
+Existing failures and limited/unknown evidence keep their original scope.
+
+The feedback post-review polling, global usage aggregation and Runner test-hygiene
+follow-ups remain open as listed in that record; no complete product parity,
+trusted image release or operating-stack deployment is claimed by this verdict.
+**Next phase: none defined or authorized. Phase 18 is NOT_STARTED.**
+
+### Dated closeout checkpoint — 2026-10-31
+
+The following OPEN statements describe the earlier checkpoint; the November 2
+phase verdict above supersedes their routing, without rewriting the evidence.
 
 The Product phase remains **Clean Break Phase 17**. The later ACP maintenance
 and search-credential fixes have passed their named CI, image and pre-release
@@ -23,6 +40,11 @@ Phase 18 is not started. The dated narratives below retain their original
 scope and outcomes.
 
 <!-- byq:clean-break-current-phase=17 -->
+
+### Baseline and historical phase progress
+
+The architecture baseline below remains current. Its dated Phase 17 progress
+and OPEN narratives precede the final technical acceptance above.
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)

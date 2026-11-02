@@ -1,5 +1,13 @@
 # Phase 17 — Final Golden evidence reconciliation (2026-10-02)
 
+## Final applicability decision — 2026-11-02
+
+The [final Phase 17 acceptance](phase17-final-acceptance-20261102.md) records the
+later Tester → independent Reviewer → Root PASS, current real ACP F6, user-wide
+settings and all-lanes PR CI/merge gates. The OPEN statements and failed attempts
+below are dated evidence, not instructions to repeat completed tests or releases.
+Their source, unknown outcomes and bounded reuse remain unchanged.
+
 ## Later closeout checkpoint — 2026-10-31
 
 The [current reconciliation](phase17-closeout-20261031.md) records the later
