@@ -298,18 +298,27 @@ def test_search_credential_is_optional_with_only_official_model_value_reuse() ->
     assert "another-model-key" not in str(error.value)
 
 
+def _private_state_snapshot(state_dir: Path) -> dict[Path, bytes | None]:
+    return {
+        path.relative_to(state_dir): path.read_bytes() if path.is_file() else None
+        for path in state_dir.rglob("*")
+    }
+
+
 def test_workspace_mismatch_is_signed_and_never_creates_a_cwd(tmp_path: Path,
                                                               monkeypatch: pytest.MonkeyPatch) -> None:
-    _fake_popen_for_current_uid(monkeypatch)
+    calls = _fake_popen_for_current_uid(monkeypatch)
     server, thread = _server(tmp_path, "import sys,time; time.sleep(60)")
     path = tmp_path / "control" / "control.sock"
     try:
+        before = _private_state_snapshot(server.state_dir)
         scope = _scope(workspace_id="another-workspace")
         connection, challenge = _connect(path)
         nonce, digest = _start(connection, challenge, scope)
         assert _receive_reject(connection, challenge, nonce, digest) == "workspace_mismatch"
         assert not (server.session_base / "another-workspace").exists()
-        assert list(server.state_dir.iterdir()) == []
+        assert _private_state_snapshot(server.state_dir) == before
+        assert calls == []
         connection.close()
     finally:
         _close_server(server, thread)
@@ -318,17 +327,19 @@ def test_workspace_mismatch_is_signed_and_never_creates_a_cwd(tmp_path: Path,
 def test_forbidden_authority_environment_is_rejected_before_consumption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _fake_popen_for_current_uid(monkeypatch)
+    calls = _fake_popen_for_current_uid(monkeypatch)
     server, thread = _server(tmp_path, "import sys,time; time.sleep(60)")
     path = tmp_path / "control" / "control.sock"
     try:
+        before = _private_state_snapshot(server.state_dir)
         scope = _scope()
         env = {**_environment(scope), "BYQ_RUNTIME_AUTHORITY_TOKEN": "forbidden"}
         connection, challenge = _connect(path)
         nonce, digest = _start(connection, challenge, scope, env)
         assert _receive_reject(connection, challenge, nonce, digest) == "environment_rejected"
         assert not (server.session_root / scope["cwd_leaf"]).exists()
-        assert list(server.state_dir.iterdir()) == []
+        assert _private_state_snapshot(server.state_dir) == before
+        assert calls == []
         connection.close()
     finally:
         _close_server(server, thread)

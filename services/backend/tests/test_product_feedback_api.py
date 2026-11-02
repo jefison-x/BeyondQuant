@@ -98,6 +98,106 @@ def test_feedback_hub_relay_route_remains_service_authenticated(monkeypatch) -> 
     assert claimed.status_code == 200 and isinstance(claimed.json()["events"], list)
 
 
+def test_feedback_hub_rejected_status_round_trips_through_authenticated_api(monkeypatch) -> None:
+    """Local ASGI with a synthetic Hub receipt; not a formal Hub or browser E2E."""
+    monkeypatch.setattr(main_module, "FEEDBACK_HUB_RELAY_TOKEN", "hub-relay-status-test-token")
+    relay_headers = {"x-byq-feedback-hub-relay-token": "hub-relay-status-test-token"}
+    owner_headers = {
+        **trusted_agent_context("feedback-api-rejected-owner"),
+        "x-byq-feedback-browser-family": "chrome",
+        "x-byq-feedback-os-family": "linux",
+    }
+    other_headers = trusted_agent_context("feedback-api-rejected-other-owner")
+    payload = {
+        **draft_payload(),
+        "title": "反馈审核状态回传验证",
+        "idempotency_key": "api-feedback-rejected-create",
+    }
+
+    created = client.post("/v1/feedback/items", headers=owner_headers, json=payload)
+    assert created.status_code == 201, created.text
+    draft = created.json()["feedback"]
+    feedback_id = draft["feedback_id"]
+    preview = client.post(
+        f"/v1/feedback/items/{feedback_id}/preview", headers=owner_headers,
+        json={"expected_version": draft["version"]},
+    )
+    assert preview.status_code == 200, preview.text
+    submitted = client.post(
+        f"/v1/feedback/items/{feedback_id}/submit", headers=owner_headers,
+        json={"expected_version": draft["version"], "preview_hash": preview.json()["preview_hash"],
+              "disclosure_confirmed": True, "idempotency_key": "api-feedback-rejected-submit"},
+    )
+    assert submitted.status_code == 200, submitted.text
+
+    heartbeat = client.post("/internal/feedback-hub/heartbeat", headers=relay_headers, json={
+        "configured": True, "hub_origin": "https://feedback.example.org", "worker_version": "test-v1",
+    })
+    assert heartbeat.status_code == 200, heartbeat.text
+    delivery_claim = client.post("/internal/feedback-hub/claim", headers=relay_headers, json={
+        "worker_id": "feedback-status-roundtrip", "limit": 10, "lease_seconds": 30,
+    })
+    assert delivery_claim.status_code == 200, delivery_claim.text
+    delivery = next(
+        event for event in delivery_claim.json()["events"]
+        if event["snapshot"]["public_content"]["title"] == payload["title"]
+    )
+    receipt_id = "central_feedback_" + "d" * 32
+    status_token = "e" * 64
+    completed = client.post(
+        f"/internal/feedback-hub/{delivery['event_id']}/complete", headers=relay_headers,
+        json={"worker_id": "feedback-status-roundtrip", "lease_fence": delivery["lease_fence"],
+              "receipt_id": receipt_id, "status_token": status_token},
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "received"
+    assert "status_token" not in completed.text
+
+    status_claim = client.post("/internal/feedback-hub/status-checks/claim", headers=relay_headers,
+                               json={"limit": 10})
+    assert status_claim.status_code == 200, status_claim.text
+    candidate = next(item for item in status_claim.json()["items"] if item["event_id"] == delivery["event_id"])
+    assert candidate["receipt_id"] == receipt_id and candidate["status_token"] == status_token
+
+    status_payload = {
+        "schema_version": "central-feedback-status.v1", "receipt_id": receipt_id,
+        "status": "rejected", "github_issue": None,
+    }
+    unauthenticated = client.post(
+        f"/internal/feedback-hub/{delivery['event_id']}/status", json=status_payload,
+    )
+    assert unauthenticated.status_code == 401
+    unchanged = client.get(f"/v1/feedback/items/{feedback_id}", headers=owner_headers)
+    assert unchanged.status_code == 200
+    assert unchanged.json()["feedback"]["central_hub"]["status"] == "received"
+
+    status_update = client.post(
+        f"/internal/feedback-hub/{delivery['event_id']}/status", headers=relay_headers, json=status_payload,
+    )
+    assert status_update.status_code == 200, status_update.text
+    assert status_update.json()["status"] == "rejected"
+    duplicate_update = client.post(
+        f"/internal/feedback-hub/{delivery['event_id']}/status", headers=relay_headers, json=status_payload,
+    )
+    assert duplicate_update.status_code == 200, duplicate_update.text
+    assert duplicate_update.json() == status_update.json()
+
+    owner_read = client.get(f"/v1/feedback/items/{feedback_id}", headers=owner_headers)
+    assert owner_read.status_code == 200, owner_read.text
+    owner_feedback = owner_read.json()["feedback"]
+    assert owner_feedback["central_hub"] == {
+        "status": "rejected", "receipt_id": receipt_id, "last_error_category": None,
+    }
+    assert owner_feedback["github_issue"] is None
+    assert "status_token" not in owner_read.text and status_token not in owner_read.text
+    assert client.get(f"/v1/feedback/items/{feedback_id}", headers=other_headers).status_code == 404
+
+    next_status_claim = client.post("/internal/feedback-hub/status-checks/claim", headers=relay_headers,
+                                    json={"limit": 10})
+    assert next_status_claim.status_code == 200, next_status_claim.text
+    assert all(item["event_id"] != delivery["event_id"] for item in next_status_claim.json()["items"])
+
+
 def test_agent_feedback_submit_requires_exact_global_approval(monkeypatch) -> None:
     feedback = ProductFeedbackStore()
     agents = AgentResearchStore()

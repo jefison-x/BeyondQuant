@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -300,6 +301,50 @@ def test_hub_delivery_retry_fences_unknown_attempt_and_publishes_receipt() -> No
     owner = store.get_owner(item["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
     assert owner["central_hub"] == {"status": "received", "receipt_id": receipt, "last_error_category": None}
     assert owner["github_issue"] is None
+    store.close()
+
+
+def test_hub_rejection_is_durably_visible_to_owner_without_status_token() -> None:
+    _admin, alice, bob = provision()
+    store = ProductFeedbackStore()
+    item = submit(store, create(store, alice, "hub-rejection-create"), alice, "hub-rejection-submit")
+    receipt = "central_feedback_" + "j" * 32
+    status_token = "f" * 64
+    store.hub_relay_heartbeat({
+        "configured": True, "hub_origin": "https://feedback.example", "worker_version": "test-v1",
+    })
+    delivery = store.claim_hub_deliveries({
+        "worker_id": "hub-rejection-relay", "limit": 1, "lease_seconds": 30,
+    })["events"][0]
+    store.complete_hub_delivery(delivery["event_id"], {
+        "worker_id": "hub-rejection-relay", "lease_fence": delivery["lease_fence"],
+        "receipt_id": receipt, "status_token": status_token,
+    })
+
+    claimed = store.claim_hub_status_checks({"limit": 20})
+    candidate = next((row for row in claimed["items"] if row["event_id"] == delivery["event_id"]), None)
+    assert candidate is not None
+    assert candidate["receipt_id"] == receipt and candidate["status_token"] == status_token
+    result = store.update_hub_status(delivery["event_id"], {
+        "schema_version": "central-feedback-status.v1",
+        "receipt_id": receipt,
+        "status": "rejected",
+        "github_issue": None,
+    })
+    assert result["status"] == "rejected"
+
+    owner = store.get_owner(item["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert owner["status"] == "submitted"
+    assert owner["central_hub"] == {
+        "status": "rejected", "receipt_id": receipt, "last_error_category": None,
+    }
+    assert owner["github_issue"] is None
+    assert "status_token" not in owner
+    assert status_token not in json.dumps(owner, sort_keys=True)
+    with pytest.raises(FeedbackNotFound):
+        store.get_owner(item["feedback_id"], trusted_workspace=workspace(bob))
+    assert all(row["event_id"] != delivery["event_id"]
+               for row in store.hub_status_candidates()["items"])
     store.close()
 
 

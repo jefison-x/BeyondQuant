@@ -71,6 +71,13 @@ case and focused route/guard contracts qualify only their recorded Runner scope.
 
 ## Separate maintenance follow-ups
 
+Later [November 2 maintenance](../evidence/feedback-runner-maintenance-20261102.md)
+verified the local feedback return path and corrected the Runner assertions
+(full module 20 PASS). The maintainer stopped global usage work; no aggregation
+implementation was retained. Formal Hub/browser verification remains NOT_RUN.
+The table below preserves the original phase-closeout handoff, including its
+historical Runner FAIL; it is not a claim that the later local repair failed.
+
 | Item | Current record | Phase boundary |
 | --- | --- | --- |
 | R3 feedback post-review status polling | Still NOT_RUN in the [designated remediation record](post-release-fix-requirements.md); Hub received and local status-after-moderation are distinct. | Separate post-release remediation, not one of the Phase 17 A–F/F6 scenarios. It remains open; this reconciliation does not claim the full feedback lifecycle passed. |
