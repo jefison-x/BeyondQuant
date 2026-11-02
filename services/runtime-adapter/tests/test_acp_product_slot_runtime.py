@@ -1354,6 +1354,87 @@ def test_restart_empty_registry_still_holds_unconfirmed_v2_binding(slot_runtime)
     runtime.acknowledge_terminal("slot-other-after-restart", other_receipt)
 
 
+def _add_stale_recovery_boundary(binding: dict) -> None:
+    """An ACKed historical cursor still at its pre-reattachment sequence."""
+    from packages.contracts.workflow_trace import make_workflow_trace_event
+
+    receipt = binding["settlement_receipt"]
+    event = make_workflow_trace_event(
+        trace_id=binding["trace_id"], session_id=binding["session_id"],
+        sequence=binding["sequence"] + 1, kind="session.reattached",
+        source="runtime-adapter", payload={
+            "schema_version": "runtime-recovery-boundary-event.v1",
+            "root_run_id": binding["root_run_id"],
+            "settlement_receipt_sha256": hashlib.sha256(json.dumps(
+                receipt, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+            "prior_sequence": binding["sequence"],
+            "runtime_boot_id": binding["previous_boot_id"],
+            "authority_epoch": binding["previous_authority_epoch"],
+        },
+    )
+    raw = json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+    binding["recovery_boundary"] = {
+        "schema_version": "byq-acp-recovery-boundary.v1",
+        "binding_sequence": binding["sequence"],
+        "next_sequence": binding["sequence"] + 1,
+        "previous_boot_id": binding["previous_boot_id"],
+        "previous_authority_epoch": binding["previous_authority_epoch"],
+        "runtime_boot_id": binding["previous_boot_id"],
+        "runtime_authority_epoch": binding["previous_authority_epoch"],
+        "event_json_b64": base64.b64encode(raw).decode("ascii"),
+        "event_sha256": hashlib.sha256(raw).hexdigest(), "state": "acknowledged",
+    }
+
+
+def test_stale_recovery_boundary_does_not_block_new_session(slot_runtime):
+    runtime, compatibility, registry = slot_runtime
+    workspace = "workspace_slot_a"
+    cwd = runtime._session_root / workspace / ("session-" + "d" * 32)
+    binding = _valid_binding("historical-session", workspace, cwd)
+    binding["settlement_receipt"] = {
+        "schema_version": "agent-run-lifecycle-receipt.v1",
+        "root_run_id": binding["root_run_id"], "sequence": 1,
+        "event_sha256": "e" * 64,
+    }
+    _add_stale_recovery_boundary(binding)
+    path = runtime._acp_binding_path(binding["session_id"], workspace)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original = json.dumps(binding).encode()
+    path.write_bytes(original)
+
+    with pytest.raises(SessionConflict, match="recovery boundary binding is invalid"):
+        runtime.recovery_binding(binding["session_id"])
+    _create(runtime, "new-after-historical-recovery", workspace)
+    assert runtime._get("new-after-historical-recovery").status == SessionStatus.READY
+    assert registry._leases == {}
+    assert compatibility.start_attempts == []
+    assert path.read_bytes() == original
+    with pytest.raises(SessionConflict, match="recovery boundary binding is invalid"):
+        runtime.recovery_binding(binding["session_id"])
+
+
+@pytest.mark.parametrize("exited,uncertain", [(False, False), (False, True), (True, True)])
+def test_stale_recovery_boundary_keeps_unconfirmed_cleanup_fenced(
+        slot_runtime, exited, uncertain):
+    runtime, compatibility, registry = slot_runtime
+    workspace = "workspace_slot_a"
+    _create(runtime, "existing-before-historical-fence", workspace)
+    binding, _ = _frozen_failed_v2(runtime, workspace, settled=True)
+    binding.update(process_exit_confirmed=exited, cleanup_unconfirmed=uncertain)
+    _add_stale_recovery_boundary(binding)
+    path = runtime._acp_binding_path(binding["session_id"], workspace)
+    original = json.dumps(binding).encode()
+    path.write_bytes(original)
+
+    with pytest.raises(SessionConflict, match="prior ACP cleanup is unconfirmed"):
+        _create(runtime, "new-after-unconfirmed-cleanup", workspace)
+    with pytest.raises(SessionConflict, match="prior ACP cleanup is unconfirmed"):
+        runtime.submit_prompt("existing-before-historical-fence", "hello", conversation_context=[])
+    assert registry._leases == {}
+    assert compatibility.start_attempts == []
+    assert path.read_bytes() == original
+
+
 def test_failed_terminal_cleanup_only_ack_preserves_original_terminal_and_rejects_new_lease(
     slot_runtime,
 ):
@@ -2096,6 +2177,27 @@ def test_read_binding_rejects_file_found_in_another_group(tmp_path: Path) -> Non
     wrong.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(SessionConflict):
         adapter._read_acp_binding(session_id)
+    with pytest.raises(SessionConflict):
+        adapter._require_workspace_acp_cleanup_fence("workspace_b")
+
+
+@pytest.mark.parametrize("invalid", [
+    {"schema_version": "unsupported"},
+    {"domain_call_sequence": 0, "domain_call_drained_sequence": 1},
+    {"cwd": "/outside-resource-group"},
+])
+def test_cleanup_scan_still_rejects_invalid_execution_binding(tmp_path: Path, invalid):
+    adapter = _binding_adapter(tmp_path, ("workspace_a",))
+    binding = _valid_binding("historical-session", "workspace_a", tmp_path / "workspace_a" / "session-x")
+    _add_stale_recovery_boundary(binding)
+    binding.update(invalid)
+    path = adapter._acp_binding_path(binding["session_id"], "workspace_a")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original = json.dumps(binding).encode()
+    path.write_bytes(original)
+    with pytest.raises(SessionConflict):
+        adapter._require_workspace_acp_cleanup_fence("workspace_a")
+    assert path.read_bytes() == original
 
 
 def test_ordinary_path_unsupported_model_is_rejected_before_any_proxy(slot_runtime, monkeypatch):
