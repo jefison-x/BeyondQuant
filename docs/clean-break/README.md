@@ -4,6 +4,9 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 
 ## Documents
 
+- [Phase 17 final acceptance](phase17-final-acceptance-20261102.md) — current scoped PASS; supersedes earlier pending-phase routing without rewriting failures.
+- [Maintenance release/deployment reconciliation](../evidence/maintenance-release-20261102.md) — completed post-phase CI, trusted images and six-service pre-release deployment, with explicit limits.
+- [Historical work closeout register](../evidence/project-history-closeout-20261102.md) — retained Drafts, branches/worktrees and consolidated maintainer decisions; no Phase 18 work.
 - [Development agent mode](development-agent-mode.md) — Phase 0 configuration and role contract.
 - [Environment inventory](environment-inventory.md) — Phase 1–2 freeze and read-only environment facts.
 - [Archive and environment plan](archive-and-environment-plan.md) — Phase 3 backup and Phase 8–9 plan.
@@ -12,7 +15,7 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 - [Fidelity and execution plan](fidelity-and-execution-plan.md) — user journeys, risks and Phase 7–17 order.
 - [Development verification gates](verification-gates.md) — risk-selected slice tests, review and rebuild milestones.
 - [Phase gates](phase-gates.md) — Tester, independent Reviewer and Root verdicts with activation limits.
-- [Phase 17 residual simplification](phase17-residual-simplification.md) — current ownership audit, source slices and pending final Golden gates.
+- [Phase 17 residual simplification](phase17-residual-simplification.md) — historical ownership audit, source slices and the then-pending final Golden gates.
 - [Agent stop/session issue](runtime-stop-session-issue.md) — original terminal-reconnect diagnosis and remaining actual DSH browser gate.
 - [Personal workspace menu issue](personal-workspace-menu-issue.md) — original Bootstrap Admin diagnosis and completed isolated browser checks.
 - [Post-release fix requirements](post-release-fix-requirements.md) — R1–R4 candidate, scoped test evidence and remaining gates.
