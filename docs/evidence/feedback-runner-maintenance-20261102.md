@@ -1,6 +1,7 @@
 # Feedback status and Runner test maintenance — 2026-11-02
 
-Status: **PASS for isolated local feedback verification and Runner test maintenance.**
+Status: **PASS for isolated local feedback verification, Runner test maintenance
+and the local partial receipt-based usage fix.**
 Hub acceptance: **COMPLETE — maintainer confirmation, 2026-11-02** (“hub标记验收完毕”).
 No additional formal Hub or browser end-to-end execution was performed by this
 agent; the original automated NOT_RUN records remain historical facts.
@@ -10,11 +11,14 @@ agent; the original automated NOT_RUN records remain historical facts.
 The maintainer requested the feedback post-review return path, global usage
 aggregation and Runner test follow-ups, reusing the existing environment and
 evidence while preserving the current page. The maintainer subsequently stopped
-usage work: “无需汇总了。直接下一步。” No usage implementation was written or retained.
+usage work: “无需汇总了。直接下一步。” No usage implementation was written or retained
+at that checkpoint.
 For feedback the maintainer initially chose isolated local verification. The
 later instruction closes the Hub acceptance item by maintainer confirmation and
 requests a minimal usage check. The earlier usage cancellation remains its dated
-decision; the later scope is verification only, not a new aggregation module.
+decision; that checkpoint authorized verification only. The subsequent instruction
+explicitly authorizes the minimal receipt-based fix described below, without new
+model calls or a complex statistics module.
 
 This maintenance follows the completed Phase 17 technical acceptance. It does not
 reopen that phase, define Phase 18, publish images, deploy services, send a new
@@ -95,6 +99,59 @@ The small readbacks are `usage-minimal-ledger-readback.json` and
 directory. Historical unknowns remain unknown; no zero backfill, billing estimate,
 new table, background poller or replacement harness was added.
 
+## Minimal usage fix
+
+The later maintainer instruction authorizes a narrow fix using existing receipts.
+The existing admin-only Backend Operations overview now reads stored continuation
+ledgers and returns a partial usage summary. Gateway forwards that projection;
+the budget view uses it instead of the Runtime process-lifetime counter. This
+adds no table, endpoint, poller, Runtime accounting path or model request.
+
+Only settled v3 receipts accepted by the existing envelope/usage validator and
+matching the stored task, owner and workspace contribute to known totals.
+Identical reservation identities count once; conflicting copies are excluded as
+invalid. Unknown, incomplete, historical and unsettled records remain separate
+from known usage. A validated `no_provider_calls` receipt can establish zero.
+This readback does not recompute settlement digests or independently verify
+provider network responses.
+
+The subtotal adds non-cached input, cache-read and output once each. Go Chat's
+cached portion is subtracted from its inclusive input count; official Messages
+input and cache-read fields are already separate. Provider attempts are request
+attempts, not Agent turns. Ordinary Product roots and research Judgment remain
+explicitly uncovered; neither full global usage nor billed cost is claimed.
+
+The existing official F6 receipt was exported read-only and passed through the
+candidate helper in a network-disabled container: **1 known receipt, 368,360
+tokens, 8 provider attempts** (47,589 input + 319,232 cache-read + 1,539 output).
+The raw receipt stays private in ignored local artifacts. No model or Job was
+created. The earlier process-counter comparison remains **NOT_PASSED** as the
+before-fix evidence; the receipt subtotal does not rewrite that result.
+
+Validation artifacts are under
+`.ci-artifacts/minimal-usage-summary-20261102/`. The first Backend batch failed:
+four test fixtures supplied a 32-character content digest instead of 64, and
+four overview/API nodes lacked the workspace schema initialization performed by
+normal application startup. Its log is retained. The corrections use valid
+fixtures and the existing `WorkspaceTenancyStore` initialization in those tests;
+production workspace binding is unchanged. Final targeted test and review
+results retain those earlier failures rather than replacing their logs.
+
+The corrected Backend batch passed **9 tests**, including the nonempty PostgreSQL
+overview projection and an unchanged stored-ledger assertion. The Gateway
+admin-only pass-through node passed **1 test**; the targeted frontend suite
+passed **7 tests**, and type-check/build passed. The default `make dev-check`
+passed. The PostgreSQL scenario uses a synthetic valid receipt in the separate
+test database; the existing real receipt helper readback is distinct evidence.
+The API/Frontend tests do not substitute for live Product browser acceptance.
+
+Independent Tester and independent Sol Reviewer records are `tester.md` and
+`independent-review.md` in that artifact directory. Tester, independent Sol
+Reviewer and Root pass the local partial-summary scope: Functional PASS,
+Tests PASS and Clean Break Architecture PASS. Hosted PR CI and live browser
+verification of this candidate are **NOT_RUN**; the retained running services
+have not been replaced with it.
+
 ## Evidence and preservation
 
 Local receipts are under `.ci-artifacts/maintenance-feedback-usage-runner-20261102/`:
@@ -108,5 +165,10 @@ two maintenance items locally; remote PR CI and merge gates remain separate.
 
 Existing services, browser tabs/current page, Product database, volumes, user
 identity and earlier evidence are preserved. Feedback tests use a separate
-test-only PostgreSQL database. No runtime aggregate, user execution option or
-ordinary model configuration was changed.
+test-only PostgreSQL database. No Runtime process counter, user execution option
+or ordinary model configuration was changed. The receipt-based fix is local
+source work; no release, deployment, live browser acceptance or Phase 18
+advancement is claimed. A final read-only inventory matched all 29 retained
+container IDs/images to the existing baseline; the six acceptance services were
+healthy and the 17 operating `beyondquant-*` services were running. No browser
+navigation, reload or tab closure was performed.

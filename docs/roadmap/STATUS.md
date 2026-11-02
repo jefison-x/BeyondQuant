@@ -13,9 +13,12 @@ Existing failures and limited/unknown evidence keep their original scope.
 
 Later [maintenance evidence](../evidence/feedback-runner-maintenance-20261102.md)
 records Hub acceptance by maintainer confirmation and locally passing Runner
-tests. Minimal read-only verification found that the process-local zero omits a
-known positive usage receipt; global aggregation remains unqualified. No complete
-product parity, trusted image release or operating-stack deployment is claimed.
+tests. The minimal usage fix now derives a partial summary from validated stored
+continuation receipts and passed local targeted checks with an existing real
+receipt. Ordinary Product roots and research Judgment remain uncovered; complete
+global aggregation is unqualified. Hosted CI and live browser verification of
+this candidate remain NOT_RUN. No complete product parity, trusted image release
+or operating-stack deployment is claimed.
 **Next phase: none defined or authorized. Phase 18 is NOT_STARTED.**
 
 ### Dated closeout checkpoint — 2026-10-31

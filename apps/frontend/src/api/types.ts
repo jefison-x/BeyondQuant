@@ -577,6 +577,7 @@ export interface PaperControls {
 
 export interface OperationsStatus {
   schema_version: "operations.v1";
+  usage?: OperationsReceiptUsage;
   services: Record<string, string>;
   database: {
     engine: "postgresql";
@@ -659,6 +660,26 @@ export interface OperationsAudit {
   resource_id?: string | null;
   detail_json?: Record<string, unknown>;
   created_at: string;
+}
+
+export interface OperationsReceiptUsage {
+  schema_version: "operations-usage.v1";
+  scope: "persisted_continuation_requests";
+  source: "backend_validated_request_receipts";
+  completeness: "partial";
+  request_count: number;
+  known_requests: number;
+  unknown_requests: number;
+  invalid_requests: number;
+  known_totals: {
+    input_tokens: number;
+    cache_read_tokens: number;
+    output_tokens: number;
+    provider_attempts: number;
+    total_tokens: number;
+  };
+  uncovered_sources: string[];
+  truncated: boolean;
 }
 
 export interface OperationsUsage {
