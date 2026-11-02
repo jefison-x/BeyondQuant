@@ -1,6 +1,7 @@
 from __future__ import annotations
 import importlib.util, sys
 from pathlib import Path
+import pytest
 MODULE=Path(__file__).parents[1]/"relay.py"; SPEC=importlib.util.spec_from_file_location("feedback_hub_relay",MODULE)
 assert SPEC and SPEC.loader
 relay=importlib.util.module_from_spec(SPEC); sys.modules[SPEC.name]=relay; SPEC.loader.exec_module(relay)
@@ -104,7 +105,8 @@ def test_invalid_json_encoding_and_oversized_http_success_stay_unknown(monkeypat
     assert reads == [64 * 1024 + 1] * 5
 
 
-def test_status_refresh_reserves_durable_candidates_before_remote_reads(monkeypatch):
+@pytest.mark.parametrize("status", ["accepted", "rejected"])
+def test_status_refresh_reserves_durable_candidates_before_remote_reads(monkeypatch, status):
     config=relay.Config('http://backend','relay-token','https://feedback.example.org','relay-worker',15)
     item={'event_id':'feedback_hub_event_'+'a'*32,'receipt_id':'central_feedback_'+'d'*32,'status_token':'e'*64}
     calls=[]
@@ -115,12 +117,13 @@ def test_status_refresh_reserves_durable_candidates_before_remote_reads(monkeypa
         assert calls[0]==('/internal/feedback-hub/status-checks/claim',{'payload':{'limit':10}})
         assert url.endswith('/v1/status/'+item['receipt_id'])
         assert kwargs['headers']['authorization']=='Bearer '+item['status_token']
-        return {'schema_version':'central-feedback-status.v1','receipt_id':item['receipt_id'],'status':'accepted','github_issue':None}
+        return {'schema_version':'central-feedback-status.v1','receipt_id':item['receipt_id'],'status':status,'github_issue':None}
     monkeypatch.setattr(relay,'_backend',backend)
     monkeypatch.setattr(relay,'_json_request',remote)
     relay._refresh_statuses(config)
     assert calls[1][0]=='/internal/feedback-hub/'+item['event_id']+'/status'
-    assert calls[1][1]['payload']['status']=='accepted'
+    assert calls[1][1]['payload']['status']==status
+    assert 'status_token' not in calls[1][1]['payload']
 
 
 def test_http_redirect_cannot_forward_credentials():

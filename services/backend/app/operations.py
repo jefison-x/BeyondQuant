@@ -11,8 +11,10 @@ import hashlib
 import json
 import re
 import uuid
+from collections.abc import Iterable, Mapping
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from packages.contracts.acp_product_prebind import (
@@ -28,6 +30,7 @@ from packages.contracts.acp_operator_process_fence import (
     validate_ack_receipt as _validate_process_fence_ack,
     validate_process_fence_proof as _validate_process_fence_proof,
 )
+from packages.contracts.continuation_request import ALLOWED_PROVIDER, OFFICIAL_PROVIDER
 
 from .db import PgStoreMixin, execute, fetch_one
 
@@ -56,6 +59,135 @@ _BUDGET_FIELDS = {
     "expected_version",
     "idempotency_key",
 }
+_USAGE_TOTAL_FIELDS = (
+    "input_tokens", "cache_read_tokens", "output_tokens", "provider_attempts", "total_tokens",
+)
+
+
+def _aggregate_continuation_usage(task_rows: Iterable[Mapping[str, Any]]) -> dict[str, object]:
+    """Project validated v3 continuation receipts into a partial usage summary.
+
+    Invalid records and conflicting reservation identities are disjoint from
+    unknown records. Exact duplicate identities count once, so
+    request_count == known_requests + unknown_requests + invalid_requests.
+    """
+    from .research_continuation import _is_v3_ledger_entry, _validate_v3_ledger_entry
+
+    records: dict[tuple[str, str], tuple[str, dict[str, object], object]] = {}
+    conflicts: set[tuple[str, str]] = set()
+    occurrence = 0
+    for row in task_rows:
+        task_id = row.get("task_id")
+        owner = row.get("owner_principal")
+        workspace = row.get("workspace_id")
+        outer_scope = {"task_id": task_id, "owner_principal": owner, "workspace_id": workspace}
+        ledger = row.get("continuation_budget")
+        if ledger is None:
+            continue
+        if not isinstance(ledger, list):
+            ledger = [None]
+        for raw_entry in ledger:
+            occurrence += 1
+            reservation_id = raw_entry.get("reservation_id") if isinstance(raw_entry, dict) else None
+            if isinstance(reservation_id, str) and reservation_id:
+                identity = ("reservation", reservation_id)
+            else:
+                identity = ("anonymous", str(occurrence))
+            try:
+                canonical = json.dumps(
+                    {"outer_scope": outer_scope, "entry": raw_entry},
+                    sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                )
+            except (TypeError, ValueError):
+                canonical = repr((outer_scope, raw_entry))
+            fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            if identity in conflicts:
+                continue
+            prior = records.get(identity)
+            if prior is None:
+                records[identity] = (fingerprint, outer_scope, raw_entry)
+            elif prior[0] != fingerprint:
+                records.pop(identity, None)
+                conflicts.add(identity)
+
+    totals = {field: 0 for field in _USAGE_TOTAL_FIELDS}
+    known = unknown = invalid = 0
+    for identity in conflicts:
+        invalid += 1
+
+    for _fingerprint, outer_scope, raw_entry in records.values():
+        if not isinstance(raw_entry, dict):
+            invalid += 1
+            continue
+        if not _is_v3_ledger_entry(raw_entry):
+            # Historical reservation envelopes remain visible as unknown; they
+            # are not reinterpreted using the current v3 accounting contract.
+            if isinstance(raw_entry.get("schema_version"), str) and raw_entry["schema_version"]:
+                unknown += 1
+            else:
+                invalid += 1
+            continue
+        try:
+            entry = _validate_v3_ledger_entry(raw_entry)
+            reservation = entry["reservation"]
+            if (reservation.get("task_id"), reservation.get("owner_principal"),
+                    reservation.get("workspace_id")) != (
+                    outer_scope["task_id"], outer_scope["owner_principal"], outer_scope["workspace_id"]):
+                raise ValueError("continuation receipt is outside its stored task scope")
+            if entry["status"] != "settled":
+                unknown += 1
+                continue
+            usage = entry["request_usage"]
+            if (usage.get("execution_profile") != reservation.get("execution_profile")
+                    or usage.get("request_limits") != reservation.get("request_limits")):
+                raise ValueError("continuation usage does not match its reservation")
+            actual = usage["actual_usage"]
+            source = actual["usage_source"]
+            if actual["completeness"] != "known" or source not in {"provider_response", "no_provider_calls"}:
+                unknown += 1
+                continue
+            input_tokens = actual["input_tokens"]
+            cache_read = actual["cache_read_tokens"]
+            output_tokens = actual["output_tokens"]
+            attempts = actual["provider_attempts"]
+            provider = reservation["execution_profile"]["provider"]
+            if source == "no_provider_calls":
+                fresh_input = 0
+            elif provider == ALLOWED_PROVIDER:
+                # Go Chat prompt_tokens already contains the cached portion.
+                if cache_read > input_tokens:
+                    raise ValueError("Go usage cache-read exceeds prompt input")
+                fresh_input = input_tokens - cache_read
+            elif provider == OFFICIAL_PROVIDER:
+                fresh_input = input_tokens
+            else:
+                raise ValueError("continuation provider is not included in usage projection")
+        except (KeyError, TypeError, ValueError):
+            invalid += 1
+            continue
+
+        known += 1
+        totals["input_tokens"] += fresh_input
+        totals["cache_read_tokens"] += cache_read
+        totals["output_tokens"] += output_tokens
+        # This is the provider HTTP attempt count from the receipt, not an Agent turn count.
+        totals["provider_attempts"] += attempts
+        totals["total_tokens"] += fresh_input + cache_read + output_tokens
+
+    request_count = len(records) + len(conflicts)
+    return {
+        "schema_version": "operations-usage.v1",
+        "scope": "persisted_continuation_requests",
+        "source": "backend_validated_request_receipts",
+        "completeness": "partial",
+        "request_count": request_count,
+        "known_requests": known,
+        "unknown_requests": unknown,
+        "invalid_requests": invalid,
+        "known_totals": totals,
+        "uncovered_sources": ["ordinary_product_roots", "research_judgment"],
+        "truncated": False,
+    }
 
 
 class OperationsStore(PgStoreMixin):
@@ -326,6 +458,15 @@ class OperationsStore(PgStoreMixin):
                               version, updated_by, updated_at
                        FROM operations_budget_policy WHERE policy_id = 'product-agent'""",
                 ) or {}
+                usage_result = connection.execute(
+                    text("""SELECT task_id, owner_principal, workspace_id, continuation_budget
+                            FROM research_tasks WHERE continuation_budget IS NOT NULL
+                            ORDER BY task_id""").execution_options(yield_per=256)
+                )
+                try:
+                    usage = _aggregate_continuation_usage(usage_result.mappings())
+                finally:
+                    usage_result.close()
         except SQLAlchemyError as error:
             raise OperationsPersistenceError("operations projection is unavailable") from error
 
@@ -388,6 +529,7 @@ class OperationsStore(PgStoreMixin):
                 "operations_audit": operations_audit,
             },
             "budget": budget,
+            "usage": usage,
         }
 
     def update_budget(

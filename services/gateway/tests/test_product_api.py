@@ -644,6 +644,17 @@ def test_asset_diagnostics_name_destination_workspace_without_trust_metadata(mon
 
 
 def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(monkeypatch) -> None:
+    persisted_usage = {
+        "schema_version": "operations-usage.v1",
+        "scope": "persisted_continuation_requests",
+        "source": "backend_validated_request_receipts",
+        "completeness": "partial",
+        "request_count": 1, "known_requests": 1, "unknown_requests": 0, "invalid_requests": 0,
+        "known_totals": {"input_tokens": 47589, "cache_read_tokens": 319232,
+                         "output_tokens": 1539, "provider_attempts": 8, "total_tokens": 368360},
+        "uncovered_sources": ["ordinary_product_roots", "research_judgment"],
+        "truncated": False,
+    }
     class FakeResponse:
         def __init__(self, body: dict[str, object]) -> None:
             self.body = body
@@ -666,6 +677,7 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
         "graphs": {"raw_dsh_events": False},
         "access": {"operations_audit": []},
         "budget": {"version": 1},
+        "usage": persisted_usage,
     }))
     monkeypatch.setattr(product_api.httpx, "get", lambda *args, **kwargs: FakeResponse({
         "schema_version": "runtime-operations.v1",
@@ -685,6 +697,7 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     body = response.json()
     assert body["services"]["runtime_adapter"] == "ready"
     assert body["runtime"]["usage"]["total_tokens"] == 125
+    assert body["usage"] == persisted_usage
     assert body["runtime"]["product_slot_leases"]["held"] == 0
     assert body["cache"]["redis"] == "not_used"
     assert "api_key" not in response.text.lower()

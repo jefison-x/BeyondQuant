@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { updateOperationsBudget } from "@/api/operations";
 import type { OperationsStatus } from "@/api/types";
 import { createRequestId } from "@/utils/requestId";
@@ -7,6 +7,9 @@ const props = defineProps<{ data: OperationsStatus }>();
 const emit = defineEmits<{ changed: [] }>();
 const saving = ref(false);
 const message = ref("");
+const usage = computed(() => props.data.usage?.schema_version === "operations-usage.v1" ? props.data.usage : undefined);
+const totals = computed(() => usage.value && usage.value.known_requests > 0 ? usage.value.known_totals : undefined);
+const formatCount = (value: number | undefined) => value === undefined ? "暂无已知回执" : value.toLocaleString("zh-CN");
 const form = reactive({ enabled: false, alert_total_tokens: 400000, alert_requests: 48 });
 watch(() => props.data.budget, (budget) => { form.enabled = budget.enabled; form.alert_total_tokens = budget.alert_total_tokens; form.alert_requests = budget.alert_requests; }, { immediate: true });
 async function save() {
@@ -16,5 +19,27 @@ async function save() {
   finally { saving.value = false; }
 }
 </script>
-<template><div class="ops-workbench"><el-alert title="阈值用于告警观察，不会直接终止 DSH、修改模型或扩大 Product Agent 权限。统计范围为当前 Runtime Adapter 进程生命周期。" type="warning" show-icon :closable="false" /><div class="ops-metrics"><el-card shadow="never"><span>累计 tokens</span><strong>{{ data.runtime.usage.total_tokens }}</strong><small>输入/输出/缓存写入分离计数</small></el-card><el-card shadow="never"><span>模型调用</span><strong>{{ data.runtime.usage.model_calls }}</strong><small>成功产生 usage 的调用</small></el-card><el-card shadow="never"><span>推理 tokens</span><strong>{{ data.runtime.usage.reasoning_tokens }}</strong><small>单列诊断</small></el-card></div><el-card shadow="never"><template #header><strong>Product Agent 用量监控阈值</strong></template><el-form label-position="top" class="budget-form"><el-form-item label="启用告警"><el-switch v-model="form.enabled" /></el-form-item><el-form-item label="总 token 告警线"><el-input-number v-model="form.alert_total_tokens" :min="1000" :max="100000000" :step="10000" /></el-form-item><el-form-item label="模型调用告警线"><el-input-number v-model="form.alert_requests" :min="1" :max="1000000" /></el-form-item><el-button type="primary" :loading="saving" @click="save">保存并审计</el-button><span v-if="message" class="budget-message">{{ message }}</span></el-form></el-card></div></template>
+<template>
+  <div class="ops-workbench">
+    <el-alert title="按现存已结算接续回执汇总已知用量。普通回合和研究判断尚未计入，因此不是完整总量。阈值只用于告警观察，不限制执行。" type="warning" show-icon :closable="false" />
+    <p v-if="!usage" role="status">用量汇总暂不可用；进程计数不能替代持久回执。</p>
+    <p v-if="usage?.truncated" role="status">当前只汇总了部分记录。</p>
+    <div class="ops-metrics">
+      <el-card shadow="never"><span>已知 tokens 小计</span><strong>{{ formatCount(totals?.total_tokens) }}</strong><small>非缓存输入、缓存读取、输出各计一次</small></el-card>
+      <el-card shadow="never"><span>已知提供方请求次数</span><strong>{{ formatCount(totals?.provider_attempts) }}</strong><small>来自已结算回执，不是 Agent 回合数</small></el-card>
+      <el-card shadow="never"><span>已知回执</span><strong>{{ usage ? usage.known_requests : "未知" }}</strong><small v-if="usage">未确认 {{ usage.unknown_requests }}；异常 {{ usage.invalid_requests }}</small></el-card>
+    </div>
+    <p v-if="totals" class="usage-breakdown">非缓存输入 {{ formatCount(totals.input_tokens) }} · 缓存读取 {{ formatCount(totals.cache_read_tokens) }} · 输出 {{ formatCount(totals.output_tokens) }}</p>
+    <el-card shadow="never">
+      <template #header><strong>Product Agent 用量监控阈值</strong></template>
+      <el-form label-position="top" class="budget-form">
+        <el-form-item label="启用告警"><el-switch v-model="form.enabled" /></el-form-item>
+        <el-form-item label="总 token 告警线"><el-input-number v-model="form.alert_total_tokens" :min="1000" :max="100000000" :step="10000" /></el-form-item>
+        <el-form-item label="模型调用告警线"><el-input-number v-model="form.alert_requests" :min="1" :max="1000000" /></el-form-item>
+        <el-button type="primary" :loading="saving" @click="save">保存并审计</el-button>
+        <span v-if="message" class="budget-message">{{ message }}</span>
+      </el-form>
+    </el-card>
+  </div>
+</template>
 <style scoped>.budget-form{max-width:520px}.budget-message{margin-left:12px;color:var(--byq-text-muted)}</style>
