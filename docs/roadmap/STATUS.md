@@ -21,8 +21,12 @@ and the healthy six-service pre-release operating deployment. Its retained
 signature/SBOM and preservation receipts remain separate from browser evidence.
 Ordinary Product roots and research Judgment remain uncovered by usage accounting;
 complete global aggregation and complete product parity are unqualified.
-Real F6 is qualified in the retained test environment; operating F6 remains
-disabled and was not executed. No formal v1.0 release is claimed.
+Real F6 is qualified in the retained test environment. The later
+[default-on configuration maintenance](../evidence/f6-default-on-20261102.md)
+enabled the operating executor and verified both environments at flag 1 while
+preserving user opt-out and existing data. This reused qualified images and
+real-test evidence; no new operating real F6 chain was executed.
+No formal v1.0 release is claimed.
 The [history closeout register](../evidence/project-history-closeout-20261102.md)
 records the maintainer-authorized closure of historical PRs/branches and removal
 of unused worktrees after encrypted archival. Mounted test sources and original
