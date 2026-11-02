@@ -74,7 +74,9 @@ case and focused route/guard contracts qualify only their recorded Runner scope.
 Later [November 2 maintenance](../evidence/feedback-runner-maintenance-20261102.md)
 verified the local feedback return path and corrected the Runner assertions
 (full module 20 PASS). The maintainer stopped global usage work; no aggregation
-implementation was retained. Formal Hub/browser verification remains NOT_RUN.
+implementation was retained. The maintainer subsequently marked Hub acceptance
+complete; the later minimal read-only usage check did not qualify the global
+aggregate. No additional formal Hub/browser execution was made.
 The table below preserves the original phase-closeout handoff, including its
 historical Runner FAIL; it is not a claim that the later local repair failed.
 

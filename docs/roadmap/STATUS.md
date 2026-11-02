@@ -11,9 +11,11 @@ Golden A–F evidence, affected user-wide execution settings, current official
 DeepSeek real F6, and all-lanes hosted PR CI with the repository merge gate.
 Existing failures and limited/unknown evidence keep their original scope.
 
-The feedback post-review polling, global usage aggregation and Runner test-hygiene
-follow-ups remain open as listed in that record; no complete product parity,
-trusted image release or operating-stack deployment is claimed by this verdict.
+Later [maintenance evidence](../evidence/feedback-runner-maintenance-20261102.md)
+records Hub acceptance by maintainer confirmation and locally passing Runner
+tests. Minimal read-only verification found that the process-local zero omits a
+known positive usage receipt; global aggregation remains unqualified. No complete
+product parity, trusted image release or operating-stack deployment is claimed.
 **Next phase: none defined or authorized. Phase 18 is NOT_STARTED.**
 
 ### Dated closeout checkpoint — 2026-10-31
