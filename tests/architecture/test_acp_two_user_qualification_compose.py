@@ -55,6 +55,7 @@ class AcpTwoUserQualificationComposeTests(unittest.TestCase):
 
     def _config(
         self, *, include_qualification: bool = True, omit: str | None = None,
+        f6_enabled: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         docker = shutil.which("docker", path=os.defpath)
         if docker is None:
@@ -66,6 +67,8 @@ class AcpTwoUserQualificationComposeTests(unittest.TestCase):
         if version.returncode != 0:
             self.skipTest("Docker Compose plugin is unavailable for merged-config validation")
         environment = _fake_environment()
+        if f6_enabled is not None:
+            environment["BYQ_F6_EXECUTOR_ENABLED"] = f6_enabled
         if omit is not None:
             environment.pop(omit)
         return subprocess.run(
@@ -73,6 +76,19 @@ class AcpTwoUserQualificationComposeTests(unittest.TestCase):
             cwd=ROOT, env=environment, capture_output=True, text=True,
             check=False, timeout=30,
         )
+
+    def test_f6_defaults_on_and_explicit_operator_disable_is_coherent(self) -> None:
+        for override, expected in ((None, "1"), ("0", "0")):
+            with self.subTest(override=override):
+                result = self._config(include_qualification=False, f6_enabled=override)
+                self.assertEqual(result.returncode, 0, "Compose rejected the synthetic environment")
+                services = json.loads(result.stdout)["services"]
+                for service in ("backend", "gateway", "runtime-adapter"):
+                    self.assertEqual(
+                        str(services[service]["environment"]["BYQ_F6_EXECUTOR_ENABLED"]),
+                        expected,
+                        service,
+                    )
 
     def test_second_static_slot_is_isolated_and_keeps_the_product_role_profile(self) -> None:
         baseline_result = self._config(include_qualification=False)

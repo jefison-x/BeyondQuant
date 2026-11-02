@@ -58,7 +58,7 @@ services:
     ports:
       - "${BYQ_GATEWAY_BIND:-127.0.0.1:8100}:8100"
     environment:
-      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
+      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-1}
       BYQ_PRODUCT_TOKEN: ${BYQ_PRODUCT_TOKEN:?BYQ_PRODUCT_TOKEN must be set}
       BYQ_PRODUCT_PRINCIPAL: ${BYQ_PRODUCT_PRINCIPAL:-product-user}
       BYQ_WORKFLOW_TRACE_ROOT: /var/lib/byq/workflow-traces
@@ -99,7 +99,7 @@ services:
       context: .
       dockerfile: services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate
     environment:
-      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
+      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-1}
       BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
       BYQ_MCP_URL: http://mcp:8300/mcp/v1
       BYQ_BACKEND_URL: http://backend:8000
@@ -173,7 +173,7 @@ services:
     networks:
       - byq_product
     environment:
-      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
+      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-1}
       BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
       BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_RUNTIME_AUTHORITY_TOKEN:?BYQ_RUNTIME_AUTHORITY_TOKEN must be set}
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
