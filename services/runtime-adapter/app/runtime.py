@@ -111,6 +111,7 @@ from .compat import (
     ACP_COMPATIBILITY_FAMILY, RuntimeCompatibility, RuntimeObservation,
     compatibility_for_release,
 )
+from .compat.dsh_acp import AcpTransportError
 from .identifiers import contained_session_path, validate_identifier
 from .continuation_budget import (
     CONTINUATION_MAX_OUTPUT_TOKENS,
@@ -2281,7 +2282,11 @@ class RuntimeAdapter:
                     self._close_generation(record, generation_id, "runtime_limited")
                     return
                 record.status = SessionStatus.FAILED
-                self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
+                failure: dict[str, Any] = {"error": type(exc).__name__, "run_id": run.run_id}
+                if isinstance(exc, AcpTransportError):
+                    failure.update(code="runtime-transport-failed", retryable=False,
+                                   reason=exc.reason)
+                self._emit(record, "session.failed", "runtime-adapter", failure)
                 self._close_generation(record, generation_id, "failed")
             return
 
@@ -6549,7 +6554,6 @@ class RuntimeAdapter:
                             "byq-acp-root-binding.v1", _ACP_ROOT_BINDING_V2_SCHEMA}
                             or binding["closed"] is not False
                             or binding["cleanup_unconfirmed"] is not False
-                            or binding["native_session_close_confirmed"] is not True
                             or binding["process_exit_confirmed"] is not True
                             or binding["settlement_receipt"] is None
                             or binding["settlement_receipt"] != receipt
@@ -6582,9 +6586,10 @@ class RuntimeAdapter:
                             or binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]
                             or generation is None
                             or generation.process_root_id != binding["root_run_id"]
+                            or binding["native_session_close_confirmed"]
+                               is not generation.native_session_close_confirmed
                             or not generation.process_closed
                             or generation.process_closing
-                            or not generation.native_session_close_confirmed
                             or not generation.process_exit_confirmed):
                         raise SessionConflict("failed ACP session lacks exact settled recovery proof")
                     if (type(initial_sequence) is not int
@@ -6593,6 +6598,9 @@ class RuntimeAdapter:
                     existing.sequence = initial_sequence
                     existing.status = SessionStatus.IDLE
                     existing.continuity = continuity.REATTACHED
+                    # Exact settlement and old-process fencing allow a fresh
+                    # native root even when ACP session/close was lost. Never
+                    # resume that failed native or replay its unfinished input.
                     existing.reuse_native_session_ready = False
                     return {**self.describe_session(existing), "resumed_from_run_id": None}
                 exact_root = receipt.get("root_run_id") if isinstance(receipt, dict) else None

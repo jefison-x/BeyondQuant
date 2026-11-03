@@ -654,6 +654,41 @@ def test_public_resume_does_not_send_byq_history_to_native_acp_resume(monkeypatc
     ]
 
 
+@pytest.mark.parametrize("recovery_status", [409, 503])
+def test_resume_explains_unproven_cleanup_without_bypassing_recovery(monkeypatch, recovery_status) -> None:
+    session = main.ProductSession(
+        CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL,
+        workspace_id=WORKSPACE_ID, boot_id=NEW_BOOT_ID,
+    )
+    monkeypatch.setattr(main, "_product_session", lambda *_a: session)
+    monkeypatch.setattr(main, "_require_session_runtime_authority", lambda _session: NEW_BOOT_ID)
+    calls = []
+
+    def failed_resume(path, **_kwargs):
+        calls.append(path)
+        error = main.HTTPException(409, "runtime session is not available for this operation")
+        error.adapter_conflict_detail = main._FAILED_RUNTIME_SESSION_MARKER
+        raise error
+
+    def blocked_recovery(*_a, **kwargs):
+        assert kwargs["required_recovery_state"] == "settled"
+        error = main.HTTPException(recovery_status, "private recovery evidence unavailable")
+        error.adapter_conflict_detail = "failed ACP session lacks exact settled recovery proof"
+        raise error
+
+    monkeypatch.setattr(main, "_adapter_post", failed_resume)
+    monkeypatch.setattr(main, "_restore_product_session", blocked_recovery)
+    with pytest.raises(main.ProductError if recovery_status == 409 else main.HTTPException) as raised:
+        main.resume_product_session(CONVERSATION_ID, None)
+    assert calls == [f"/internal/runtime/sessions/{SESSION_ID}/resume"]
+    if recovery_status == 409:
+        assert raised.value.code == "agent_session_recovery_blocked"
+        assert "核实已提交业务" in raised.value.message
+        assert "private" not in raised.value.message
+    else:
+        assert raised.value.status_code == 503
+
+
 def test_turn_retries_same_message_until_old_root_ack_barrier_clears(monkeypatch) -> None:
     session = main.ProductSession(
         CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL,

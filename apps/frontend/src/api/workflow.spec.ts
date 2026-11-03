@@ -79,6 +79,16 @@ describe("workflow projections", () => {
     }));
   });
 
+  it("explains a transport failure without claiming the failed request will be replayed", () => {
+    const message = workflowOutcomes([event(2, "session.failed", {
+      code: "runtime-transport-failed", reason: "private-secret", retryable: false,
+    })], "session-1")[0].message;
+    expect(message).toContain("运行连接异常");
+    expect(message).toContain("不会自动重发");
+    expect(message).toContain("先核实上一轮状态");
+    expect(message).not.toContain("private-secret");
+  });
+
   it("folds cards by stable identity and highest revision", () => {
     const common = {
       schema_version: "workflow-card.v1",

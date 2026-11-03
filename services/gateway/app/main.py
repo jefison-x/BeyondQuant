@@ -4552,11 +4552,21 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
         # A settled ordinary failure may continue only after the same-root
         # Backend and durable Runtime proofs pass the normal recovery path.
         # Protected operator failures retain their distinct V3 proof.
-        restored = _restore_product_session(
-            session.conversation_id, session.principal, session.workspace_id,
-            force_recovery=True,
-            required_recovery_state=("settled" if failed_terminal else
-                                     ("settled", "operator_failed_terminal")))
+        try:
+            restored = _restore_product_session(
+                session.conversation_id, session.principal, session.workspace_id,
+                force_recovery=True,
+                required_recovery_state=("settled" if failed_terminal else
+                                         ("settled", "operator_failed_terminal")))
+        except HTTPException as recovery_error:
+            if (recovery_error.status_code == 409
+                    and getattr(recovery_error, "adapter_conflict_detail", None)
+                    == "failed ACP session lacks exact settled recovery proof"):
+                raise ProductError(
+                    409, "agent_session_recovery_blocked",
+                    "当前会话无法安全接续。历史消息仍可查看；核实已提交业务的状态后，请新建会话继续。",
+                ) from None
+            raise
         if (restored.session_id != session.session_id
                 or restored.trace_id != session.trace_id
                 or restored.principal.subject != session.principal.subject

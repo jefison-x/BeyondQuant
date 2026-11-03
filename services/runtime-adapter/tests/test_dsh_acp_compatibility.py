@@ -694,6 +694,13 @@ def test_acp_runtime_rejects_reused_discovery_or_signing_credential() -> None:
             DshAcpCompatibility._validate_runtime_identity({**base, **replacement})
 
 
+def test_transport_reason_does_not_echo_unrecognized_error_or_chained_provider_text() -> None:
+    error = AcpTransportError("private provider response: Bearer secret")
+    error.__cause__ = ValueError("private request body")
+    assert error.reason == "unclassified"
+    assert AcpTransportError("official DSH ACP returned malformed JSON-RPC").reason == "malformed-frame"
+
+
 def test_json_rpc_error_does_not_echo_remote_error_text(tmp_path: Path) -> None:
     server = r'''import json, sys
 for line in sys.stdin:

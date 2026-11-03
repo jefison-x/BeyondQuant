@@ -464,6 +464,35 @@ describe("AgentView", () => {
     wrapper.unmount();
   });
 
+  it("preserves input and stops repeated resumes when safe recovery is blocked", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as any;
+    view.prompt = "第一次请求";
+    await view.send();
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 2,
+      timestamp: "2026-08-28T00:00:02Z", kind: "session.failed", source: "runtime-adapter",
+      payload: { code: "runtime-transport-failed", retryable: false },
+    }, 1);
+    resumeSession.mockRejectedValue(new AgentRequestError(
+      "private internal text", 409, "agent_session_recovery_blocked",
+    ));
+    view.prompt = "用户新的明确指令";
+    await view.send();
+    await flushPromises();
+    expect(view.prompt).toBe("用户新的明确指令");
+    expect(view.sessionContinuationBlocked).toBe(true);
+    expect(wrapper.text()).toContain("无法安全接续");
+    expect(wrapper.text()).toContain("核实已提交业务");
+    expect(wrapper.text()).not.toContain("private internal text");
+    expect(useAgentStore().messages.some(message => message.text === "用户新的明确指令")).toBe(false);
+    await view.send();
+    expect(resumeSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
   it("permits an explicit new instruction after a known budget exhaustion without a failed-run resume", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
