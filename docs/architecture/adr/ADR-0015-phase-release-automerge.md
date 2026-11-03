@@ -45,7 +45,10 @@ auto-merge，并在发布后提醒关闭 auto-merge。
 
 本例外不是自动忽略更严格专项验收或平台设置的授权。动作前验证当前任务的合并授权、
 GitHub auto-merge 与严格 required checks；设置关闭、API 403、检查跳过或不可验证时停在 Draft。
-不得以直接即时 merge/admin bypass 代替不可用的 auto-merge。v1.0 失效边界不变。
+不得以直接即时 merge/admin bypass 代替上述失败。ADR-0059 的 2026-11-03 CLEAN
+路径修订在维护者接受后，另行允许全部门禁通过且 GitHub 已报告 CLEAN 的 ready PR
+采用锁定已验收 head 的普通 squash；这不是检查失败的 fallback。修订接受前仍不得
+以直接合并代替不可用的 auto-merge。v1.0 失效边界不变。
 
 ## 拒绝的替代方案
 
