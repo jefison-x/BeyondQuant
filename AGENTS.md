@@ -131,6 +131,11 @@ allows Codex to mark PRs ready and enable CI-green auto-merge. This exception
 expires at the v1.0 release boundary, after which the single-maintainer gate
 above is restored and auto-merge must be disabled.
 
+Under the Accepted 2026-11-03 CLEAN-route amendment in ADR-0059, an authorized
+pre-release merge may also use ordinary head-locked squash when GitHub reports CLEAN and
+all existing preflight/review/check requirements pass. It grants no admin bypass,
+GitHub-settings change or deployment authority.
+
 ## Before starting implementation
 
 Read all of the following before selecting or implementing work:

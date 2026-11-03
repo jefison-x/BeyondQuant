@@ -173,7 +173,16 @@ ADR-0059 补充：必须有覆盖本任务的 merge 授权，并在动作前运�
 核对精确 PR head、真实执行的 local-ci/ci-gate、全部 required checks/review、strict/up-to-date
 服务器规则和 auto-merge/squash 设置。工具只做保守 preflight，不代替授权或最终平台判定。
 API 403、ruleset-only 尚未验证、设置关闭、skipped/neutral、未知/过期检查时停在 Draft；
-不得使用 `--admin`、取消必需检查或直接即时 merge 作为 fallback。修复平台配置需维护者另行授权。
+不得使用 `--admin`、取消必需检查或直接即时 merge 作为这些失败的 fallback。
+修复平台配置需维护者另行授权。
+
+ADR-0059 的 2026-11-03 CLEAN 路径修订已由维护者接受。仅当全部现有
+预检、独立审查和平台要求已通过，ready PR 的精确 head 未变化，且 GitHub 明确报告
+`mergeable=MERGEABLE`、`mergeStateStatus=CLEAN`，可按本任务已有 merge 授权执行普通
+squash，无须先请求 auto-merge 或再次申请逐 PR 的 CLEAN 例外。合并请求必须锁定
+已验收 head（如 `gh pr merge <number> --squash --match-head-commit <sha>`），由平台继续
+执行保护规则；head/base 或任何门禁变化时停止并重新预检。若平台要求 merge queue，
+必须遵守队列，不能以直接合并绕过。v1.0 到期边界和单独部署授权保持不变。
 
 merge preflight 只评估**精确 PR head 上最新的有效 BeyondQuant CI run**（按 check 的
 `/actions/runs/<id>` run identity 分组，而非按 check 名称）。同一 head 上更旧的 run 若被较新 run

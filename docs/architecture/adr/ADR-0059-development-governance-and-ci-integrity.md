@@ -24,7 +24,8 @@
    未覆盖的外部写动作不能推定授权。默认 Draft/human gate；v1.0 前只有明确合并授权且
    GitHub auto-merge、服务器 required checks 可验证时才使用 ADR-0015 squash auto-merge。
    设置关闭、API 403、检查缺失/跳过/过期时停在 Draft，不使用 admin bypass 或立即手动 merge 代替。
-   本 ADR 不修改 GitHub 设置，不以本地检查冒充平台强制门禁。
+   本 ADR 不修改 GitHub 设置，不以本地检查冒充平台强制门禁。下述已接受的 2026-11-03
+   CLEAN 路径修订仅在其具名范围内覆盖“只能 auto-merge”的限制。
 4. Engineering code agent 本身没有生产部署权限。维护者可另行授权其在 Product 之外作为
    trusted operator 执行既有 deployment lane；记录授权、目标 commit/image、服务白名单、
    readiness/业务 smoke、rollback 和必要 backup。不得把该权限传给 Product DSH、Backend 或浏览器。
@@ -91,3 +92,38 @@ DSH ADR-0058 保持 Proposed；治理整改不接受候选运行时。DSH 升级
 保留精确旧镜像作为首选回退制品，不依赖现场重编译；必要重建必须重新核验依赖和制品身份。
 应用回退不默认恢复数据库；恢复备份可能丢失备份之后的新数据，实际生产数据恢复须另行明确授权。
 本修订不授权自动删数据、清理历史制品、付费模型测试、正式 release/tag，或省略实际健康与基本业务验证。
+
+## Accepted amendment — 2026-11-03：已满足平台要求的 CLEAN PR 使用普通 squash
+
+- Status：**Accepted**（2026-11-03）。
+- Acceptance：维护者对提案提交 `5b0c8280` 的精确条款及应用于本次治理 PR、PR #424、
+  继续推送/CI/合并及已授权发布部署的确认，明确回复“接受修订并按上述范围继续”。
+- Scope：v1.0 正式发布前、已有本任务 merge 授权的 PR；不授予未来任务的永久合并授权。
+- Supersedes：本 ADR 第3条、ADR-0015 的执行澄清、AGENTS 和开发流程中，
+  把“只能使用 auto-merge”应用到所有门禁已通过的 CLEAN PR 的限制。其余门禁继续有效。
+
+GitHub 将 [CLEAN](https://docs.github.com/en/graphql/reference/pulls#mergestatestatus)
+定义为可合并且提交检查通过。PR #424 的真实平台响应是
+`Pull request is in clean status`：全部检查通过后，开启 auto-merge 仍被拒绝。
+不再把这种已就绪状态要求为每个 PR 单独申请一次流程例外。
+
+采用以下两条正常路径：
+
+1. GitHub 支持并接受 squash auto-merge 时，继续使用现有 auto-merge 路径。
+2. 全部现有门禁通过且 ready PR 为 `MERGEABLE` / `CLEAN` 时，允许普通 squash。
+   不必先调用 auto-merge 取得拒绝；当前任务的 merge 授权已覆盖此合并方式。
+
+两条路径均须复用 `scripts/ci/check-github-gates.py` 的只读预检，包括精确 head 上最新
+有效 CI、实际执行成功的 `local-ci` / `ci-gate` 及所有 required checks/reviews、strict/up-to-date
+保护、贡献/来源审查与仓库 auto-merge/squash 设置验证，并保留独立审查证据。
+动作前再次核对 PR head/base、ready 状态和 GitHub 判定；普通
+[合并 API](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request) 的 `sha` 参数
+或等效 `--match-head-commit` 必须锁定已验收 head。head/base 或门禁变化时停止并重新预检。
+
+禁止 `--admin`、bypass、取消检查、修改保护规则、force-push main，或把非 CLEAN、403、
+缺失/失败/跳过/过期/未知检查解释为可直接合并。设置关闭、保护/ruleset 未验证时仍停在 Draft；
+平台要求 merge queue 时必须遵守队列。v1.0 发布时本例外失效，恢复人工合并门禁。
+发布、部署、数据操作和版本 tag 继续使用各自授权与验证通道，不由合并规则授予。
+
+维护者已明确授权将本修订用于当前治理 PR 及 PR #424，以解决本次流程阻塞。
+接受、推送/CI、合并与部署证据分别记录；本地测试和文档提交不代表已通过远端 CI、合并或部署。
