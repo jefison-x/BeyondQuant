@@ -176,7 +176,7 @@ API 403、ruleset-only 尚未验证、设置关闭、skipped/neutral、未知/�
 不得使用 `--admin`、取消必需检查或直接即时 merge 作为这些失败的 fallback。
 修复平台配置需维护者另行授权。
 
-ADR-0059 的 2026-11-03 CLEAN 路径修订在维护者接受前不生效；接受后，若全部现有
+ADR-0059 的 2026-11-03 CLEAN 路径修订已由维护者接受。仅当全部现有
 预检、独立审查和平台要求已通过，ready PR 的精确 head 未变化，且 GitHub 明确报告
 `mergeable=MERGEABLE`、`mergeStateStatus=CLEAN`，可按本任务已有 merge 授权执行普通
 squash，无须先请求 auto-merge 或再次申请逐 PR 的 CLEAN 例外。合并请求必须锁定
