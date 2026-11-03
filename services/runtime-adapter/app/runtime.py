@@ -4862,7 +4862,11 @@ class RuntimeAdapter:
         if not binding_dir.exists():
             return
         for binding_path in binding_dir.glob("*.json"):
-            previous = self._read_acp_binding(binding_path.stem)
+            # A historical conversation's reattachment cursor is not a
+            # workspace execution fence. Keep identity/cleanup validation,
+            # without requiring that unrelated conversation to be resumable.
+            previous = self._read_acp_binding(
+                binding_path.stem, validate_recovery_boundary=False)
             if previous.get("workspace_id") != workspace_id:
                 raise SessionConflict("workspace ACP binding scope changed")
             if (previous.get("schema_version") == _ACP_ROOT_BINDING_V2_SCHEMA
@@ -5688,7 +5692,9 @@ class RuntimeAdapter:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
 
-    def _read_acp_binding(self, session_id: str) -> dict[str, Any]:
+    def _read_acp_binding(
+        self, session_id: str, *, validate_recovery_boundary: bool = True,
+    ) -> dict[str, Any]:
         if not self._acp:
             raise KeyError(session_id)
         path = self._acp_binding_path(session_id)
@@ -5999,7 +6005,7 @@ class RuntimeAdapter:
                                  > value["final_live_sequence"]))):
                     raise SessionConflict("ACP operator recovery observation binding changed")
                 value["operator_observation"] = observation
-        if "recovery_boundary" in value:
+        if "recovery_boundary" in value and validate_recovery_boundary:
             boundary = value["recovery_boundary"]
             boundary_fields = {
                 "schema_version", "binding_sequence", "previous_boot_id",
