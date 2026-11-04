@@ -1052,7 +1052,11 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       : headerValue(requestHeaders(factoryContext), "x-byq-root-run-id") };
   const admittedReadContext = (extra: unknown) => extra && typeof extra === "object"
     && Object.hasOwn(extra, privateObservationId) ? extra : trustedContext;
-  const server = new McpServer({ name: SERVICE, version: VERSION });
+  // Advertise the empty resource surface so the MCP client does not emit its
+  // missing-capability diagnostic on the ACP JSON-RPC stdout stream.
+  const server = new McpServer({ name: SERVICE, version: VERSION }, {
+    capabilities: { resources: { listChanged: false } },
+  });
   // ADR-0085 P4: explicit, type-checked registration gate. In the isolated
   // read-only subset only the five bounded read tools are registered; every
   // other registration is a no-op, so the bounded judgment root/persona cannot
