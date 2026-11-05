@@ -93,6 +93,11 @@ try {
       "x-byq-runtime-boot-id": runtimeBootId,
     } },
   }));
+  assert.ok(client.getServerCapabilities()?.resources, "BYQ must advertise its empty resource surface");
+  assert.deepEqual((await client.listResources()).resources, []);
+  assert.deepEqual((await client.listResourceTemplates()).resourceTemplates, []);
+  await assert.rejects(client.readResource({ uri: "byq://nonexistent" }));
+  assert.equal(requests.length, 0, "resource discovery must not reach the Backend");
   const listed = await client.listTools();
   const webEvidenceTool = listed.tools.find(tool => tool.name === "byq_web_evidence_create");
   const webProperties = webEvidenceTool?.inputSchema?.properties as Record<string, unknown> | undefined;

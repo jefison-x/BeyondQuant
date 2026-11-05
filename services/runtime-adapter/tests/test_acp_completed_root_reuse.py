@@ -34,6 +34,7 @@ class FakeAcpCompatibility:
         self.closed_sessions: list[tuple[FakeAcpHarness, str]] = []
         self.closed_processes: list[FakeAcpHarness] = []
         self.finish_reason = "completed"
+        self.prompt_error: Exception | None = None
         self.close_rpc_failures = 0
         self.process_close_failures = 0
         self.resume_failures = 0
@@ -78,6 +79,8 @@ class FakeAcpCompatibility:
         self.prompt_started.set()
         if self.block_prompt:
             assert self.allow_prompt_return.wait(2)
+        if self.prompt_error is not None:
+            raise self.prompt_error
         return self.finish_reason
 
     def cancel_session(self, _harness: FakeAcpHarness, _native_session_id: str) -> None:
@@ -250,6 +253,151 @@ def test_close_rpc_failure_uses_fresh_native_session_after_process_exit(acp_adap
     assert fresh.session_root != old_harness.session_root
     assert fresh.environment.get("BYQ_NATIVE_ROOT_SESSION_ID") is None
     assert record.runtime_session_id != old_native
+
+
+def test_failed_transport_recovers_only_new_input_in_fresh_native_after_exact_ack(acp_adapter):
+    from app.compat.dsh_acp import AcpTransportError
+
+    runtime = acp_adapter
+    compat = runtime._compatibility
+    compat.finish_reason = "failed"
+    compat.prompt_error = AcpTransportError("official DSH ACP connection was lost")
+    record, old_root, receipt = _create_and_complete(runtime, compat, "failed input")
+    old_harness = compat.harnesses[0]
+    old_prompts = list(old_harness.prompts)
+    old_native = record.runtime_session_id
+    failed = [event for event in record.history if event["kind"] == "session.failed"][-1]
+    assert failed["payload"]["code"] == "runtime-transport-failed"
+    assert failed["payload"]["reason"] == "connection-lost"
+    assert failed["payload"]["retryable"] is False
+    with pytest.raises(SessionConflict):
+        runtime.recover_acp_session("reuse-session", receipt, record.sequence)
+
+    compat.close_rpc_failures = 1
+    runtime.acknowledge_terminal("reuse-session", receipt)
+    assert not record.current_generation.native_session_close_confirmed
+    assert record.current_generation.process_exit_confirmed
+    result = runtime.recover_acp_session("reuse-session", receipt, record.sequence)
+    assert result["status"] == "idle"
+    assert not record.reuse_native_session_ready
+    # A lost resume response can be retried without recovering the failed native.
+    runtime.recover_acp_session("reuse-session", receipt, record.sequence)
+    assert compat.resumed == []
+    assert len(compat.harnesses) == 1
+
+    compat.prompt_error = None
+    compat.finish_reason = "completed"
+    new_root = runtime.submit_prompt("reuse-session", "new explicit instruction", conversation_context=[])
+    _wait_for_status(runtime, SessionStatus.IDLE)
+    assert new_root != old_root
+    assert record.runtime_session_id != old_native
+    assert compat.harnesses[-1].session_root != old_harness.session_root
+    assert compat.harnesses[-1].environment.get("BYQ_NATIVE_ROOT_SESSION_ID") is None
+    assert old_harness.closed
+    assert len(old_prompts) == 1
+    assert old_harness.prompts == old_prompts
+    assert compat.harnesses[-1].prompts == ["new explicit instruction"]
+    assert compat.resumed == []
+    assert record.terminal_receipts[old_root] == receipt
+    runtime.acknowledge_terminal("reuse-session", receipt)
+    assert not compat.harnesses[-1].closed
+    assert runtime._read_acp_binding("reuse-session")["root_run_id"] == new_root
+
+
+@pytest.mark.parametrize("older_pending", [False, True])
+def test_restart_recovers_settled_failure_after_lost_native_close(acp_adapter, older_pending):
+    runtime = acp_adapter
+    compat = runtime._compatibility
+    compat.finish_reason = "failed"
+    record, old_root, receipt = _create_and_complete(runtime, compat, "failed input")
+    compat.close_rpc_failures = 1
+    runtime.acknowledge_terminal("reuse-session", receipt)
+    assert record.current_generation.process_exit_confirmed
+    assert not record.current_generation.native_session_close_confirmed
+    native_id = record.runtime_session_id
+    failed_prompts = list(compat.harnesses[0].prompts)
+    tail = record.sequence
+
+    first_boot = RuntimeAdapter(compat)
+    first_boot.boot_id = uuid.uuid4().hex
+    first_boot.require_current_backend_authority = lambda: 8
+    try:
+        first = first_boot.recover_acp_session("reuse-session", receipt, tail, trace_tail=tail)
+        boundary = first["recovery_boundary"]
+        assert boundary["state"] == "pending"
+        assert boundary["next_sequence"] == tail + 1
+        restarted = first_boot
+        if older_pending:
+            restarted = RuntimeAdapter(compat)
+            restarted.boot_id = uuid.uuid4().hex
+            restarted.require_current_backend_authority = lambda: 9
+        try:
+            compat.runtime = restarted
+            if older_pending:
+                path = restarted._acp_binding_path("reuse-session")
+                original_binding = path.read_bytes()
+                for unproven in ({"process_exit_confirmed": False}, {"cleanup_unconfirmed": True},
+                                 {"domain_call_sequence": 1}, {"settlement_receipt": None}):
+                    path.write_text(json.dumps({**json.loads(original_binding), **unproven}))
+                    with pytest.raises(SessionConflict, match="recovery boundary binding is invalid"):
+                        restarted.recover_acp_session("reuse-session", receipt, tail, trace_tail=tail)
+                path.write_bytes(original_binding)
+                with pytest.raises(SessionConflict, match="settled|another trace"):
+                    restarted.recover_acp_session("reuse-session", {}, tail, trace_tail=tail)
+                result = restarted.recover_acp_session("reuse-session", receipt, tail, trace_tail=tail)
+                assert result["boot_id"] != boundary["runtime_boot_id"]
+                assert result["recovery_boundary"] == boundary
+            with pytest.raises(SessionConflict, match="boundary is not acknowledged"):
+                restarted.submit_prompt("reuse-session", "not admitted")
+            ack = {"trace_tail": tail + 1, "boundary_ack_sha256": boundary["event_sha256"]}
+            result = restarted.recover_acp_session("reuse-session", receipt, tail + 1, **ack)
+            assert result["recovery_boundary"] == {**boundary, "state": "acknowledged"}
+            assert restarted.recover_acp_session("reuse-session", receipt, tail + 1, **ack) == result
+            assert restarted.recovery_binding("reuse-session")["settlement_receipt"] == receipt
+            compat.finish_reason = "completed"
+            new_root = restarted.submit_prompt("reuse-session", "new input", conversation_context=[])
+            _wait_for_status(restarted, SessionStatus.IDLE)
+            assert new_root != old_root
+            assert restarted._get("reuse-session").runtime_session_id != native_id
+            assert not compat.resumed
+            assert [h.prompts for h in compat.harnesses] == [failed_prompts, ["new input"]]
+        finally:
+            if older_pending:
+                restarted.close()
+    finally:
+        first_boot.close()
+
+
+@pytest.mark.parametrize("unproven", [
+    "native_close_mismatch", "binding_exit", "generation_exit", "cleanup", "receipt", "domain_drain",
+])
+def test_failed_fresh_native_recovery_preserves_settlement_and_cleanup_fences(acp_adapter, unproven):
+    runtime = acp_adapter
+    compat = runtime._compatibility
+    compat.finish_reason = "failed"
+    record, _root, receipt = _create_and_complete(runtime, compat)
+    compat.close_rpc_failures = 1
+    runtime.acknowledge_terminal("reuse-session", receipt)
+    binding_path = runtime._acp_binding_path("reuse-session")
+    binding = json.loads(binding_path.read_text())
+    if unproven == "native_close_mismatch":
+        binding["native_session_close_confirmed"] = True
+    elif unproven == "binding_exit":
+        binding["process_exit_confirmed"] = False
+    elif unproven == "generation_exit":
+        record.current_generation.process_exit_confirmed = False
+    elif unproven == "cleanup":
+        record.cleanup_unconfirmed = True
+    elif unproven == "receipt":
+        receipt = {**receipt, "event_sha256": "0" * 64}
+    elif unproven == "domain_drain":
+        record.domain_call_sequence += 1
+    binding_path.write_text(json.dumps(binding))
+    with pytest.raises(SessionConflict):
+        runtime.recover_acp_session("reuse-session", receipt, record.sequence)
+    assert record.status == SessionStatus.FAILED
+    assert len(compat.harnesses) == 1
+    assert compat.resumed == []
 
 
 def test_process_exit_failure_keeps_terminal_fence_until_exact_ack_retry(acp_adapter):

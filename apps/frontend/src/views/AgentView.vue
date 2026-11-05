@@ -55,9 +55,9 @@ const softCancelPending = ref(false);
 const softCancelRunId = ref("");
 const activeRunId = ref("");
 const agentMessageRunIds = new WeakMap<object, string>();
-const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
+const terminalSessionMessage = "当前会话无法安全接续。历史消息仍可查看；核实已提交业务的状态后，请新建会话继续。";
 const softCancelWaitingMessage = "已请求停止本轮；这只停止当前回复，独立后台任务可能稍后接续。可在智能助手偏好中关闭后续自动接续。正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
-const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
+const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed", "agent_session_recovery_blocked"]);
 // A known, fully-settled model-budget exhaustion closes the failed root but
 // leaves the live conversation promptable. The browser must not treat it as a
 // terminal session and must not attempt a failed-run resume; an explicit new
@@ -65,6 +65,8 @@ const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_sessio
 const budgetExhaustedCode = "budget-exhausted";
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
+const sessionContinuationBlocked = computed(() => Boolean(agent.activeSessionId)
+  && terminalSessionId.value === agent.activeSessionId);
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
 const activities = computed(() => workflowActivities(agent.events));
 const activeActivityCount = computed(() => activities.value.filter((item) =>
@@ -724,7 +726,7 @@ onBeforeUnmount(() => {
       <div v-else-if="!timeline.length" class="conversation-empty">
         <div class="xiaoba-mark">小巴</div><h1>今天想研究什么？</h1>
         <p>从问题出发，小巴会把结论、策略草案、候选股票与回测上下文放在同一条对话时间线中。</p>
-        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" :disabled="loading || requestedSessionUnavailable" @click="send(starter)">{{ starter }}</button></div>
+        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" :disabled="loading || requestedSessionUnavailable || sessionContinuationBlocked" @click="send(starter)">{{ starter }}</button></div>
       </div>
       <div v-else class="timeline">
         <template v-for="item in timeline" :key="item.key">
@@ -774,7 +776,7 @@ onBeforeUnmount(() => {
           title="停止本轮"
           @click="stopCurrentRun"
         ><span class="stop-square" aria-hidden="true"></span></el-button>
-        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim() || loading || requestedSessionUnavailable" @click="send()">发送</el-button>
+        <el-button v-else class="composer-action" type="primary" :loading="busy" :disabled="!prompt.trim() || loading || requestedSessionUnavailable || sessionContinuationBlocked" @click="send()">发送</el-button>
       </form>
     </footer>
     <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">

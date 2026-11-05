@@ -849,6 +849,21 @@ def _prepare_private_product_home(home: Path) -> None:
 class AcpTransportError(RuntimeError):
     """A sanitized transport or protocol failure; wire contents are never included."""
 
+    @property
+    def reason(self) -> str:
+        # Persist only known categories, never exception text, wire payloads
+        # or chained provider errors in the public WorkflowTrace.
+        return {
+            "official DSH ACP connection was lost": "connection-lost",
+            "official DSH ACP process exited": "process-exited",
+            "official DSH ACP returned malformed JSON-RPC": "malformed-frame",
+            "official DSH ACP returned an unmatched response": "unmatched-response",
+            "official DSH ACP returned a malformed session update": "malformed-update",
+            "official DSH ACP response exceeded the protocol bound": "frame-bound-exceeded",
+            "ACP slot ended without a signed exit": "runner-exit-unproven",
+            "ACP update consumer failed": "notification-consumer-failed",
+        }.get(str(self), "unclassified")
+
 
 class AcpRpcError(RuntimeError):
     """A JSON-RPC error reduced to its method and numeric code."""

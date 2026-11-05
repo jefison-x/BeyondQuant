@@ -3481,11 +3481,26 @@ def _append_and_ack_recovery_boundary(
     if (not isinstance(boundary, dict) or binding.get("state") != "settled"
             or not isinstance(binding.get("settlement_receipt"), dict)
             or (receipt is not None and receipt != binding.get("settlement_receipt"))
-            or boundary.get("runtime_boot_id") != runtime_reply.get("boot_id")
             or type(runtime_reply.get("sequence")) is not int
             or runtime_reply["sequence"] != boundary.get("next_sequence")):
         raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid")
     prior_boundary = binding.get("recovery_boundary")
+    if boundary.get("runtime_boot_id") != runtime_reply.get("boot_id"):
+        # The previous Runtime may have persisted the event without finishing
+        # its handoff. Append only the exact stored event under current authority.
+        authority = _runtime_authority_snapshot()
+        event_epoch = boundary.get("runtime_authority_epoch")
+        current_epoch = authority.get("authority_epoch")
+        previous_epoch = binding.get("previous_authority_epoch")
+        if (prior_boundary != boundary or authority.get("ready") is not True
+                or authority.get("boot_id") != runtime_reply.get("boot_id")
+                or not _valid_runtime_boot_id(runtime_reply.get("boot_id"))
+                or boundary.get("runtime_boot_id") == binding.get("previous_boot_id")
+                or type(event_epoch) is not int or type(current_epoch) is not int
+                or type(previous_epoch) is not int or not previous_epoch < event_epoch < current_epoch):
+            raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid")
+        if receipt is None:
+            _verify_settled_recovery_binding(_validate_recovery_binding(binding, session), session)
     if prior_boundary is None:
         binding = _validate_recovery_binding({**binding, "recovery_boundary": boundary}, session)
     elif prior_boundary == boundary:
@@ -4552,11 +4567,21 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
         # A settled ordinary failure may continue only after the same-root
         # Backend and durable Runtime proofs pass the normal recovery path.
         # Protected operator failures retain their distinct V3 proof.
-        restored = _restore_product_session(
-            session.conversation_id, session.principal, session.workspace_id,
-            force_recovery=True,
-            required_recovery_state=("settled" if failed_terminal else
-                                     ("settled", "operator_failed_terminal")))
+        try:
+            restored = _restore_product_session(
+                session.conversation_id, session.principal, session.workspace_id,
+                force_recovery=True,
+                required_recovery_state=("settled" if failed_terminal else
+                                         ("settled", "operator_failed_terminal")))
+        except HTTPException as recovery_error:
+            if (recovery_error.status_code == 409
+                    and getattr(recovery_error, "adapter_conflict_detail", None)
+                    == "failed ACP session lacks exact settled recovery proof"):
+                raise ProductError(
+                    409, "agent_session_recovery_blocked",
+                    "当前会话无法安全接续。历史消息仍可查看；核实已提交业务的状态后，请新建会话继续。",
+                ) from None
+            raise
         if (restored.session_id != session.session_id
                 or restored.trace_id != session.trace_id
                 or restored.principal.subject != session.principal.subject
