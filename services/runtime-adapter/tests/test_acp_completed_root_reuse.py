@@ -304,8 +304,10 @@ def test_failed_transport_recovers_only_new_input_in_fresh_native_after_exact_ac
     assert runtime._read_acp_binding("reuse-session")["root_run_id"] == new_root
 
 
-@pytest.mark.parametrize("older_pending", [False, True])
-def test_restart_recovers_settled_failure_after_lost_native_close(acp_adapter, older_pending):
+@pytest.mark.parametrize("older_pending,same_original_boot", [(False, False), (True, False), (True, True)])
+def test_restart_recovers_settled_failure_after_lost_native_close(
+    acp_adapter, older_pending, same_original_boot,
+):
     runtime = acp_adapter
     compat = runtime._compatibility
     compat.finish_reason = "failed"
@@ -319,8 +321,8 @@ def test_restart_recovers_settled_failure_after_lost_native_close(acp_adapter, o
     tail = record.sequence
 
     first_boot = RuntimeAdapter(compat)
-    first_boot.boot_id = uuid.uuid4().hex
-    first_boot.require_current_backend_authority = lambda: 8
+    first_boot.boot_id = runtime.boot_id if same_original_boot else uuid.uuid4().hex
+    first_boot.require_current_backend_authority = lambda: 7 if same_original_boot else 8
     try:
         first = first_boot.recover_acp_session("reuse-session", receipt, tail, trace_tail=tail)
         boundary = first["recovery_boundary"]
