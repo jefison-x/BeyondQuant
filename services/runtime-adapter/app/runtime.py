@@ -6089,10 +6089,12 @@ class RuntimeAdapter:
             return boundary["runtime_authority_epoch"] == authority_epoch
         # Older builds could persist this boundary and reject it on read-back
         # after losing ACP close. Finish the exact event under current authority.
+        same_original_boot = boundary["runtime_boot_id"] == binding["previous_boot_id"]
         return (not binding["native_session_close_confirmed"]
-                and boundary["runtime_boot_id"] != binding["previous_boot_id"]
                 and binding["previous_authority_epoch"]
-                    < boundary["runtime_authority_epoch"] < authority_epoch)
+                    <= boundary["runtime_authority_epoch"] < authority_epoch
+                and same_original_boot == (
+                    boundary["runtime_authority_epoch"] == binding["previous_authority_epoch"]))
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:
         binding = self._read_acp_binding(session_id)

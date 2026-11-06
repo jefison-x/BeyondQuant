@@ -3492,12 +3492,13 @@ def _append_and_ack_recovery_boundary(
         event_epoch = boundary.get("runtime_authority_epoch")
         current_epoch = authority.get("authority_epoch")
         previous_epoch = binding.get("previous_authority_epoch")
+        same_original_boot = boundary.get("runtime_boot_id") == binding.get("previous_boot_id")
         if (prior_boundary != boundary or authority.get("ready") is not True
                 or authority.get("boot_id") != runtime_reply.get("boot_id")
                 or not _valid_runtime_boot_id(runtime_reply.get("boot_id"))
-                or boundary.get("runtime_boot_id") == binding.get("previous_boot_id")
                 or type(event_epoch) is not int or type(current_epoch) is not int
-                or type(previous_epoch) is not int or not previous_epoch < event_epoch < current_epoch):
+                or type(previous_epoch) is not int or not previous_epoch <= event_epoch < current_epoch
+                or same_original_boot != (event_epoch == previous_epoch)):
             raise HTTPException(status_code=502, detail="runtime recovery boundary is invalid")
         if receipt is None:
             _verify_settled_recovery_binding(_validate_recovery_binding(binding, session), session)

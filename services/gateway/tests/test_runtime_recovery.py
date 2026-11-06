@@ -267,13 +267,17 @@ def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_p
     )
 
 
-def test_finish_persisted_boundary_from_previous_boot(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("same_original_boot", [False, True])
+def test_finish_persisted_boundary_from_previous_boot(monkeypatch, tmp_path: Path, same_original_boot) -> None:
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
     binding = _binding("settled")
     receipt = binding["settlement_receipt"]
     binding["sequence"] = 9
-    boundary, event = _recovery_boundary(9, receipt, runtime_boot_id="d" * 32, authority_epoch=8)
+    boundary, event = _recovery_boundary(
+        9, receipt, runtime_boot_id=OLD_BOOT_ID if same_original_boot else "d" * 32,
+        authority_epoch=7 if same_original_boot else 8,
+    )
     binding["recovery_boundary"] = boundary
     session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
     authority = {"ready": True, "boot_id": NEW_BOOT_ID, "authority_epoch": 9}
@@ -285,6 +289,15 @@ def test_finish_persisted_boundary_from_previous_boot(monkeypatch, tmp_path: Pat
         main._append_and_ack_recovery_boundary(session, {**reply, "boot_id": "f" * 32}, receipt, binding)
     with pytest.raises(main.HTTPException, match="boundary is invalid"):
         main._append_and_ack_recovery_boundary(session, reply, receipt, {**binding, "recovery_boundary": None})
+    inconsistent, _event = _recovery_boundary(
+        9, receipt, runtime_boot_id=boundary["runtime_boot_id"],
+        authority_epoch=8 if same_original_boot else 7,
+    )
+    with pytest.raises(main.HTTPException, match="boundary is invalid"):
+        main._append_and_ack_recovery_boundary(
+            session, {**reply, "recovery_boundary": inconsistent}, receipt,
+            {**binding, "recovery_boundary": inconsistent},
+        )
     assert store.read(SESSION_ID) == [_trace_event(9)]
 
     acknowledged = {**reply, "recovery_boundary": {**boundary, "state": "acknowledged"}}
