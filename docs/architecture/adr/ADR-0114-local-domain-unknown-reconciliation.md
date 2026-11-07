@@ -533,3 +533,37 @@ recovery handoff, and the shared normalized WorkflowTrace contract. Any required
 projection adjustment must be reviewed explicitly; no new auxiliary program is
 in scope. Existing evidence and browser pages remain retained; the two
 business-unknown acceptance cases remain NOT_RUN.
+
+## Accepted narrow amendment — acknowledged idle recovery across cold boots (2026-11-07)
+
+**Status: Accepted (2026-11-07).** The maintainer accepted the concrete proposal
+to repair repeated cold-start recovery and complete review, CI, merge, release,
+development-test validation and then production-test deployment. Existing data,
+conversations, pages, historical receipts and rollback material remain protected;
+Phase 18 remains NOT_STARTED.
+
+An already settled public conversation may have an acknowledged recovery boundary
+without a subsequent business turn. Another cold start must not reject that idle
+conversation solely because the acknowledged boundary belongs to the previous
+Runtime boot. This extends only the authorization of that completed boundary:
+
+- The current authority epoch must be strictly newer than the boundary authority;
+  original boot/epoch provenance, owner, Workspace, session, trace and Root must
+  remain exact. Same or stale authority from another boot is not sufficient.
+- Require the exact durable settlement receipt, acknowledged boundary/event digest,
+  confirmed native close and process exit, no uncertain cleanup, drained domain
+  calls, an open public conversation and the exact durable trace tail. Backend
+  verification of pending/unknown execution and ownership remains mandatory.
+- Reuse the existing binding lock/CAS, normalized recovery event and exact-digest
+  ACK. Each actual new recovery emits a new consecutive `session.reattached` event
+  and requires its own ACK before admitting input. Old event bytes and terminal
+  receipts are not edited or reused as a new business Root's terminal ACK.
+- Restore only an idle Runtime record. Do not send an old prompt or create an
+  Agent process to replay work. This does not widen the existing pending-boundary
+  repair route, settle unknown outcomes, or grant a new user execution permission.
+
+Acceptance includes two successive cold starts without a business turn between
+them, retained original conversation identity/history, and negative cases for
+pending boundaries, stale authority, mismatched receipt/event/tail, undrained
+calls and unconfirmed process/cleanup. Subsequent business work still requires
+its own terminal ACK. No new protocol, store, harness, DSH fork or schema is added.
