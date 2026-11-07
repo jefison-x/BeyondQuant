@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import uuid
-import os
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 
@@ -958,9 +957,7 @@ class ResearchContinuationMixin:
                             reason = 'continuation_request_limit_exceeded'
                     except ValueError:
                         reason = 'continuation_usage_unconfirmed'
-                if reason is None and os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1':
-                    reason = 'request_profile_unqualified'
-                elif reason is None and not request_state['requests_remaining']:
+                if reason is None and not request_state['requests_remaining']:
                     reason = 'continuation_request_exhausted'
                 elif reason is None:
                     reason = task.get('continuation_blocked_reason') or 'waiting_for_event'
@@ -1002,8 +999,6 @@ class ResearchContinuationMixin:
         if reason is None:
             if budget['unconfirmed_reservations']:
                 reason = 'continuation_result_unconfirmed'
-            elif os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1':
-                reason = 'budget_enforcement_unqualified'
             elif budget['turns_remaining'] == 0 or budget['available_tokens'] < 1048576 + 8192:
                 reason = 'budget_exhausted'
             else:
@@ -1717,8 +1712,6 @@ class ResearchContinuationMixin:
         Only this closed domain scan supplies the executor consumer; it never
         uses workspace-wide newest objects or default page absence as proof.
         """
-        if os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1':
-            return {'status': 'blocked', 'reason': 'budget_enforcement_unqualified'}
         owner, workspace = trusted_context.get('owner_principal'), trusted_context.get('workspace_id')
         with self._transaction() as connection:
             tasks = execute(connection, '''SELECT t.task_id FROM research_tasks t
@@ -1968,8 +1961,7 @@ class ResearchContinuationMixin:
                 execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
                     {'budget': rows, 'task': task_id})
                 return {'dispatch': True, 'attempt': 1}
-            if (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or row is None
-                    or not _is_v2_reservation(row)):
+            if row is None or not _is_v2_reservation(row):
                 return {'dispatch': False}
             if (self._continuation_blocked_reason(task, conversation, row) is not None
                     or row['status'] != 'reserved'

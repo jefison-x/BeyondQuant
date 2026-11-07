@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'), reason='
 
 
 def setup_handoff(monkeypatch, *, grant=True):
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     store, task, context, payload = setup_permission()
     store.transition('research_task', task, 'running', 'handoff-progress', progress={
         'schema_version': 'research-progress.v1', 'stage': 'backtest', 'next_action': '核对原任务后继续',
@@ -53,7 +53,7 @@ def test_strategy_approval_artifact_is_preserved_without_triggering_background_m
         session_id='byq-session-product-user')
     context = {key.removeprefix('x-byq-').replace('-', '_'): value for key, value in headers.items()}
     monkeypatch.setattr(test_backtest_api, '_owner_headers', lambda _: headers)
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     catalog = ConversationCatalogStore()
     conversation = catalog.create('product-user', 'byq-session-product-user',
         'byq-trace-task-receipt')['conversation_id']

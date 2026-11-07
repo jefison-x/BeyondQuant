@@ -46,8 +46,11 @@ Judgment MCP 指向健康主 Backend。保留原有健康启动依赖及 Runner 
 以后沿用 [镜像发布流程](image-release.md) 和 `scripts/release/manifest.py overlay`
 验证签名、SBOM、可信运行和 digest。先在开发测试验证，再按任务授权处理生产测试。
 每次成功后把已验证的 image 字段收敛回当前单入口，保留原配置作回退记录，
-不继续无限叠加日期目录和临时源码补丁。默认 F6 运行开关为 1，用户主动关闭的
-设置仍保存在各自数据库中，不由环境同步覆盖。
+不继续无限叠加日期目录和临时源码补丁。F6 按
+[ADR-0111 的内建能力修订](../architecture/adr/ADR-0111-automatic-continuation-execution-parameters.md)
+移除独立环境开关，只保留用户级 `auto_continue`；用户主动关闭的设置仍保存在
+各自数据库中，不由环境同步覆盖。上表记录的 `e8be5d2f` 已部署镜像仍保留其历史
+启用参数；只有采用新实现镜像后才清理运行配置中的旧变量，不能先让旧镜像停用 F6。
 
 下面的 `config` 仅作退出状态验证；解析结果可能含秘密，不打印、不保存明文：
 

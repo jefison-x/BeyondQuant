@@ -468,7 +468,6 @@ test "$COMPOSE_FILE" = "$REPO_ROOT/compose.yml:$REPO_ROOT/compose.override.yml"
 test "$COMPOSE_DISABLE_ENV_FILE" = 1
 test "$BYQ_POSTGRES_VOLUME_EXTERNAL" = false
 test "$BYQ_DATABASE_URL" = postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain
-test "$BYQ_F6_EXECUTOR_ENABLED" = 0
 test -z "$DEEPSEEK_API_KEY$OPENCODE_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_HUB_URL"
 test -z "${BYQ_DSH_RUNTIME_DOCKERFILE:-}${BYQ_DSH_COMPATIBILITY_RELEASE:-}${BYQ_DSH_SESSION_ROOT:-}${DSH_SESSION_ROOT:-}"
 test "$BYQ_DSH_PROVIDER" = opencode-go-chat

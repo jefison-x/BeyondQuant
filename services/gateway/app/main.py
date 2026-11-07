@@ -612,7 +612,7 @@ def _consume_task_continuation(context):
 
 
 def _consume_default_task_continuation(context, *, allow_dispatch=True):
-    """Process only default v3 task-ready intents while F6 remains disabled."""
+    """Process only default v3 task-ready intents, including receipt-only recovery."""
     try:
         require_runtime_authority()
     except HTTPException:
@@ -1729,7 +1729,6 @@ def _reconcile_research_receipts(context):
 
 task_continuation_delivery = TaskContinuationDelivery(
     os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), _consume_task_continuation,
-    consume_default=_consume_default_task_continuation,
     reconcile=_reconcile_research_receipts,
     cancel_pending=_retry_v3_continuation_cancel)
 

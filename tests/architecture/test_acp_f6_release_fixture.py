@@ -125,6 +125,39 @@ class AcpF6ReleaseFixtureTests(unittest.TestCase):
                     entrypoint.main()
                 load_fixture.assert_not_called()
 
+    def test_synthetic_entrypoint_scope_is_independent_of_retired_f6_switch(self) -> None:
+        entrypoint = _load_runtime_entrypoint()
+        project = "byq-ci-stack-offline-default-f6"
+        environment = {
+            "COMPOSE_PROJECT_NAME": project, "BYQ_F6_CI_PROJECT": project,
+            "BYQ_ACP_ROLE": "adapter", "BYQ_ACP_F6_RELEASE_FIXTURE": "1",
+            "BYQ_F6_SYNTHETIC_RUNTIME": "1",
+            "BYQ_DSH_COMPATIBILITY_RELEASE": "dsh-v0.2.0-rc.2-acp",
+            "BYQ_DSH_PROVIDER": "opencode-go-chat", "BYQ_DSH_MODEL": "deepseek-v4.1-flash",
+        }
+        for retired in (None, "0", "1"):
+            values = dict(environment)
+            if retired is not None:
+                values["BYQ_F6_EXECUTOR_ENABLED"] = retired
+            with self.subTest(retired=retired), patch.dict(os.environ, values, clear=True), \
+                    patch.object(entrypoint.os, "geteuid", return_value=10002), \
+                    patch.object(entrypoint.os, "getegid", return_value=10002), \
+                    patch.object(entrypoint.importlib.util, "spec_from_file_location",
+                                 side_effect=RuntimeError("fixture import reached")) as load_fixture:
+                with self.assertRaisesRegex(RuntimeError, "fixture import reached"):
+                    entrypoint.main()
+                load_fixture.assert_called_once()
+        for key in ("BYQ_F6_CI_PROJECT", "BYQ_ACP_F6_RELEASE_FIXTURE",
+                    "BYQ_F6_SYNTHETIC_RUNTIME", "BYQ_DSH_COMPATIBILITY_RELEASE",
+                    "BYQ_DSH_PROVIDER", "BYQ_DSH_MODEL"):
+            with self.subTest(invalid=key), patch.dict(os.environ, {**environment, key: "invalid"}, clear=True), \
+                    patch.object(entrypoint.os, "geteuid", return_value=10002), \
+                    patch.object(entrypoint.os, "getegid", return_value=10002), \
+                    patch.object(entrypoint.importlib.util, "spec_from_file_location") as load_fixture:
+                with self.assertRaises(SystemExit):
+                    entrypoint.main()
+                load_fixture.assert_not_called()
+
     def test_product_slot_uses_created_personal_workspace_before_adapter_restart(self) -> None:
         project = "byq-ci-stack-offline-workspace"
         scope = "offline-workspace"
@@ -132,7 +165,6 @@ class AcpF6ReleaseFixtureTests(unittest.TestCase):
         environment = {
             "COMPOSE_PROJECT_NAME": project,
             "BYQ_CI_SCOPE": scope,
-            "BYQ_F6_EXECUTOR_ENABLED": "0",
             "BYQ_ACP_PRODUCT_WORKSPACE_ID": "workspace_" + "b" * 32,
             "BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME": project + "-acp-product-sessions",
             "BYQ_ACP_PRODUCT_STATE_VOLUME_NAME": project + "-acp-product-state",

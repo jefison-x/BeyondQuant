@@ -45,7 +45,6 @@ def main() -> int:
             or os.environ.get("BYQ_F6_CI_PROJECT") != project
             or os.environ.get("BYQ_ACP_F6_RELEASE_FIXTURE") != "1"
             or os.environ.get("BYQ_F6_SYNTHETIC_RUNTIME") != "1"
-            or os.environ.get("BYQ_F6_EXECUTOR_ENABLED") != "1"
             or os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE") != ACP_FAMILY
             or os.environ.get("BYQ_DSH_PROVIDER") != "opencode-go-chat"
             or os.environ.get("BYQ_DSH_MODEL") != "deepseek-v4.1-flash"):

@@ -205,7 +205,6 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_MCP_ACP_DISCOVERY_TOKEN", "test-discovery-token")
     monkeypatch.setenv("BYQ_MCP_ACP_SIGNING_KEY", "test-signing-key-0123456789abcdef")  # gitleaks:allow — fixed synthetic test key
-    monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", "1")
     monkeypatch.setenv("BYQ_BACKEND_URL", "http://backend.test")
     monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "synthetic-search-resolver-token")
     monkeypatch.setenv("BYQ_RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority-token")

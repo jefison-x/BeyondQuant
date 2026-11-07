@@ -5,7 +5,6 @@ mixing a pre-cancellation task with post-cancellation delivery facts.
 """
 import hashlib
 import json
-import os
 import re
 from datetime import datetime, timezone
 
@@ -350,10 +349,8 @@ class ResearchHandoffMixin:
                 state, reason = 'blocked', 'continuation_needs_attention'
             elif blocked_reserved:
                 state, reason = 'needs_reconciliation', 'continuation_needs_attention'
-            elif os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1':
-                state = 'continuation_queued'
             else:
-                state, reason = 'blocked', 'no_registered_executor'
+                state = 'continuation_queued'
         elif conversation is None:
             state, reason = 'blocked', 'conversation_binding_missing'
         elif conversation['status'] != 'active':
@@ -364,8 +361,6 @@ class ResearchHandoffMixin:
             state, reason = 'blocked', 'continuation_needs_attention'
         elif not options['auto_continue']:
             state, reason = 'blocked', 'automatic_continuation_disabled'
-        elif os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1':
-            state, reason = 'blocked', 'no_registered_executor'
         else:
             state = 'waiting_event'
         return {'schema_version': 'research-task-handoff.v1', 'task_id': task_id,

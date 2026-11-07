@@ -1,5 +1,6 @@
 import hashlib
 import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -465,17 +466,18 @@ def test_eligible_missing_runtime_uses_live_attach_only_and_never_prompts(monkey
     })]
 
 
-def test_registered_conversation_scan_is_bounded_fair_and_flagged(tmp_path, monkeypatch):
+@pytest.mark.parametrize('retired_flag', [None, '0', '1'])
+def test_registered_conversation_scan_is_bounded_fair_by_default(tmp_path, monkeypatch, retired_flag):
+    if retired_flag is None:
+        monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
+    else:
+        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', retired_flag)
     called = []
     for i in range(10):
         context = dict(owner='alice', workspace_id='workspace-a', conversation_id=f'conversation-{i}',
             session_id=f'session-{i}', trace_id=f'trace-{i}')
         write_context(tmp_path, context)
     delivery = TaskContinuationDelivery(tmp_path, called.append)
-    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
-    delivery.tick()
-    assert called == []
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     delivery.tick()
     assert len(called) == 8
     delivery.tick()
@@ -483,24 +485,21 @@ def test_registered_conversation_scan_is_bounded_fair_and_flagged(tmp_path, monk
     assert len({c['conversation_id'] for c in called}) == 10
 
 
-def test_default_consumer_runs_without_f6_while_legacy_consumer_stays_gated(tmp_path, monkeypatch):
+def test_continuation_worker_starts_without_environment_opt_in(tmp_path, monkeypatch):
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     write_context(tmp_path, context)
-    legacy_calls, default_calls = [], []
-    delivery = TaskContinuationDelivery(
-        tmp_path, legacy_calls.append, consume_default=default_calls.append,
-    )
-    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
-
-    delivery.tick()
-
-    assert legacy_calls == []
-    assert default_calls == [context]
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
-    delivery.tick()
-    assert legacy_calls == [context]
-    assert default_calls == [context]
+    consumed = threading.Event()
+    delivery = TaskContinuationDelivery(tmp_path, lambda _: consumed.set())
+    try:
+        delivery.start()
+        assert consumed.wait(timeout=2)
+        original_thread = delivery.thread
+        delivery.start()
+        assert delivery.thread is original_thread
+    finally:
+        delivery.close()
 
 
 @pytest.mark.parametrize('status', ['eligible', 'intent', 'waiting'])
@@ -883,7 +882,7 @@ def test_invalid_or_foreign_cancel_marker_fails_closed_before_consumption(tmp_pa
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     delivery = TaskContinuationDelivery(tmp_path, lambda _: pytest.fail('legacy consumer called'),
-        consume_default=lambda _: pytest.fail('default consumer called'), cancel_pending=lambda *_: True)
+        cancel_pending=lambda *_: True)
     session = main.ProductSession(context['conversation_id'], context['session_id'], context['trace_id'],
         main.Principal(subject=context['owner']), context['workspace_id'])
     delivery.register(session)
@@ -908,8 +907,7 @@ def test_pending_cancel_fence_precedes_reconcile_and_consumption(tmp_path, monke
     session = main.ProductSession(context['conversation_id'], context['session_id'], context['trace_id'],
         main.Principal(subject=context['owner']), context['workspace_id'])
     calls, fence_ok = [], [False]
-    delivery = TaskContinuationDelivery(tmp_path, lambda _: pytest.fail('legacy consumer called'),
-        consume_default=lambda value: calls.append(('consume', value)),
+    delivery = TaskContinuationDelivery(tmp_path, lambda value: calls.append(('consume', value)),
         reconcile=lambda value: calls.append(('reconcile', value)),
         cancel_pending=lambda value, identity, mode: calls.append(('fence', value, identity, mode)) or fence_ok[0])
     delivery.register(session)
@@ -955,7 +953,6 @@ def test_collector_registers_business_context_for_gateway_restart(monkeypatch, t
     assert path.exists() and not (tmp_path / 'session-a.lifecycle.json').exists()
     restarted_calls = []
     restarted = TaskContinuationDelivery(tmp_path, restarted_calls.append)
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     restarted.tick()
     assert restarted_calls == [context]
     assert captured and captured[0][1] == (session,)
@@ -1076,14 +1073,14 @@ def test_settlement_releases_only_matching_background_idle_lease():
     assert registry.claim_idle_release(session, registry.idle_release_generation(session))
 
 
-def test_passive_receipt_checks_survive_restart_without_f6_model_permission(tmp_path, monkeypatch):
-    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
-        session_id='session-a', trace_id='trace-a')
+def test_passive_receipt_checks_survive_restart_without_admitted_intent(tmp_path, monkeypatch):
+    context, intent, _, _, prompts, _, _ = fixture(monkeypatch)
+    intent['status'] = 'waiting'
+    intent['may_dispatch'] = False
     write_context(tmp_path, context)
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
-    reads, prompts = [], []
+    reads = []
     for _ in range(2):
-        delivery = TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reads.append)
+        delivery = TaskContinuationDelivery(tmp_path, main._consume_task_continuation, reconcile=reads.append)
         delivery.tick()
     assert reads == [context, context] and prompts == []
 
@@ -1092,7 +1089,6 @@ def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeyp
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     write_context(tmp_path, context)
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     prompts = []
     def unavailable(_):
         raise RuntimeError('synthetic read unavailable')
@@ -1104,7 +1100,6 @@ def test_receipt_failure_backoff_survives_restart_and_recovers(tmp_path, monkeyp
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     write_context(tmp_path, context)
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     clock = [1000.0]
     reads, prompts = [], []
     def missing(value):
@@ -1143,7 +1138,6 @@ def test_corrupt_receipt_backoff_does_not_block_checks_or_f6(tmp_path, monkeypat
         session_id='session-a', trace_id='trace-a')
     write_context(tmp_path, context)
     (tmp_path / 'session-a.continuation.receipt-backoff.json').write_text(state)
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     reads, prompts = [], []
     TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reads.append).tick()
     assert reads == [context] and prompts == [context]

@@ -413,8 +413,6 @@ prepare_ci_compose_env() {
   export BYQ_MCP_BACKEND_PROOF_TOKEN=ci-mcp-backend-proof-token-0000000000000000000000000000000
   export BYQ_GATEWAY_SERVICE_TOKEN=ci-gateway-service-token-00000000000000000000000000000000
   export BYQ_DSH_PROVIDER=opencode-go-chat BYQ_DSH_MODEL=deepseek-v4.1-flash
-  # F6 is opt-in and is enabled only by the scoped ACP release fixture below.
-  export BYQ_F6_EXECUTOR_ENABLED=0
   # ADR-0110: the ACP release topology is derived from the single checked-in
   # Compose route (images.py ACP_COMPOSE_ROUTE) selected by
   # set_ci_compose_files, never from an ambient selector. The adopted default

@@ -12,6 +12,10 @@ from app import runtime
         ("1", "synthetic", "opencode-go-chat", "deepseek-v4.1-flash",
          "dsh-v0.2.0-rc.2-acp", True, True),
         ("0", "synthetic", "opencode-go-chat", "deepseek-v4.1-flash",
+         "dsh-v0.2.0-rc.2-acp", True, True),
+        (None, "synthetic", "opencode-go-chat", "deepseek-v4.1-flash",
+         "dsh-v0.2.0-rc.2-acp", True, True),
+        (None, "synthetic", "deepseek-official", "deepseek-flash",
          "dsh-v0.2.0-rc.2-acp", True, False),
         ("1", "", "opencode-go-chat", "deepseek-v4.1-flash",
          "dsh-v0.2.0-rc.2-acp", True, False),
@@ -36,7 +40,10 @@ def test_continuation_qualification_requires_fixed_acp_and_existing_business_gat
     adapter._root_scoped = root_scoped
     adapter._compatibility = SimpleNamespace(family=family)
     adapter._provider, adapter._model = "opencode-go-chat", "deepseek-v4.1-flash"
-    monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", enabled)
+    if enabled is None:
+        monkeypatch.delenv("BYQ_F6_EXECUTOR_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", enabled)
 
     def no_python_dsh_distribution(_name: str) -> str:
         raise metadata.PackageNotFoundError("Python DSH SDK is not installed")

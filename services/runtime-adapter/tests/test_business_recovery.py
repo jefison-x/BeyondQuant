@@ -31,7 +31,6 @@ def _root_scoped_adapter(tmp_path: Path, monkeypatch) -> RuntimeAdapter:
     monkeypatch.setenv("BYQ_DSH_COMPOSITION_IDENTITY", str(identity))
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
-    monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", "1")
     # ADR-0105 pins the continuation route to OpenCode Go chat.
     monkeypatch.setenv("BYQ_DSH_PROVIDER", "opencode-go-chat")
     monkeypatch.setenv("BYQ_DSH_MODEL", "deepseek-v4.1-flash")
