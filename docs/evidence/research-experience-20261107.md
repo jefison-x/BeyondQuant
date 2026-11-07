@@ -117,3 +117,98 @@ Runtime 复用已有请求回执，在精确 generation 的 proxy 已关闭、ga
 新代码镜像、远端 CI、发布、部署和修复后真实模型验收均 **NOT_RUN**。
 模型500的服务端根因仍未知；不切换用户模型、绕过保护或反复重发来制造成功。
 本次不推进 Product Phase。
+
+## 继续定位（2026-11-07 15:46–15:53 UTC）
+
+用户要求“那继续查”。以下与上午07时的失败相隔约8小时，运行镜像、模型、
+额度和密钥均未修改；不是新源码部署后的验证。
+
+### 模型500与本次请求
+
+对比原成功基础对话和失败研究的原生记录：两者均为 `deepseek-official` /
+`deepseek-flash`、maxTokens 256000、reasoningEffort high；101个工具定义完全相同
+（SHA256 `04fed60490117b7388449bacfc1ac0b4852499b0b865bd343cbe28d03d5c2bbf`），
+全部通过本机 JSON Schema 定义校验。失败请求约15.3秒返回上游500，原基础对话
+约1.5秒返回200。请求代理原样转发请求正文；本地连接超时为10秒，未配置固定15秒
+读取截止，连接失败路径产生502，而非此次带上游 request id 的500。
+
+[DeepSeek错误码说明](https://api-docs.deepseek.com/quick_start/error_codes/)
+将500定义为服务端内部错误；[官方兼容接口说明](https://api-docs.deepseek.com/guides/anthropic_api/)
+支持当前模型与 max_tokens 字段。这些只能排查明显配置不符，不能证明上游内部根因。
+检查时官方状态页正常，不能以11月3日的历史事件解释11月7日的失败。
+
+只新增两次明确的开发 Product 输入，无自动重发、无切换模型：
+
+| 输入 | Root | 结果 |
+| --- | --- | --- |
+| 仅调用一次 byq_health | `3f7246a3e1c74f939d90aae25a099fde` | Backend completed，unknown=0；实际 byq_health ingress settled；2次成对模型请求均200 |
+| 与上午相同的招商银行只读研究 | `f6dc48f8c4e446c6912eed772a47493f` | 12次成对模型请求均200；15:48:07生成并持久化回答；业务终态未通过，见下文 |
+
+对应会话为 `conversation_b2f27ed85c3e4f95bfaa82aa137a1866` 和
+`conversation_5ecc68a5555c4de2a6fc975a6682c6bd`。后者 trace 为
+`byq-trace-06a38817a2bc4a34839fd1111795f387`。
+本次500未复现，不能据此宣称此前500被代码修复或永久恢复。
+
+### 新定位：只读查询错误被误记为未知结果
+
+研究原生记录 seq54/55：`byq_market_daily({ts_code:"600036.SH"})` 缺日期，
+Backend明确返回422；MCP返回 `isError=true` 和 `research_data_unavailable`。
+精确请求 `d654db9604d2a0631a6db5ba5e77412c` 的 Backend ingress seq8却被记为
+unknown。原Root仍为active、terminal_unknown_claim_count未结算。Product回放已有
+session.result和回答，containment显示completed；这些投影不等于权威业务终态。
+不把此研究记为PASS，不改写旧收据、不解除旧会话保护、不重放请求。
+
+代码原因：`classifyAcpToolCompletion` 对已审核只读工具的已知错误允许settled，
+但四个持久化行情读取工具未在其显式名单中，因此普通422落到unknown。
+修复限定为核对只读调用链后补充名单，沿用原有分类机制；错误仍返回给模型，
+不会变成成功行情。显式unknown、无法解析的结果、凭据/身份收据缺失与业务写入
+错误继续保留保护。具体本地验证结果补记于下文。
+
+审核路径：MCP `market-data.ts` → Backend `main.py` 四条
+`/v1/data/research/{daily,session-context,valuation,fundamentals}` →
+`market_data.py`、`market_automation.py`、`market_readiness.py` 的只读查询。
+日线缺日期在 `DailyRequest.normalized()` 中于任何数据查询之前被拒绝。
+
+### 开发数据与搜索配置不能外推到原体验环境
+
+- 开发库实际查询：招商银行日线、估值及财务均未返回数据，日历登记止于20260330，
+  当前交易会话未知；其证券目录先前已确认只有Synthetic Fixture。模型关于“全库
+  财务为空”的泛化推论未通过全库审计，不作为本报告事实。
+- 本次唯一网页搜索原生结果为HTTP401，request id
+  `143c3177-ecf8-4f4d-b282-d80a1a9829fd`，上游明确拒绝搜索密钥。
+  只读核对确认拒绝的遮罩尾码与开发账号的独立搜索凭据记录一致；该记录创建于
+  2026-10-15且仍标active。active仅是本地启用状态，不能证明上游凭据有效。
+  不复制模型密钥、不改搜索端点、不输出真实密钥。
+- 原体验环境的搜索凭据创建于2026-11-02，遮罩尾码不同；其搜索实际可用性本轮
+  **NOT_RUN**，不能从开发401推断它同样失效。
+- 原体验环境经正常登录读取 Product 数据覆盖：133589条、5579个证券，观察日期
+  20260928–20261106；该接口明确不声称整体完整。另一次现有只读 readiness 请求
+  对600036.SH/20261106返回 usable、ready_items=1、missing_items=0、日历完整。
+  这只证明该日研究行情准备度，不证明估值、盈利、分红数据或完整研究质量。
+
+定位采集限制保留：原生日志存在无seq元数据，首次筛选KeyError后改用get；
+从上层目录递归未能遍历挂载工作区，核对实际挂载后直接读取已知工作区；
+宿主未安装dotenv，首次只读Product检查在登录前退出，随后用标准库读取指定变量。
+均未因此新增模型输入、安装依赖、改动运行环境或重放业务。
+
+### 本次补充修复验收
+
+- 业务源码仅在 `services/mcp/src/server.ts` 的已审核只读名单增加四个工具名。
+  现有 ingress 集成测试新增四种422错误保持isError、单次请求及精确收据settled断言，
+  另验证同一日线工具的显式outcome_unknown仍为unknown且不重放。
+  原有可变写入409、超时、错误观察/结算收据保护仍执行；同时修正旧测试中错误的
+  `/v1/market/daily` 断言路径为实际 `/v1/data/research/daily`。
+- 独立Tester：一次临时容器中 `npm run build`、
+  `node dist/tests/acp-ingress-test.js`、`node dist/tests/market-data-test.js` 全部
+  **PASS**，exit0，无准备失败。固定镜像
+  `sha256:134ab67dff08eadcdb71234abce3830823619f0bc400dcc296aa377bae414bf0`，
+  Node24.22.2/npm11.19.1/TypeScript7.0.2，network none，UID1000，
+  源码/测试/配置只读挂载，dist与tmp仅临时内存目录；不安装依赖或更改运行栈。
+- `dev-check.py --base e01d5bae519a94d91995c92613d4e9d718575ca6` 和diff检查 **PASS**。
+- 独立Sol审查 Functional / Tests / Clean Break Architecture **PASS**，
+  核实四端点为只读、分类器和写入保护未改；源码与定向测试证据不代替
+  部署后的真实Product流程。
+
+**Root：补充缺陷的本地源码与定向验证 PASS；研究流程整体仍未通过。**
+500上游内部根因未取得，开发搜索401未修复，原unknown收据保持不变。
+新代码部署及部署后真实研究验收 **NOT_RUN**；未推送、合并、部署或推进Product Phase。

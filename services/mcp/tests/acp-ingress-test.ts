@@ -72,6 +72,7 @@ let domainMode: "success" | "reject422" | "conflict409" | "timeout" = "success";
 let settlementMode: "valid" | "invalid" = "valid";
 let authorizationDenialMode: "valid" | "missing" | "ok" = "valid";
 let backtestAnalysisMode: "success" | "not_found" = "success";
+let marketReadMode: "error" | "outcome_unknown" = "error";
 let rootBound = false;
 let ingressSequence = 0;
 const settlements: Array<Record<string, unknown>> = [];
@@ -279,6 +280,26 @@ const backend = createServer(async (req, res) => {
     assert.equal(req.method, "GET");
     assert.equal(entry.headers.get("authorization"), `Bearer ${backendProof}`);
     send(200, { run: { run_id: runId, parent_run_id: null, status: "active" } });
+    return;
+  }
+  if (req.url === "/v1/data/research/daily"
+    || req.url === "/v1/data/research/session-context"
+    || req.url === "/v1/data/research/valuation"
+    || req.url === "/v1/data/research/fundamentals") {
+    if (req.url === "/v1/data/research/daily") {
+      assert.equal(req.method, "POST");
+      assert.deepEqual(body, { ts_code: "600036.SH" },
+        "the regression reproduces the exact one-argument daily query that received Backend 422");
+    } else if (req.url === "/v1/data/research/session-context") {
+      assert.equal(req.method, "GET");
+    } else {
+      assert.equal(req.method, "POST");
+    }
+    if (req.url === "/v1/data/research/daily" && marketReadMode === "outcome_unknown") {
+      send(200, { status: "outcome_unknown" });
+      return;
+    }
+    send(422, { detail: "synthetic persisted-market read error" });
     return;
   }
   if (req.url === "/internal/acp/agent-bind") {
@@ -905,10 +926,10 @@ try {
     beforeInvalidObservationClaim, "malformed or mismatched receipt blocks the domain handler");
 
   ingressMode = "invalid";
-  const beforeGenericFailure = requests.filter(request => request.path === "/v1/market/daily").length;
+  const beforeGenericFailure = requests.filter(request => request.path === "/v1/data/research/daily").length;
   const rejectedGenericReceipt = await acp.value.callTool({ name: "byq_market_daily", arguments: {} });
   assert.equal(rejectedGenericReceipt.isError, true);
-  assert.equal(requests.filter(request => request.path === "/v1/market/daily").length, beforeGenericFailure,
+  assert.equal(requests.filter(request => request.path === "/v1/data/research/daily").length, beforeGenericFailure,
     "malformed generic receipt blocks an ordinary Backend-facing tool before its handler");
   const badIngress = requests.slice().reverse().find(request => request.path === "/internal/acp/tool-ingress-observe"
     && request.body?.tool_name === "byq_market_daily");
@@ -919,6 +940,51 @@ try {
     "lost or invalid observe receipt is aborted using the exact original request ID before handler entry");
   assert.deepEqual(abort.body?.arguments, badIngress.body?.arguments);
   ingressMode = "valid";
+
+  const marketReadCases = [
+    { name: "byq_market_daily", args: { ts_code: "600036.SH" }, path: "/v1/data/research/daily" },
+    { name: "byq_market_session_context", args: {}, path: "/v1/data/research/session-context" },
+    { name: "byq_market_valuation", args: {
+      symbols: ["600036.SH"], trade_date: "20261106", fields: ["pe_ttm"],
+    }, path: "/v1/data/research/valuation" },
+    { name: "byq_market_fundamentals", args: {
+      symbols: ["600036.SH"], as_of_date: "20261106", fields: ["eps"],
+    }, path: "/v1/data/research/fundamentals" },
+  ] as const;
+  for (const marketRead of marketReadCases) {
+    const before = requests.length;
+    const readResult = await acp.value.callTool({ name: marketRead.name, arguments: marketRead.args });
+    assert.equal(readResult.isError, true, `${marketRead.name} preserves its public read error`);
+    const text = readResult.content.find(item => item.type === "text");
+    assert.ok(text && text.type === "text");
+    const readPayload = JSON.parse(text.text) as { backend?: { http_status?: unknown } };
+    assert.equal(readPayload.backend?.http_status, 422);
+    assert.equal(requests.slice(before).filter(request => request.path === marketRead.path).length, 1,
+      `${marketRead.name} dispatches exactly once`);
+    const ingress = requests.slice(before).find(request => request.path === "/internal/acp/tool-ingress-observe"
+      && request.body?.tool_name === marketRead.name);
+    assert.ok(ingress?.body, `${marketRead.name} records its exact ingress before dispatch`);
+    const marketRequest = requests.slice(before).find(request => request.path === marketRead.path);
+    assert.ok(marketRequest, `${marketRead.name} reaches its audited read endpoint`);
+    assert.equal(settlements.find(entry => entry.mcp_request_id === ingress.body?.mcp_request_id)?.outcome,
+      "settled", `${marketRead.name} read errors settle as known no-write outcomes`);
+  }
+
+  marketReadMode = "outcome_unknown";
+  const beforeUnknownRead = requests.length;
+  const unknownRead = await acp.value.callTool({ name: "byq_market_daily", arguments: { ts_code: "600036.SH" } });
+  assert.equal(unknownRead.isError, false, "the read wrapper retains an explicit unknown payload");
+  const unknownText = unknownRead.content.find(item => item.type === "text");
+  assert.ok(unknownText && unknownText.type === "text");
+  assert.equal((JSON.parse(unknownText.text) as { status?: unknown }).status, "outcome_unknown");
+  const unknownIngress = requests.slice(beforeUnknownRead).find(request => request.path === "/internal/acp/tool-ingress-observe"
+    && request.body?.tool_name === "byq_market_daily");
+  assert.ok(unknownIngress?.body);
+  assert.equal(requests.slice(beforeUnknownRead).filter(request => request.path === "/v1/data/research/daily").length, 1,
+    "an explicit unknown read result does not trigger a replay");
+  assert.equal(settlements.find(entry => entry.mcp_request_id === unknownIngress.body?.mcp_request_id)?.outcome,
+    "unknown", "an explicit outcome_unknown stays unknown even for an audited read tool");
+  marketReadMode = "error";
 
   bindingStatus = "pending";
   const pendingReconcile = await acp.value.callTool({ name: "byq_agent_run_start", arguments: {

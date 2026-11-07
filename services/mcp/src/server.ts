@@ -199,6 +199,10 @@ const ACP_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...READ_ONLY_JUDGMENT_TOOLS,
   "byq_health",
   "byq_agent_roles",
+  "byq_market_daily",
+  "byq_market_session_context",
+  "byq_market_valuation",
+  "byq_market_fundamentals",
 ]);
 const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
 const ACP_JUDGMENT_SUBSET = process.env.BYQ_MCP_ACP_JUDGMENT_SUBSET === "1";
