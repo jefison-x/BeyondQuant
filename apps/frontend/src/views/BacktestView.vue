@@ -310,7 +310,7 @@ async function remove(row: Record<string, unknown>) {
   if (!jobId) return;
   try {
     await ElMessageBox.confirm(
-      "删除后任务会从回测目录移除；仍被引用的不可变结果证据会继续保留。",
+      "删除后任务会从回测目录移除；已有研究使用的结果记录仍会保留。",
       "删除回测任务",
       { type: "warning", confirmButtonText: "删除任务", cancelButtonText: "取消" },
     );
@@ -371,6 +371,7 @@ const executionRuleRows = computed(() => {
 
 const showCreate = ref(false);
 const creating = ref(false);
+const prerequisiteOptionsLoaded = ref(false);
 const options = ref<Array<Record<string, unknown>>>([]);
 const snapshots = ref<Array<Record<string, unknown>>>([]);
 const selectedOption = ref<Record<string, unknown> | null>(null);
@@ -422,6 +423,7 @@ function producerMissing(job: Record<string, unknown>): unknown {
 
 async function openCreate() {
   showCreate.value = true;
+  prerequisiteOptionsLoaded.value = false;
   selectedOption.value = null;
   backtestName.value = "";
   selectedSnapshot.value = null;
@@ -434,6 +436,7 @@ async function openCreate() {
     options.value = o.options ?? [];
     snapshots.value = s.snapshots ?? [];
     pools.value = (p.pools ?? []).filter((item) => item.status === "active" && item.current_snapshot_id);
+    prerequisiteOptionsLoaded.value = true;
     const requestedStrategy = typeof route.query.strategy === "string" ? route.query.strategy : "";
     if (requestedStrategy) selectedOption.value = options.value.find(
       (item) => item.strategy_version_artifact_id === requestedStrategy,
@@ -441,6 +444,11 @@ async function openCreate() {
   } catch (exc) {
     ElMessage.error(exc instanceof Error ? exc.message : "加载回测选项失败");
   }
+}
+
+function openPrerequisite(path: "/strategy" | "/stock-pool") {
+  showCreate.value = false;
+  void router.push(path);
 }
 
 async function produceSignals() {
@@ -489,7 +497,7 @@ async function produceSignals() {
         selectedSnapshot.value = snapshots.value.find(
           (item) => item.artifact_id === response.job.result_artifact_id,
         ) ?? null;
-        ElMessage.success("信号快照已生成并冻结");
+        ElMessage.success("策略信号已生成");
         return;
       }
       if (response.job.status === "failed") {
@@ -593,7 +601,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
       v-else
       eyebrow="核心研究资产"
       title="回测任务与完整结果"
-      description="沿不可变策略版本、审批与信号快照谱系复核收益、成交和执行假设。"
+      description="使用已批准的策略和股票名单运行回测，复核收益、成交和执行假设。"
       catalog-label="回测任务"
       :count="totalBacktests"
       @return="returnToConversation"
@@ -603,7 +611,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
         <el-button @click="loadList">刷新</el-button>
         <el-button type="primary" @click="openCreate">新建回测</el-button>
       </template>
-      <template #summary>结果来自不可变输入和 BYQ 确定性引擎</template>
+      <template #summary>回测按已批准策略与生成的信号计算</template>
       <template #catalog>
       <el-card shadow="never" class="backtest-list-pane">
         <template #header>
@@ -622,7 +630,9 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
             <el-option label="失败" value="failed" />
           </el-select>
         </div>
-        <el-empty v-if="!backtests.length" description="暂无回测结果" />
+        <el-empty v-if="!backtests.length" description="暂无回测结果">
+          <el-button type="primary" @click="openCreate">新建回测</el-button>
+        </el-empty>
         <ListFilterPagination v-else v-model:page="listPage" query="" :page-size="listPageSize" :total="totalBacktests" label="回测任务分页" hide-search>
         <el-table
           class="desktop-catalog-table"
@@ -691,7 +701,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
         <el-empty v-else-if="!job" description="请选择左侧回测结果" />
         <template v-else>
           <ManagementActionBar
-            :description="['completed', 'cancelled', 'failed'].includes(String(job.status)) ? '终态任务可以删除目录记录；被其他结果引用的不可变证据仍由领域层保护。' : '运行与取消会改变当前任务状态；运行中的任务必须先取消，不能直接删除。'"
+            :description="['completed', 'cancelled', 'failed'].includes(String(job.status)) ? '已结束的任务可以从目录移除；已有结果中使用的记录仍会保留。' : '运行与取消会改变当前任务状态；运行中的任务必须先取消，不能直接删除。'"
           >
             <template #status><el-tag size="small">{{ statusLabel(job.status) }}</el-tag></template>
             <el-button v-if="job.status === 'queued' || job.status === 'failed'" type="primary" :loading="busy === job.job_id" @click="run(job)">运行</el-button>
@@ -871,7 +881,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
       <el-form label-position="top">
         <el-form-item label="回测名称">
           <el-input v-model="backtestName" maxlength="120" show-word-limit placeholder="可选；留空时按策略名称与创建时间自动生成" />
-          <div class="wizard-hint">名称用于目录识别，不影响不可变输入、回测结果或幂等身份。</div>
+          <div class="wizard-hint">名称用于区分回测，不会改变策略、信号或计算结果。</div>
         </el-form-item>
         <el-form-item label="已批准策略版本">
           <el-select v-model="selectedOption" value-key="strategy_version_artifact_id" filterable placeholder="选择已批准的策略版本" style="width: 100%">
@@ -882,6 +892,10 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
               :label="`${String(opt.strategy_id)} · ${String(opt.strategy_version_id).slice(0, 8)}`"
             />
           </el-select>
+          <div v-if="prerequisiteOptionsLoaded && !options.length" class="prerequisite-next-step" data-testid="backtest-no-strategy">
+            <span>还没有可用于回测的策略。先创建策略版本并完成批准，再回来生成回测。</span>
+            <el-button type="primary" plain @click="openPrerequisite('/strategy')">去策略管理</el-button>
+          </div>
         </el-form-item>
         <el-alert
           v-if="selectedBenchmark"
@@ -889,7 +903,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           :closable="false"
           show-icon
           :title="`对比基准：${selectedBenchmark.name}（${selectedBenchmark.symbol}）`"
-          description="该基准来自已批准策略版本，将与行情、信号一起冻结后用于计算基准收益和超额收益。"
+          description="回测将使用这个策略版本指定的指数计算基准收益和超额收益。"
         />
         <el-alert
           v-else-if="selectedOption"
@@ -899,12 +913,12 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           title="该历史策略版本未声明对比基准"
           description="新策略默认使用沪深300（000300.SH）；如需基准对比，请先创建并批准包含基准声明的新版本。"
         />
-        <el-form-item label="信号快照（ADR-0017 冻结输入）">
+        <el-form-item label="策略信号">
           <el-select
             v-model="selectedSnapshot"
             value-key="artifact_id"
             filterable
-            placeholder="选择匹配该策略的信号快照"
+            placeholder="选择该策略已生成的信号"
             style="width: 100%"
             :disabled="!selectedOption"
           >
@@ -915,10 +929,10 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
               :label="`${String(snap.artifact_id).slice(0, 18)} · ${snapshotProducer(snap)}`"
             />
           </el-select>
-          <div class="wizard-hint">可选择已有快照，或在下方用 ADR-0023 隔离运行时生成。</div>
+          <div class="wizard-hint">可选择已有信号，或在下方生成新的策略信号。</div>
         </el-form-item>
-        <el-divider content-position="left">隔离生成信号</el-divider>
-        <el-form-item label="不可变股票池快照">
+        <el-divider content-position="left">生成策略信号</el-divider>
+        <el-form-item label="股票池">
           <el-select v-model="selectedPool" value-key="pool_id" filterable placeholder="选择活动股票池" style="width: 100%">
             <el-option
               v-for="pool in pools"
@@ -927,6 +941,10 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
               :label="`${String(pool.name)} · ${String(pool.member_count ?? 0)} 只`"
             />
           </el-select>
+          <div v-if="prerequisiteOptionsLoaded && !pools.length" class="prerequisite-next-step" data-testid="backtest-no-pool">
+            <span>还没有可用的股票池。先创建自建股票池，或在股票管理中启用已有股票池。</span>
+            <el-button type="primary" plain @click="openPrerequisite('/stock-pool')">去股票管理</el-button>
+          </div>
         </el-form-item>
         <div class="signal-range-grid">
           <el-form-item label="开始日期">
@@ -946,7 +964,7 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           :disabled="!selectedOption || !selectedPool || !signalStartDate || !signalEndDate"
           @click="produceSignals"
         >
-          隔离执行并冻结信号快照
+          生成策略信号
         </el-button>
         <el-alert
           v-if="producerJob"
@@ -961,14 +979,14 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
           系统会按交易日历、证券上市/退市周期补齐日线、停牌状态与精确涨跌停价；数据完整后任务自动开始，无需重复提交。
         </div>
         <template v-if="selectedSnapshot">
-          <el-divider content-position="left">冻结执行参数</el-divider>
+          <el-divider content-position="left">本次运行参数</el-divider>
           <el-descriptions :column="2" size="small" border>
             <el-descriptions-item label="初始资金">{{ snapshotExecution(selectedSnapshot, "initial_capital") }}</el-descriptions-item>
             <el-descriptions-item label="手续费率">{{ snapshotExecution(selectedSnapshot, "commission_rate") }}</el-descriptions-item>
             <el-descriptions-item label="印花税率">{{ snapshotExecution(selectedSnapshot, "stamp_tax_rate") }}</el-descriptions-item>
             <el-descriptions-item label="整手">{{ snapshotExecution(selectedSnapshot, "lot_size") }}</el-descriptions-item>
           </el-descriptions>
-          <div class="wizard-hint">执行参数随快照冻结，向导不可修改（不可变输入）。</div>
+          <div class="wizard-hint">这些参数会随信号记录，回测将按记录的参数计算。</div>
         </template>
       </el-form>
       <template #footer>
@@ -996,6 +1014,8 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
   margin-top: 0.75rem;
 }
 
+.prerequisite-next-step { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.prerequisite-next-step span { color: var(--byq-text-muted); font-size: 12px; }
 .metric-grid {
   display: grid;
   gap: 0.75rem;

@@ -15,6 +15,20 @@ function event(sequence: number, kind: string, payload: Record<string, unknown>)
 }
 
 describe("workflow projections", () => {
+  it.each([
+    ["model-service-unavailable", "暂时不可用"],
+    ["model-service-rate-limited", "请求过多或额度不足"],
+    ["model-service-auth-failed", "验证未通过"],
+  ])("describes %s with a stable diagnostic reference and no automatic retry", (code, label) => {
+    const events = [event(1, "session.started", { run_id: "run-1" }),
+      event(2, "session.failed", { code, run_id: "run-1", retryable: false, error: "private upstream body" })];
+    const outcome = workflowOutcomes(events, "session-1")[0];
+    expect(outcome.message).toContain(label);
+    expect(outcome.message).toContain("不会自动重发");
+    expect(outcome.diagnosticId).toBe("trace-1:2");
+    expect(JSON.stringify(outcome)).not.toContain("private upstream body");
+    expect(workflowRunState(events).retryable).toBe(false);
+  });
   it("shows provider rejection without exposing upstream details or suggesting blind retry", () => {
     const events = [event(1, "session.started", {}), event(2, "session.failed", {
       code: "model-request-rejected", retryable: false, error: "secret upstream body",

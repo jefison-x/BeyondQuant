@@ -114,4 +114,23 @@ describe("BacktestView", () => {
       "backtest-test",
     );
   });
+
+  it("offers direct next steps when no approved strategy or usable stock pool exists", async () => {
+    const wrapper = mountView();
+    listBacktestOptions.mockResolvedValueOnce({ options: [] });
+    listSignalSnapshots.mockResolvedValueOnce({ snapshots: [] });
+    listStockPools.mockResolvedValueOnce({ pools: [] });
+    const state = wrapper.vm as any;
+
+    await state.openCreate();
+    expect(state.prerequisiteOptionsLoaded).toBe(true);
+    expect(state.options).toEqual([]);
+    expect(state.pools).toEqual([]);
+
+    state.openPrerequisite("/strategy");
+    state.openPrerequisite("/stock-pool");
+    expect(pushRoute).toHaveBeenNthCalledWith(1, "/strategy");
+    expect(pushRoute).toHaveBeenNthCalledWith(2, "/stock-pool");
+    wrapper.unmount();
+  });
 });

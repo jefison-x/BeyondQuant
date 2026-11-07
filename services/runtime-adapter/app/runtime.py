@@ -111,7 +111,7 @@ from .compat import (
     ACP_COMPATIBILITY_FAMILY, RuntimeCompatibility, RuntimeObservation,
     compatibility_for_release,
 )
-from .compat.dsh_acp import AcpTransportError
+from .compat.dsh_acp import AcpRpcError, AcpTransportError
 from .identifiers import contained_session_path, validate_identifier
 from .continuation_budget import (
     CONTINUATION_MAX_OUTPUT_TOKENS,
@@ -2286,6 +2286,15 @@ class RuntimeAdapter:
                 if isinstance(exc, AcpTransportError):
                     failure.update(code="runtime-transport-failed", retryable=False,
                                    reason=exc.reason)
+                elif isinstance(exc, AcpRpcError):
+                    code = run.domain_stop_code or "model-run-failed"
+                    generation = record.current_generation
+                    if (not run.domain_stop_code and generation is not None
+                            and generation.generation_id == generation_id
+                            and generation.continuation_proxy_closed is True
+                            and record.continuation_request_gate is not None):
+                        code = record.continuation_request_gate.provider_failure_code() or code
+                    failure.update(code=code, retryable=False)
                 self._emit(record, "session.failed", "runtime-adapter", failure)
                 self._close_generation(record, generation_id, "failed")
             return

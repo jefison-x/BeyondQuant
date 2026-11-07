@@ -715,7 +715,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="conversation-workspace">
     <header class="conversation-header">
-      <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>{{ activeSession ? "BYQ 规范化工作流 · 持久会话" : "发送第一条消息后保存" }}</small></div>
+      <div><strong>{{ activeSession?.title || "小巴投研对话" }}</strong><small>{{ activeSession ? "研究对话 · 历史自动保存" : "发送第一条消息后保存" }}</small></div>
       <div class="header-actions">
         <el-button text @click="activityOpen = true">活动 <el-badge v-if="activeActivityCount" :value="activeActivityCount" type="info" /></el-button>
       </div>
@@ -741,6 +741,7 @@ onBeforeUnmount(() => {
             <span class="message-author">运行记录</span>
             <div class="message-body">
               <div>{{ item.outcome.message }}</div>
+              <small class="failure-diagnostic">诊断编号：{{ item.outcome.diagnosticId }}</small>
               <small><time :datetime="item.outcome.timestamp">{{ new Date(item.outcome.timestamp).toLocaleString() }}</time><span v-if="item.outcome.laterTurnStarted"> · 后续已发起新一轮（不表示原任务已完成）</span></small>
             </div>
           </article>
@@ -810,6 +811,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.failure-diagnostic { display: block; overflow-wrap: anywhere; margin-top: .4rem; }
 .conversation-workspace { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; min-height: 0; }
 .conversation-header { align-items: center; backdrop-filter: blur(10px); background: color-mix(in srgb, var(--byq-surface) 92%, transparent); border-bottom: 1px solid var(--byq-border-subtle); display: flex; justify-content: space-between; padding: .7rem 1.2rem; z-index: 2; }
 .conversation-header > div:first-child { display: grid; gap: .15rem; } .conversation-header strong { color: var(--byq-text); font-size: 14px; } .conversation-header small { color: var(--byq-text-soft); font-size: 10px; }

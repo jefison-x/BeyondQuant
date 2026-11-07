@@ -489,6 +489,31 @@ class ResearchRequestGate:
             return [{k: v for k, v in row.items() if not k.startswith("_")}
                     for row in self._receipts]
 
+    def provider_failure_code(self) -> str | None:
+        """Describe the last paired HTTP refusal; never authorize a retry.
+
+        Only sealed, complete receipts qualify. Response bodies and provider
+        messages must not enter the public workflow projection.
+        """
+        with self._lock:
+            if self._settlement_state_locked() != SETTLED_OK:
+                return None
+            completed = [row for row in self._receipts if row.get("phase") == "completed"]
+            if not completed:
+                return None
+            status = max(completed, key=lambda row: row["attempt"]).get("status")
+            if type(status) is not int:
+                return None
+            if 500 <= status <= 599:
+                return "model-service-unavailable"
+            if status == 429:
+                return "model-service-rate-limited"
+            if status in {401, 403}:
+                return "model-service-auth-failed"
+            if 400 <= status <= 499:
+                return "model-request-rejected"
+            return None
+
     @property
     def started_at(self) -> float | None:
         return self._continuation_started

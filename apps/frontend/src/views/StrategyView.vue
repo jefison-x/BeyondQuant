@@ -675,6 +675,13 @@ function returnToConversation() {
   void router.push({ path: "/agent", query: session ? { session } : {} });
 }
 
+function discussStrategyIdea() {
+  void router.push({ path: "/agent", query: {
+    new: createRequestId(),
+    draft: "我想验证一个投资想法：\n\n请先帮我明确选股范围、买卖规则、数据日期与费用假设，指出缺少的信息。先讨论方案，确认后再创建策略或运行回测。",
+  } });
+}
+
 async function refreshList() {
   if (confirmDiscard()) await loadList();
 }
@@ -769,14 +776,15 @@ onUnmounted(() => {
     <AppStateBlock :loading="loading" :error="!selected ? error : ''" @retry="loadList">
       <ManagementWorkspace
         eyebrow="核心研究资产"
-        title="策略目录与版本谱系"
-        description="从可编辑草稿推进到不可变版本、人工审批、信号快照与回测。"
+        title="策略管理"
+        description="先描述投资想法，再完善规则、保存版本并验证历史表现。熟悉代码的用户也可直接编辑策略。"
         catalog-label="策略资产"
         :count="total"
         @return="returnToConversation"
       >
       <template #return>返回投研对话</template>
       <template #actions>
+        <el-button @click="discussStrategyIdea">描述投资想法</el-button>
         <el-button type="primary" @click="newDraft">新建策略</el-button>
         <el-button @click="refreshList">刷新目录</el-button>
       </template>

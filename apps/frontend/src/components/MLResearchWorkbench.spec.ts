@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import MLResearchWorkbench from "./MLResearchWorkbench.vue";
 import { useAuthStore } from "@/stores/auth";
+import { createMLStrategy } from "@/api/mlResearch";
+import { createTask } from "@/api/research";
 
 const getMLCapabilities = vi.fn();
 const getMLOptions = vi.fn();
@@ -48,6 +50,8 @@ vi.mock("@/api/quant", () => ({
 describe("MLResearchWorkbench", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    vi.mocked(createMLStrategy).mockReset();
+    vi.mocked(createTask).mockReset();
     useAuthStore().setUser({ subject: "alice", workspace: { workspace_id: "workspace-alice" } } as any);
     submitProductApprovalRequestOnce.mockReset();
     localStorage.clear(); sessionStorage.clear();
@@ -122,6 +126,29 @@ describe("MLResearchWorkbench", () => {
         status: "completed", signal_artifact_id: "artifact_signal",
       }] }, backtests: { total: 0, backtests: [] },
     });
+  });
+
+  it("requires user-selected date windows before saving a study", async () => {
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    expect(vm.form.train_start).toBe("");
+    expect(vm.form.prediction_start).toBe("");
+    expect(vm.dateWindowError).toContain("请选择训练、验证和预测");
+
+    await vm.saveStrategy();
+    expect(createTask).not.toHaveBeenCalled();
+    expect(createMLStrategy).not.toHaveBeenCalled();
+
+    Object.assign(vm.form, {
+      train_start: "2024-01-01", train_end: "2024-02-01",
+      validation_start: "2024-02-02", validation_end: "2024-03-01",
+      prediction_start: "2024-03-02", prediction_end: "2024-04-01",
+    });
+    expect(vm.dateWindowError).toBe("");
+    vm.form.validation_start = "2024-01-15";
+    expect(vm.dateWindowError).toContain("区间不能重叠");
+    wrapper.unmount();
   });
 
   it("loads detail and paged prediction rows only after explicit selection", async () => {

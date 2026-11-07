@@ -56,6 +56,16 @@ vi.mock("@/api/approvalRequestSubmissions", () => ({
 }));
 
 describe("StrategyView", () => {
+  it("opens an investment idea as an editable conversation draft without saving a strategy", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    (wrapper.vm as unknown as { discussStrategyIdea: () => void }).discussStrategyIdea();
+    expect(pushRoute).toHaveBeenCalledWith({ path: "/agent", query: {
+      new: expect.any(String), draft: expect.stringContaining("先讨论方案"),
+    } });
+    expect(saveStrategyDraft).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   beforeEach(() => {
     setActivePinia(createPinia());
     useAuthStore().token = "strategy-test";
