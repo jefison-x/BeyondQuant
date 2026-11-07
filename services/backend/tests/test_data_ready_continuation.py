@@ -41,7 +41,7 @@ TRACE = 'byq-trace-task-receipt'
 
 def setup_ready(monkeypatch, tmp_path, *, outcome='completed'):
     from tests import test_backtest_api
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     owner = f"data-ready-{uuid4().hex}"
     trace_id = TRACE
     session_id = f"{SESSION}-{uuid4().hex}"
@@ -478,6 +478,7 @@ def test_data_ready_scope_admits_only_the_original_task(monkeypatch, tmp_path):
 
 def test_budgeted_permission_still_reserves_the_ready_event(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
     try:
@@ -505,7 +506,6 @@ def test_legacy_data_ready_model_receipt_never_dispatches_or_authorizes(
         monkeypatch, tmp_path, later_grant):
     from app.continuation_scope import authorize
 
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
@@ -656,6 +656,9 @@ def test_active_request_stays_at_most_once_across_concurrent_polls_and_restart(m
             assert ledger[0]['reservation_id'] == reservation_id
             assert ledger[0]['status'] == 'outcome_unknown'
             assert ledger[0]['dispatch_attempts'] == 1
+            assert restarted.claim_continuation_dispatch(task, reservation_id,
+                trusted_context=context) == {'dispatch': False}
+            assert continuation_budget(restarted, task)[0]['dispatch_attempts'] == 1
         finally:
             restarted.close()
     finally:
@@ -1222,7 +1225,7 @@ def test_default_peek_does_not_fall_back_to_f6_legacy_claim(monkeypatch, tmp_pat
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task = fixture['store'], fixture['payload']['task_id']
     try:
-        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+        monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
         grant_retry_permission(store, fixture, key='v3-default-fallback-' + blocked_case)
         if blocked_case == 'auto_continue_disabled':
             update_user_execution_options(fixture, {

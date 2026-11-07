@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'), reason='
 
 def test_terminal_notification_claim_and_dispatch_are_durable_and_once(monkeypatch, tmp_path):
     from tests import test_backtest_api
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     headers = trusted_agent_context('product-user', trace_id='byq-trace-task-receipt', session_id='byq-session-product-user')
     monkeypatch.setattr(test_backtest_api, '_owner_headers', lambda principal: headers)
     context = {key.removeprefix('x-byq-').replace('-', '_'): value for key, value in headers.items()}
@@ -91,7 +91,7 @@ def test_private_consumer_uses_catalog_identity_before_any_model_root(monkeypatc
     from app import main
     from tests.test_research_continuation import setup_permission
     store, task, context, payload = setup_permission()
-    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     monkeypatch.setattr(main, 'research_store', store)
     try:
         grant = store.create_continuation_permission(task, payload, trusted_context=context)

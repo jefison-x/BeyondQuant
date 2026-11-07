@@ -9,12 +9,13 @@ from tests.test_research_continuation import setup_permission
 pytestmark = pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'), reason='isolated PostgreSQL required')
 
 
-def test_orphaned_running_task_is_not_reported_as_executing_and_survives_restart():
+def test_orphaned_running_task_waits_for_event_and_survives_restart(monkeypatch):
+    monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     store, task, context, _ = setup_permission()
     store.transition('research_task', task, 'running', 'handoff-start')
     first = store.get_task_handoff(task, trusted_context=context)
-    assert first['state'] == 'blocked'
-    assert first['reason'] == 'no_registered_executor'
+    assert first['state'] == 'waiting_event'
+    assert first['reason'] is None
     assert first['task_status'] == 'running'
     assert first['objective'] == 'No execution'
     assert first['references'] == []
@@ -57,7 +58,7 @@ def test_cancelled_task_wins_over_late_active_conversation():
 def test_permission_alone_does_not_mean_continuation_is_queued(monkeypatch):
     store, task, context, payload = setup_permission()
     try:
-        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+        monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
         store.create_continuation_permission(task, payload, trusted_context=context)
         view = store.get_task_handoff(task, trusted_context=context)
         assert view['state'] == 'waiting_event'
@@ -72,7 +73,7 @@ def test_durable_receipt_controls_queue_state_and_revocation(delivery_status, ex
     from datetime import datetime, timedelta, timezone
     store, task, context, payload = setup_permission()
     try:
-        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
         store.create_continuation_permission(task, payload, trusted_context=context)
         store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task', {
              'task': task, 'budget': [{'schema_version': RESERVATION_SCHEMA_VERSION,
@@ -118,7 +119,7 @@ def test_legacy_data_ready_liability_prevents_a_new_human_grant_and_dispatch(
         with pytest.raises(ValueError, match='unresolved legacy continuation liability'):
             store.create_continuation_permission(task, payload, trusted_context=context)
         assert store.get_continuation_permission(task, trusted_context=context)['permission'] is None
-        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
 
         view = store.get_task_handoff(task, trusted_context=context)
         assert view['state'] == 'needs_reconciliation'
@@ -159,7 +160,7 @@ def test_exact_job_scope_and_terminal_job_does_not_complete_task():
             trusted_context=context)
         assert store.get_task_handoff(other['task_id'], trusted_context=context)['references'] == []
         store._execute("UPDATE ml_training_runs SET workspace_id=:workspace,status='completed' WHERE training_run_id='synthetic-job'", params)
-        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'blocked'
+        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'waiting_event'
         assert store.get_task(task)['status'] == 'planned'
     finally:
         store.close()
@@ -205,7 +206,7 @@ def test_approval_wait_and_delivery_are_distinct_from_action_execution():
         store._execute("UPDATE agent_approvals SET continuation_status='outcome_unknown' WHERE approval_id=:id", {'id': approval['approval_id']})
         assert store.get_task_handoff(task, trusted_context=context)['state'] == 'needs_reconciliation'
         store._execute("UPDATE agent_approvals SET continuation_status='submitted' WHERE approval_id=:id", {'id': approval['approval_id']})
-        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'blocked'
+        assert store.get_task_handoff(task, trusted_context=context)['state'] == 'waiting_event'
     finally:
         agents.close()
         store.close()

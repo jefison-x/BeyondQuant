@@ -24,14 +24,9 @@ class CancelModeConflict(ValueError):
 
 
 class TaskContinuationDelivery:
-    def __init__(self, root: Path, consume, *, consume_default=None, reconcile=None,
+    def __init__(self, root: Path, consume, *, reconcile=None,
                  cancel_pending=None, now=time.time):
         self.root, self.consume = Path(root), consume
-        # The ordinary task-ready SignalJob path is independent of the legacy
-        # F6 opt-in. It shares this registered-context poller but has a
-        # separate callback so a default tick can never enter the legacy
-        # permission/receipt consumer by accident.
-        self.consume_default = consume_default
         self.reconcile = reconcile
         self.cancel_pending = cancel_pending
         self.now = now
@@ -197,10 +192,6 @@ class TaskContinuationDelivery:
             return True
 
     def tick(self):
-        enabled = os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1'
-        if (not enabled and self.reconcile is None and self.consume_default is None
-                and self.cancel_pending is None):
-            return
         paths = sorted(self.root.glob('*.continuation.json'))
         candidates = [p for p in paths if p.name > self.cursor]
         if not candidates:
@@ -231,12 +222,8 @@ class TaskContinuationDelivery:
                     self._reconcile_with_backoff(path, context)
                 if cancellation_processed:
                     continue
-                if enabled:
-                    stage = 'consume'
-                    self.consume(context)
-                elif self.consume_default is not None:
-                    stage = 'consume_default'
-                    self.consume_default(context)
+                stage = 'consume'
+                self.consume(context)
             except Exception as exc:
                 # The Backend owns every intent/uncertain liability. A transport
                 # failure never fabricates a receipt or retries a model write.
@@ -281,10 +268,7 @@ class TaskContinuationDelivery:
                 pass
 
     def start(self):
-        if (self.thread is not None
-                or (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1'
-                    and self.reconcile is None and self.consume_default is None
-                    and self.cancel_pending is None)):
+        if self.thread is not None:
             return
         self.stop.clear()
         def run():

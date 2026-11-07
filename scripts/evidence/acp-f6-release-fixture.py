@@ -249,8 +249,6 @@ def _fixture_override(project: str) -> dict:
     tests = ROOT / "services/runtime-adapter/tests"
     _require(entrypoint.is_file() and tests.is_dir(), "acp_f6_fixture_source_missing")
     return {"services": {
-        "backend": {"environment": {"BYQ_F6_EXECUTOR_ENABLED": "1"}},
-        "gateway": {"environment": {"BYQ_F6_EXECUTOR_ENABLED": "1"}},
         "runtime-adapter": {
             # The unified image dispatcher ignores command for the adapter role.
             # Explicitly replace its entrypoint only in this scoped fixture.
@@ -260,7 +258,6 @@ def _fixture_override(project: str) -> dict:
             # Do not pass the original image command as extra Python arguments.
             "command": [],
             "environment": {
-                "BYQ_F6_EXECUTOR_ENABLED": "1",
                 "BYQ_ACP_F6_RELEASE_FIXTURE": "1",
                 "BYQ_F6_SYNTHETIC_RUNTIME": "1",
                 "BYQ_F6_CI_PROJECT": project,
@@ -476,8 +473,6 @@ def run() -> dict:
     _require(PROJECT_PATTERN.fullmatch(project) is not None
              and project == "byq-ci-stack-" + scope,
              "isolated_release_compose_scope_required")
-    _require(env.get("BYQ_F6_EXECUTOR_ENABLED") == "0",
-             "f6_must_start_disabled_in_base_compose")
     base_files = _compose_files(env)
     # Validate the captured batch before creating any per-run artifacts or
     # inspecting containers. A missing or incomplete release identity must
@@ -509,7 +504,6 @@ def run() -> dict:
     fixture_env["COMPOSE_FILE"] = os.pathsep.join(str(path) for path in fixture_files)
     fixture_env["BYQ_F6_CI_PROJECT"] = project
     base_env = dict(env)
-    base_env["BYQ_F6_EXECUTOR_ENABLED"] = "0"
     base_env.pop("BYQ_ACP_F6_RELEASE_FIXTURE", None)
     base_env.pop("BYQ_F6_SYNTHETIC_RUNTIME", None)
     touched = False

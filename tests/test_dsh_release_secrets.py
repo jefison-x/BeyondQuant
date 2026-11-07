@@ -41,7 +41,7 @@ class SecretKeyTests(unittest.TestCase):
     def test_non_secret_keys_stay_non_secret(self):
         for name in (
             "BYQ_BACKTEST_OBJECT_ROOT", "BYQ_BACKEND_URL", "BYQ_DSH_COMPOSITION",
-            "BYQ_DSH_COMPOSITION_IDENTITY", "BYQ_F6_EXECUTOR_ENABLED",
+            "BYQ_DSH_COMPOSITION_IDENTITY", "BYQ_ACP_ROLE",
             "BYQ_PLUGIN_REGISTRY_PATH", "DSH_SESSION_ROOT", "TUSHARE_API_URL",
         ):
             self.assertFalse(secrets.is_secret_key(name), name)
@@ -99,7 +99,7 @@ class GuardTests(unittest.TestCase):
                     "environment": {
                         "TUSHARE_TOKEN": "b" * 32,
                         "BYQ_DATABASE_URL": "postgresql+psycopg://" + "example-user" + ":" + "example-password" + "@postgres:5432/example_db",
-                        "BYQ_F6_EXECUTOR_ENABLED": "0",
+                        "BYQ_ACP_ROLE": "product",
                     }
                 }
             }
@@ -108,7 +108,7 @@ class GuardTests(unittest.TestCase):
         environment = redacted["services"]["backend"]["environment"]
         self.assertEqual(environment["TUSHARE_TOKEN"], "${TUSHARE_TOKEN}")
         self.assertEqual(environment["BYQ_DATABASE_URL"], "${BYQ_DATABASE_URL}")
-        self.assertEqual(environment["BYQ_F6_EXECUTOR_ENABLED"], "0")
+        self.assertEqual(environment["BYQ_ACP_ROLE"], "product")
 
 
 class ProtectedSourceTests(unittest.TestCase):

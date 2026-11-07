@@ -7011,13 +7011,13 @@ class RuntimeAdapter:
             return {"receipt": dict(entry["receipt"])}
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
-        if (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or not self._root_scoped
+        if (not self._root_scoped
                 or not bool(record.model_resolution.get('api_key'))
                 or not _continuation_route_qualified(
                     record.model_resolution, self._provider, self._model)):
             return False
         # ADR-0103: only the fixed ACP family has the root guard and request
-        # proxy contract. Keep the existing opt-in and BYQ route/credential gates
+        # proxy contract. Keep the BYQ route/credential gates
         # above; no Python SDK version can qualify this online continuation path.
         return self._compatibility.family == ACP_COMPATIBILITY_FAMILY
 

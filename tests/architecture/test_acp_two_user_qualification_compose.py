@@ -77,18 +77,15 @@ class AcpTwoUserQualificationComposeTests(unittest.TestCase):
             check=False, timeout=30,
         )
 
-    def test_f6_defaults_on_and_explicit_operator_disable_is_coherent(self) -> None:
-        for override, expected in ((None, "1"), ("0", "0")):
+    def test_compose_does_not_expose_a_separate_f6_switch(self) -> None:
+        for override in (None, "0", "1"):
             with self.subTest(override=override):
                 result = self._config(include_qualification=False, f6_enabled=override)
                 self.assertEqual(result.returncode, 0, "Compose rejected the synthetic environment")
                 services = json.loads(result.stdout)["services"]
                 for service in ("backend", "gateway", "runtime-adapter"):
-                    self.assertEqual(
-                        str(services[service]["environment"]["BYQ_F6_EXECUTOR_ENABLED"]),
-                        expected,
-                        service,
-                    )
+                    self.assertNotIn("BYQ_F6_EXECUTOR_ENABLED",
+                                     services[service]["environment"], service)
 
     def test_second_static_slot_is_isolated_and_keeps_the_product_role_profile(self) -> None:
         baseline_result = self._config(include_qualification=False)
