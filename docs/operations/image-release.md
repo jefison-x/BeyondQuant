@@ -2,6 +2,10 @@
 
 依据 [ADR-0070](../architecture/adr/ADR-0070-hosted-ci-and-image-release.md)。
 
+现有生产测试、开发测试的单一配置入口、共享镜像基线与保留数据的操作边界见
+[环境基线](environment-baseline.md)。发行清单验证仍使用本流程，不从历史临时
+Compose 叠加链或源码挂载推断当前已部署状态。
+
 ## 开发
 
 ```bash
