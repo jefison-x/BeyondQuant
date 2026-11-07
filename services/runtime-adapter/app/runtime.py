@@ -6087,14 +6087,36 @@ class RuntimeAdapter:
     ) -> bool:
         if boundary["runtime_boot_id"] == self.boot_id:
             return boundary["runtime_authority_epoch"] == authority_epoch
+        same_original_boot = boundary["runtime_boot_id"] == binding["previous_boot_id"]
+        authority_epoch_advances = (
+            binding["previous_authority_epoch"]
+            <= boundary["runtime_authority_epoch"] < authority_epoch
+        )
+        authority_lineage_matches = same_original_boot == (
+            boundary["runtime_authority_epoch"] == binding["previous_authority_epoch"]
+        )
+        if (boundary["state"] == "acknowledged"
+                and binding["settlement_receipt"] is not None
+                and binding["native_session_close_confirmed"] is True
+                and binding["process_exit_confirmed"] is True
+                and binding["cleanup_unconfirmed"] is False
+                and binding["closed"] is False
+                and binding["domain_call_sequence"] == binding["domain_call_drained_sequence"]
+                and authority_epoch_advances
+                and authority_lineage_matches):
+            # A fully closed, settled idle session may be reattached again
+            # after another cold boot. The immutable ACKed boundary is valid
+            # only while the current Backend authority advances the boundary
+            # and its original-boot/epoch relationship remains exact. Pending
+            # boundaries and uncertain roots keep the prior fail-closed path.
+            return True
         # Older builds could persist this boundary and reject it on read-back
         # after losing ACP close. Finish the exact event under current authority.
-        same_original_boot = boundary["runtime_boot_id"] == binding["previous_boot_id"]
-        return (not binding["native_session_close_confirmed"]
-                and binding["previous_authority_epoch"]
-                    <= boundary["runtime_authority_epoch"] < authority_epoch
-                and same_original_boot == (
-                    boundary["runtime_authority_epoch"] == binding["previous_authority_epoch"]))
+        return (
+            not binding["native_session_close_confirmed"]
+            and authority_epoch_advances
+            and authority_lineage_matches
+        )
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:
         binding = self._read_acp_binding(session_id)

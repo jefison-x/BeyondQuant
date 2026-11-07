@@ -538,6 +538,7 @@ def test_acknowledged_recovery_boundary_tracks_idle_release_tail(acp_adapter):
     runtime.release_session("reuse-session", preserve_conversation=True)
 
     restarted = RuntimeAdapter(compat)
+    restarted.boot_id = uuid.uuid4().hex
     restarted.require_current_backend_authority = lambda: 8
     compat.runtime = restarted
     try:
@@ -572,6 +573,29 @@ def test_acknowledged_recovery_boundary_tracks_idle_release_tail(acp_adapter):
         assert acked_binding["recovery_boundary"] == {
             **first_boundary, "state": "acknowledged",
         }
+        same_origin_epoch = {
+            **acked_binding["recovery_boundary"],
+            "runtime_boot_id": original_boot_id,
+            "runtime_authority_epoch": original_authority_epoch,
+        }
+        lineage_check = RuntimeAdapter(compat)
+        lineage_check.boot_id = "e" * 32
+        try:
+            assert lineage_check._recovery_boundary_authorized(
+                acked_binding, same_origin_epoch, original_authority_epoch + 1,
+            )
+            mismatched_lineages = (
+                {**same_origin_epoch, "runtime_authority_epoch": original_authority_epoch + 1},
+                {**acked_binding["recovery_boundary"],
+                 "runtime_boot_id": uuid.uuid4().hex,
+                 "runtime_authority_epoch": original_authority_epoch},
+            )
+            lineage_results = [lineage_check._recovery_boundary_authorized(
+                acked_binding, candidate, original_authority_epoch + 2,
+            ) for candidate in mismatched_lineages]
+            assert lineage_results == [False, False]
+        finally:
+            lineage_check.close()
         assert acked_binding["previous_boot_id"] == original_boot_id
         assert acked_binding["previous_authority_epoch"] == original_authority_epoch
         assert acked_binding["root_run_id"] == root
@@ -650,6 +674,96 @@ def test_acknowledged_recovery_boundary_tracks_idle_release_tail(acp_adapter):
         assert acked_again["sequence"] == next_boundary["next_sequence"]
         assert not compat.resumed
         assert all(not harness.prompts for harness in compat.harnesses[1:])
+
+        # A second cold Runtime may silently reattach the same fully settled
+        # idle session after the prior release advanced the durable trace tail.
+        final_released_record = restarted._get("reuse-session")
+        restarted.release_session("reuse-session", preserve_conversation=True)
+        second_release_tail = final_released_record.sequence
+        idle_binding = restarted._read_acp_binding("reuse-session")
+        assert idle_binding["sequence"] == second_release_tail
+        assert idle_binding["recovery_boundary"]["state"] == "acknowledged"
+
+        stale_boot = RuntimeAdapter(compat)
+        stale_boot.require_current_backend_authority = lambda: 7
+        try:
+            with pytest.raises(SessionConflict, match="another trace or Runtime boot"):
+                stale_boot.recover_acp_session(
+                    "reuse-session", receipt, second_release_tail,
+                    trace_tail=second_release_tail,
+                )
+        finally:
+            stale_boot.close()
+
+        second_cold_boot = RuntimeAdapter(compat)
+        second_cold_boot.boot_id = uuid.uuid4().hex
+        second_cold_boot.require_current_backend_authority = lambda: 9
+        compat.runtime = second_cold_boot
+        try:
+            original_harness_count = len(compat.harnesses)
+            original_prompts = [list(harness.prompts) for harness in compat.harnesses]
+            with pytest.raises(SessionConflict, match="another trace or Runtime boot"):
+                second_cold_boot.recover_acp_session(
+                    "reuse-session", {**receipt, "event_sha256": "0" * 64},
+                    second_release_tail, trace_tail=second_release_tail,
+                )
+            with pytest.raises(SessionConflict, match="acknowledged recovery boundary requires"):
+                second_cold_boot.recover_acp_session(
+                    "reuse-session", receipt, second_release_tail + 1,
+                    trace_tail=second_release_tail + 1,
+                )
+            reattached = second_cold_boot.recover_acp_session(
+                "reuse-session", receipt, second_release_tail,
+                trace_tail=second_release_tail,
+            )
+            second_boundary = reattached["recovery_boundary"]
+            assert reattached["status"] == SessionStatus.IDLE
+            assert second_boundary["state"] == "pending"
+            assert second_boundary["runtime_boot_id"] == second_cold_boot.boot_id
+            assert second_boundary["runtime_authority_epoch"] == 9
+            assert second_boundary["binding_sequence"] == second_release_tail
+            assert not compat.resumed
+            assert len(compat.harnesses) == original_harness_count
+            assert [harness.prompts for harness in compat.harnesses] == original_prompts
+
+            pending_boot = RuntimeAdapter(compat)
+            pending_boot.require_current_backend_authority = lambda: 10
+            try:
+                with pytest.raises(SessionConflict, match="another trace or Runtime boot"):
+                    pending_boot.recover_acp_session(
+                        "reuse-session", receipt, second_release_tail,
+                        trace_tail=second_release_tail,
+                    )
+                assert "reuse-session" not in pending_boot._sessions
+            finally:
+                pending_boot.close()
+
+            with pytest.raises(SessionConflict, match="recovery trace boundary is not acknowledged"):
+                second_cold_boot.submit_prompt("reuse-session", "not admitted yet")
+            second_cold_boot.recover_acp_session(
+                "reuse-session", receipt, second_boundary["next_sequence"],
+                trace_tail=second_boundary["next_sequence"],
+                boundary_ack_sha256=second_boundary["event_sha256"],
+            )
+            assert second_cold_boot._read_acp_binding("reuse-session")[
+                "recovery_boundary"]["state"] == "acknowledged"
+
+            new_root = second_cold_boot.submit_prompt(
+                "reuse-session", "new input after repeated cold recovery",
+                conversation_context=[],
+            )
+            _wait_for_status(second_cold_boot, SessionStatus.IDLE)
+            new_receipt = second_cold_boot._get("reuse-session").terminal_receipts[new_root]
+            assert new_root != root
+            assert new_receipt["root_run_id"] == new_root
+            assert new_root in second_cold_boot._get("reuse-session").pending_terminal_receipts
+            assert second_cold_boot.acknowledge_terminal("reuse-session", new_receipt) == {
+                "receipt": new_receipt,
+            }
+            assert new_root not in second_cold_boot._get("reuse-session").pending_terminal_receipts
+            assert not compat.resumed
+        finally:
+            second_cold_boot.close()
     finally:
         restarted.close()
 
