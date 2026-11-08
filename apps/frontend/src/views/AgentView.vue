@@ -39,7 +39,17 @@ const stopping = ref(false);
 const localRunStartedAt = ref("");
 const clock = ref(Date.now());
 const conversationRef = ref<HTMLElement | null>(null);
-const starters = ["筛选一组可研究的股票候选", "起草一个可验证的量化策略", "根据最近回测提出优化建议"];
+const composerInput = ref<{ focus: () => void } | null>(null);
+const starters = [
+  { id: "stock", title: "研究一只股票", description: "了解估值、盈利、分红与风险",
+    draft: "我想研究招商银行（600036.SH），计划观察 3 至 6 个月。请先说明可用数据截至哪一天，再给出估值、盈利、分红和主要风险的简要分析，注明来源和缺失数据。这次只做研究，不创建策略或下单。" },
+  { id: "screen", title: "寻找符合条件的股票", description: "把选股想法变成清晰的条件",
+    draft: "我想寻找估值较低、盈利稳定且持续分红的 A 股。请先帮我明确筛选指标和范围，再说明本站哪些数据可用、哪些有缺口。先确认条件，不创建策略或运行回测。" },
+  { id: "idea", title: "验证一个投资想法", description: "先明确规则、费用和所需数据",
+    draft: "我想验证一个想法：股价向上突破 20 日均线时买入，向下跌破时卖出。请先和我确认选股范围、历史区间、交易费用和风险假设，并说明还缺哪些数据。这一步先讨论方案，不创建或执行回测。" },
+  { id: "compare", title: "比较几只股票", description: "在同一日期和口径下比较",
+    draft: "请比较招商银行（600036.SH）和工商银行（601398.SH）的估值、盈利和分红，注明各项数据的日期与来源。数据口径不同或缺失时请说明，不补造数字。这次只做比较研究。" },
+];
 let conversationGeneration = 0;
 let streamController: AbortController | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -67,6 +77,15 @@ const budgetExhaustedCode = "budget-exhausted";
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const sessionContinuationBlocked = computed(() => Boolean(agent.activeSessionId)
   && terminalSessionId.value === agent.activeSessionId);
+const starterDisabled = computed(() => loading.value || requestedSessionUnavailable.value
+  || sessionContinuationBlocked.value || busy.value || runActive.value || Boolean(prompt.value.trim()));
+
+async function prepareStarter(draft: string) {
+  if (starterDisabled.value) return;
+  prompt.value = draft;
+  await nextTick();
+  composerInput.value?.focus?.();
+}
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
 const activities = computed(() => workflowActivities(agent.events));
 const activeActivityCount = computed(() => activities.value.filter((item) =>
@@ -725,8 +744,16 @@ onBeforeUnmount(() => {
       <div v-if="loading" class="conversation-state"><el-skeleton :rows="4" animated /></div>
       <div v-else-if="!timeline.length" class="conversation-empty">
         <div class="xiaoba-mark">小巴</div><h1>今天想研究什么？</h1>
-        <p>从问题出发，小巴会把结论、策略草案、候选股票与回测上下文放在同一条对话时间线中。</p>
-        <div class="starter-grid"><button v-for="starter in starters" :key="starter" type="button" :disabled="loading || requestedSessionUnavailable || sessionContinuationBlocked" @click="send(starter)">{{ starter }}</button></div>
+        <p>从一只股票或一个投资想法开始，查看有日期和来源的研究依据。</p>
+        <div class="starter-grid">
+          <button v-for="starter in starters" :key="starter.id" type="button"
+            :data-testid="`research-starter-${starter.id}`" :disabled="starterDisabled"
+            @click="prepareStarter(starter.draft)">
+            <strong>{{ starter.title }}</strong><span>{{ starter.description }}</span>
+          </button>
+        </div>
+        <p class="starter-hint">{{ prompt.trim() ? "草稿已保留在输入框中，可修改股票和条件后发送。清空输入可重新选择示例。" : "点击示例只填入草稿，不会自动发送。你可以修改股票、条件和研究范围。" }}</p>
+        <el-button text @click="router.push('/stock-pool')">从已有股票池继续比较研究</el-button>
       </div>
       <div v-else class="timeline">
         <template v-for="item in timeline" :key="item.key">
@@ -767,7 +794,7 @@ onBeforeUnmount(() => {
     </main>
     <footer class="composer-wrap">
       <form class="agent-composer" @submit.prevent="send()">
-        <el-input v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" :disabled="loading || requestedSessionUnavailable" @keydown="handleComposerKeydown" />
+        <el-input ref="composerInput" v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" :disabled="loading || requestedSessionUnavailable" @keydown="handleComposerKeydown" />
         <el-button
           v-if="runActive"
           class="composer-action composer-stop"
@@ -820,8 +847,13 @@ onBeforeUnmount(() => {
 .conversation-empty { margin: clamp(2rem, 9vh, 7rem) auto 0; max-width: 720px; text-align: center; }
 .xiaoba-mark { align-items: center; background: var(--byq-brand-contrast); border-radius: 18px; color: var(--byq-on-brand); display: inline-flex; font-size: 13px; font-weight: 900; height: 56px; justify-content: center; width: 56px; }
 .conversation-empty h1 { color: var(--byq-text); font-size: clamp(24px, 3vw, 34px); margin: 1rem 0 .55rem; }.conversation-empty p { color: var(--byq-text-muted); line-height: 1.7; margin: 0 auto 1.4rem; max-width: 620px; }
-.starter-grid { display: grid; gap: .65rem; grid-template-columns: repeat(3, 1fr); }.starter-grid button { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: var(--byq-radius); color: var(--byq-text-muted); cursor: pointer; line-height: 1.5; padding: .85rem; text-align: left; }.starter-grid button:hover { border-color: var(--byq-brand); color: var(--byq-text); }
+.starter-grid { display: grid; gap: .65rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }.starter-grid button { background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: var(--byq-radius); color: var(--byq-text-muted); cursor: pointer; line-height: 1.5; padding: .85rem; text-align: left; }.starter-grid button:hover { border-color: var(--byq-brand); color: var(--byq-text); }
 .timeline { display: grid; gap: 1.15rem; margin: 0 auto; max-width: 860px; }.conversation-message { display: grid; gap: .7rem; grid-template-columns: minmax(42px, max-content) minmax(0, 1fr); }.message-author { align-items: center; background: var(--byq-surface-muted); border-radius: 12px; color: var(--byq-text-muted); display: flex; font-size: 11px; font-weight: 850; height: 36px; justify-content: center; max-width: 96px; min-width: 36px; overflow: hidden; padding: 0 7px; text-overflow: ellipsis; white-space: nowrap; }.conversation-message.agent .message-author { background: var(--byq-brand-contrast); color: var(--byq-on-brand); width: 36px; }.message-body { color: var(--byq-text); line-height: 1.75; padding: .35rem 0; white-space: pre-wrap; }.conversation-message.user .message-body { background: var(--byq-brand-soft); border-radius: 16px; justify-self: start; padding: .7rem .9rem; }
+.starter-grid button strong, .starter-grid button span { display: block; }
+.starter-grid button strong { color: var(--byq-text); margin-bottom: .3rem; }
+.starter-grid button span { font-size: 12px; }
+.starter-grid button:disabled { cursor: default; opacity: .6; }
+.conversation-empty .starter-hint { font-size: 12px; margin: .9rem auto .25rem; }
 .thinking-status { align-items: flex-start; display: grid; gap: .15rem; padding: .35rem 0; }.thinking-summary { align-items: center; background: transparent; border: 0; color: var(--byq-text-muted); cursor: pointer; display: flex; font: inherit; gap: .55rem; padding: 0; text-align: left; }.thinking-summary strong { color: var(--byq-text); font-size: 13px; }.thinking-summary > span:last-child, .thinking-status small { color: var(--byq-text-soft); font-size: 11px; }.thinking-spark { align-items: center; display: inline-flex; gap: 3px; height: 16px; }.thinking-spark i { animation: thinking-dot 1.15s ease-in-out infinite; background: var(--byq-brand); border-radius: 50%; display: block; height: 5px; width: 5px; }.thinking-spark i:nth-child(2) { animation-delay: .16s; }.thinking-spark i:nth-child(3) { animation-delay: .32s; }
 .composer-wrap { background: linear-gradient(transparent, var(--byq-bg) 22%); padding: 1rem max(1rem, calc((100% - 860px) / 2)) 1.2rem; }.agent-composer { align-items: center; background: var(--byq-surface); border: 1px solid var(--byq-border); border-radius: 18px; box-shadow: var(--byq-shadow-sm); display: flex; gap: .65rem; padding: .65rem .7rem .65rem .9rem; }.composer-input { flex: 1; min-width: 0; }.agent-composer :deep(.el-textarea__inner) { box-shadow: none; line-height: 1.55; padding: .35rem 0; resize: none; }.composer-action { align-self: center; flex: 0 0 auto; margin-left: 0; }
 .composer-stop { background: var(--byq-text); border-color: var(--byq-text); color: var(--byq-surface); }.stop-square { background: currentColor; border-radius: 2px; display: block; height: 10px; width: 10px; }

@@ -15,6 +15,10 @@ vi.mock("element-plus", async (load) => ({ ...await load<typeof import("element-
   ElMessage: { warning: vi.fn(), error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/api/paper", async (load) => ({ ...await load<typeof import("@/api/paper")>(),
   listStockPools: vi.fn(async () => ({ pools: [] })),
+  getStockPool: vi.fn(async () => ({ pool: { pool_id: "pool_exact", name: "银行池", pool_type: "custom", current_snapshot_id: "snapshot_saved", metadata_version: 1, snapshot: { definition: {} } } })),
+  listStockPoolSnapshots: vi.fn(async () => ({ snapshots: [] })),
+  listStockPoolReferences: vi.fn(async () => ({ references: [] })),
+  getStockPoolReadiness: vi.fn(async () => ({ readiness: {} })),
   listIndexPoolCatalog: vi.fn(async () => ({ indices: [{ index_symbol: "000300.SH", selectable: true }] })),
   submitPoolCreation: vi.fn(async () => ({ pool: { pool_id: "synthetic-index", pool_type: "index" } })),
   refreshIndexStockPool: vi.fn(),
@@ -26,6 +30,8 @@ type State = { poolType: string; indexSymbol: string; indexTrackingMode: string;
   selected: unknown; producer: unknown; isHistoricalIndex: boolean; canRefreshPool: boolean;
   createMembers: Array<{ symbol: string; name: string; weightPercent: number | null }>;
   editMembers: Array<{ symbol: string; name: string; weightPercent: number | null }>;
+  setCreateEqualWeights: () => void; clearCreateWeights: () => void;
+  setEditEqualWeights: () => void; clearEditWeights: () => void;
   saveSnapshot: () => Promise<void>;
   searchSecurities: (query: string) => Promise<void>; syncCreateMembers: (symbols?: string[]) => void;
   formatPoolWeight: (weight: unknown) => string;
@@ -131,6 +137,76 @@ describe("index pool tracking mode", () => {
     await state.submit();
     expect(submitPoolCreation).toHaveBeenCalledWith("custom", expect.objectContaining({
       weights: { "600036.SH": 0.2001, "601398.SH": 0.7999 },
+    }), expect.any(String));
+    wrapper.unmount();
+  });
+
+  it("sets three members to exact 100.00% equal weights and only saves on submit", async () => {
+    const { wrapper, state } = await setup();
+    (wrapper.vm as any).showCreate = true;
+    (wrapper.vm as any).name = "三只股票";
+    state.createMembers = [
+      { symbol: "600036.SH", name: "招商银行", weightPercent: null },
+      { symbol: "601398.SH", name: "工商银行", weightPercent: null },
+      { symbol: "000001.SZ", name: "平安银行", weightPercent: null },
+    ];
+    await nextTick();
+    await wrapper.get('[data-testid="stock-pool-create-equal-weights"]').trigger("click");
+    expect(state.createMembers.map(({ weightPercent }) => weightPercent)).toEqual([33.34, 33.33, 33.33]);
+    expect(submitPoolCreation).not.toHaveBeenCalled();
+
+    await wrapper.get('[data-testid="stock-pool-create-clear-weights"]').trigger("click");
+    expect(state.createMembers.every(({ weightPercent }) => weightPercent === null)).toBe(true);
+    expect(submitPoolCreation).not.toHaveBeenCalled();
+    state.setCreateEqualWeights();
+    await state.submit();
+    expect(submitPoolCreation).toHaveBeenCalledWith("custom", expect.objectContaining({
+      weights: { "600036.SH": 0.3334, "601398.SH": 0.3333, "000001.SZ": 0.3333 },
+    }), expect.any(String));
+    wrapper.unmount();
+  });
+
+  it("distributes seven-member remainder in 0.01% steps and preserves weights when membership changes", async () => {
+    const { wrapper, state } = await setup();
+    state.editMembers = Array.from({ length: 7 }, (_, index) => ({
+      symbol: `60000${index}.SH`, name: `股票${index}`, weightPercent: null,
+    }));
+    state.setEditEqualWeights();
+    expect(state.editMembers.map(({ weightPercent }) => weightPercent)).toEqual([
+      14.29, 14.29, 14.29, 14.29, 14.28, 14.28, 14.28,
+    ]);
+    expect(state.editMembers.reduce((sum, { weightPercent }) => sum + (weightPercent ?? 0), 0)).toBe(100);
+    state.syncCreateMembers(["600036.SH", "601398.SH", "000001.SZ"]);
+    state.createMembers = [
+      { symbol: "600036.SH", name: "招商银行", weightPercent: 60 },
+      { symbol: "601398.SH", name: "工商银行", weightPercent: 40 },
+    ];
+    state.syncCreateMembers(["600036.SH", "601398.SH", "000001.SZ"]);
+    expect(state.createMembers.map(({ weightPercent }) => weightPercent)).toEqual([60, 40, null]);
+    expect(replaceStockPoolSnapshot).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("applies edit equal weights as a draft until the member snapshot is saved", async () => {
+    const { wrapper, state } = await setup();
+    state.selected = { pool_id: "pool_exact", current_snapshot_id: "snapshot_exact", pool_type: "custom" };
+    state.editMembers = [
+      { symbol: "600036.SH", name: "招商银行", weightPercent: 80 },
+      { symbol: "601398.SH", name: "工商银行", weightPercent: 20 },
+    ];
+    await nextTick();
+    state.setEditEqualWeights();
+    expect(state.editMembers.map(({ weightPercent }) => weightPercent)).toEqual([50, 50]);
+    expect(replaceStockPoolSnapshot).not.toHaveBeenCalled();
+    state.clearEditWeights();
+    expect(state.editMembers.every(({ weightPercent }) => weightPercent === null)).toBe(true);
+    expect(replaceStockPoolSnapshot).not.toHaveBeenCalled();
+    state.setEditEqualWeights();
+    await state.saveSnapshot();
+    expect(replaceStockPoolSnapshot).toHaveBeenCalledWith("pool_exact", expect.objectContaining({
+      expected_current_snapshot_id: "snapshot_exact",
+      symbols: ["600036.SH", "601398.SH"],
+      weights: { "600036.SH": 0.5, "601398.SH": 0.5 },
     }), expect.any(String));
     wrapper.unmount();
   });

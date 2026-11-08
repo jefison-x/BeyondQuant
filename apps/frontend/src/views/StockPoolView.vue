@@ -166,6 +166,27 @@ function memberDraftsFor(symbols: string[], existing: MemberDraft[]): MemberDraf
   });
 }
 
+function setEqualWeights(rows: MemberDraft[]) {
+  if (!rows.length) return;
+  // Allocate integer hundredths of a percentage so the visible values total
+  // 100.00% exactly, including when the number of members does not divide 100.
+  const totalHundredths = 10_000;
+  const each = Math.floor(totalHundredths / rows.length);
+  const remainder = totalHundredths % rows.length;
+  rows.forEach((row, index) => {
+    row.weightPercent = (each + (index < remainder ? 1 : 0)) / 100;
+  });
+}
+
+function clearWeights(rows: MemberDraft[]) {
+  rows.forEach((row) => { row.weightPercent = null; });
+}
+
+function setCreateEqualWeights() { setEqualWeights(createMembers.value); }
+function clearCreateWeights() { clearWeights(createMembers.value); }
+function setEditEqualWeights() { setEqualWeights(editMembers.value); }
+function clearEditWeights() { clearWeights(editMembers.value); }
+
 function syncCreateMembers(symbols = createSymbols.value) {
   const directorySymbols = new Set(securityOptions.value.map((item) => item.symbol));
   const invalidSymbols = symbols.filter((symbol) => !directorySymbols.has(symbol) && !/^\d{6}\.(SH|SZ|BJ)$/.test(symbol));
@@ -744,7 +765,7 @@ onMounted(async () => {
           />
         </template>
         <template v-if="poolType === 'dynamic'">
-          <el-alert title="规则仅支持 BYQ 白名单字段和运算符，不执行 Python、SQL、URL、插件或模型表达式。" type="info" :closable="false" />
+          <el-alert title="动态池只支持下面列出的筛选和排序条件。" type="info" :closable="false" />
           <el-row :gutter="14" class="dynamic-form-row">
             <el-col :xs="24" :sm="12">
               <el-form-item label="最低总市值（万元，可选）">
@@ -767,7 +788,7 @@ onMounted(async () => {
           </el-row>
           <el-form-item label="截至日期（可选）"><el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" placeholder="默认使用当前日期前最新完整交易日" /></el-form-item>
           <el-form-item label="创建后立即激活"><el-switch v-model="dynamicActivate" /></el-form-item>
-          <div class="preview-actions"><el-button data-testid="dynamic-preview" :loading="busy" @click="previewDynamic">预览规则结果</el-button><span v-if="dynamicPreview">非权威预览：{{ dynamicPreview.member_count }} 只 · 数据日 {{ dynamicPreview.effective_trade_date }}</span></div>
+          <div class="preview-actions"><el-button data-testid="dynamic-preview" :loading="busy" @click="previewDynamic">预览规则结果</el-button><span v-if="dynamicPreview">预览 {{ dynamicPreview.member_count }} 只 · 数据日 {{ dynamicPreview.effective_trade_date }}；创建时会再次核验</span></div>
           <el-table v-if="dynamicPreview" :data="dynamicPreview.members" size="small" max-height="180"><el-table-column prop="symbol" label="预览成分" /><el-table-column label="权重"><template #default="{ row }">{{ formatPoolWeight(row.weight) }}</template></el-table-column></el-table>
         </template>
         <el-form-item v-if="poolType === 'custom'" label="搜索股票">
@@ -798,6 +819,11 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item v-if="poolType === 'custom'" label="成员与权重">
           <p class="member-weight-hint">权重按百分比填写；每只股票须大于 0，合计为 100%。全部留空表示不设置权重。</p>
+          <div class="member-weight-actions">
+            <el-button size="small" :disabled="busy || !createMembers.length" data-testid="stock-pool-create-equal-weights" @click="setCreateEqualWeights">设为等权</el-button>
+            <el-button size="small" :disabled="busy || !createMembers.length" data-testid="stock-pool-create-clear-weights" @click="clearCreateWeights">清空权重</el-button>
+            <span>无法均分时，按列表顺序分配 0.01% 余量，合计仍为 100%。</span>
+          </div>
           <el-table :data="createMembers" size="small" empty-text="先搜索并选择股票">
             <el-table-column prop="symbol" label="股票代码" min-width="130" />
             <el-table-column label="股票名称（中文）" min-width="140"><template #default="{ row }">{{ row.name || "名称待同步" }}</template></el-table-column>
@@ -846,7 +872,16 @@ onMounted(async () => {
         </div>
       </template>
       <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
-      <el-empty v-else-if="!filteredPools.length" description="暂无股票池" />
+      <div v-else-if="!filteredPools.length && !pools.length" class="pool-empty">
+        <el-empty description="还没有股票池" />
+        <p>添加几只关注的股票，保存后即可继续研究。</p>
+        <el-button type="primary" @click="showCreate = true">新建股票池</el-button>
+      </div>
+      <div v-else-if="!filteredPools.length" class="pool-empty">
+        <el-empty description="没有找到符合条件的股票池" />
+        <p>试试其他名称，或清除当前搜索和类型筛选。</p>
+        <el-button @click="search = ''; filter = 'all'">清除筛选</el-button>
+      </div>
       <ListFilterPagination v-else v-model:page="poolPages.page.value" query="" :page-size="poolPages.pageSize.value" :total="poolPages.total.value" label="股票池分页" hide-search>
       <el-table class="desktop-catalog-table" :data="poolPages.pageItems.value" highlight-current-row @current-change="select">
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
@@ -971,6 +1006,11 @@ onMounted(async () => {
             </el-form-item>
             <el-form-item label="成员与权重">
               <p class="member-weight-hint">权重按百分比填写；每只股票须大于 0，合计为 100%。全部留空表示不设置权重。</p>
+              <div class="member-weight-actions">
+                <el-button size="small" :disabled="busy || !editMembers.length" data-testid="stock-pool-edit-equal-weights" @click="setEditEqualWeights">设为等权</el-button>
+                <el-button size="small" :disabled="busy || !editMembers.length" data-testid="stock-pool-edit-clear-weights" @click="clearEditWeights">清空权重</el-button>
+                <span>无法均分时，按列表顺序分配 0.01% 余量，合计仍为 100%。</span>
+              </div>
               <el-table :data="editMembers" size="small" empty-text="搜索并选择股票，或清空当前名单">
                 <el-table-column prop="symbol" label="股票代码" min-width="130" />
                 <el-table-column label="股票名称（中文）" min-width="140"><template #default="{ row }">{{ row.name || "名称待同步" }}</template></el-table-column>
@@ -1087,6 +1127,10 @@ onMounted(async () => {
 
 .dialog-intro { color: var(--byq-text-muted); font-size: 12px; margin: 0 0 14px; }
 .member-weight-hint { color: var(--byq-text-muted); font-size: 12px; margin: 0 0 8px; }
+.member-weight-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.member-weight-actions span { color: var(--byq-text-muted); font-size: 12px; }
+.pool-empty { align-items: center; display: flex; flex-direction: column; padding: 16px; text-align: center; }
+.pool-empty p { color: var(--byq-text-muted); margin: 0 0 12px; }
 .security-search-empty { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 8px; margin-top: 6px; }
 .catalog-option-meta { color: var(--byq-text-muted); float: right; margin-left: 18px; }
 .section-title { font-size: 14px; margin: 20px 0 10px; }

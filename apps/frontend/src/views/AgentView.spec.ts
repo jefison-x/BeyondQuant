@@ -735,6 +735,46 @@ describe("AgentView", () => {
     wrapper.unmount();
   });
 
+  it.each(["stock", "screen", "idea", "compare"])("prepares the %s example without creating a conversation or sending", async (id) => {
+    routerHarness.route.query = { new: "true" };
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    await wrapper.get(`[data-testid="research-starter-${id}"]`).trigger("click");
+    await flushPromises();
+
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    expect(view.prompt.length).toBeGreaterThan(30);
+    expect(createAgentSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(useAgentStore().activeSessionId).toBe("");
+    expect(wrapper.text()).toContain("可修改股票和条件后发送");
+
+    view.prompt = "我修改后的研究范围，只查看已有数据";
+    await wrapper.get("form.agent-composer").trigger("submit");
+    await flushPromises();
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).toHaveBeenCalledExactlyOnceWith("session-1", "我修改后的研究范围，只查看已有数据", "");
+    wrapper.unmount();
+  });
+
+  it("preserves an existing draft when selecting an example and allows selection after clearing", async () => {
+    routerHarness.route.query = { new: "true", draft: "保留股票池传入的研究问题" };
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const button = wrapper.get('[data-testid="research-starter-stock"]');
+    expect(button.attributes("disabled")).toBeDefined();
+    await button.trigger("click");
+    const view = wrapper.vm as unknown as { prompt: string };
+    expect(view.prompt).toBe("保留股票池传入的研究问题");
+    view.prompt = "";
+    await flushPromises();
+    expect(button.attributes("disabled")).toBeUndefined();
+    await button.trigger("click");
+    expect(view.prompt).toContain("招商银行");
+    expect(submitTurn).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("reloads an existing conversation from its exact CID without creating or sending", async () => {
     routerHarness.route.query = { session: "session-1" };
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
