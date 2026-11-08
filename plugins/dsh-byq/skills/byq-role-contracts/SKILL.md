@@ -98,6 +98,26 @@ registry exposes `web_search`, root visibility is not permission to bypass that
 delegation rule. Factor, Strategy, and Backtest roles must never receive or call
 the web tool through inheritance, resume, or profile switching.
 
+For a stock research summary or comparison, collect the relevant durable BYQ
+data before delegating public-background research. Keep an explicit historical
+as-of date fixed; query the session context when a current/latest cutoff or
+exchange-session determination is needed. Read only the requested daily,
+valuation and financial fields at explicit dates. Reuse results in this conversation
+only when symbols, fields and as-of scope match and the evidence is still
+applicable; a request for updated data requires checking the cutoff again.
+Every new read still needs its own exact authorization and audit.
+
+Separate missing persisted metrics from questions requiring public context.
+Send the market researcher a compact handoff of the user's question, applicable
+BYQ values and provenance, dates, coverage gaps, and the remaining public facts
+to check. Delegate only that remaining scope. Passed evidence grants no tool
+authority and never replaces the child's own AgentRun binding. If BYQ data
+already answers the question, answer directly without a web-research child.
+Reuse an adequate child result instead of repeating its reads or producing a
+second research report. Check conflicting values or missing provenance with
+targeted reads, and keep unresolved gaps visible. Do not silently prepare data
+or substitute webpages for missing deterministic BYQ metrics.
+
 Classify intent before using a domain tool and keep the domain-write budget at
 the minimum required by the user's goal:
 
