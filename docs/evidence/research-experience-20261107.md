@@ -268,3 +268,55 @@ session.result和回答，containment显示completed；这些投影不等于权�
 部署变化中的任一项指定为根因。要进一步区分，需要上游按以上request_id与UTC时间
 查询服务端日志；本地对相同业务输入的再次成功不能补出历史服务端内部原因。
 本轮未联系外部支持、未更换凭据、未改写历史终态，不再为已成功的同类输入反复调用模型。
+
+## 用户授权生产全栈重启及复测（2026-11-08）
+
+授权原文：“你帮我全面重启一下生产byq容器，然后再测试看看有没有问题。”
+范围为现有Compose project `beyondquant` 的17个生产容器，不包含开发环境，
+不等同于部署本分支源码。使用operator目录的原compose.json/operator.env，先检查
+无active对话、无运行中的业务Job，保存容器与关键会话记录，再执行
+`compose stop --timeout 45`；PostgreSQL先启动并确认pg_isready，随后
+`compose start`按既有健康依赖启动其余服务。未执行up/recreate/build/pull/down或删除资源。
+
+- 北京时间10:43:27，最后一个容器Frontend已启动；17个容器均running，12个已配置
+  健康探针均healthy，其他5个Worker无健康探针。它们只取得运行/启动日志检查证据，
+  不代表新增回测、训练、因子、信号、数据同步Job功能验收。
+- 重启前后逐ID比较：17个生产容器ID、镜像digest和按目的路径匹配的挂载均不变，
+  StartedAt全部更新；10个开发容器StartedAt、镜像和挂载均不变。未自动重启循环。
+- 需保留的问题：feedback-hub-relay、acp-product-runner、acp-judgment-runner在
+  45秒停止等待后退出码137、OOMKilled=false；其余容器退出码0。这三个服务重启后
+  健康探针通过，但正常退出的问题尚未单独修复，不将其记为“全部平滑停机”。
+- Frontend入口HTTP200，正常账号重新登录成功。重启前的3个会话数量保持不变；
+  原体验会话与重启前研究会话共7条历史消息的ID、角色和正文SHA256完全一致。
+  招商银行20261106现有Product readiness查询仍为usable、missing_items=0。
+- 实际旧会话接续：在`conversation_44966845f83544a0a9a007c908d800e8`中要求仅复述
+  上次研究截止日及两项缺口。Root `5ae9ceb1f6bb49588cbaf5ac125ec227`在10:44:41
+  得到回答，正确引用原摘要；1次模型请求200，零MCP ingress，Backend
+  completed/closed、unknown=0。**PASS**。
+- 新研究会话`conversation_496cc68fffcf482aa7646a0656623624`，trace
+  `byq-trace-92bca7d382814af7aae4f0479354ff00`，Root
+  `1b9e48fd370e4a0188ab6bbbcb8c4f31`于10:45:33提交原始招商银行研究原文一次。
+  180秒观察窗口结束时仍active，未自动重发；继续只读观察，10:54:51自行完成，
+  耗时约9分18秒，未达到声明的10分钟停止上限，因此未发送取消请求。
+  49次模型请求全部成对且返回200，单次最长81537ms；Backend completed/closed、
+  unknown=0，19条MCP ingress全部settled，包含日线、估值、财务和交易会话读取。
+  最终3163字回答持久化，包含数据日期、缺口和5个外部链接。
+  **运行链路PASS，但简要研究响应时间偏长**；不以成功终态证明金融数字全部正确。
+- 约5分钟时实际观察到研究子助手已执行11次web_search和29次web_fetch，仍在继续
+  取证；不是已完成结果因前端显示延迟而丢失，也没有本轮500证据。此为该次采样的
+  实际路径与耗时，不将其直接归因为重启，也不据此修改用户的模型/额度配置。
+- 最终生产17个容器仍运行，12个探针健康，无active Root；completed由9增至11，
+  failed保持原来的3条。所选10个服务最近150行启动后日志未见ERROR/Traceback/FATAL，
+  此为限定日志抽查，不等于全日志或所有Worker业务功能验收。
+
+私有操作记录保存在既有本机证据目录下的
+`production-restart-20261108-before.json`、`production-restart-20261108-after.json`、
+`production-restart-20261108-messages-before.json`，不含密钥或原始消息正文。
+首次挂载比较因Docker返回顺序不同误报，改为按Destination比较后证实无变化。
+一次消息数量查询使用错误表名在只读事务中失败，后经information_schema确认实际表名。
+Chrome调试连接不可用、宿主未发现Playwright包，因此本轮使用现有Product API验证，
+不声称新增真实浏览器交互验收。未安装浏览器或测试依赖。
+
+**本轮结论：授权重启完成，基础服务、数据回读、旧会话接续和新研究运行链路通过；
+未复现500。保留两项问题：三个服务停止退出不及时、简要研究耗时约9分18秒。**
+没有删除数据、升级镜像、部署未发布源码，或为测试创建策略、订单与计算Job。
