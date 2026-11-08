@@ -437,3 +437,54 @@ tokens使用上游统计口径，不能等同于用户可见字数或纯推理�
 真实“完全没有股票池”的空态仍NOT_RUN（保留现有池，不为测试删除数据）；
 其余三个首页示例保留本地行为测试证据，本轮仅个股示例实点。
 金融结论质量、新取数指导的真实耗时和部署后研究整链仍NOT_RUN。
+
+## 2026-11-09 当前测试会话 409：工作区历史未结算保护
+
+用户在候选前端 `5175` 提交股票池比较后，新会话
+`conversation_555d234c6cf64527bd4114b711dd2b2c` 显示
+`runtime session is not available for this operation`。本轮没有重发输入或
+重启容器，先以现有访问日志、Product 回读和数据库只读事务定位。
+
+- 当前 Runtime 为 `byq-session-5bbe82898c8044a5b7cc9e3125548ed1`，
+  trace 为 `byq-trace-e679576c066d4cdf89d54608d0f43769`。
+  2026-11-09 06:57:51（北京时间）会话创建返回201，发送返回409。
+  持久消息只有一条用户输入，无助手回答；事件只有 `session.ready`，
+  Product containment 为 `submission=not_performed`。
+- 同一时间 Backend 收到该 session 的工作区 admission 读取，候选 Root
+  `40dde542820a4746a64cc9992d1b0174`，随后 Runtime prompt 返回409；没有
+  新 Root admission POST。数据库没有这个候选 Root 的记录。
+- 工作区 `workspace_4c5b803209d549019b7804976f6930c6` 旧 Root
+  `f6dc48f8c4e446c6912eed772a47493f` 仍为 `active/active`，它正是前文
+  11月7日日线缺日期返回422却被误记为unknown的研究；ingress seq8
+  `byq_market_daily` 仍为unknown，`terminal_unknown_claim_count=NULL`，不能当作0。
+  旧ACP binding仍为 `closed=false/process_exit_confirmed=false` 且无settlement
+  receipt。没有把Runner中的node进程精确归属到该Root，因此其当前是否还执行
+  模型未证实；完整active Jobs盘点NOT_RUN。旧页面出现回答没有结清该业务执行。
+- Backend `AgentResearchStore.workspace_agent_admission` 对同工作区其他
+  `status=active` 或 `authority_status!=closed` 的Root返回 `can_start=false`；
+  Runtime `_require_group_admission` 将其映射为
+  `workspace has an unsettled Agent turn`，Gateway `_adapter_post` 再隐藏为
+  上述通用英文提示。日志顺序、持久状态与源码共同定位到准入保护；没有保留
+  当时409响应正文，不把源码还原的原因冒充已采集的响应body。
+
+所以本次不是模型慢、模型500或新会话不存在；新输入在模型执行前已被拒绝。
+旧会话 `/release` 也有409，但那是并发出现的另一个请求，不能代替上述因果链。
+新建同工作区会话仍受相同保护。候选 `d57904f8` 只防止未来已审核只读工具的
+明确错误再被误记为unknown，不会自动修改这条历史收据。
+
+现有 local-validation prepare/finalize 恢复仅支持精确的
+`byq_strategy_validate` 回执，不能用于行情读取。普通恢复也需要已结算的
+Backend证明，不能把 `byq_market_daily` 的unknown直接改成settled、清空数据库、
+重放原请求或通过重启宣称恢复。历史执行的安全结算路径和可理解的工作区
+阻塞提示仍是未完成整改项。
+
+用户已授权仅测试环境更新。更新前检查发现上述未结算Root，因此尚未切换
+运行容器；候选ACP统一镜像、MCP与Frontend按当前源码开始构建，保留原配置
+和镜像。生产无变更。部署后同题研究、金融质量及耗时对比仍为NOT_RUN，
+不能用候选构建成功替代验收。
+
+独立Reviewer复核上述guard与现有恢复分支，确认当前会话功能FAIL、保护门禁
+符合架构约束。Root复核27个现有容器（生产17、测试10）的ID、镜像和StartedAt
+均与本轮开始相同，测试operator Compose字节一致。私有构建日志和只含容器
+元数据的前后对照位于 `~/.local/state/byq-maintenance/research-candidate-20261109/`。
+MCP与Frontend候选构建exit0；这仅是镜像构建证据。
