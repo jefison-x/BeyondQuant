@@ -488,3 +488,61 @@ Backend证明，不能把 `byq_market_daily` 的unknown直接改成settled、清
 均与本轮开始相同，测试operator Compose字节一致。私有构建日志和只含容器
 元数据的前后对照位于 `~/.local/state/byq-maintenance/research-candidate-20261109/`。
 MCP与Frontend候选构建exit0；这仅是镜像构建证据。
+
+### 2026-11-09 安全恢复授权与设计准备
+
+维护者明确要求：先修好历史未结算记录的安全恢复，再更新测试环境，用同一
+研究问题验证结论质量和耗时，生产不动。独立设计审查确认：ADR-0113排除
+非审计工具，ADR-0114仅覆盖策略校验；此日线读取需具名的新恢复合同，不能
+将上述任务授权自行记成Accepted。已形成
+[ADR-0117 Accepted](../architecture/adr/ADR-0117-exact-readonly-error-reconciliation.md)，
+维护者明确回复“接受 ADR-0117，继续实现和测试”。实现进展见后文；历史恢复、候选部署、同题验证尚未进行。
+
+只读准备：测试Backend实际文件与当前源码SHA256一致：
+
+| 文件 | SHA256 |
+| --- | --- |
+| `app/main.py` | `84e3923d2b24bb9b50cafe91923a178f7077b0ffa1537c2ee7e4ec151791e830` |
+| `app/market_data.py` | `72e511f206e3ddd8edf6d40a26ef1462ccdbcd99fd2cef4beaf5708dbc32cc54` |
+| `app/data_provider.py` | `0fdf9de31724ed53ccb53c35ed1a069a696cc0fa6e3843048cfc047a967b7662` |
+
+`research_daily`先调用`DailyRequest.normalized()`，只给`ts_code`且没有日期时
+抛出ValueError，入口映为422；正常读取只执行已有行情/交易日/停牌状态SELECT，
+没有Provider调用。候选与已部署基线这三个文件无源码差异。这证明源码性质，
+不冒充当时完整HTTP请求/响应配对证明；ADR采用保留读取结果unknown的语义。
+
+先前启动的ACP候选构建现已结束；本地三镜像均具有源码
+`62c0363ff51ae7ada3210f0cd19759e9b658e4ff`标记，尚不含新的恢复实现：
+ACP `sha256:24affa33aef864012cb526b41a25a5ce39a75c2fc963a057c81e8c36d2600e5a`；
+MCP `sha256:fce67cc302c85c0bed201060081033652ba7d4889c085208b14ac7aaff995552`；
+Frontend `sha256:fa2b06698a515878d11070d425e0aa7dc814857ad35dd53cf6373da32f5055b6`。
+元数据留在同一私有目录`candidate-images.json`。未变更operator配置、容器、
+数据库、凭据或当前页面，未发新模型请求。
+
+
+### ADR-0117 实现和隔离验证（2026-11-09）
+
+Backend 增加无 HTTP 入口的受限 prepare/finalize CLI；保留原 unknown，附加
+固定审计证明并消费原始 seq38 terminal。检查原控制 Key 信任锚、签名 cleanup、
+完整冻结快照及身份；terminal guard/hash 和 Workspace reset 均保护此证明。
+Runtime helper 7 项测试 PASS；Backend 14 项定向测试 PASS。独立源码审查
+正路径和架构 PASS。仅在新增 tmpfs PostgreSQL 内恢复测试环境备份做实际 SQL
+检查：prepare/finalize/exact repeat PASS；改变 operator 拒绝；22 条 ingress
+整行未变，Root completed/closed、terminal sequence38、unknown domain claims0。
+这是合成控制 Key 的隔离 SQL 证据，不是原 Runner 清理或 Product 验收。
+
+隔离负例：额外 unknown、pending registration、改 settlement、删 proof、改 proof、
+未决 domain claim 均拒绝。Reset 初次命中前置 ADR-0113 保护；在回滚事务内
+排除该前置保护后，ADR-0117 保护也拒绝，原数据未变。首次 CLI 因容器普通用户
+不能读取0700私有证据而 HOLD；核对用户/路径后以一次性 Engineering 身份成功。
+
+旧 MCP image 134ab67d… 的实际 src/server.ts 与 src/market-data.ts 均匹配
+Git e7c488d8；分别 SHA256 2dd1139f13438b859a1e12f42b2c390f5e4de9586bd4904257778dfadddb6b05
+和 eda1210e91803659708139f9e1b68b03cb73b7ad9279fbc3c3b4c2ea49f2c4d7。
+编译产物 SHA 及原 Runtime seq38 event/readback/arguments 文件 SHA 已封存在
+私有 readonly-operation-evidence.json。MCP handler 仅加身份头并调用上述 Backend
+读取入口；外围写入仅为已保留的 ingress 生命周期记录，不执行行情更新/业务写入。
+
+经维护者允许，仅测试 admin 将现有模型 Key 复用于搜索 credential；Product API
+版本1→2，重新解析保存后的 Key 鉴权200（原401）。未调用模型/搜索来替代研究验收。
+生产未变更。真实旧 Runner 签名清理、实际恢复、候选部署及同题研究仍 NOT_RUN。
