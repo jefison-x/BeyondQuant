@@ -546,3 +546,24 @@ Git e7c488d8；分别 SHA256 2dd1139f13438b859a1e12f42b2c390f5e4de9586bd49042577
 经维护者允许，仅测试 admin 将现有模型 Key 复用于搜索 credential；Product API
 版本1→2，重新解析保存后的 Key 鉴权200（原401）。未调用模型/搜索来替代研究验收。
 生产未变更。真实旧 Runner 签名清理、实际恢复、候选部署及同题研究仍 NOT_RUN。
+
+### 实际恢复与第二个收尾阻塞
+
+实际原 Runner cleanup MAC 校验 PASS，reason=cancelled、code0、cleanup=proven，
+receipt SHA f4cd19a79c0ef350f4480ce9429316d2b67bc5d3d0768031f53d6921cac61795。
+Helper 只补 process_exit_confirmed；Backend finalize exit0，proof SHA
+c917f101ad5f8d02dc8a769c99cbc25ab4e99cbdc933209a492551cd96732f53。
+旧 Root completed/closed、原seq38 receipt落库，原unknown不改。
+
+测试 Backend 已更新本地镜像5655da84…，两MCP更新fce67cc3…，生产不动。
+旧会话GET仍保留2条消息与原seq38 terminal；事件订阅实际409。根因是原binding
+sequence1与Gateway tail38不等，阻塞正常closed-before-ACK恢复。经独立审查，
+在ADR0117原终态ACK范围内只允许完整原binding摘要+原receipt+已证明进程退出+
+initial/tail38的唯一组合。35项Runtime测试PASS，包括真实恢复函数写38、生成39
+并ACK39，且不创建旧native harness；其他binding字段/receipt/cursor偏差均拒绝，
+原通用gap拒绝测试仍PASS。此补充尚未部署时不宣称旧会话接续已PASS。
+
+构建首次错误：Dockerfile FROM image ID被BuildKit当作registry路径；停止该批，
+保留失败说明，给已核对image ID打本地base tag后成功派生镜像。未改依赖或热补丁。
+Runtime新增测试因宿主缺httpx未收集；改用既有运行镜像依赖。普通10002用户运行
+Engineering manifest夹具会被owner保护拒绝；明确root Engineering测试身份后35PASS。

@@ -81,3 +81,19 @@ qualifying differing data/search conditions. Production stays untouched.
 
 Independent Proposed-design review: PASS for this narrow uncertainty-
 acknowledgement design; not implementation, deployment or recovery acceptance.
+
+## Exact original terminal ACK implementation evidence
+
+The original V1 binding was persisted at sequence 1, while Gateway already has
+its genuine terminal at sequence 38. After signed process cleanup and Backend
+closure, the ordinary recovery cursor equality still rejected this retained ACK
+race. The accepted original-terminal ACK scope above therefore uses one exact
+exception: the complete original canonical binding SHA256
+`6bb63a1ed858b88d164fa8b66a95a47ef07a8077f10ec739ed6d269adc25fb7d`
+with only `process_exit_confirmed=true`, the original lifecycle receipt sequence
+38 / event SHA256 `3d33d004ca54667c98b1588ecb4a9838e93f47d05b236a5f5d533848141b29b6`,
+and integer initial/tail sequence 38. Gateway still independently matches the
+Backend closed row and original persisted terminal. Runtime then uses the normal
+settlement write at 38 and recovery boundary/ACK at 39 without resuming the old
+native child. Every other binding/receipt/cursor retains the existing rejection.
+This is the fixed ADR-0117 ACK completion, not a general trace-gap exemption.
