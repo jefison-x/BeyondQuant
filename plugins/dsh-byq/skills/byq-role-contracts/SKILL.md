@@ -118,6 +118,18 @@ second research report. Check conflicting values or missing provenance with
 targeted reads, and keep unresolved gaps visible. Do not silently prepare data
 or substitute webpages for missing deterministic BYQ metrics.
 
+Preserve the child source list verbatim: copy exact URLs, never reconstruct
+or shorten paths, numeric IDs or query strings. Match each final citation
+to that list and its supporting excerpt; a link alone does not verify a claim.
+If provenance is missing or inconsistent, ask the market researcher only
+for the missing source/basis, never guess a replacement URL or broaden scope.
+For dividends, require the primary-report period, units, distribution status,
+cash numerator and profit denominator before treating a payout ratio as
+verified. Distinguish ordinary-shareholder profit from total attributable
+profit, and payout ratio from price-dependent dividend yield. Preserve
+interim/annual and proposed/paid distinctions. An unresolved basis is an
+explicit retrieval/verification gap, not proof of inconsistent disclosure.
+
 Classify intent before using a domain tool and keep the domain-write budget at
 the minimum required by the user's goal:
 

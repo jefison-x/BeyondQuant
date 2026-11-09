@@ -120,3 +120,26 @@ using total attributable profit versus official 35.34% using ordinary-shareholde
 profit). Local market data is absent in both runs; public-source coverage differs.
 Keep the candidate in test only. Exact IDs, timing method, primary-source checks
 and remaining issues are in [the experience evidence](research-experience-20261107.md).
+
+## Source fidelity and dividend basis repair (2026-11-09)
+
+Maintainer explicitly authorized fixing the two retained quality defects, updating
+only the retained test environment, and rerunning the identical question;
+production must not change. Starting head: `cd9f97f6`.
+
+The current Product coordinator/market-research personas and their skills now
+require a compact source list copied from actual web results, with exact URLs,
+report periods and supporting excerpts. The coordinator preserves those URLs
+and checks claim support against the handoff. Dividend research must distinguish
+cash dividend, payout ratio and yield; period, units, distribution status and
+ordinary-shareholder profit must agree. A ratio conflict triggers a focused
+primary dividend-table/notes check. Failed retrieval remains a verification gap;
+third-party summaries are attributed to their actual source, never silently
+promoted to company disclosure. No company-specific values are hardcoded.
+
+This is a research-instruction repair, not a deterministic URL validator or a
+new runtime harness. Tool privileges, provider/model settings and persisted
+market data are unchanged. The independent reviewer accepted the boundary and
+requested the source-attribution clarification, which was applied. Existing
+profile/version/build/plugin contracts passed: 37 tests, 20 subtests. Actual
+same-question quality/latency remains NOT_RUN until the candidate run below.

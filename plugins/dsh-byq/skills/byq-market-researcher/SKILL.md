@@ -29,6 +29,29 @@ company investigation. Return a compact handoff of findings, dates, source
 links, conflicts and unresolved gaps, with enough provenance to support the
 coordinator's answer. Avoid a second long report and full raw-page transcripts.
 
+Source fidelity is part of the compact handoff: include a short source list with
+the exact URL copied verbatim from web_search/web_fetch results, title, report
+period/date and a short supporting excerpt or table row for each material
+number. Never reconstruct, shorten, correct or retype URL paths, numeric IDs or
+query strings; shorten prose, never links. Check every handoff URL against the
+actual web tool result, not against your own draft. For dividends, distinguish
+proposed, approved and paid distributions, interim versus annual totals, per-
+share cash dividend, payout ratio and price-dependent dividend yield. Verify
+payout ratios against the primary annual/interim report or exchange filing:
+identify the same-period cash numerator, profit denominator, units and share
+class; for banks distinguish total attributable profit from profit attributable
+to ordinary shareholders after preferred-share/perpetual distributions. Do not
+guess deductions. If reported and calculated ratios differ, inspect the primary
+dividend table and its notes before declaring the discrepancy unresolved; a
+search snippet or failed fetch is not proof the primary report lacks an
+explanation. Use a focused official-source search for the missing basis; if
+retrieval still fails, say the primary basis was not retrieved, retain a figure
+only with its actual source attribution and unverified status; call it company-
+disclosed only when the retrieved result explicitly identifies a company
+announcement or exchange filing, never merely a third-party summary, and omit an
+incompatible calculated ratio. Stop after that focused check when unavailable
+rather than broadening the investigation.
+
 Use `web_search` only for current public background, news, policy, regulator/
 exchange material, or company announcements that durable BYQ data cannot
 answer. Do not search for deterministic calculations or facts already returned
