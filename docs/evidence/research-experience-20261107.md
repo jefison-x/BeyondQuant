@@ -567,3 +567,84 @@ initial/tail38的唯一组合。35项Runtime测试PASS，包括真实恢复函�
 保留失败说明，给已核对image ID打本地base tag后成功派生镜像。未改依赖或热补丁。
 Runtime新增测试因宿主缺httpx未收集；改用既有运行镜像依赖。普通10002用户运行
 Engineering manifest夹具会被owner保护拒绝；明确root Engineering测试身份后35PASS。
+
+
+### 测试环境恢复闭环与对照准备
+
+实际 Gateway 首次恢复在Runtime已写settled sequence38/pending boundary39后返回502：
+`_append_and_ack_recovery_boundary`仍拿恢复前transfer_required绑定检查settled。
+核对持久新绑定后，通过正常第二次attach完成Gateway trace append和Runtime ACK；
+SSE HTTP200、session.reattached sequence39，绑定recovery_boundary=acknowledged。
+没有重放旧child。这个首次502作为遗留体验问题保留，不用后一次成功抹去失败。
+
+与恢复前备份副本逐行对比，旧22条ingress和2条消息完全相同；生产17个容器
+ID/image/StartedAt均未改变。浏览器控制再次因browser.user unavailable不可用，
+当前验证是正常测试用户的Gateway/Product API，不是新的页面验收。
+
+Reviewer发现初次派生ACP镜像漏了runtime.py依赖的research_request_gate.py，
+该不完整镜像未部署；补齐匹配文件后，实际派生基线镜像内45项定向测试PASS。
+两组共用ADR0117恢复、模型错误提示与MCP只读分类修复，研究profile/skills不同：
+基线ACP 4da967b693d4d29b4084823b1929fc63a51dda8ddb6bad484ea47a9041fd1462；
+优化ACP d1fd650ba04a91daf4377088b4a975b845a958bafe29d2d497e7635ce4fbcd08。
+四个ACP角色统一更新；优化轮还更新既有Frontend候选fa2b0669…，保留所有卷与账号。
+
+同题SHA256 20bd2af90641878114ada3b32213cd79630cc9ebd5b4e70ac65961adde317be7。
+基线conversation_f55ff4df4dae4f50b252ca46293e9c23，Root3ed362cff3b04e22a2a52cbc4b578bb0，
+Backend01:23:48.883711至01:29:05.465857 UTC=316.582146秒；completed/closed、unknown claims0。
+优化轮conversation_fc2b4d3836ef49cd9322fb4ecf1f6d00，Root9bfa17cea8094571b035dbf7d2dc4b28，
+正在运行，未提前宣称提速。相同模型、账号、搜索Key和本地数据覆盖；外部网页/缓存
+与模型随机性不能锁定，单对照只能描述这两次运行，不是生产统计基准。
+
+### 2026-11-09 同题对照最终结果
+
+两次均真实调用模型/搜索，经正常用户 Gateway/Product API 提交相同问题。
+优化轮Backend01:30:51.529142至01:35:16.306995 UTC=264.777853秒，
+completed/closed、unknown domain claims0。与基线相比短51.804秒（16.36%）。
+轮询观测320.48/268.52秒含5秒轮询误差，不作为精确对比口径。
+
+| 指标 | 基线 | 优化版 |
+| --- | ---: | ---: |
+| Backend Root 全程 | 316.582秒 | 264.778秒 |
+| 模型请求次数（均HTTP200） | 33 | 29 |
+| 模型请求区间并集 | 235.156秒 | 141.937秒 |
+| web_search次数 / 区间 | 10 / 68.433秒 | 10 / 114.029秒 |
+| web_fetch次数 / 区间 | 12 / 4.757秒 | 11 / 3.115秒 |
+| 本地工具区间 | 3.646秒 | 2.695秒 |
+| 区间外差额 | 4.590秒 | 3.002秒 |
+| 上游output tokens（含内部生成，非可见字数） | 34140 | 19460 |
+| 最终assistant字符数（含Markdown/URL） | 5237 | 3687 |
+
+工具以同native session的callId配对；不重复计入父级delegate等待；上表类别
+区间并集无交叠。模型elapsed_ms自报合计234.968/141.863秒，与admission至completed
+区间有少量测量差异。基线最后一次模型请求91.609秒/13512 output tokens。
+此次主要减少了模型生成，搜索次数没降，搜索耗时反而增加；不能归因于数据库提速。
+两轮profile/binding、执行选项完全一致，搜索credential ID/version2/status一致。
+初次整对象比较因原快照只存3个字段而失败，改为比较这3个精确字段后PASS；未改Key。
+
+研究质量 **未通过完整验收**：
+
+- 两轮明确本站600036行情/估值/财务为空，未创建策略、股票池或订单；记录的工具
+  调用也无这些写操作。只能验收缺数据场景，不能当作生产完整数据研究验收。
+- 核心盈利抽检相符：2026前三季营收2648.52亿元、归母净利润1164.76亿元，与
+  [招行官方2026三季报](https://s3gw.cmbimg.com/lb5001-cmbweb-prd-1255000097/cmbir/20261030/ba4dc24b-e84a-4228-bbf6-a1b52e638eca.pdf)
+  一致；不代表本次逐项核对了全文所有风险指标。
+- 基线给出2025分红比例35.34%；优化版计算508.43/1501.81≈33.9%后标为未核实差异。
+  [官方2025年报第100页](https://s3gw.cmbimg.com/lb5001-cmbweb-prd-1255000097/cmbir/20260327/e1efc81f-7ad9-41b7-9b02-5db202026930.pdf)
+  已明确以普通股股东净利润1438.74亿元为分母，比例35.34%。优化版没有捏造一个
+  确定比例，但把可解决的口径问题留成缺口，质量较基线回退。
+- 优化版引用 `https://finance.eastmoney.com/a/202610303916817.html` 不在实际
+  web_search/web_fetch结果中；它首次出现在子研究员最终assistant消息(seq141)，
+  随delegate结果传给主助手再进入最终回答。原工具结果为同日期的3916880757、
+  3916942017等完整文章ID。这是摘要传递时的链接保真失败；未把浏览工具无法打开
+  直接当成HTTP404证据。其余引用仅检查存在于原工具结果，不等于逐条内容背书。
+- 优化回答的公开信息截止停在11月2日，基线包含11月6日第三方延迟行情；两轮
+  都标注来源与缺口，但信息覆盖并非等量。单对照提速不能称作同质量统计提升。
+
+最终优化环境健康检查PASS；原历史会话在最终部署后正常SSE HTTP200、接续seq41。
+生产17个容器ID/image/StartedAt最终再次逐项一致且running，未推送、合并或部署生产。
+本地代码HEAD5bd27ffe，证据提交另记；远端CI/完整浏览器验收NOT_RUN。
+
+剩余整改优先项：来源URL原样传递及输出引用核验；银行分红/估值的分母与期间口径；
+缺行情时直达有界数据准备；首次closed-before-ACK恢复的旧绑定502及可理解提示。
+此前尚未完成的股票中文搜索/多选、筛选条件扩展、完整回测向导、按实际覆盖推荐
+模型日期仍不因本次研究对照自动关闭。测试环境与原用户页面保留供共同验证。

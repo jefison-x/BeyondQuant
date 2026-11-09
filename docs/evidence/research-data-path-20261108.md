@@ -104,3 +104,19 @@ scheduler or a measured guarantee of faster research.
   end-to-end latency comparison, MCP tool/data qualification, hosted PR CI.
 - No push, PR, merge, release or deployment. Existing test/production
   environments, pages, credentials and data are retained.
+
+## Retained test deployment and paired result (2026-11-09)
+
+After ADR-0117 exact historical recovery, the same question was submitted once
+per profile through the existing test Gateway with unchanged user/model/search
+credential version and execution options. Baseline 316.582s versus candidate
+264.778s (16.36% shorter); model calls 33→29 and model time 235.156→141.937s.
+Search calls remained 10 and their time increased 68.433→114.029s. This supports
+less generation work in this pair, not faster database reads or a production SLA.
+
+Quality is not accepted: the candidate changed a source URL during the child
+handoff and left the official dividend denominator unresolved (33.9% calculated
+using total attributable profit versus official 35.34% using ordinary-shareholder
+profit). Local market data is absent in both runs; public-source coverage differs.
+Keep the candidate in test only. Exact IDs, timing method, primary-source checks
+and remaining issues are in [the experience evidence](research-experience-20261107.md).
