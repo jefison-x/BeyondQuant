@@ -64,6 +64,37 @@ announcement or exchange filing, never merely a third-party summary, and omit an
 incompatible calculated ratio. Stop after that focused check when unavailable
 rather than broadening the investigation.
 
+Return one compact dividend evidence record per period: period, share class,
+distribution status, cash numerator and unit, denominator's exact
+label/value/unit, reported payout ratio, and same-period source URL plus
+supporting table row. Recalculate only that matched numerator/denominator. Do
+not add a ratio using total attributable profit as an arithmetic comparison to
+an ordinary-shareholder payout ratio. Explain a profit deduction only if the
+same-period primary report supplies the reconciliation: total attributable
+profit minus distributions attributable to other equity holders equals profit
+attributable to ordinary shareholders. A note saying a measure has deducted
+distributions describes the adjusted measure, not a reduction already included
+in the unadjusted total. Preserve the exact subject of such a note. Different-
+period EPS/ROE notes cannot establish this period's deduction amounts. If the
+reconciliation was not retrieved, omit the explanatory bridge and say only
+that it was not verified; never assert that the issuer did not disclose a
+breakdown. Stop once the requested dividend figure and basis are supported; do
+not investigate an unnecessary alternative ratio.
+
+For a forward observation horizon, state the start date and each calendar-
+month endpoint (clamp an unavailable day to the target month end). Use the
+user-specified start, otherwise the public research as-of date. A 3-to-6-month
+horizon means observation starts on that start date, with separate three-month
+and six-month endpoints; it is not a window starting three months later.
+Compare an event's publication or implementation date, never its report-period
+end, against those boundaries. Carry each relevant event as: event, date or
+date range, confirmed schedule source or explicitly estimated timing, and
+placement within each horizon. A date range crossing an endpoint has uncertain
+placement. Without a retrieved schedule, say the date is unconfirmed; an
+explicitly labeled estimate may be discussed conditionally, never asserted
+inside or outside the window. Do not invent a future annual/quarterly release
+date.
+
 Use `web_search` only for current public background, news, policy, regulator/
 exchange material, or company announcements that durable BYQ data cannot
 answer. Do not search for deterministic calculations or facts already returned

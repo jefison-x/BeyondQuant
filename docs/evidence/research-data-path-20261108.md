@@ -385,3 +385,24 @@ delegate等待不重复计入。本轮比上一完成轮少34.660秒（13.44%）
 原始证据在既有私有目录：date-timeout-full-*.txt、date-timeout-gc-*-v2.txt、
 date-timeout-retest-*、date-timeout-environments-{before,deployed,final}.json，
 包含首次失败；未推送、合并或修改生产。
+
+### 2026-11-14 分红解释与观察期判断：候选修复
+
+维护者接受上一轮建议，继续修复这两个已复现的质量错误、更新测试并同题复测；
+生产不动。Git起点6b08dae5，复用当前隔离工作树，不推进Product Phase。
+核对上一轮root/child最终公开text（不读取reasoning）后，确认不适用的33.85%对照、
+跨期扣除解释和“未逐项披露”断言已在child交接出现，root照搬；child未来排期
+判断也缺少边界依据，root另添加未核实的一季报窗外判断。
+
+本次仅调整两角色persona及对应skill：交接保留同期间/股类/状态的分子、分母
+原标签、单位、原表行和来源；只有同期间主报告调节表才可解释利润扣除，
+不兼容算术对照直接省略，未取得依据不等于公司未披露。主角色独立核对交接。
+观察期从明确起点计算各日历月终点，分别判断三个月/六个月；按披露或实施日
+而非报告期判断，区分确认排期与预计，跨终点区间保持不确定。不增加工具、
+权限、硬编码股票数字或第二套harness。身份及manifest哈希同步。
+
+37项版本/构建/插件合同与20subtests PASS，切片dev-check及diff检查PASS。
+独立Reviewer：候选Functional/Architecture PASS；真实质量尚待Product复测。
+复用前轮完整Node24镜像ec90cb94…作为限定派生基础，仅覆盖研究profile/identity/skills；
+不声称重新完成Full或远端CI。部署前生产17容器运行（12 healthy），测试10 healthy；
+仅两条既有authority_revoked_unconfirmed root，未发现正在获授权执行的新研究。

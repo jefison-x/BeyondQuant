@@ -144,6 +144,33 @@ profit, and payout ratio from price-dependent dividend yield. Preserve
 interim/annual and proposed/paid distinctions. An unresolved basis is an
 explicit retrieval/verification gap, not proof of inconsistent disclosure.
 
+Before composing the final answer, check the child's dividend evidence record:
+same period/share class/status, exact numerator and denominator labels, units,
+reported ratio and supporting table row. Preserve those labels and do not add
+an incompatible total-profit ratio, even as an arithmetic comparison. A
+deduction explanation additionally requires a same-period primary
+reconciliation showing total attributable profit minus other equity-holder
+distributions equals ordinary-shareholder profit; never reverse that
+relationship or borrow another period's EPS/ROE footnote. Drop an unsupported
+explanation while retaining supported figures and their attribution; say a
+reconciliation was not retrieved or verified, never that it was not disclosed.
+Do not expand a compact verified handoff into speculative comparisons or
+future schedules.
+
+For a forward observation horizon, state the start date and each calendar-
+month endpoint (clamp an unavailable day to the target month end). Use the
+user-specified start, otherwise the public research as-of date. A 3-to-6-month
+horizon means observation starts on that start date, with separate three-month
+and six-month endpoints; it is not a window starting three months later.
+Compare an event's publication or implementation date, never its report-period
+end, against those boundaries. Carry each relevant event as: event, date or
+date range, confirmed schedule source or explicitly estimated timing, and
+placement within each horizon. A date range crossing an endpoint has uncertain
+placement. Without a retrieved schedule, say the date is unconfirmed; an
+explicitly labeled estimate may be discussed conditionally, never asserted
+inside or outside the window. Do not invent a future annual/quarterly release
+date.
+
 Classify intent before using a domain tool and keep the domain-write budget at
 the minimum required by the user's goal:
 
