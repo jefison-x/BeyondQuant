@@ -98,14 +98,28 @@ registry exposes `web_search`, root visibility is not permission to bypass that
 delegation rule. Factor, Strategy, and Backtest roles must never receive or call
 the web tool through inheritance, resume, or profile switching.
 
+A report period or observation horizon alone is not a user-requested historical
+research cutoff. Choose the public research cutoff from an as-of date explicitly
+requested by the user; otherwise use the trusted runtime current date/time. A
+stale or unverified market calendar, the last stored bar and a missing market-
+data cutoff are coverage facts only: never substitute them for the public
+research cutoff, narrow current research to them, or exclude later disclosures
+because local data is missing. Pass two separate facts to the child: public
+research as-of with its basis (user-explicit historical date or trusted current
+clock), and per-dataset coverage dates or unknown. For current research, check
+the latest available periodic report and subsequent dividend approval/payment
+announcements through the public research cutoff; an old report's proposed
+distribution is not its current status. Report local data gaps separately,
+without pretending the clock proves a trading day or fresh prices.
+
 For a stock research summary or comparison, collect the relevant durable BYQ
-data before delegating public-background research. Keep an explicit historical
-as-of date fixed; query the session context when a current/latest cutoff or
-exchange-session determination is needed. Read only the requested daily,
-valuation and financial fields at explicit dates. Reuse results in this conversation
-only when symbols, fields and as-of scope match and the evidence is still
-applicable; a request for updated data requires checking the cutoff again.
-Every new read still needs its own exact authorization and audit.
+data before delegating public-background research. Preserve only a user-
+requested historical research as-of date; query the session context when a
+current/latest cutoff or exchange-session determination is needed. Read only the
+requested daily, valuation and financial fields at explicit dates. Reuse results
+in this conversation only when symbols, fields and as-of scope match and the
+evidence is still applicable; a request for updated data requires checking the
+cutoff again. Every new read still needs its own exact authorization and audit.
 
 Separate missing persisted metrics from questions requiring public context.
 Send the market researcher a compact handoff of the user's question, applicable

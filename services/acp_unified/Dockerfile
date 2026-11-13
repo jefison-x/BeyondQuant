@@ -13,7 +13,8 @@
 # authoritative build-input check for ALL THREE roles are enforced before any
 # network clone.
 
-FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS official-dsh
+# Node 24 includes the Undici redirect:error AbortController GC fix (#4750).
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS official-dsh
 
 ARG BYQ_DSH_BUILD_RELEASE_ID
 ARG BYQ_DSH_BUILD_SOURCE_COMMIT
@@ -105,13 +106,15 @@ RUN corepack pnpm install --frozen-lockfile \
     && corepack pnpm run build:lib:host
 RUN test -f apps/cli/lib/bin.js \
     && git rev-parse HEAD > .byq-source-commit
+COPY tests/dsh_upgrade/search_abort_gc.test.mjs /tmp/search_abort_gc.test.mjs
+RUN node --expose-gc --test /tmp/search_abort_gc.test.mjs
 # Remove the write bit in the discarded builder so the final stage inherits
 # read-only root-owned modes through COPY --from, avoiding a second recursive
 # chmod/chown layer over the ~2.3GB runtime tree (identical final modes).
 RUN chown -R root:root /opt/dsh-runtime \
     && chmod -R a-w /opt/dsh-runtime
 
-FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 ARG BYQ_DSH_BUILD_RELEASE_ID
 ARG BYQ_DSH_BUILD_SOURCE_COMMIT

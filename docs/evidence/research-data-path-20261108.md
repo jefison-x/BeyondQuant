@@ -240,3 +240,76 @@ are healthy. Final production inventory again matched all 17 pre-update
 container IDs/images/start times. No production change, push, PR, merge or
 remote CI. Private raw evidence and both cancelled/completed test conversations
 remain retained under the existing research-candidate-20261109 evidence folder.
+
+
+### 2026-11-13 日期边界修复与搜索超时调查（未部署）
+
+本轮只修复已经由 native delegate 参数证明的日期混淆：父级把本地交易日历
+覆盖终点 2026-03-30 强制当作公开研究截止日，用户并未要求历史研究。
+父子角色、研究技能和可信时钟说明现在区分用户显式历史研究日、当前研究日、
+各数据集覆盖日；年报期间和“观察3至6个月”不构成历史研究请求。当前研究
+需检查最新已披露定期报告和后续分红批准/实施状态；明确历史研究仍排除未来披露。
+没有将系统时间当作交易日或最新行情证据，也未改动业务授权或数据。
+
+验证与审查：
+- `node --test plugins/dsh-byq/runtime/byq-runtime-time-context.test.js`：4 PASS，
+  包含上海当地午夜切换和历史研究/覆盖边界。
+- `pytest` 定向 authoritative version/build 与 plugin registry：37 PASS、
+  20 subtests PASS；profile、identity 和 authoritative manifest 哈希一致。
+- 独立 Reviewer：日期 Functional PASS、上述本地 Tests PASS、Clean Break
+  Architecture PASS。Product 质量/耗时、镜像与部署验收均 NOT_RUN。
+
+搜索超时仍 OPEN，不属于本次已修复项：
+- 保留先前 root 1274bf9d61c24dbe914768a8b1584eb6、native child
+  dd999d3f-94ff-4b82-8628-c3ca41f94085 seq104→107 的604.706秒失败。
+  最终错误为60000ms工具超时，但记录没有取消信号实际触发时间或HTTP结束时间；
+  不能仅凭该错误断言信号在第60秒已送达HTTP层。
+- 核对实际部署镜像 0d87206caf37eb0a849c1444e7bb56ed5db5b0b91c4039b635a14ee5c3b73249
+  内 timeout-policy、deadline、tool signal融合、批量搜索及DeepSeek fetch路径。
+  guard等待下游退出；信号逐层传递。deadline使用自建AbortController和setTimeout，
+  不是AbortSignal.timeout。未发现足以解释该历史等待的确定代码缺陷。
+- 同镜像、无外网、无真实凭据的原生provider+deadline测试，等待响应头、
+  等待正文、双查询分别约102/102/101ms终止，命令exit0。仅证明这些本地场景。
+- 原生registry链夹具首次因测试依赖解析失败未运行；核对实际导出后，工具链
+  109ms返回TOOL_TIMEOUT且断言通过，但清理调用不存在的ctx.dispose导致exit1。
+  整项不得记为PASS，已停止该夹具批，不继续扩展替代harness。
+- 查询同一历史时段系统journal，没有取得支持休眠解释的记录；不据此排除所有
+  调度、网络或运行时因素，也不将上游类似问题直接当成本次根因。
+
+未添加丢弃在途调用的Promise.race或修改通用DSH超时语义。遵循用户“两项修好
+后再更新测试环境”的顺序，本轮没有构建/部署候选，没有新真实研究调用，
+没有生产变更；保留现有测试容器、数据、账号和用户页面。下一验收仍使用原题
+SHA256 20bd2af90641878114ada3b32213cd79630cc9ebd5b4e70ac65961adde317be7，
+不得将后续单次未超时运行当作历史超时根因或修复证据。
+
+
+### 2026-11-13 继续定位：复现并修复 GC 后 HTTP 取消失效
+
+后续调查取得了前一阶段缺失的可证伪结果。当前镜像 Node22.23.3 / Undici6.28.1
+中，原生 DeepSeekSearchProvider 使用 `redirect: error`，HTTP 已返回响应头但
+正文未结束时，垃圾回收可使 Request/AbortController 提前失去保活引用。
+外部 deadline 已触发，正文读取却仍在等待。原生 provider 的成功正文和错误正文、
+单/双查询四个场景均复现；不强制 GC 的前置对照能正常取消。
+官方 [Undici #4627](https://github.com/nodejs/undici/issues/4627) 和
+[合入修复 #4750](https://github.com/nodejs/undici/pull/4750) 对应同一机制。
+当前 Node22 内置 fetch 没有保活 requestObject；Node24.21.0 / Undici7.29.1
+已将其保留至 fetchParams。没有修改 DSH 源码、取消语义或跳过重定向保护。
+
+新增 `tests/dsh_upgrade/search_abort_gc.test.mjs`，使用同一原生 provider/deadline，
+仅访问隔离容器内 HTTP fixture，不使用真实 Key/模型：
+- 旧镜像：等待响应头2 PASS；成功/错误正文4 FAIL。信号约300ms触发，正文
+  直至fixture约1500ms强制断开连接才退出。
+- 临时Node24二进制派生候选：6 PASS，约300–308ms退出，请求连接正常关闭。
+- 第一版连接断言把Undici额外建立的闲置连接也计入，导致headers额外失败；
+  修正为只跟踪实际req.socket后重跑，原输出保留，最终使用v2红/绿证据。
+
+这证明当前版本存在可导致搜索超时不收敛的缺陷，并验证上游修复覆盖该条件。
+历史604.706秒记录没有GC/响应头/取消时点，故不声称当时确实发生GC或全部
+604秒已被逐秒解释。不能把缺陷复现升级为未采集到的历史事实。
+
+源码修法只在当前正式使用的 `services/acp_unified/Dockerfile` 将builder和runtime
+固定到同一Node24镜像digest，并在builder内运行上述回归。DSH release/commit/lock
+不变。独立审查Functional/Architecture PASS；依赖/配置37项及20subtests PASS。
+仅替换Node二进制的派生镜像用于红绿定位，不部署；从修改后的统一Dockerfile
+完整重建和最终镜像验证仍为准入门槛，完成后才更新四个测试ACP容器及同题复测。
+生产不在本轮部署范围内。
