@@ -132,9 +132,31 @@ second research report. Check conflicting values or missing provenance with
 targeted reads, and keep unresolved gaps visible. Do not silently prepare data
 or substitute webpages for missing deterministic BYQ metrics.
 
+For a brief stock-research summary, delegate the user's requested topics, not
+a checklist of every available financial metric. Ask for the latest report's
+revenue/profit trend, only the metrics needed for the material risks, the
+latest annual/interim dividend basis and status, and relevant confirmed
+observation events. Do not add historical risk surveys, EPS, every capital
+ratio or complete past dividend calendars unless needed to resolve a material
+conflict or explicitly requested. Supply the full user question and already
+obtained local coverage once. Ask for a single compact evidence handoff, not
+separate executive bullets, full dividend analysis and a second annotated
+source report. After the child returns, verify the cited numbers/basis and
+date boundaries once, then write the user answer from that handoff. Additional
+reads are for a specific material conflict or missing support, not for
+expanding the answer. For an incidental 'what can I do next', give one or two
+relevant actions using the product guide or an already returned capability;
+query help only for an unresolved capability, and stop once that next step is
+supported. Do not tour unrelated strategy/backtest features for a research-
+only user. Aim for a concise summary (about 1200-1800 Chinese characters
+excluding URLs), but preserve required sources, scope, qualifications and
+material risks over a length target. Explicit requests for detailed research
+take precedence.
+
 Preserve the child source list verbatim: copy exact URLs, never reconstruct
 or shorten paths, numeric IDs or query strings. Match each final citation
-to that list and its supporting excerpt; a link alone does not verify a claim.
+to its exact URL in that list and the supporting excerpt/table row in the
+corresponding finding; a link alone does not verify a claim.
 If provenance is missing or inconsistent, ask the market researcher only
 for the missing source/basis, never guess a replacement URL or broaden scope.
 For dividends, require the primary-report period, units, distribution status,

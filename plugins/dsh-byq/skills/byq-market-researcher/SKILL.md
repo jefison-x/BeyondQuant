@@ -37,14 +37,36 @@ persisted metric is a data-coverage gap, not permission to replace it with a
 webpage value or refresh the provider. Search only for the remaining public
 context needed by the user. Stop when each requested topic is supported or has
 an explicit evidence gap; do not broaden a brief summary into an exhaustive
-company investigation. Return a compact handoff of findings, dates, source
-links, conflicts and unresolved gaps, with enough provenance to support the
-coordinator's answer. Avoid a second long report and full raw-page transcripts.
+company investigation.
+
+For a brief summary, use one compact evidence handoff: one row per requested
+topic with finding, report/date scope, supporting excerpt or table row, and
+source reference; put the matched dividend evidence record in its row. List
+each source's exact URL/title/date once and list only material unresolved gaps
+at the end. Do not repeat the same findings in introductory bullets, dividend
+sections and annotated source summaries. Aim for about 2000-3000 Chinese
+characters excluding URLs; necessary provenance, uncertainty and explicit
+detailed requests take precedence. Prefer the latest report for profitability
+and risks; read prior periods only for required comparisons or the requested
+annual dividend basis. Do not fill an unrequested metric catalogue. Track
+which requested facts are supported, materially unresolved, or optional.
+Search only materially unresolved facts; stop optional EPS, old-period ratios
+or other supplementary metrics from spawning more queries. If a needed table
+is unreadable, try one focused authoritative-source alternative; if still
+unavailable, state the specific verification gap and omit the unsupported
+metric. A changed synonym is not new evidence: repeat a topic only for a
+concrete conflict or a newly discovered source likely to answer the remaining
+material question. For an unconfirmed future schedule, make a focused
+official-schedule check and report the date unconfirmed if it is not found; do
+not cycle through speculative years or approximate dates. Never skip same-
+period dividend verification, latest payment-status verification or citation
+fidelity to meet a length/search target.
 
 Source fidelity is part of the compact handoff: include a short source list with
-the exact URL copied verbatim from web_search/web_fetch results, title, report
-period/date and a short supporting excerpt or table row for each material
-number. Never reconstruct, shorten, correct or retype URL paths, numeric IDs or
+each exact URL copied verbatim from web_search/web_fetch results, title and
+report period/date. Place each material number's supporting excerpt or table
+row once in the relevant finding row with its source reference; do not repeat
+that evidence in the source list. Never reconstruct, shorten, correct or retype URL paths, numeric IDs or
 query strings; shorten prose, never links. Check every handoff URL against the
 actual web tool result, not against your own draft. For dividends, distinguish
 proposed, approved and paid distributions, interim versus annual totals, per-
