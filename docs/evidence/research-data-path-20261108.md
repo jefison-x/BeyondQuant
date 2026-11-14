@@ -584,3 +584,205 @@ Gateway/Product API真实验证；本批浏览器NOT_RUN，不冒充浏览器验
 acp-summary-evidence.Dockerfile、summary-evidence-compose-preflight.json、
 summary-evidence-environments-{before,deployed,final}.json及summary-evidence-retest-*。
 首轮summary-scope-*完整保留，未用最终通过覆盖失败。
+
+
+## 2026-11-15 研究措辞与缺数据接续流程整改
+
+本次维护使用原隔离工作树。研究规则提交 bcdcc08f，Product 准备流程
+907d5da2，空交易范围后端校验 78b8c2b2，指引与实际上限一致性修正 f8f1625e，
+重试回归 db63a7e6。更新范围为 byq-development-test，生产保持原部署。
+远端 CI、推送和生产发布均 NOT_RUN。
+
+### 功能与恢复
+
+原会话增加准备研究数据入口，显式确认规范代码、日期及所需字段。普通用户通过
+Gateway/Product readiness 查看覆盖，缺口生成仅携带范围的管理员链接。管理员
+复核后通过新增 Product preparation API 复用 MarketAutomationStore 持久化准备
+请求，原会话必须重新检查同一范围后才能带入续研草稿，发送仍由用户确认。
+
+范围限 1–20 个标的、180 个自然日。估值与财务字段使用现有允许列表，准备沿用
+按交易日获取的既有 Data Plane。普通用户无准备写权限。任务完成回执只描述执行
+状态，字段值、分红口径与来源仍需续研核实。零交易日、零有效记录范围阻止准备。
+
+独审发现最初实现的 retry_terminal=False 使终态任务无法恢复。现已加显式管理员
+重试，按 request_id、requirement hash、status、completed_at、error 生成终态版本，
+在行锁事务内对当前版本做单次状态变更。同一范围重提只返回原请求；失败/已完成
+但覆盖仍缺需要重新确认重试。响应中断先只读刷新原任务，旧版本不能重新排队
+下一代失败。新 API 不暴露其它领域准备任务。
+
+范围草稿按用户和会话保存在 sessionStorage，页面刷新后恢复，覆盖结果必须重查。
+关闭标签或换设备需要重新填写范围。现有输入框草稿追加续研前需确认。
+
+### 定向验证
+
+- Backend data API 初批 13 项、CAS 真实 PostgreSQL 回归 1 项通过，后续零范围 2 项、
+  retry API 权限及当前覆盖再核对 1 项通过。既有 readiness/repair 4 项通过。
+- Gateway preparation admin-only 转发回归 1 项通过。
+- Frontend API/范围校验/组件初批 12 项通过，补充重试中断恢复 1 项通过。
+  首次新增组件测试定位器错误已修正，失败未混作通过。
+- 前端 vue-tsc 和 Vite 构建通过。profile/identity architecture 25 项通过。
+  首次 unittest 模块路径错误已纠正，临时文件受只读沙箱限制后使用获批执行完成。
+- git diff --check、dev-check local_syntax PASS。定向测试使用隔离、无外部网络、
+  无持久卷的 PostgreSQL byq_domain_test，未对保留测试业务库执行测试 DDL。
+- Independent Reviewer 对终态恢复限定 PASS。其零交易日 API 意见已落实且两个
+  回归通过。Product 全链路仍受以下实际数据源缺口约束。
+
+### 测试部署与浏览器
+
+七个既有服务替换为基于当前已验证镜像的限定派生候选，新增既有 data worker。
+预检时保留测试栈的八类待执行队列表均为零、自动调度关闭，获授权 active root
+为零。worker 使用测试密钥环，独立非特权 UID、只读文件系统，无主机数据挂载。
+心跳正常，last_error 空，自动调度仍关闭。
+
+Compose 等待部署通过，测试 11 个容器运行，10 个具有 healthcheck 的服务健康。
+新 worker 用数据库心跳验证。17 个生产容器 id/image/started/health/mounts
+逐对象匹配基线，原 10 个测试容器的挂载全部保留。快照验证曾因未序列化 tuple
+与 JSON list 比较误报，按同格式持久化快照复核一致，未发现实际挂载差异。
+
+真实 Chromium 使用 C 普通账号和 A 管理员、Gateway/Product API 验证。
+原会话 conversation_2fa02883797e4febbec58e3997e9646e，准备范围
+600036.SH / 20261113 / pb。普通用户 readiness 200、verdict unavailable，
+准备写 403。管理员链接只含范围，不含会话/身份；显式复核前提交按钮禁用。
+管理员确认后返回 409，明确提示无法解析唯一有效 Tushare 数据源。原会话刷新
+保留范围，复查仍缺失且无续研按钮。
+
+已现场核实该测试栈 Tushare 配置为空，环境无 TUSHARE_TOKEN。
+没有借用生产凭据，真实补数至 ready 的 Product 正向链路 NOT_RUN，阻塞为待配置
+测试 Tushare 数据源。已向用户请求在测试页配置专用 Key。
+ready 后填草稿分支目前只有定向组件证据，不能替代真实数据补齐验收。
+
+### 原题真实研究第一轮
+
+沿用 benchmark-question.txt，SHA256
+20bd2af90641878114ada3b32213cd79630cc9ebd5b4e70ac65961adde317be7。
+账号模型与执行配置与上轮逐对象相同。会话
+conversation_d865c34c4d0b441191619b2cedac8a5a，root
+71e139c44148401d94817b062789de26，completed/closed，unknown=0。
+持久化结算 178.700910 秒。25 个模型请求全 200，5 次搜索、9 次页面读取，
+没有工具错误。模型区间并集 115.608 秒、搜索 56.145 秒、网页 2.320 秒、
+本地工具 2.606 秒，区间可能重叠，不能简单相加等同总耗时。
+
+7/7 URL 与真实工具来源完全匹配，原生最终文本与持久化拼接完全一致。
+未创建策略、股票池、回测或交易。无行情/估值/财务覆盖仍明确披露，未检索到
+与尚未核实用语替代原穷尽式断言。
+
+质量第一轮保留 FAIL。下一步建议给出全年跨度，超过实际 180 天上限，使用了
+不存在的接续研究按钮，且普通用户检查/管理员提交的表述不准确。f8f1625e
+明确规范代码、范围上限、近端最小范围、管理员写权限和实际带入续研草稿按钮。
+只有四个测试 ACP 服务再更新，第一轮结果完整保留。
+
+本批私有原件目录为
+/home/jefison/.local/state/byq-maintenance/research-candidate-20261109/preparation-20261114。
+包括各镜像 Dockerfile、build log、image id、Compose 前后版本、deploy log、
+environments-before/after/final.json、browser.json、submission/product/terminal、
+answer.txt、metrics.json。guidance-corrected 子目录保存针对具体指引失败的纠正
+复测，未覆盖第一轮结果。
+
+
+### 指引纠正复测与公告状态纠正
+
+第二轮会话 conversation_042c3f70291b474687846bec77473487，
+root ff7a8a2261df42edb92836007c8ae188，结算 175.462513 秒，
+completed/closed，unknown=0。25 个模型请求全 200，5 次搜索、13 次页面读取，
+其中一次 web_fetch 错误；来源链接 3/3 精确匹配。原生文本与持久化差异仅为
+既有 Product 术语投影 coverage_unverified → 覆盖完整性尚未验证，使用源码
+project_public_answer_text 后完全一致。此核验曾在容器替换中途读取失败，
+等待 Compose healthy 后完成，没有重发研究。
+
+指引目标 PASS，规范代码 600036.SH、180 自然日上限、近期范围、管理员交接与
+带入续研草稿均准确。整体措辞目标继续 FAIL，每股金额/总额仍被写成尚未公告，
+检索缺口不能建立当前公告状态，三月计划写另行公告只证明当时计划。
+bc382b25 进一步限定逐句审查公告/披露/支付状态，明确历史公告的时间边界、
+本轮未检索到和本轮尚未核实，状态须各有相应日期的证据。25 项 profile/
+identity architecture 再验证通过。四个测试 ACP 服务更新后针对同一问题再次
+验证，前两轮失败不覆盖。
+
+测试 worker 的 Provider 环境已与 Backend 对齐，使用相同默认端点与测试密钥环。
+未引入独立端点配置；现场心跳正常、last_error 空、准备记录仍为零。
+
+
+### 第三轮、真实数据源与完整浏览器补数
+
+第三轮同题会话 conversation_561b9e773d414c7e829bc0b29e75aaa0，
+root e1ef48d228564e8a9c950e7355c318f7，completed/closed，unknown=0，
+结算 310.334831 秒。31 次模型请求全 200，13 次搜索、22 次网页读取，
+一次 web_fetch 错误，6/6 引用 URL 来自实际工具结果；Product 术语投影后最终文本
+与持久化完全一致。模型区间 175.528 秒、搜索 124.773 秒、网页读取 5.600 秒。
+这次多检索了分红批准决议及同口径分母，耗时高于上次 223.020546 秒，不能宣称
+稳定提速。前两次 178.700910 / 175.462513 秒同样不能证明稳定 SLA。
+
+金额改为本轮未检索到，批准状态有决议来源，准备入口与上限正确。仍保留两处
+措辞问题，具体日期尚未确定和地方融资平台敞口无量化披露，本轮检索缺口不足以
+证明这两个当前状态。d29b3d2c 对这些结尾缺口与日期句再限定，不把第三轮记录
+改为全面质量 PASS。最终测试候选应用这一修正，后续在同一会话验证真实续研。
+
+用户随后明确授权直接找生产 Key 配置测试。只读事务检查生产 credentials，
+生产有效来源为环境 TUSHARE_TOKEN。密钥经内存由生产容器传入测试管理员
+Product credential API，并由测试自身密钥环加密存储，未输出、写入证据或提交。
+生产无写操作。credential-copy-receipt.json 仅记录来源类型与测试目的地。
+
+首次真实准备 datarepair_2ab2e9c91d594ceca3981933d071ad6f 返回 failed /
+readiness_not_satisfied。Product readiness 精确定位证券目录缺少 600036.SH
+上市状态，非 Provider 猜测。管理员通过现有 security-master sync Product API
+提交 securitysync_2d6f1ed148fa42bea20a16ca31e3e871，completed，收到 5923，
+导入 5922，隔离 1 条，保留其现有验证/隔离规则。新目录快照
+securitysnapshot_11881223becf8c5508278a4d5b4146a2。
+
+相同 symbol/date/field 范围重新确认后按新目录快照形成准备
+datarepair_ec90f80062fe45fcab701bd343838f1e，queued → waiting_for_sessions →
+completed。20261113 市场任务 completed，持久化规范日线 5571 条、
+估值 5571 条。均由既有按交易日 Data Plane 路径取得，未伪造成逐股票 Provider 请求。
+
+真实普通用户浏览器持续复查同一范围达到 usable，仍在原会话、带入续研草稿
+成功且未自动发送。with-source/browser.json 记录该过程，初始回执为第一次
+失败任务，后续实际成功任务由 after-directory-submit.json 及数据库结算互证。
+首次失败保留。with-source/resumed-draft.png 为真实页面。
+
+d29b3d2c 同时修复此前暴露的目录前置死路。准备前遇到缺少证券状态时，返回
+可操作 409，指向证券目录，避免排入必然失败的准备。管理员审核卡可直接切换
+数据中心现有证券目录页，完成目录同步后重新确认相同范围。新增 backend
+回归通过，审批卡 3 项再次通过，vue-tsc/Vite 构建通过。
+
+最终 Backend、frontend、四个 ACP 测试服务更新，Gateway 和 Data Worker 保留
+此前已验证版本。真实浏览器在第三轮招商银行原会话打开目录按钮验证可达，
+复查 600036.SH/20261113/pb 为 usable，带入草稿并由用户已授权的测试动作点击
+发送。续研 root e34e4899667845129dab8ba6e4d86f91，原会话身份保持不变。
+这次覆盖就绪后的续研使用新数据，不能与先前无本地数据的同题样本做等条件
+耗时比较。continuation/ 保存原会话、草稿、截图、提交和结算原件。
+
+
+### 最终结算与验收范围
+
+续研 completed/closed，unknown=0。结算时间 2026-11-14T20:57:22.445371Z 至
+20:57:52.699156Z，**30.253785 秒**。8 次模型请求全部 200，本轮只执行持久化
+估值与交易日上下文读取，无新搜索或网页读取，无工具错误。模型区间并集
+28.255 秒、本地工具 0.892 秒。没有股票池、策略、回测或交易创建。
+公开最终文本按既有 Product 术语投影后与持久化完全一致，沿用的 3 个 URL
+逐项包含于同一会话上一轮已验证的 6 个来源中。metrics 的本轮 unmatched
+只表示没有在本轮重新抓取，unmatched_after_verified_history 为空。
+
+续研读取 600036.SH / 20261113 / pb=0.916，完整性 usable=true、complete=true，
+来源 Tushare 持久化数据集。工程只读 SQL 复核该行 PB=0.916，与公开回答一致。
+本轮对未读取的价格/PE/股息率明确列为缺口，具体分红日期写本轮未检索到，
+没有继续使用前轮无量化披露的推断。引用旧研究时保持日期和分红分母口径。
+
+最终裁定为**本次限定范围的缺数据→管理员准备→原会话复查→实际续研 PASS**。
+真实范围是一个交易日、一个 PB 字段。长区间、更多估值与财务字段没有再次做
+真实 Provider 补数测试，不扩展认定其已全量验收。跨设备范围恢复仍需重填。
+措辞规则及本轮续研缺口表述目标限定 PASS，三轮完整摘要中已发现的失败样本
+均保留，模型输出仍须按具体运行验收，不能认定未来所有句子均不再出现误断。
+
+最终独立 Reviewer 补查发现缺项列表最多 200 条，目录缺口可能被截断。
+f6328c7d 已改读未截断 missing_by_dataset，并以未截断/截断两个回归验证。
+Reviewer 确认阻断解除。最终只更新测试 Backend 至对应镜像，Product readiness
+现场再核为 usable；测试 worker 心跳新鲜、last_error 空，临时无持久卷测试 PG
+已停止，保留测试环境及数据。
+
+最终 environments-final-verified.json 与更新前生产 17 容器逐对象一致，测试原
+10 容器挂载一致。测试当前 11 容器（新增必要 data worker），现有环境、数据库、
+测试身份与原会话保留。生产只读获取用户已授权的 Key，未修改生产配置或容器。
+最终源码 f6328c7d，文档提交单独记录；未推送、合并或生产发布。
+
+完整原题耗时为三次 178.700910、175.462513、310.334831 秒，上轮基准
+223.020546 秒。模型/搜索次数与范围随实际检索变化，不能声明稳定提速。
+30.253785 秒属于单日 PB 就绪后的同会话续研，与完整联网研究分别列示。
