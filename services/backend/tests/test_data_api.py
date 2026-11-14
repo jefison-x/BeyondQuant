@@ -366,10 +366,14 @@ def test_preparation_retry_requires_current_receipt_and_rechecks_readiness(monke
     assert already_ready.json() == {"request_id": None, "status": "ready"}
     assert calls == [token]
 
-def test_preparation_explains_missing_security_directory_before_enqueue(monkeypatch):
+@pytest.mark.parametrize("truncated", [False, True])
+def test_preparation_explains_missing_security_directory_before_enqueue(monkeypatch, truncated):
     readiness, repair = _research_preparation_fakes(monkeypatch)
     monkeypatch.setattr(readiness, "assess", lambda requirement: {
-        "state": "missing", "missing": [{"dataset": "security_lifecycle", "symbol": "600036.SH"}],
+        "state": "missing",
+        "missing": ([{"dataset": "corporate_actions"}] * 200 if truncated
+                    else [{"dataset": "security_lifecycle", "symbol": "600036.SH"}]),
+        "missing_by_dataset": {"security_lifecycle": 1},
     })
     response = TestClient(main.app).post(
         "/v1/data-center/research-preparations",

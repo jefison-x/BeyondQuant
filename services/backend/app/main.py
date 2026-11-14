@@ -2367,7 +2367,7 @@ def create_research_preparation(payload: dict[str, Any], request: Request) -> di
     ))
     if isinstance(existing, dict):
         return _research_preparation_receipt(existing)
-    if any(item.get("dataset") == "security_lifecycle" for item in assessment.get("missing", [])):
+    if assessment.get("missing_by_dataset", {}).get("security_lifecycle", 0):
         raise HTTPException(
             status_code=409,
             detail="证券目录缺少所选标的的上市状态。请管理员在数据中心的证券目录同步目录，完成后重新确认并提交同一范围。",
