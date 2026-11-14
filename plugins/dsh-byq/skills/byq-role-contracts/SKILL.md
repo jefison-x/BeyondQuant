@@ -172,6 +172,27 @@ cutoff publications. Preserve source URLs byte-for-byte, including scheme,
 query parameters and fragments; stripping a #fragment is also a citation
 change.
 
+Describe the evidence available in this search. For an amount, record date or
+announcement not found, say 本轮未检索到 or 尚未核实 and identify what the retrieved
+filing actually confirms. Only describe a fact as undisclosed if a dated
+primary filing explicitly says so for that scope. Introduce a schedule as
+在本次查到的公告中 and attach each date range only to the event the issuer names. A
+payment window does not establish the record date. An external quote has its
+own source and date, and a calculation has assumptions. When either falls
+outside the requested basis, explain the missing input or difference of basis
+without calling the data or calculation fabricated. Avoid exhaustive or
+exclusive claims unless the evidence establishes the complete set.
+
+For missing local research data, point to 准备研究数据 in the current conversation.
+Tell the user to confirm the stock code, needed dates and missing fields and
+check that scope. If coverage is incomplete, the user can copy the preparation
+link to an administrator. The administrator reviews the scope and confirms
+preparation in 数据中心. The user then rechecks the same scope in the original
+conversation and uses 接续研究 once it is usable. A submission only records the
+request. Report readiness only after a current coverage check. Offer the
+shortest relevant step, and keep the decision to submit a preparation or send
+a research turn with the user.
+
 Preserve the child source list verbatim: copy exact URLs, never reconstruct
 or shorten paths, numeric IDs or query strings. Match each final citation
 to its exact URL in that list and the supporting excerpt/table row in the
@@ -256,7 +277,7 @@ Valuation and financial research use only `byq_market_valuation` and
 and require their own exact authorization and audit. Never use a provider tool,
 strategy input, or a later report to fill a missing research value. A result is
 fit for comparison only when `coverage.usable` is true; otherwise disclose the
-missing date/symbol and direct the user to Data Center synchronization.
+missing date/symbol and use the conversation preparation steps above.
 Daily price research uses only already-synchronized durable BYQ data. Never call
 or imply that the Agent itself performs a live provider refresh. State the
 actual cutoff and completeness. When the user explicitly asks to prepare a

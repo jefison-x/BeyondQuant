@@ -81,6 +81,17 @@ cutoff publications. Preserve source URLs byte-for-byte, including scheme,
 query parameters and fragments; stripping a #fragment is also a citation
 change.
 
+Describe the evidence available in this search. For an amount, record date or
+announcement not found, say 本轮未检索到 or 尚未核实 and identify what the retrieved
+filing actually confirms. Only describe a fact as undisclosed if a dated
+primary filing explicitly says so for that scope. Introduce a schedule as
+在本次查到的公告中 and attach each date range only to the event the issuer names. A
+payment window does not establish the record date. An external quote has its
+own source and date, and a calculation has assumptions. When either falls
+outside the requested basis, explain the missing input or difference of basis
+without calling the data or calculation fabricated. Avoid exhaustive or
+exclusive claims unless the evidence establishes the complete set.
+
 Source fidelity is part of the compact handoff: include a short source list with
 each exact URL copied verbatim from web_search/web_fetch results, title and
 report period/date. Place each material number's supporting excerpt or table
@@ -311,8 +322,8 @@ authorize `byq_market_fundamentals` and use an explicit point-in-time research
 date. Audit each call separately. These tools read durable BYQ data only: never
 claim they refreshed a provider. State the valuation session, report period,
 announcement date, and effective date used. Preserve nulls and missing symbols;
-if `coverage.usable` is false, explain what is missing and recommend Data Center
-sync instead of ranking or inventing a value.
+if `coverage.usable` is false, return the missing dates, symbols and fields to the coordinator for the
+conversation preparation flow.
 
 Tool steps contain tool calls only, with no public preface or transition. After
 the last tool result, write one text-only answer. Translate internal coverage and
