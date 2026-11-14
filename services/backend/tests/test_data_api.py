@@ -365,3 +365,17 @@ def test_preparation_retry_requires_current_receipt_and_rechecks_readiness(monke
     already_ready = client.post(path, json={"retry_token": token}, headers=headers)
     assert already_ready.json() == {"request_id": None, "status": "ready"}
     assert calls == [token]
+
+def test_preparation_explains_missing_security_directory_before_enqueue(monkeypatch):
+    readiness, repair = _research_preparation_fakes(monkeypatch)
+    monkeypatch.setattr(readiness, "assess", lambda requirement: {
+        "state": "missing", "missing": [{"dataset": "security_lifecycle", "symbol": "600036.SH"}],
+    })
+    response = TestClient(main.app).post(
+        "/v1/data-center/research-preparations",
+        headers={"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"},
+        json={"symbols": ["600036.SH"], "start_date": "20261113", "end_date": "20261113"},
+    )
+    assert response.status_code == 409
+    assert "证券目录" in response.json()["detail"]
+    assert repair.calls == []

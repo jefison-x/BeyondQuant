@@ -455,7 +455,7 @@ function securityStatusLabel(value: string) {
       <el-button :loading="refreshing" @click="load()">刷新状态</el-button>
     </div>
 
-    <ResearchPreparationApproval />
+    <ResearchPreparationApproval @securities="activeTab = 'securities'" />
 
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">正在读取数据平面...</div>
     <div v-else-if="error && !status" class="base-error" role="alert">{{ error }}</div>

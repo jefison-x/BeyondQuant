@@ -11,6 +11,7 @@ import {
 import type { ResearchPreparationSubmission } from "@/api/dataCenter";
 import { useAuthStore } from "@/stores/auth";
 
+const emit = defineEmits<{ securities: [] }>();
 const route = useRoute();
 const auth = useAuthStore();
 const confirming = ref(false);
@@ -166,6 +167,8 @@ async function retry() {
   <section v-if="handoffValue !== undefined" class="approval-card" aria-label="研究数据准备审核">
     <header><strong>用户提交的研究数据范围</strong><span>管理员复核</span></header>
     <p>这是一个不包含会话内容或用户标识的范围链接。提交后，原用户需在自己的研究会话复查数据可用性。</p>
+    <p>若缺少证券上市状态，请先同步证券目录。目录同步完成后，重新确认并提交同一范围。</p>
+    <button v-if="auth.isAdmin" type="button" class="secondary-button" @click="emit('securities')">查看证券目录</button>
     <div v-if="invalidHandoff" class="error" role="alert">链接中的范围无效或超出支持上限。请让用户重新生成审核链接。</div>
     <template v-else-if="scope">
       <dl>

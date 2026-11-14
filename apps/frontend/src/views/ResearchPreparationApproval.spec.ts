@@ -36,7 +36,7 @@ describe("research preparation approval handoff", () => {
     expect(createResearchPreparation).not.toHaveBeenCalled();
     const confirm = wrapper.get('input[type="checkbox"]');
     await confirm.setValue(true);
-    await wrapper.get("button").trigger("click");
+    await wrapper.findAll("button").find(b => b.text() === "管理员确认并准备")!.trigger("click");
     await flushPromises();
     expect(createResearchPreparation).toHaveBeenCalledWith({
       symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research",
@@ -52,7 +52,7 @@ describe("research preparation approval handoff", () => {
     setUserRole("user");
     const wrapper = mount(Approval);
     await wrapper.get('input[type="checkbox"]').setValue(true);
-    expect((wrapper.get("button").element as HTMLButtonElement).disabled).toBe(true);
+    expect((wrapper.findAll("button").find(b => b.text() === "管理员确认并准备")!.element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("当前账号没有管理员权限");
     expect(createResearchPreparation).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -67,7 +67,7 @@ describe("research preparation approval handoff", () => {
     vi.mocked(getResearchPreparation).mockResolvedValue({ request_id: "repair-123", status: "queued" });
     const wrapper = mount(Approval);
     await wrapper.get('input[type="checkbox"]').setValue(true);
-    await wrapper.get("button").trigger("click");
+    await wrapper.findAll("button").find(b => b.text() === "管理员确认并准备")!.trigger("click");
     await flushPromises();
     const retryButton = wrapper.findAll("button").find(b => b.text() === "管理员确认重试")!;
     expect((retryButton.element as HTMLButtonElement).disabled).toBe(true);
