@@ -329,3 +329,39 @@ def test_ready_preparation_requires_an_actual_research_scope(monkeypatch, sessio
     assert response.status_code == 422
     assert "调整标的或日期" in response.json()["detail"]
     assert repair.calls == []
+
+def test_preparation_retry_requires_current_receipt_and_rechecks_readiness(monkeypatch):
+    from app.market_automation import data_repair_terminal_revision
+    readiness, repair = _research_preparation_fakes(monkeypatch)
+    record = {
+        "request_id": "datarepair_fixture", "requirement_sha256": "a" * 64,
+        "status": "failed", "completed_at": "2026-11-14T00:00:00+00:00",
+        "error_message": "session_repair_failed", "requested_by": "research-preparation:admin",
+        "requirement_json": {"requirement_sha256": "a" * 64},
+    }
+    monkeypatch.setattr(repair, "get_data_repair", lambda request_id: dict(record), raising=False)
+    calls = []
+    def retry(request_id, *, terminal_revision):
+        calls.append(terminal_revision)
+        return {**record, "status": "queued", "completed_at": None, "error_message": None}
+    monkeypatch.setattr(repair, "retry_data_repair_if_terminal", retry, raising=False)
+    monkeypatch.setattr(main, "_resolved_tushare_provider", lambda: (object(), {}))
+    client = TestClient(main.app)
+    path = "/v1/data-center/research-preparations/datarepair_fixture/retry"
+    headers = {"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"}
+    token = data_repair_terminal_revision(record)
+    assert client.post(path, json={"retry_token": token}, headers={
+        **headers, "x-byq-actor-role": "user",
+    }).status_code == 403
+    assert client.post(path, json={"retry_token": "0" * 64}, headers=headers).status_code == 409
+    assert calls == []
+    accepted = client.post(path, json={"retry_token": token}, headers=headers)
+    assert accepted.status_code == 200
+    assert accepted.json() == {"request_id": "datarepair_fixture", "status": "queued"}
+    assert calls == [token]
+    monkeypatch.setattr(readiness, "assess", lambda requirement: {
+        "state": "ready", "required_session_count": 1, "required_cell_count": 1,
+    })
+    already_ready = client.post(path, json={"retry_token": token}, headers=headers)
+    assert already_ready.json() == {"request_id": None, "status": "ready"}
+    assert calls == [token]

@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import Approval from "./ResearchPreparationApproval.vue";
-import { createResearchPreparation } from "@/api/dataCenter";
+import { createResearchPreparation, retryResearchPreparation, getResearchPreparation } from "@/api/dataCenter";
 import { useAuthStore } from "@/stores/auth";
 
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: { researchPreparation: JSON.stringify({
@@ -12,6 +12,8 @@ vi.mock("vue-router", () => ({ useRoute: () => ({ query: { researchPreparation: 
 vi.mock("@/api/dataCenter", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/api/dataCenter")>(),
   createResearchPreparation: vi.fn(),
+  retryResearchPreparation: vi.fn(),
+  getResearchPreparation: vi.fn(),
 }));
 
 function setUserRole(role: "admin" | "user") {
@@ -53,6 +55,31 @@ describe("research preparation approval handoff", () => {
     expect((wrapper.get("button").element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("当前账号没有管理员权限");
     expect(createResearchPreparation).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("requires renewed confirmation, then refreshes after an uncertain retry", async () => {
+    setActivePinia(createPinia());
+    setUserRole("admin");
+    const failed = { request_id: "repair-123", status: "failed", retry_token: "a".repeat(64), failure_reason: "session_repair_failed" };
+    vi.mocked(createResearchPreparation).mockResolvedValue(failed);
+    vi.mocked(retryResearchPreparation).mockRejectedValue(new Error("响应中断"));
+    vi.mocked(getResearchPreparation).mockResolvedValue({ request_id: "repair-123", status: "queued" });
+    const wrapper = mount(Approval);
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+    const retryButton = wrapper.findAll("button").find(b => b.text() === "管理员确认重试")!;
+    expect((retryButton.element as HTMLButtonElement).disabled).toBe(true);
+    await wrapper.findAll('input[type="checkbox"]')[1]!.setValue(true);
+    await retryButton.trigger("click");
+    await flushPromises();
+    expect(retryResearchPreparation).toHaveBeenCalledWith("repair-123", "a".repeat(64));
+    expect(wrapper.text()).toContain("先刷新原任务状态");
+    expect(wrapper.text()).not.toContain("管理员确认重试");
+    await wrapper.findAll("button").find(b => b.text() === "只读刷新原任务状态")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("请求已进入排队");
     wrapper.unmount();
   });
 });
