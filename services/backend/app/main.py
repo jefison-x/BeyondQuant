@@ -2339,6 +2339,14 @@ def _assess_data_readiness(
     return {"scope": scope, "requirement": requirement, "assessment": assessment, "projection": projection}
 
 
+def _research_preparation_ready(assessment: dict[str, object]) -> bool:
+    if assessment.get("state") != "ready":
+        return False
+    if not assessment.get("required_session_count") or not assessment.get("required_cell_count"):
+        raise HTTPException(status_code=422, detail="该范围没有可研究的交易日或证券记录，请调整标的或日期。")
+    return True
+
+
 @app.post("/v1/data-center/research-preparations")
 def create_research_preparation(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Queue one admin-confirmed, bounded research data requirement idempotently."""
@@ -2348,7 +2356,7 @@ def create_research_preparation(payload: dict[str, Any], request: Request) -> di
         payload, max_calendar_days=MAX_PARTITION_CHUNK_DAYS, research_preparation=True,
     ))
     assessment = evidence["assessment"]
-    if isinstance(assessment, dict) and assessment.get("state") == "ready":
+    if isinstance(assessment, dict) and _research_preparation_ready(assessment):
         return {"request_id": None, "status": "ready"}
 
     requirement = evidence["requirement"]
@@ -2444,7 +2452,7 @@ def retry_research_preparation(
         raise HTTPException(status_code=409, detail="该任务范围无法复核，请重新检查范围后再准备。") from error
     except MarketReadinessPersistenceError as error:
         raise HTTPException(status_code=503, detail="market research data is unavailable") from error
-    if assessment.get("state") == "ready":
+    if _research_preparation_ready(assessment):
         return {"request_id": None, "status": "ready"}
 
     try:

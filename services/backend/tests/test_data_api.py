@@ -313,3 +313,19 @@ def test_research_preparation_rejects_out_of_scope_requests(monkeypatch, payload
     )
     assert response.status_code == 422
     assert repair.calls == []
+
+@pytest.mark.parametrize(("sessions", "cells"), [(0, 0), (1, 0)])
+def test_ready_preparation_requires_an_actual_research_scope(monkeypatch, sessions, cells):
+    readiness, repair = _research_preparation_fakes(monkeypatch, state="ready")
+    monkeypatch.setattr(readiness, "assess", lambda requirement: {
+        "state": "ready", "required_session_count": sessions, "required_cell_count": cells,
+        "calendar_complete": True,
+    })
+    response = TestClient(main.app).post(
+        "/v1/data-center/research-preparations",
+        headers={"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"},
+        json={"symbols": ["000001.SZ"], "start_date": "20260824", "end_date": "20260824"},
+    )
+    assert response.status_code == 422
+    assert "调整标的或日期" in response.json()["detail"]
+    assert repair.calls == []
