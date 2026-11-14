@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
@@ -181,3 +182,134 @@ def test_product_data_readiness_is_bounded_and_actionable(monkeypatch) -> None:
         json={"symbols": [], "start_date": "20260824", "end_date": "20260825"},
     )
     assert rejected.status_code == 422
+
+
+def _research_preparation_fakes(monkeypatch, *, state: str = "partial"):
+    class ReadinessStore:
+        requirements = []
+
+        def requirement(self, **payload):
+            self.requirements.append(payload)
+            return {"schema_version": "fixture", "requirement_sha256": "a" * 64, **payload}
+
+        def assess(self, requirement):
+            return {
+                "state": state, "required_session_count": 1, "required_cell_count": 1,
+                "missing_count": 0 if state == "ready" else 1,
+                "calendar_complete": True,
+                "missing": [] if state == "ready" else [
+                    {"symbol": "000001.SZ", "trade_date": "20260825", "dataset": "stock_daily"},
+                ],
+            }
+
+    class RepairStore:
+        calls = []
+        records = {}
+
+        def get_data_repair_by_requirement(self, identity):
+            return self.records.get(identity)
+
+        def request_data_repair(self, *, requirement, requested_by, retry_terminal):
+            self.calls.append({
+                "requirement": requirement, "requested_by": requested_by,
+                "retry_terminal": retry_terminal,
+            })
+            identity = requirement["requirement_sha256"]
+            return self.records.setdefault(identity, {
+                "request_id": "datarepair_fixture", "status": "queued",
+            })
+
+    readiness = ReadinessStore()
+    repair = RepairStore()
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "market_automation_store", repair)
+    return readiness, repair
+
+
+def test_research_preparation_requires_admin_and_reuses_existing_repair(monkeypatch) -> None:
+    _readiness, repair = _research_preparation_fakes(monkeypatch)
+    client = TestClient(main.app)
+    payload = {
+        "symbols": [f"{number:06d}.SZ" for number in range(1, 21)],
+        "start_date": "20240101", "end_date": "20240628", "use_case": "research",
+        "data_requirements": {"daily_basic": ["pe_ttm"], "fundamentals": ["roe"]},
+    }
+    user = client.post("/v1/data-center/research-preparations", json=payload, headers={
+        "x-byq-actor-principal": "alice", "x-byq-actor-role": "user",
+    })
+    assert user.status_code == 403
+    assert repair.calls == []
+
+    monkeypatch.setattr(main, "_resolved_tushare_provider", lambda: (object(), {"source": "fixture"}))
+    admin_headers = {"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"}
+    first = client.post("/v1/data-center/research-preparations", json=payload, headers=admin_headers)
+    repeated = client.post("/v1/data-center/research-preparations", json=payload, headers=admin_headers)
+
+    assert first.status_code == repeated.status_code == 200
+    assert first.json() == {"request_id": "datarepair_fixture", "status": "queued"}
+    assert repeated.json() == first.json()
+    assert len(repair.calls) == 1
+    assert all(call["retry_terminal"] is False for call in repair.calls)
+    assert all(call["requested_by"] == "research-preparation:admin" for call in repair.calls)
+    scope = repair.calls[0]["requirement"]
+    assert len(scope["symbols"]) == 20
+    assert scope["start_date"] == "20240101" and scope["end_date"] == "20240628"
+    assert scope["data_requirements"] == {"daily_basic": ["pe_ttm"], "fundamentals": ["roe"]}
+
+
+def test_ready_research_preparation_does_not_resolve_source_or_enqueue(monkeypatch) -> None:
+    _readiness, repair = _research_preparation_fakes(monkeypatch, state="ready")
+    monkeypatch.setattr(
+        main, "_resolved_tushare_provider",
+        lambda: (_ for _ in ()).throw(AssertionError("ready scope must not need a source")),
+    )
+    response = TestClient(main.app).post(
+        "/v1/data-center/research-preparations",
+        headers={"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"},
+        json={"symbols": ["000001.SZ"], "start_date": "20260824", "end_date": "20260825"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"request_id": None, "status": "ready"}
+    assert repair.calls == []
+
+
+def test_research_preparation_blocks_unconfigured_or_ambiguous_source(monkeypatch) -> None:
+    from app.data_provider import ProviderCredentialsMissing
+
+    _readiness, repair = _research_preparation_fakes(monkeypatch)
+    monkeypatch.setattr(
+        main, "_resolved_tushare_provider",
+        lambda: (_ for _ in ()).throw(ProviderCredentialsMissing("provider detail must not leak")),
+    )
+    response = TestClient(main.app).post(
+        "/v1/data-center/research-preparations",
+        headers={"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"},
+        json={"symbols": ["000001.SZ"], "start_date": "20260824", "end_date": "20260825"},
+    )
+    assert response.status_code == 409
+    assert "Tushare" in response.json()["detail"]
+    assert "provider detail" not in response.text
+    assert repair.calls == []
+
+
+@pytest.mark.parametrize("payload", [
+    {"symbols": [f"{number:06d}.SZ" for number in range(1, 22)],
+     "start_date": "20240101", "end_date": "20240101"},
+    {"symbols": ["000001.SZ"], "start_date": "20240101", "end_date": "20240629"},
+    {"symbols": ["000001.SZ"], "start_date": "20240101", "end_date": "20240101",
+     "data_requirements": {"benchmark": "000300.SH"}},
+    {"symbols": ["000001.SZ"], "start_date": "20240101", "end_date": "20240101",
+     "data_requirements": {"daily_basic": ["unsupported_field"]}},
+    {"symbols": ["000001.SZ"], "start_date": "20240101", "end_date": "20240101",
+     "use_case": "backtest"},
+])
+def test_research_preparation_rejects_out_of_scope_requests(monkeypatch, payload) -> None:
+    _readiness, repair = _research_preparation_fakes(monkeypatch)
+    response = TestClient(main.app).post(
+        "/v1/data-center/research-preparations",
+        headers={"x-byq-actor-principal": "admin", "x-byq-actor-role": "admin"},
+        json=payload,
+    )
+    assert response.status_code == 422
+    assert repair.calls == []

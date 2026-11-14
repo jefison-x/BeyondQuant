@@ -1763,6 +1763,41 @@ def product_data_readiness(request: Request, payload: dict[str, object]) -> dict
     )
 
 
+@router.post("/data-center/research-preparations")
+def product_research_preparation_create(
+    request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    """Create an admin-confirmed bounded repair using the Product API boundary."""
+
+    return _backend_request(
+        "POST",
+        "/v1/data-center/research-preparations",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/research-preparations/{request_id}")
+def product_research_preparation_get(request_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        f"/v1/data-center/research-preparations/{request_id}",
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.post("/data-center/research-preparations/{request_id}/retry")
+def product_research_preparation_retry(
+    request_id: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        f"/v1/data-center/research-preparations/{request_id}/retry",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
 @router.post("/data-center/security-master/sync-jobs", status_code=201)
 def product_security_master_sync_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
     return _backend_request(

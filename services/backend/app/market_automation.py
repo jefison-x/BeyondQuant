@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import secrets
 import uuid
 from calendar import monthrange
 from contextlib import nullcontext
@@ -81,6 +82,25 @@ def _local_now(value: datetime | None = None) -> datetime:
 
 def _iso_timestamp(value: object) -> str:
     return value.isoformat() if isinstance(value, datetime) else str(value)
+
+
+def data_repair_terminal_revision(record: dict[str, object]) -> str | None:
+    """Return an opaque receipt revision usable only for one terminal-state retry."""
+
+    status = record.get("status")
+    completed_at = record.get("completed_at")
+    request_id = record.get("request_id")
+    requirement_sha256 = record.get("requirement_sha256")
+    if status not in {"completed", "failed"} or not completed_at or not request_id or not requirement_sha256:
+        return None
+    return _hash({
+        "schema_version": "market-data-repair-terminal-revision.v1",
+        "request_id": str(request_id),
+        "requirement_sha256": str(requirement_sha256),
+        "status": str(status),
+        "completed_at": _iso_timestamp(completed_at),
+        "error_message": record.get("error_message"),
+    })
 
 
 class MarketAutomationStore(PgStoreMixin):
@@ -777,6 +797,22 @@ class MarketAutomationStore(PgStoreMixin):
             return dict(fetch_one(connection, "SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
                                         {"sha": requirement_sha256}) or {})
 
+    def get_data_repair_by_requirement(self, requirement_sha256: str) -> dict[str, object] | None:
+        row = self._fetch_one(
+            "SELECT * FROM market_data_repair_requests WHERE requirement_sha256=:sha",
+            {"sha": requirement_sha256},
+        )
+        return dict(row) if row is not None else None
+
+    def get_data_repair(self, request_id: object) -> dict[str, object]:
+        row = self._fetch_one(
+            "SELECT * FROM market_data_repair_requests WHERE request_id=:id",
+            {"id": str(request_id)},
+        )
+        if row is None:
+            raise MarketAutomationNotFound("data repair request not found")
+        return dict(row)
+
     def claim_data_repair(self) -> dict[str, object] | None:
         with self._transaction() as connection:
             row = fetch_one(connection, """SELECT * FROM market_data_repair_requests
@@ -808,6 +844,32 @@ class MarketAutomationStore(PgStoreMixin):
         if not rows:
             raise MarketAutomationConflict("data repair is not retryable")
         return dict(rows[0])
+
+    def retry_data_repair_if_terminal(
+        self, request_id: object, *, terminal_revision: str,
+    ) -> dict[str, object]:
+        """Requeue one exact terminal receipt revision, rejecting stale/double retries."""
+
+        with self._transaction() as connection:
+            record = fetch_one(connection, """SELECT * FROM market_data_repair_requests
+                WHERE request_id=:id FOR UPDATE""", {"id": str(request_id)})
+            if record is None:
+                raise MarketAutomationNotFound("data repair request not found")
+            current_revision = data_repair_terminal_revision(record)
+            if current_revision is None or not secrets.compare_digest(current_revision, terminal_revision):
+                raise MarketAutomationConflict("data repair terminal receipt is stale or not retryable")
+            updated = fetch_one(connection, """UPDATE market_data_repair_requests
+                SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL
+                WHERE request_id=:id AND requirement_sha256=:sha AND status=:status
+                  AND completed_at=:completed_at AND error_message IS NOT DISTINCT FROM :error
+                RETURNING *""", {
+                    "id": record["request_id"], "sha": record["requirement_sha256"],
+                    "status": record["status"], "completed_at": record["completed_at"],
+                    "error": record.get("error_message"),
+                })
+            if updated is None:
+                raise MarketAutomationConflict("data repair terminal receipt is stale or not retryable")
+            return dict(updated)
 
     def reconcile_data_repairs(self, readiness_store: MarketReadinessStore) -> dict[str, int]:
         outcomes = {"completed": 0, "failed": 0}

@@ -27,6 +27,7 @@ import { useAuthStore } from "@/stores/auth";
 import { boundedReadinessSymbols, stockPoolSymbols } from "@/readinessInputs";
 import { mergeDataCenterProgress } from "@/dataCenterProgress";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
+import ResearchPreparationApproval from "@/views/ResearchPreparationApproval.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 const auth = useAuthStore();
@@ -453,6 +454,8 @@ function securityStatusLabel(value: string) {
       <div><p class="eyebrow">市场数据</p><h1>数据中心</h1><p>检查研究和回测所需数据是否齐全，并在缺失时继续同步。</p></div>
       <el-button :loading="refreshing" @click="load()">刷新状态</el-button>
     </div>
+
+    <ResearchPreparationApproval />
 
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">正在读取数据平面...</div>
     <div v-else-if="error && !status" class="base-error" role="alert">{{ error }}</div>

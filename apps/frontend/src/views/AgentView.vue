@@ -11,6 +11,7 @@ import { foldWorkflowCards, workflowActivities, workflowOutcomes, workflowRunSta
 import type { AgentReplayMessage, AgentSession, WorkflowCardEvent, WorkflowTraceEvent } from "@/api/types";
 import AgentActivityPanel from "@/components/agent/AgentActivityPanel.vue";
 import ResearchReceiptPanel from "@/components/agent/ResearchReceiptPanel.vue";
+import ResearchDataPreparationPanel from "@/components/agent/ResearchDataPreparationPanel.vue";
 import RichMessage from "@/components/agent/RichMessage.vue";
 import WorkflowCard from "@/components/agent/WorkflowCard.vue";
 import { useAgentStore, type AgentMessage } from "@/stores/agent";
@@ -75,6 +76,7 @@ const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_sessio
 const budgetExhaustedCode = "budget-exhausted";
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
+const hasResearchAnswer = computed(() => agent.messages.some((message) => message.role === "agent" && message.text.trim()));
 const sessionContinuationBlocked = computed(() => Boolean(agent.activeSessionId)
   && terminalSessionId.value === agent.activeSessionId);
 const starterDisabled = computed(() => loading.value || requestedSessionUnavailable.value
@@ -604,6 +606,24 @@ async function send(value = prompt.value) {
   finally { busy.value = false; }
 }
 
+async function prepareResearchFollowup(draft: string) {
+  if (sessionContinuationBlocked.value) return;
+  if (prompt.value.trim()) {
+    try {
+      await ElMessageBox.confirm(
+        "输入框中已有草稿。要保留原内容并在末尾追加续研草稿吗？",
+        "保留当前草稿",
+        { type: "warning", confirmButtonText: "追加续研草稿", cancelButtonText: "不更改草稿" },
+      );
+    } catch { return; }
+    prompt.value = `${prompt.value.trim()}\n\n${draft}`;
+  } else {
+    prompt.value = draft;
+  }
+  await nextTick();
+  composerInput.value?.focus?.();
+}
+
 function handleComposerKeydown(event: KeyboardEvent) {
   if (event.key !== "Enter" || !event.ctrlKey) return;
   event.preventDefault();
@@ -792,6 +812,15 @@ onBeforeUnmount(() => {
       </div>
       <ResearchReceiptPanel v-if="agent.activeSessionId" :conversation-id="agent.activeSessionId" />
     </main>
+    <ResearchDataPreparationPanel
+      v-if="agent.activeSessionId"
+      :key="`${auth.user?.subject ?? 'user'}:${agent.activeSessionId}`"
+      :conversation-id="agent.activeSessionId"
+      :owner-key="auth.user?.subject ?? ''"
+      :enabled="hasResearchAnswer && !runActive && !requestedSessionUnavailable"
+      :can-continue="!sessionContinuationBlocked"
+      @continue="prepareResearchFollowup"
+    />
     <footer class="composer-wrap">
       <form class="agent-composer" @submit.prevent="send()">
         <el-input ref="composerInput" v-model="prompt" class="composer-input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder="向小巴描述你的投研问题…" :disabled="loading || requestedSessionUnavailable" @keydown="handleComposerKeydown" />

@@ -2089,6 +2089,48 @@ def test_product_data_readiness_forwards_trusted_identity_and_bounded_request(mo
     assert captured["json"]["symbols"] == ["600036.SH"]
 
 
+def test_product_research_preparation_is_admin_only_and_uses_backend_boundary(monkeypatch) -> None:
+    captured: list[dict[str, object]] = []
+    role = {"value": "user"}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"request_id": "datarepair_1", "status": "queued"}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.append({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "username": "alice", "role": role["value"],
+        "_workspace": {"workspace_id": "workspace_alice"},
+    })
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "session_alice")
+    payload = {
+        "symbols": ["600036.SH"], "start_date": "20260824", "end_date": "20260825",
+        "use_case": "research", "data_requirements": {"daily_basic": ["pe_ttm"]},
+    }
+
+    forbidden = client.post("/api/product/data-center/research-preparations", json=payload)
+    assert forbidden.status_code == 403
+    assert captured == []
+
+    role["value"] = "admin"
+    accepted = client.post("/api/product/data-center/research-preparations", json=payload)
+    assert accepted.status_code == 200
+    assert accepted.json() == {"request_id": "datarepair_1", "status": "queued"}
+    assert str(captured[0]["url"]).endswith("/v1/data-center/research-preparations")
+    assert captured[0]["method"] == "POST"
+    assert captured[0]["headers"]["x-byq-actor-principal"] == "alice"
+    assert captured[0]["headers"]["x-byq-actor-role"] == "admin"
+    assert captured[0]["json"] == payload
+
+
 def test_product_data_center_writes_are_admin_only_and_use_backend_boundary(monkeypatch) -> None:
     captured: list[dict[str, object]] = []
 

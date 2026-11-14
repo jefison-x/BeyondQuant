@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDataSourceCredential, createDataSyncJob, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, queryDataReadiness, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
+import { createDataSourceCredential, createDataSyncJob, createResearchPreparation, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, queryDataReadiness, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
 
 describe("data center api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -75,5 +75,31 @@ describe("data center api client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({
       symbols: ["600036.SH"], start_date: "20260101", end_date: "20260630", use_case: "research",
     }));
+  });
+
+  it("checks and submits the exact confirmed research scope through Product routes", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        schema_version: "data-readiness-product.v1", verdict: "limited",
+        scope: { symbol_count: 1, symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research" },
+        summary: { required_sessions: 60, ready_items: 50, missing_items: 10, calendar_complete: true },
+        datasets: [{ label: "估值数据", state: "missing", missing_count: 10 }], issues: [], issues_truncated: false,
+        checked_against: "persisted_byq",
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ request_id: "repair-1", status: "queued" }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const scope = {
+      symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research" as const,
+      data_requirements: { daily_basic: ["pe_ttm", "pb"], fundamentals: ["roe"] },
+    };
+
+    expect((await queryDataReadiness(scope)).verdict).toBe("limited");
+    expect(await createResearchPreparation(scope)).toEqual({ request_id: "repair-1", status: "queued" });
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/product/data-center/readiness", "/api/product/data-center/research-preparations",
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual(scope);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual(scope);
+    expect(fetchMock.mock.calls.every((call) => call[1]?.credentials === "include")).toBe(true);
   });
 });
