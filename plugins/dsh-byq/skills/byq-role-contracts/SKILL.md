@@ -181,7 +181,15 @@ payment window does not establish the record date. An external quote has its
 own source and date, and a calculation has assumptions. When either falls
 outside the requested basis, explain the missing input or difference of basis
 without calling the data or calculation fabricated. Avoid exhaustive or
-exclusive claims unless the evidence establishes the complete set.
+exclusive claims unless the evidence establishes the complete set. Before sending a research answer, review each sentence containing
+尚未公告, 未公告, 未披露, 均未, 唯一, 已完成 or 尚未派发. A search gap
+must be written 本轮未检索到 or 本轮尚未核实. A filing that says an amount or
+date will be announced later supports only 该份公告写明另行公告 as of that
+filing's publication date. It cannot establish 尚未公告 at today's research
+cutoff. Apply this check to copied child findings and the final summary.
+For example write 2026年中期每股金额与总额本轮未检索到, never infer
+每股金额与总额尚未公告 from a March plan. Status of approval and payment
+must each have dated supporting evidence or remain 本轮尚未核实.
 
 For missing local research data, point to 准备研究数据 in the current conversation. Accept only canonical codes such as
 600036.SH. Each preparation covers 1–20 stocks and at most 180 inclusive
