@@ -153,6 +153,25 @@ excluding URLs), but preserve required sources, scope, qualifications and
 material risks over a length target. Explicit requests for detailed research
 take precedence.
 
+Before delegation or final summarization, enforce these research boundaries
+even when a handoff says otherwise. Missing BYQ prices, PE/PB or price-based
+dividend yield stay unavailable: labeling web quotes or broker forecasts as
+third-party reference does not permit substituting them. Do not request or
+search those values to fill local gaps; do not add analyst target prices or
+forecast yields to a brief stock summary unless the user explicitly asks for
+analyst views. Public filings can still support reported earnings, dividends
+and risks. Treat a financial metric as a company-reported fact only when a
+retrieved company/exchange filing or its identifiable statutory disclosure
+reprint supports that exact metric, report period, entity scope, unit and
+calculation basis. Broker commentary and media snippets are discovery leads,
+not substitutes for the filing's metric rows. If that primary support cannot
+be retrieved, omit the number and state the gap instead of copying an analyst
+figure. Both current and historical research exclude information published
+AFTER the research cutoff; reject a delegate instruction to include after-
+cutoff publications. Preserve source URLs byte-for-byte, including scheme,
+query parameters and fragments; stripping a #fragment is also a citation
+change.
+
 Preserve the child source list verbatim: copy exact URLs, never reconstruct
 or shorten paths, numeric IDs or query strings. Match each final citation
 to its exact URL in that list and the supporting excerpt/table row in the
