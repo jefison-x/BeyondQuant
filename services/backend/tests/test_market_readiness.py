@@ -550,3 +550,24 @@ def test_financial_revision_refresh_preserves_first_observation_for_identical_va
         assert hidden["coverage"]["usable"] is False
     finally:
         store.close()
+
+def test_old_singleton_cannot_backdate_new_observed_revision_and_later_singleton_keeps_proof():
+    from app.data_provider import FinancialIndicator
+    store = MarketReadinessStore()
+    try:
+        def ingest(observed):
+            row = FinancialIndicator("000001.SZ", "20260829", "20260630", {"eps": 1.1}, "1",
+                                     revision_observed_date=observed)
+            store.import_financial_indicators("000001.SZ", "20250512", "20261113", [row],
+                                              {"provider": "tushare", "endpoint": "fina_indicator"})
+        ingest(None)
+        ingest("20261115")
+        row = store._fetch_one("SELECT effective_date,provenance_json FROM market_financial_indicators")
+        assert row["effective_date"] == "20261115"
+        assert row["provenance_json"]["revision_observed_date"] == "20261115"
+        ingest(None)
+        row = store._fetch_one("SELECT effective_date,provenance_json FROM market_financial_indicators")
+        assert row["effective_date"] == "20261115"
+        assert row["provenance_json"]["revision_observed_date"] == "20261115"
+    finally:
+        store.close()

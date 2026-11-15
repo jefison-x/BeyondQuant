@@ -1130,12 +1130,14 @@ class MarketReadinessStore(PgStoreMixin):
                 "values": dict(getattr(item, "values")), "update_flag": getattr(item, "update_flag"),
                 "data_source": "tushare", "provenance": provenance,
             }
+            if revision_observed_date is not None:
+                row["provenance"] = {**provenance, "revision_observed_date": revision_observed_date}
             normalized.append(row)
         with self._transaction() as connection:
             previous = {
                 (str(row["end_date"]), str(row["announcement_date"])): row
                 for row in execute(connection, """SELECT end_date,announcement_date,effective_date,
-                    values_json,update_flag,data_source FROM market_financial_indicators
+                    values_json,update_flag,data_source,provenance_json FROM market_financial_indicators
                     WHERE symbol=:symbol AND end_date BETWEEN :start AND :end FOR UPDATE""",
                     {"symbol": symbol, "start": report_start_date, "end": report_end_date})
             }
@@ -1146,7 +1148,12 @@ class MarketReadinessStore(PgStoreMixin):
                     and prior["update_flag"] == row["update_flag"]
                     and prior["data_source"] == row["data_source"]
                 ):
-                    row["effective_date"] = min(str(prior["effective_date"]), str(row["effective_date"]))
+                    prior_observation = prior["provenance_json"].get("revision_observed_date")
+                    if prior_observation:
+                        row["effective_date"] = str(prior["effective_date"])
+                        row["provenance"] = {**row["provenance"], "revision_observed_date": prior_observation}
+                    elif "revision_observed_date" not in row["provenance"]:
+                        row["effective_date"] = min(str(prior["effective_date"]), str(row["effective_date"]))
                 row["content_sha256"] = _hash(row)
             identity = _hash([row["content_sha256"] for row in normalized])
             execute(connection, """DELETE FROM market_financial_indicators
