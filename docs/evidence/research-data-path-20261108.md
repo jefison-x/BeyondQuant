@@ -895,3 +895,92 @@ research-browser.json保存。最终两套环境快照对比生产17容器id/ima
 started/health/mounts一致，测试保留11容器及原挂载。临时无持久卷测试PG
 已停止，保留测试业务数据、页面与身份。未更新生产、推送、合并或启动远端CI。
 本批源代码4207d1d1（含688a8235修复），文档提交另记。
+
+
+## 2026-11-15 文字型 PDF 阅读能力
+
+用户批准先接入公开文字型 PDF，再在测试环境验证。起点3602fee1，复用原隔离
+工作树。源码0bdf909f，已读页判断约束8d0bde68。没有修改DSH源代码或增加
+第二套Agent harness，未新增Backend/MCP/数据库接口、宿主命令或凭据输入。
+
+### 实现和边界
+
+通过DSH的Cordis插件与defineTool公开接口注册pdf_read，产品根会话和市场研究
+角色可调用。复用锁定DSH镜像的公开URL校验、DNS公网验证、地址固定连接、
+代理路由，同源重定向最多5跳，每跳重新验证。只发送固定匿名请求头，不接受
+模型传入headers或credentials。下载含流式计数上限15MiB，最多5个1-based页码，
+文档最多2000页，每页最多12000字符，空文本和截断均显式返回。
+
+PDF.js6.3.289在可终止Worker内提取指定页文字，禁eval、XFA、WASM、字体渲染与
+外部资源获取，Worker V8 old-generation上限256MiB，完整下载/解析预算30秒。
+返回原始source_url、final_url、取得时间、总页数和逐页文字，内容标记为不可信
+研究证据，不用于确定性行情输入。没有OCR或保证表格结构重建。
+
+网络helpers经@deepseek-ai/dsh-web-fetch-http/src/*导出加载，已在实际Node24
+镜像验证。该源码子路径在当前固定DSH完整源码镜像中存在，其npm发布files清单
+未包含src，不能声称工具适配任意packed DSH。PDF.js从现有预览依赖图加载；
+没有另行安装依赖。后续DSH版本升级仍需验证这两个镜像耦合点。
+
+统一正式入口services/acp_unified/Dockerfile与独立product Dockerfile均复制
+两个运行文件，配置identity/authoritative哈希同步。Judgment profile保持原配置，
+插件字节在该角色未被注册为可调用能力。
+
+### 定向验证和修正
+
+16项PDF/边界用例通过，包括有效页码、空页、损坏文件、12000字符截断、
+参数边界、匿名头、凭据URL/非HTTP拒绝、真实DSH公网地址拒绝、每跳pin、
+同源/次数限制、Content-Length与实际流大小限制、预取消、Worker取消、
+实际DSH schema编译/注册，以及完整截止期间的真实HTTP慢流关闭。
+慢流运行于network-none隔离容器，测试resolver仅pin本地fixture，生产resolver
+仍为DSH公网检查；requestPinned、fetch body与关闭均是实际SDK实现。
+30秒截止实测30067.99毫秒，server response close=true。
+另25项架构/配置/构建合同通过，dev-check local_syntax和diff检查通过。
+
+保留初次失败及修正：长文本测试fixture超出页面宽度，PDF.js只返回49字符，
+扩大合法MediaBox后验证截断；实际defineTool要求显式additionalProperties，
+补齐后注册成功；独审发现统一Dockerfile最初漏COPY，正式入口已补且加合同断言。
+没有将这些失败覆盖成初次通过。
+
+Independent Reviewer关闭构建入口与活动流取消两项阻断，给予测试候选的
+Functional/Tests/Clean Break限定PASS。候选无宿主挂载、user10006、read_only下
+实际tool.execute读原失败文件成功，文档共3页，选第1/2页，1.728秒。
+该候选预检不替代后续Product证据。
+
+### 原文件真实Product与浏览器
+
+原web_fetch失败URL原样使用：
+http://dataclouds.cninfo.com.cn/shgonggao/hsomarket/2026/20260327/3ca17483514b40a79b971a0705569b05.PDF#1#1#1
+
+测试仅替换四个ACP镜像，Backend/Gateway/前端/Data Worker不动，Compose
+等待健康通过。首轮Product会话conversation_9961b643f7a24f7897f1011e3a3eb09b，
+root b595e709e0404a39af9f30cb9a85be54，completed/closed、unknown=0，
+17.701115秒，仅pdf_read一次（0.768秒），2次模型请求均200，无工具错误、
+搜索、web_fetch或业务MCP操作。链接、原生最终文本和持久化逐字匹配。
+Independent Reviewer确认主要数字、页码、当时待股东会审议状态和限制声明正确，
+给Product限定PASS，指出一句全篇缺失判断应只限定已读页。
+
+8d0bde68把范围约束同步到根/子研究指引及工具结果说明，测试四ACP更新后
+使用完全相同PDF问题复测，原首轮保留。最终会话
+conversation_189c04c71cb7446b8b899f7eab4ec5db，root
+7af2c1b5c4434223847bfa8f55daca86，completed/closed、unknown=0，
+2026-11-15T02:39:52.065149Z至02:40:10.813980Z，18.748831秒。
+同样仅一次pdf_read（0.632秒）、2次模型请求均200，无搜索或业务对象创建。
+最终明确第3页未读，不对其内容下判断，具体日期缺失只说第1/2页未出现。
+
+实际提取并核对：公告2026-011、2025年度利润分配方案，文件当时尚需股东会
+审议；全年/本次每股2.016/1.003元，全年/本次508.43/252.96亿元；
+普通股股东净利润分母1438.74亿元，比例35.34%，与原页文字一致。
+1,361.84亿元明确为提取盈余公积的另一口径，不替代分红比例分母。
+原URL含全部fragment保留，native与persisted完全一致，URL unmatched为空。
+真实Chromium中金额、页码和原链接可见，href精确一致，可点击。
+
+本次是文字型PDF专项验收，不能把18.75秒与完整联网个股研究耗时直接比较。
+扫描页OCR、复杂表格结构/视觉对齐尚未验收。完整原题370.20秒的性能整改、
+run_start恢复与其它体验项继续保留原状态。
+
+最终生产17容器id/image/started/health/mounts逐对象等同基线，测试原有挂载保留。
+测试环境及原会话保留；未推送、合并、执行远端CI或生产发布。
+私有证据为research-candidate-20261109/pdf-read-20261115，包括镜像构建/部署/
+环境快照、candidate-pdf-read.json、首轮Product原件及scope-corrected最终
+product/answer/metrics/browser/result.png。正式完整清洁重建与Release Images
+资格NOT_RUN，当前证据只覆盖固定已验证基础上的限定测试派生镜像。
