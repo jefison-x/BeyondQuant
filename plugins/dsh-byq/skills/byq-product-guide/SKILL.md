@@ -30,7 +30,14 @@ required prerequisites, the next action, and one relevant limitation. Do not rec
 the whole catalogue. When a query has no match, say which user goal is unclear and ask
 for that goal instead of inventing a feature.
 
-Read only the reference matching the user's request:
+In Product sessions, resolve an exact detail with a short feature-name query
+such as `{"query":"准备研究数据"}` or `{"query":"股票池"}`.
+Use `capability_id` only after that identifier was returned by this tool.
+For a covered next step, use the returned path and stop. Keep local skill
+reference paths out of MCP resource requests; resource readers accept only
+URIs actually advertised by that server.
+
+Authoring references for each topic:
 
 - Market research, ResearchTask and approval: [references/research.md](references/research.md)
 - Stock pools and rule strategies: [references/pools-and-strategies.md](references/pools-and-strategies.md)

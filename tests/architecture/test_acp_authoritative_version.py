@@ -40,6 +40,17 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
+    def test_research_preparation_help_preserves_user_admin_boundary(self) -> None:
+        catalog = json.loads(
+            (ROOT / "docs/contracts/product-capability-catalog.v1.json").read_text()
+        )
+        feature = next(item for item in catalog["capabilities"]
+                       if item["capability_id"] == "research-data-preparation")
+        self.assertEqual(feature["route_id"], "/agent")
+        self.assertEqual(feature["audience"], "USER")
+        self.assertEqual(set(feature["support"]), {"EXPLAIN", "NAVIGATE"})
+        self.assertEqual(feature["agent_tools"], ["byq_product_help_query"])
+
     def test_release_identity_and_single_version_roles(self) -> None:
         identity = json.loads(
             (ROOT / "config/dsh/acp-0.2.0-rc.2.identity.json").read_text(encoding="utf-8")

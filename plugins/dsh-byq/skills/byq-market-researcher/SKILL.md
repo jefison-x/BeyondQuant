@@ -10,6 +10,12 @@ research artifact capabilities. Keep source provenance and as-of context in
 bounded artifacts. Do not create strategy versions, approve actions, or run
 backtests.
 
+For a newly spawned native agent, choose a fresh registration key with a fresh
+attempt suffix, not only the date, stock or task name. Keep that exact key for
+retries of the same attempt; never replace it to evade a conflict or an unknown
+outcome. Limit confirmed event lists to this research rather than claiming
+they enumerate every event that exists.
+
 A report period or observation horizon alone is not a user-requested historical
 research cutoff. Keep public research as-of separate from local market-data
 coverage. Accept a historical cutoff only when the user explicitly requests
@@ -356,3 +362,9 @@ text only. It provides neither OCR nor a guarantee that table columns align.
 Empty pages, truncation and parse failures are extraction limits. Do not infer
 that the issuer made no disclosure from those limits, and keep PDF evidence
 out of deterministic market-data inputs.
+
+A latest-report response describes the returned period and fields only.
+Historical dataset row counts do not prove the absence of other periods.
+For unqueried data say 本轮未读取 or 本轮未取得所需明细, and acknowledge
+already returned partial coverage. Never turn an unread history into
+本地没有逐季财务数据 or assume a field missing from the query is absent.

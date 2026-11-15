@@ -1,6 +1,6 @@
 {
   "schema_version": "product-capability-catalog.v1",
-  "catalog_version": "2026.09.07",
+  "catalog_version": "2026.11.15",
   "support_levels": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE", "UNAVAILABLE"],
   "capabilities": [
     {
@@ -14,6 +14,38 @@
       "support": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE"],
       "agent_tools": ["byq_product_help_query", "byq_agent_context", "byq_agent_roles", "byq_agent_run_start"],
       "limitations": ["小巴不能获得 Engineering 权限或直接访问业务数据库"]
+    },
+    {
+      "capability_id": "research-data-preparation",
+      "name": "准备研究数据",
+      "route_id": "/agent",
+      "audience": "USER",
+      "purpose": "在原研究会话确认标的、日期和字段，检查覆盖；缺少数据时将只含范围的链接交给管理员准备，复查通过后带入续研草稿。",
+      "keywords": [
+        "准备研究数据",
+        "研究数据准备",
+        "覆盖检查",
+        "数据缺口",
+        "继续研究",
+        "续研",
+        "缺数据"
+      ],
+      "prerequisites": [
+        "已登录并有研究回复，当前会话空闲",
+        "规范证券代码1至20只，单次不超过180个自然日"
+      ],
+      "support": [
+        "EXPLAIN",
+        "NAVIGATE"
+      ],
+      "agent_tools": [
+        "byq_product_help_query"
+      ],
+      "limitations": [
+        "普通用户在会话界面检查覆盖并分享范围；同步由管理员在数据中心确认",
+        "准备回执不代表指标有值，需在原会话复查并核实具体数据",
+        "带入续研草稿后由用户确认发送，不会自动发送"
+      ]
     },
     {
       "capability_id": "dashboard",

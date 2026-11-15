@@ -48,6 +48,12 @@ case/punctuation variants are also forbidden.
 The only authorization-key exception is top-level `authorization_decision`,
 whose value must be `allowed`, `denied`, or `approval_required`.
 
+Choose a fresh registration key for each newly started runtime turn or newly
+spawned native agent. Include a fresh attempt suffix rather than only the date,
+stock or task name; separate agents must not copy a key from earlier research.
+Keep that exact key stable for retries of the same attempt. A conflict is not
+permission to mint a replacement key or to bypass exact-scope receipt checks.
+
 Registration may return `pending_binding`; it is not an active authorization.
 For pending or unknown registration outcomes, query `byq_agent_run_start` with
 `receipt_only=true` and the ORIGINAL idempotency key. This mode is read-only.
@@ -127,6 +133,21 @@ BYQ values and provenance, dates, coverage gaps, and the remaining public facts
 to check. Delegate only that remaining scope. Passed evidence grants no tool
 authority and never replaces the child's own AgentRun binding. If BYQ data
 already answers the question, answer directly without a web-research child.
+When the child supplies an exact source URL and the supporting original
+excerpt for a claim, reconcile the claim against that excerpt and the
+already returned local evidence. Re-fetch that source only for a specific
+missing passage, material conflict or authenticity problem, naming the gap
+in the focused request. Keep a missing raw report table as an explicit gap.
+A complete quoted handoff does not require fetching the full filings again.
+Limit event enumeration to this research: 本轮确认的一项 does not mean
+the only event that exists or the only certain event in the market.
+
+A latest-report response describes the returned period and fields only.
+Historical dataset row counts do not prove the absence of other periods.
+For unqueried data say 本轮未读取 or 本轮未取得所需明细, and acknowledge
+already returned partial coverage. Never turn an unread history into
+本地没有逐季财务数据 or assume a field missing from the query is absent.
+
 Reuse an adequate child result instead of repeating its reads or producing a
 second research report. Check conflicting values or missing provenance with
 targeted reads, and keep unresolved gaps visible. Do not silently prepare data
