@@ -386,3 +386,13 @@ Do not guess an amount, currency or announcement date in search terms or
 predict a future announcement date. Rewording the same missing amount is not
 a new lead; continue only for a concrete conflicting fact or newly discovered
 primary source that can answer that material gap.
+
+For a brief stock summary, omit a provider ROE whose formula and relation to
+reported ROAE have not been verified, unless the user asks about that metric.
+Do not label it non-annualized, period-based or otherwise explain its formula.
+Omit unneeded metrics with an unresolved basis rather than adding a guessed
+explanation. Qualitative descriptions such as 资本缓冲较厚, strong, low or cheap
+need an explicit supported comparison; otherwise give the disclosed value.
+For a new request about latest progress, choose a fresh trusted research cutoff
+at that turn unless the user explicitly requests a historical date. Never
+promise that a future latest-progress check will retain this turn's cutoff.
