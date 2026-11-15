@@ -2400,3 +2400,21 @@ def test_ml_training_cancel_forwards_trusted_browser_context_without_agent_grant
     assert forwarded["x-byq-actor-principal"] == "phase12-browser-owner"
     assert forwarded["x-byq-session-id"] == "browser"
     assert forwarded["x-byq-dsh-run-id"] == "browser"
+
+
+def test_ml_options_only_forwards_optional_pool_reference_with_trusted_identity(monkeypatch):
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls = []
+    def backend(method, path, payload=None, *, headers=None):
+        assert method == "GET" and payload is None
+        assert headers["x-byq-owner-principal"] == "product-user"
+        calls.append(path)
+        return {"schema_version": "ml-options.v1", "tasks": [], "pools": []}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer product-test-token"}
+    assert client.get("/api/product/ml/options", headers=headers).status_code == 200
+    assert calls[-1] == "/v1/research/ml/options"
+    assert client.get("/api/product/ml/options?pool_id=stock_pool_test&owner=other",
+                      headers=headers).status_code == 200
+    assert calls[-1] == "/v1/research/ml/options?pool_id=stock_pool_test"

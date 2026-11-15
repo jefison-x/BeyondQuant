@@ -497,6 +497,50 @@ class MarketDataStore(PgStoreMixin):
             },
         }
 
+    def pool_daily_date_reference(
+        self, snapshot_id: str, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, Any]:
+        """Observed per-member date bounds only, not a training-readiness proof."""
+        rows = self._execute(
+            """SELECT member.symbol,MIN(bar.trade_date) AS date_min,
+                      MAX(bar.trade_date) AS date_max,COUNT(bar.trade_date) AS row_count
+               FROM stock_pool_snapshot_members member
+               JOIN stock_pool_snapshots snapshot ON snapshot.snapshot_id=member.snapshot_id
+               JOIN stock_pools pool ON pool.pool_id=snapshot.pool_id
+               LEFT JOIN market_daily_bars bar
+                 ON bar.symbol=member.symbol AND bar.data_source='tushare'
+               WHERE member.snapshot_id=:snapshot AND pool.owner_principal=:owner
+                 AND pool.workspace_id=:workspace AND pool.status='active'
+                 AND pool.current_snapshot_id=member.snapshot_id
+               GROUP BY member.symbol ORDER BY member.symbol""",
+            {"snapshot": snapshot_id, "owner": trusted_owner, "workspace": trusted_workspace},
+        )
+        populated = [row for row in rows if int(row["row_count"]) > 0]
+        first = max((str(row["date_min"]) for row in populated), default=None)
+        last = min((str(row["date_max"]) for row in populated), default=None)
+        if not rows:
+            state = "no_members"
+        elif len(populated) != len(rows):
+            state = "members_without_data"
+        elif first is None or last is None or first > last:
+            state = "no_overlapping_bounds"
+        else:
+            state = "observed_bounds"
+        return {
+            "schema_version": "ml-pool-daily-reference.v1",
+            "stock_pool_snapshot_id": snapshot_id,
+            "state": state,
+            "member_count": len(rows), "members_with_data": len(populated),
+            "minimum_rows_per_member": min((int(row["row_count"]) for row in rows), default=0),
+            "observed_start_date": first if state == "observed_bounds" else None,
+            "observed_end_date": last if state == "observed_bounds" else None,
+            "source": "persisted_tushare_daily",
+            "reference_only": True,
+            "continuous_history_verified": False,
+            "training_readiness_verified": False,
+            "recommended_dates": None,
+        }
+
     def coverage(self) -> dict[str, Any]:
         rows = self._execute(
             """SELECT data_source, asset_type, SUM(row_count)::bigint AS row_count,

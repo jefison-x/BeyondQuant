@@ -59,10 +59,24 @@ describe("StrategyView", () => {
   it("opens an investment idea as an editable conversation draft without saving a strategy", async () => {
     const wrapper = mountView();
     await flushPromises();
+    expect((wrapper.vm as unknown as { editorOpen: boolean }).editorOpen).toBe(false);
+    expect((wrapper.vm as unknown as { filteredArtifacts: unknown[] }).filteredArtifacts).toHaveLength(0);
     (wrapper.vm as unknown as { discussStrategyIdea: () => void }).discussStrategyIdea();
     expect(pushRoute).toHaveBeenCalledWith({ path: "/agent", query: {
       new: expect.any(String), draft: expect.stringContaining("先讨论方案"),
     } });
+    expect(saveStrategyDraft).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("opens the manual editor only after the explicit new-draft action", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect((wrapper.vm as unknown as { editorOpen: boolean }).editorOpen).toBe(false);
+    await (wrapper.vm as unknown as { newDraft: () => Promise<void> }).newDraft();
+    await flushPromises();
+
+    expect((wrapper.vm as unknown as { editorOpen: boolean }).editorOpen).toBe(true);
     expect(saveStrategyDraft).not.toHaveBeenCalled();
     wrapper.unmount();
   });

@@ -38,6 +38,7 @@ const tasks = ref<Array<Record<string, unknown>>>([]);
 const approval = ref<Record<string, unknown> | null>(null);
 const approvalArtifactId = ref("");
 const selected = ref<Record<string, unknown> | null>(null);
+const editorOpen = ref(false);
 const detail = ref<Record<string, unknown> | null>(null);
 const taskId = ref("");
 const filter = ref<"all" | "draft" | "version">("all");
@@ -274,6 +275,7 @@ async function newDraft() {
   historyPage.value = 1;
   historyTotal.value = 0;
   selected.value = null;
+  editorOpen.value = true;
   detail.value = null;
   lifecycle.value = "active";
   filter.value = "draft";
@@ -360,6 +362,7 @@ async function changeLifecycle(value: "active" | "superseded") {
   lifecycle.value = value;
   page.value = 1;
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -374,6 +377,7 @@ async function changePage(value: number) {
   if (busy.value === "backtest") busy.value = "";
   page.value = value;
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -392,6 +396,7 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   const targetId = String(row.artifact_id ?? "");
   if (!targetId) return;
   selected.value = row;
+  editorOpen.value = row.kind === "strategy_draft";
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -488,6 +493,7 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
   const id = String(row.artifact_id ?? "");
   if (!id) return;
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -497,6 +503,7 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
     if (selection !== selectionGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value) return;
     if (entity.artifact_id !== id) throw new Error("精确版本回包的 Artifact ID 不一致。");
     selected.value = entity;
+    editorOpen.value = entity.kind === "strategy_draft";
     detail.value = entity;
     const approvalBody = entity.kind === "strategy_version"
       ? await getStrategyVersionApproval(id, token)
@@ -729,6 +736,7 @@ watch(authScope, () => {
   total.value = 0;
   search.value = "";
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -777,18 +785,18 @@ onUnmounted(() => {
       <ManagementWorkspace
         eyebrow="核心研究资产"
         title="策略管理"
-        description="先描述投资想法，再完善规则、保存版本并验证历史表现。熟悉代码的用户也可直接编辑策略。"
+        description="推荐先描述投资想法：只会打开一条可编辑的对话草稿，不会自动发送、创建策略或申请审批。确认方案后，再手工验证并保存草稿、创建版本和单独申请批准。"
         catalog-label="策略资产"
         :count="total"
         @return="returnToConversation"
       >
       <template #return>返回投研对话</template>
       <template #actions>
-        <el-button @click="discussStrategyIdea">描述投资想法</el-button>
-        <el-button type="primary" @click="newDraft">新建策略</el-button>
+        <el-button type="primary" @click="discussStrategyIdea">先描述投资想法</el-button>
+        <el-button @click="newDraft">手工新建策略</el-button>
         <el-button @click="refreshList">刷新目录</el-button>
       </template>
-      <template #summary>审批只授权精确的不可变版本</template>
+      <template #summary>讨论、保存、创建版本和审批是不同步骤</template>
       <template #catalog>
       <el-card shadow="never" class="strategy-list-pane">
         <template #header>
@@ -812,7 +820,14 @@ onUnmounted(() => {
             <el-radio-button value="version">版本</el-radio-button>
           </el-radio-group>
         </div>
-        <el-empty v-if="!filteredArtifacts.length" description="暂无策略" />
+        <div v-if="!filteredArtifacts.length" class="strategy-empty-state">
+          <h3>还没有可显示的策略</h3>
+          <p>可以先描述想法并在对话中补齐规则；这只会生成待你检查的消息草稿，不会创建或批准策略。也可以直接手工新建。</p>
+          <div class="empty-state-actions">
+            <el-button type="primary" @click="discussStrategyIdea">先描述投资想法</el-button>
+            <el-button @click="newDraft">手工新建策略</el-button>
+          </div>
+        </div>
         <el-table
           v-else
           class="desktop-catalog-table"
@@ -858,12 +873,12 @@ onUnmounted(() => {
 
       <template #detail>
       <div class="strategy-detail-column">
-        <el-card v-if="!isReadonly" shadow="never" class="strategy-editor-pane">
+        <el-card v-if="editorOpen && !isReadonly" shadow="never" class="strategy-editor-pane">
           <template #header>
             <div class="panel-heading">
               <div>
-                <div class="panel-title">策略编辑器</div>
-                <div class="panel-sub">{{ isReadonly ? "版本只读" : "草稿可编辑" }}</div>
+                <div class="panel-title">手工策略编辑器</div>
+                <div class="panel-sub">讨论草稿不会自动成为策略；保存草稿、创建版本和审批均需分别操作。</div>
               </div>
               <div class="editor-actions">
                 <div class="template-field">
@@ -900,53 +915,57 @@ onUnmounted(() => {
             <el-form-item label="策略说明">
               <el-input v-model="description" aria-label="策略说明" placeholder="说明策略目标、适用市场和主要假设" :disabled="isReadonly" />
             </el-form-item>
-            <div class="strategy-meta-grid">
-              <el-form-item label="参数默认值（JSON）">
-                <el-input
-                  v-model="parametersJson"
-                  aria-label="参数默认值（JSON）"
-                  type="textarea"
-                  :rows="4"
-                  :disabled="isReadonly"
-                  spellcheck="false"
-                  placeholder="例如 {&quot;lookback&quot;: 20}"
-                />
-              </el-form-item>
-              <el-form-item label="参数规范（JSON Schema）">
-                <el-input
-                  v-model="parameterSchemaJson"
-                  aria-label="参数规范（JSON Schema）"
-                  type="textarea"
-                  :rows="4"
-                  :disabled="isReadonly"
-                  spellcheck="false"
-                  placeholder="声明参数类型、范围与必填项"
-                />
-              </el-form-item>
-            </div>
-            <el-form-item label="数据依赖（JSON）">
-              <el-input
-                v-model="dataRequirementsJson"
-                aria-label="数据依赖（JSON）"
-                type="textarea"
-                :rows="4"
-                :disabled="isReadonly"
-                spellcheck="false"
-                placeholder='例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
-              />
-              <div class="field-hint">新策略默认使用沪深300（000300.SH）作为回测对比基准；如需其他基准，请在版本冻结前修改。</div>
-            </el-form-item>
-            <el-form-item label="Python 策略脚本">
-              <el-input
-                v-model="script"
-                aria-label="Python 策略脚本"
-                type="textarea"
-                :rows="14"
-                :disabled="isReadonly"
-                spellcheck="false"
-                placeholder="定义 CustomStrategy 并实现 generate_signals"
-              />
-            </el-form-item>
+            <el-collapse class="strategy-advanced-settings">
+              <el-collapse-item title="高级设置：参数、数据依赖与 Python 代码" name="advanced">
+                <div class="strategy-meta-grid">
+                  <el-form-item label="参数默认值（JSON）">
+                    <el-input
+                      v-model="parametersJson"
+                      aria-label="参数默认值（JSON）"
+                      type="textarea"
+                      :rows="4"
+                      :disabled="isReadonly"
+                      spellcheck="false"
+                      placeholder="例如 {&quot;lookback&quot;: 20}"
+                    />
+                  </el-form-item>
+                  <el-form-item label="参数规范（JSON Schema）">
+                    <el-input
+                      v-model="parameterSchemaJson"
+                      aria-label="参数规范（JSON Schema）"
+                      type="textarea"
+                      :rows="4"
+                      :disabled="isReadonly"
+                      spellcheck="false"
+                      placeholder="声明参数类型、范围与必填项"
+                    />
+                  </el-form-item>
+                </div>
+                <el-form-item label="数据依赖（JSON）">
+                  <el-input
+                    v-model="dataRequirementsJson"
+                    aria-label="数据依赖（JSON）"
+                    type="textarea"
+                    :rows="4"
+                    :disabled="isReadonly"
+                    spellcheck="false"
+                    placeholder='例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
+                  />
+                  <div class="field-hint">新策略默认使用沪深300（000300.SH）作为回测对比基准；如需其他基准，请在版本冻结前修改。</div>
+                </el-form-item>
+                <el-form-item label="Python 策略脚本">
+                  <el-input
+                    v-model="script"
+                    aria-label="Python 策略脚本"
+                    type="textarea"
+                    :rows="14"
+                    :disabled="isReadonly"
+                    spellcheck="false"
+                    placeholder="定义 CustomStrategy 并实现 generate_signals"
+                  />
+                </el-form-item>
+              </el-collapse-item>
+            </el-collapse>
           </el-form>
           <div class="editor-actions">
             <el-button type="primary" :loading="busy === 'validate'" :disabled="isReadonly" @click="validateDraft">
@@ -1027,6 +1046,10 @@ onUnmounted(() => {
 .template-field { min-width: min(230px, 100%); }
 .strategy-editor-form { margin-top: 0.75rem; }
 .strategy-editor-form :deep(.el-form-item) { margin-bottom: 0.8rem; }
+.strategy-empty-state { display: grid; gap: 0.6rem; padding: 1rem; }
+.strategy-empty-state h3 { font-size: 15px; margin: 0; }
+.strategy-empty-state p { color: var(--byq-text-muted); font-size: 12px; line-height: 1.55; margin: 0; }
+.empty-state-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 .strategy-detail-column {
   display: grid;

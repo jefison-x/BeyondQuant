@@ -49,3 +49,24 @@ annualization conversion or explanation of NULL is implied by these fields.
 MCP passes this metadata through unchanged and keeps existing safe error handling.
 Public filings, their dates and dividend status still need their own evidence;
 these local-data scopes cannot establish that no later announcement exists.
+
+## Model study date reference
+
+GET Product /api/product/ml/options keeps its original shape without a pool_id.
+With pool_id, Backend first checks the trusted owner and workspace, non-deleted
+pool, active state and current immutable snapshot. Foreign or legacy NULL
+workspace pools are not reassigned or exposed through this selector. The read-only selected_pool_data_reference
+aggregates only that snapshot's members and persisted Tushare daily rows; SQL
+also binds owner, workspace and current active snapshot. It returns counts and overlapping per-member date
+bounds only when every member has data and the bounds overlap. This is not proof
+of common sessions or continuous history. No-data, partial, inactive and missing
+snapshot cases return no suggested dates.
+
+reference_only=true, continuous_history_verified=false and
+training_readiness_verified=false remain explicit; recommended_dates is null.
+The form displays a reference and warnings, never silently fills example dates or
+blocks saving a valid future research definition solely for absent data. Training
+retains its existing preparation and approval requirements. Client requests are
+lazy and scoped to the selected snapshot; stale pool/snapshot/auth responses and
+responses after close/unmount are discarded. No new model, Job or provider call
+is started by this metadata read.

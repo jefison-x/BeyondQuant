@@ -84,6 +84,7 @@ const readiness = ref<StockPoolReadiness | null>(null);
 const snapshotDiff = ref<StockPoolSnapshotDiff | null>(null);
 const members = ref<StockPoolMember[]>([]);
 type MemberDraft = { symbol: string; name: string; weightPercent: number | null };
+type DynamicFilterDraft = { filter: DynamicStockPoolRule["filters"][number]; managed: boolean };
 type SecurityOption = Pick<SecurityRecord, "symbol" | "name">;
 const createSymbols = ref<string[]>([]);
 const editMemberSymbols = ref<string[]>([]);
@@ -116,8 +117,13 @@ const canRefreshPool = computed(() => selected.value?.pool_type === "dynamic"
   || (indexDefinitionKnown.value && !isHistoricalIndex.value));
 const requestedAsOf = ref("");
 const dynamicMinimumMarketCap = ref<number | null>(null);
+const dynamicIndustry = ref("");
+const dynamicPeTtmMaximum = ref<number | null>(null);
+const dynamicPbMaximum = ref<number | null>(null);
+const dynamicDividendYieldMinimum = ref<number | null>(null);
+const dynamicNetProfitYoyMinimum = ref<number | null>(null);
 const dynamicTopN = ref(50);
-const dynamicRanking = ref("daily_basic.total_mv");
+const dynamicRanking = ref<string | null>("daily_basic.total_mv");
 const dynamicDirection = ref<"asc" | "desc">("desc");
 const dynamicCadence = ref<"manual" | "daily" | "weekly" | "monthly">("manual");
 const dynamicWeightMode = ref<"unweighted" | "equal_weight">("equal_weight");
@@ -125,6 +131,19 @@ const dynamicActivate = ref(true);
 const dynamicPreview = ref<DynamicStockPoolPreview | null>(null);
 const dynamicRuleText = ref("");
 const dynamicRuleBaseline = ref("");
+const dynamicRuleError = ref("");
+const dynamicRuleDraft = ref<DynamicStockPoolRule>(emptyDynamicRule());
+const dynamicFilterDraft = ref<DynamicFilterDraft[]>([]);
+let dynamicPreviewRequestGeneration = 0;
+
+function invalidateDynamicPreview() {
+  dynamicPreviewRequestGeneration += 1;
+  dynamicPreview.value = null;
+}
+
+watch([dynamicRuleText, requestedAsOf], invalidateDynamicPreview, { flush: "sync" });
+
+let successfulPoolCreation = false;
 const description = ref("");
 const filter = ref<"all" | "custom" | "index" | "dynamic">("all");
 const search = ref("");
@@ -143,7 +162,7 @@ const snapshotDirty = computed(() => Boolean(selected.value?.pool_type === "cust
   members: editMembers.value,
   definition: editDefinition.value,
 }) !== snapshotBaseline.value);
-const dynamicDefinitionDirty = computed(() => selected.value?.pool_type === "dynamic" && dynamicRuleText.value !== dynamicRuleBaseline.value);
+const dynamicDefinitionDirty = computed(() => !showCreate.value && selected.value?.pool_type === "dynamic" && dynamicRuleText.value !== dynamicRuleBaseline.value);
 const createDirty = computed(() => showCreate.value && Boolean(name.value || description.value || createMembers.value.length || indexSymbol.value || requestedAsOf.value || poolType.value !== "custom"));
 const dirty = computed(() => metadataDirty.value || snapshotDirty.value || dynamicDefinitionDirty.value || createDirty.value);
 const { confirmDiscard } = useUnsavedChanges(dirty);
@@ -281,6 +300,7 @@ function memberWeightMap(rows: MemberDraft[]): Record<string, number> {
 
 function closeCreate() {
   if (createDirty.value && !window.confirm("创建内容尚未提交，确定放弃吗？")) return;
+  invalidateDynamicPreview();
   showCreate.value = false;
   name.value = "";
   description.value = "";
@@ -289,20 +309,303 @@ function closeCreate() {
   indexSymbol.value = "";
   indexTrackingMode.value = "follow_index";
   requestedAsOf.value = "";
-  dynamicPreview.value = null;
+  resetDynamicRule();
   poolType.value = "custom";
+  restoreDynamicEditorAfterCreateClose();
 }
 
-function buildDynamicRule(): DynamicStockPoolRule {
-  const filters: DynamicStockPoolRule["filters"] = [];
-  if (dynamicMinimumMarketCap.value !== null) {
-    filters.push({ field: "daily_basic.total_mv", operator: "gte", value: dynamicMinimumMarketCap.value });
+function openCreate() {
+  successfulPoolCreation = false;
+  invalidateDynamicPreview();
+  resetDynamicRule();
+  showCreate.value = true;
+}
+
+function restoreDynamicEditorAfterCreateClose() {
+  if (successfulPoolCreation) {
+    successfulPoolCreation = false;
+    return;
   }
+  if (selected.value?.pool_type === "dynamic" && producer.value?.producer_kind === "dynamic") {
+    loadDynamicRuleDefinition(producer.value.definition);
+    dynamicRuleBaseline.value = dynamicRuleText.value;
+  } else {
+    resetDynamicRule();
+  }
+}
+
+function emptyDynamicRule(): DynamicStockPoolRule {
   return {
     schema_version: "dynamic-stock-pool-rule.v1",
     base_universe: { kind: "security_master" },
+    filters: [],
+    ranking: { field: "daily_basic.total_mv", direction: "desc" },
+    top_n: 50,
+    missing_policy: "exclude",
+    weight_mode: "equal_weight",
+    cadence: "manual",
+  };
+}
+
+const SIMPLE_DYNAMIC_FILTERS = [
+  ["security.industry", "eq"],
+  ["daily_basic.total_mv", "gte"],
+  ["daily_basic.pe_ttm", "lte"],
+  ["daily_basic.pb", "lte"],
+  ["daily_basic.dv_ttm", "gte"],
+  ["financial.netprofit_yoy", "gte"],
+] as const;
+
+function simpleFilterPair(item: DynamicStockPoolRule["filters"][number]) {
+  return SIMPLE_DYNAMIC_FILTERS.find(([field, operator]) => item.field === field && item.operator === operator);
+}
+
+function isCompatibleSimpleFilter(item: DynamicStockPoolRule["filters"][number]) {
+  const simple = simpleFilterPair(item);
+  if (!simple) return false;
+  return simple[0] === "security.industry"
+    ? typeof item.value === "string"
+    : typeof item.value === "number" && Number.isFinite(item.value);
+}
+
+const dynamicAdvancedConditionNotice = computed(() =>
+  dynamicFilterDraft.value.some((item) => !item.managed && Boolean(simpleFilterPair(item.filter))));
+
+function filterValue(rule: DynamicStockPoolRule, field: string, operator: string): string | number | null {
+  const item = rule.filters.find((candidate) => candidate.field === field
+    && candidate.operator === operator && isCompatibleSimpleFilter(candidate));
+  if (field === "security.industry" && operator === "eq") {
+    return typeof item?.value === "string" ? item.value : null;
+  }
+  return typeof item?.value === "number" && Number.isFinite(item.value) ? item.value : null;
+}
+
+function loadDynamicRule(rule: DynamicStockPoolRule, text = JSON.stringify(rule, null, 2)) {
+  syncingDynamicRule = true;
+  dynamicRuleDraft.value = JSON.parse(JSON.stringify(rule)) as DynamicStockPoolRule;
+  const managedPairs = new Set<string>();
+  dynamicFilterDraft.value = dynamicRuleDraft.value.filters.map((filter) => {
+    const simple = simpleFilterPair(filter);
+    if (!simple || !isCompatibleSimpleFilter(filter)) return { filter, managed: false };
+    const key = `${simple[0]}:${simple[1]}`;
+    if (managedPairs.has(key)) return { filter, managed: false };
+    managedPairs.add(key);
+    return { filter, managed: true };
+  });
+  const industry = filterValue(rule, "security.industry", "eq");
+  const marketCap = filterValue(rule, "daily_basic.total_mv", "gte");
+  const peTtm = filterValue(rule, "daily_basic.pe_ttm", "lte");
+  const pb = filterValue(rule, "daily_basic.pb", "lte");
+  const dividend = filterValue(rule, "daily_basic.dv_ttm", "gte");
+  const profitGrowth = filterValue(rule, "financial.netprofit_yoy", "gte");
+  dynamicIndustry.value = typeof industry === "string" ? industry : "";
+  dynamicMinimumMarketCap.value = typeof marketCap === "number" ? marketCap : null;
+  dynamicPeTtmMaximum.value = typeof peTtm === "number" ? peTtm : null;
+  dynamicPbMaximum.value = typeof pb === "number" ? pb : null;
+  dynamicDividendYieldMinimum.value = typeof dividend === "number" ? dividend : null;
+  dynamicNetProfitYoyMinimum.value = typeof profitGrowth === "number" ? profitGrowth : null;
+  dynamicTopN.value = Number.isInteger(rule.top_n) ? rule.top_n : 50;
+  dynamicRanking.value = rule.ranking?.field ?? "";
+  dynamicDirection.value = rule.ranking?.direction ?? "desc";
+  dynamicCadence.value = rule.cadence;
+  dynamicWeightMode.value = rule.weight_mode;
+  dynamicRuleText.value = text;
+  dynamicRuleError.value = "";
+  syncingDynamicRule = false;
+}
+
+function resetDynamicRule() {
+  const rule = emptyDynamicRule();
+  loadDynamicRule(rule);
+  dynamicRuleBaseline.value = dynamicRuleText.value;
+  dynamicRuleError.value = "";
+}
+
+function parseDynamicRuleText(text: string): DynamicStockPoolRule {
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("规则必须是 JSON 对象");
+  }
+  const value = parsed as Record<string, unknown>;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(value, key);
+  const ruleKeys = new Set([
+    "schema_version", "base_universe", "filters", "ranking", "top_n",
+    "missing_policy", "weight_mode", "cadence",
+  ]);
+  if (Object.keys(parsed).some((key) => !ruleKeys.has(key))) {
+    throw new Error("规则包含不支持的顶层字段");
+  }
+  const schemaVersion = has("schema_version") ? value.schema_version : "dynamic-stock-pool-rule.v1";
+  if (schemaVersion !== "dynamic-stock-pool-rule.v1") {
+    throw new Error("规则版本无效");
+  }
+
+  const rawBase = value.base_universe;
+  if (!rawBase || typeof rawBase !== "object" || Array.isArray(rawBase)) {
+    throw new Error("基础股票范围格式无效");
+  }
+  const base = rawBase as Record<string, unknown>;
+  const baseKeys = Object.keys(base);
+  let baseUniverse: DynamicStockPoolRule["base_universe"];
+  if (base.kind === "security_master" && baseKeys.every((key) => key === "kind" || key === "snapshot_id")) {
+    baseUniverse = { kind: "security_master" };
+  } else if (base.kind === "stock_pool_snapshot" && baseKeys.length === 2
+    && typeof base.snapshot_id === "string" && Boolean(base.snapshot_id.trim())
+    && base.snapshot_id.trim().length <= 96) {
+    baseUniverse = { kind: "stock_pool_snapshot", snapshot_id: base.snapshot_id.trim() };
+  } else {
+    throw new Error("基础股票范围格式无效");
+  }
+
+  const rawFilters = has("filters") ? value.filters : [];
+  if (!Array.isArray(rawFilters)) throw new Error("筛选条件格式无效");
+  const operators = new Set<string>(["eq", "ne", "in", "not_in", "gt", "gte", "lt", "lte"]);
+  const isOperator = (candidate: unknown): candidate is DynamicStockPoolRule["filters"][number]["operator"] =>
+    typeof candidate === "string" && operators.has(candidate);
+  const isScalar = (entry: unknown): entry is string | number | boolean =>
+    typeof entry === "string" ? Boolean(entry.trim()) && entry.trim().length <= 128
+      : typeof entry === "number" ? Number.isFinite(entry)
+        : typeof entry === "boolean";
+  const filters: DynamicStockPoolRule["filters"] = [];
+  for (const item of rawFilters) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("筛选条件格式无效");
+    }
+    const filter = item as Record<string, unknown>;
+    if (Object.keys(filter).length !== 3 || typeof filter.field !== "string"
+      || !isOperator(filter.operator)) {
+      throw new Error("筛选条件格式无效");
+    }
+    if (filter.operator === "in" || filter.operator === "not_in") {
+      if (!Array.isArray(filter.value) || filter.value.length === 0 || filter.value.length > 50
+        || !filter.value.every(isScalar)) throw new Error("筛选条件格式无效");
+      filters.push({
+        field: filter.field,
+        operator: filter.operator,
+        value: filter.value,
+      });
+    } else {
+      if (Array.isArray(filter.value) || !isScalar(filter.value)) throw new Error("筛选条件格式无效");
+      filters.push({
+        field: filter.field,
+        operator: filter.operator,
+        value: filter.value,
+      });
+    }
+  }
+
+  const rawRanking = has("ranking") ? value.ranking : null;
+  let ranking: DynamicStockPoolRule["ranking"];
+  if (rawRanking === null) {
+    ranking = null;
+  } else if (rawRanking && typeof rawRanking === "object" && !Array.isArray(rawRanking)) {
+    const rankingRecord = rawRanking as Record<string, unknown>;
+    if (Object.keys(rankingRecord).length !== 2 || typeof rankingRecord.field !== "string"
+      || (rankingRecord.direction !== "asc" && rankingRecord.direction !== "desc")) {
+      throw new Error("排序规则格式无效");
+    }
+    ranking = { field: rankingRecord.field, direction: rankingRecord.direction };
+  } else {
+    throw new Error("排序规则格式无效");
+  }
+
+  const topN = value.top_n;
+  if (typeof topN !== "number" || !Number.isInteger(topN) || topN < 1 || topN > 500) {
+    throw new Error("规则结构不完整；top_n 必须是 1 到 500 的整数");
+  }
+  const missingPolicy = has("missing_policy") ? value.missing_policy : "exclude";
+  const weightMode = has("weight_mode") ? value.weight_mode : "unweighted";
+  const cadence = has("cadence") ? value.cadence : "manual";
+  if (missingPolicy !== "exclude" || (weightMode !== "unweighted" && weightMode !== "equal_weight")
+    || (cadence !== "manual" && cadence !== "daily" && cadence !== "weekly" && cadence !== "monthly")) {
+    throw new Error("缺值、权重或更新频率设置无效");
+  }
+  return {
+    schema_version: "dynamic-stock-pool-rule.v1",
+    base_universe: baseUniverse,
     filters,
-    ranking: { field: dynamicRanking.value, direction: dynamicDirection.value },
+    ranking,
+    top_n: topN,
+    missing_policy: missingPolicy,
+    weight_mode: weightMode,
+    cadence,
+  };
+}
+
+function loadDynamicRuleDefinition(definition: Record<string, unknown>) {
+  const text = JSON.stringify(definition, null, 2);
+  try {
+    loadDynamicRule(parseDynamicRuleText(text), text);
+  } catch (cause) {
+    loadDynamicRule(emptyDynamicRule(), text);
+    dynamicRuleError.value = cause instanceof Error ? cause.message : "动态规则结构无效";
+  }
+}
+
+function onDynamicRuleTextInput(text: string) {
+  dynamicRuleText.value = text;
+  try {
+    loadDynamicRule(parseDynamicRuleText(text), text);
+  } catch (cause) {
+    dynamicRuleError.value = cause instanceof Error ? cause.message : "规则 JSON 格式无效";
+  }
+}
+
+function buildDynamicRuleFromForm(): DynamicStockPoolRule {
+  const managedKeys = new Set<string>();
+  const filters: DynamicStockPoolRule["filters"] = [];
+  const nextFilterDraft: DynamicFilterDraft[] = [];
+  const currentValue = (field: string): string | number | null => {
+    if (field === "security.industry") return dynamicIndustry.value.trim() || null;
+    if (field === "daily_basic.total_mv") return dynamicMinimumMarketCap.value;
+    if (field === "daily_basic.pe_ttm") return dynamicPeTtmMaximum.value;
+    if (field === "daily_basic.pb") return dynamicPbMaximum.value;
+    if (field === "daily_basic.dv_ttm") return dynamicDividendYieldMinimum.value;
+    if (field === "financial.netprofit_yoy") return dynamicNetProfitYoyMinimum.value;
+    return null;
+  };
+
+  for (const draft of dynamicFilterDraft.value) {
+    const simple = simpleFilterPair(draft.filter);
+    if (!draft.managed || !simple) {
+      filters.push(draft.filter);
+      nextFilterDraft.push(draft);
+      continue;
+    }
+    const key = `${simple[0]}:${simple[1]}`;
+    if (managedKeys.has(key)) {
+      filters.push(draft.filter);
+      nextFilterDraft.push({ filter: draft.filter, managed: false });
+      continue;
+    }
+    managedKeys.add(key);
+    const value = currentValue(simple[0]);
+    if (value !== null && value !== "") {
+      const updated = { field: simple[0], operator: simple[1], value };
+      filters.push(updated);
+      nextFilterDraft.push({ filter: updated, managed: true });
+    } else {
+      // Keep the slot managed even when the visible control is cleared, so an
+      // opaque duplicate is never accidentally promoted on the next edit.
+      nextFilterDraft.push(draft);
+    }
+  }
+
+  for (const [field, operator] of SIMPLE_DYNAMIC_FILTERS) {
+    const key = `${field}:${operator}`;
+    if (managedKeys.has(key)) continue;
+    const value = currentValue(field);
+    if (value === null || value === "") continue;
+    const added = { field, operator, value };
+    filters.push(added);
+    nextFilterDraft.push({ filter: added, managed: true });
+    managedKeys.add(key);
+  }
+  dynamicFilterDraft.value = nextFilterDraft;
+  return {
+    ...dynamicRuleDraft.value,
+    filters,
+    ranking: dynamicRanking.value ? { field: dynamicRanking.value, direction: dynamicDirection.value } : null,
     top_n: dynamicTopN.value,
     missing_policy: "exclude",
     weight_mode: dynamicWeightMode.value,
@@ -310,18 +613,60 @@ function buildDynamicRule(): DynamicStockPoolRule {
   };
 }
 
+function syncDynamicRuleFromForm() {
+  if (syncingDynamicRule || dynamicRuleError.value) return;
+  const rule = buildDynamicRuleFromForm();
+  dynamicRuleDraft.value = rule;
+  dynamicRuleText.value = JSON.stringify(rule, null, 2);
+}
+
+let syncingDynamicRule = false;
+watch(() => [
+  dynamicIndustry.value, dynamicMinimumMarketCap.value, dynamicPeTtmMaximum.value,
+  dynamicPbMaximum.value, dynamicDividendYieldMinimum.value, dynamicNetProfitYoyMinimum.value,
+  dynamicTopN.value, dynamicRanking.value, dynamicDirection.value, dynamicCadence.value, dynamicWeightMode.value,
+], syncDynamicRuleFromForm, { flush: "sync" });
+
+function buildDynamicRule(): DynamicStockPoolRule {
+  if (dynamicRuleError.value) throw new Error(`请先修正规则 JSON：${dynamicRuleError.value}`);
+  return buildDynamicRuleFromForm();
+}
+
 async function previewDynamic() {
+  const requestGeneration = ++dynamicPreviewRequestGeneration;
+  dynamicPreview.value = null;
   busy.value = true;
   try {
-    dynamicPreview.value = await previewDynamicStockPool(
+    const preview = await previewDynamicStockPool(
       buildDynamicRule(), requestedAsOf.value?.replaceAll("-", "") || undefined, auth.token,
     );
-    ElMessage.success(`预览完成：${dynamicPreview.value.member_count} 只成分（非权威快照）`);
+    if (requestGeneration !== dynamicPreviewRequestGeneration) return;
+    dynamicPreview.value = preview;
+    ElMessage.success("筛选预览完成；仅供查看，尚未保存成员版本");
   } catch (exc) {
-    ElMessage.error(exc instanceof Error ? exc.message : "动态股票池预览失败");
+    if (requestGeneration === dynamicPreviewRequestGeneration) {
+      ElMessage.error(exc instanceof Error ? exc.message : "动态股票池预览失败");
+    }
   } finally {
     busy.value = false;
   }
+}
+
+function manifestCount(manifest: Record<string, unknown> | undefined, path: string[]): number | null {
+  let value: unknown = manifest;
+  for (const key of path) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+const dynamicPreviewInputCount = computed(() => manifestCount(dynamicPreview.value?.input_manifest, ["base_universe", "row_count"]));
+const dynamicPreviewRecordCount = computed(() => manifestCount(dynamicPreview.value?.input_manifest, ["record_count"]));
+
+function formatDynamicPreviewDate(value: string) {
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec(value);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : value || "日期未提供";
 }
 
 async function refreshPools() {
@@ -419,6 +764,7 @@ async function submit() {
     finishPoolSubmission(scope, original.key);
     pendingCreation.value = null;
     selected.value = created.pool;
+    successfulPoolCreation = true;
     showCreate.value = false;
     ElMessage.success(poolType.value === "custom" ? "股票池已创建" : `${poolType.value === "index" ? "指数" : "动态"}池已创建，正在生成成分快照`);
     name.value = "";
@@ -428,6 +774,7 @@ async function submit() {
     indexSymbol.value = "";
     indexTrackingMode.value = "follow_index";
     requestedAsOf.value = "";
+    resetDynamicRule();
     poolType.value = "custom";
     await loadPools();
   } catch (exc) {
@@ -470,11 +817,18 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
       ]);
       producer.value = definitionResult.producer;
       materializations.value = runsResult.runs;
-      dynamicRuleText.value = detail.pool.pool_type === "dynamic" ? JSON.stringify(definitionResult.producer.definition, null, 2) : "";
-      dynamicRuleBaseline.value = dynamicRuleText.value;
+      if (detail.pool.pool_type === "dynamic") {
+        loadDynamicRuleDefinition(definitionResult.producer.definition);
+        dynamicRuleBaseline.value = dynamicRuleText.value;
+      } else {
+        dynamicRuleText.value = "";
+        dynamicRuleBaseline.value = "";
+      }
     } else {
       producer.value = null;
       materializations.value = [];
+      dynamicRuleText.value = "";
+      dynamicRuleBaseline.value = "";
     }
     editName.value = detail.pool.name ?? "";
     editDescription.value = detail.pool.description ?? "";
@@ -566,12 +920,12 @@ async function saveDynamicDefinition(status: "draft" | "active" | "paused" = pro
   if (!selected.value?.pool_id || selected.value.pool_type !== "dynamic" || !producer.value) return;
   busy.value = true;
   try {
-    const rule = JSON.parse(dynamicRuleText.value) as DynamicStockPoolRule;
+    const rule = buildDynamicRule();
     const result = await updateDynamicStockPoolDefinition(selected.value.pool_id, {
       rule, status, expected_version: producer.value.version,
     }, auth.token);
+    loadDynamicRuleDefinition(result.producer.definition);
     producer.value = result.producer;
-    dynamicRuleText.value = JSON.stringify(result.producer.definition, null, 2);
     dynamicRuleBaseline.value = dynamicRuleText.value;
     await select({ pool_id: selected.value.pool_id }, false);
     ElMessage.success(status === "active" ? "动态规则已激活" : status === "paused" ? "动态规则已暂停" : "动态规则草稿已保存");
@@ -699,7 +1053,7 @@ onMounted(async () => {
       <el-button :disabled="busy" @click="recoverCreation()">核对原创建请求</el-button>
       <el-button :disabled="busy" @click="recoverCreation(true)">使用原请求重试</el-button>
     </el-alert>
-    <el-dialog v-model="showCreate" title="创建版本化股票池" width="min(680px, 94vw)">
+    <el-dialog v-model="showCreate" title="创建版本化股票池" width="min(680px, 94vw)" @close="invalidateDynamicPreview" @closed="restoreDynamicEditorAfterCreateClose">
       <p class="dialog-intro">自建池由你维护成员；指数池和动态池由系统依据已验证数据生成成分，已完成的研究会保留当时使用的股票名单。</p>
       <el-form label-position="top">
         <el-form-item label="股票池类型">
@@ -765,21 +1119,50 @@ onMounted(async () => {
           />
         </template>
         <template v-if="poolType === 'dynamic'">
-          <el-alert title="动态池只支持下面列出的筛选和排序条件。" type="info" :closable="false" />
+          <el-alert type="info" :closable="false" class="dynamic-data-note">
+            <template #title>规则会按“截至日期”前最近的已验证交易日计算</template>
+            <p>行业按该日期可见的证券资料精确匹配；估值与股息使用该交易日完整的日线数据；利润同比使用截至日期可见的财务记录。市值单位为万元，市盈率/市净率为倍，股息率和同比增长率为百分比。</p>
+            <p>任何筛选或排序所需字段缺失的股票都会被排除。预览是非权威结果，创建时会再次核验；可用日期和结果数量取决于已验证的数据覆盖。</p>
+          </el-alert>
           <el-row :gutter="14" class="dynamic-form-row">
             <el-col :xs="24" :sm="12">
+              <el-form-item label="行业（可选，精确匹配）">
+                <el-input v-model="dynamicIndustry" data-testid="dynamic-create-industry" placeholder="例如：银行" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
               <el-form-item label="最低总市值（万元，可选）">
-                <el-input-number v-model="dynamicMinimumMarketCap" data-testid="dynamic-min-market-cap" :min="0" :step="10000" controls-position="right" />
+                <el-input-number v-model="dynamicMinimumMarketCap" data-testid="dynamic-create-min-market-cap" :min="0" :step="10000" controls-position="right" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="滚动市盈率上限（倍，可选）">
+                <el-input-number v-model="dynamicPeTtmMaximum" data-testid="dynamic-create-pe-ttm-max" controls-position="right" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="市净率上限（倍，可选）">
+                <el-input-number v-model="dynamicPbMaximum" data-testid="dynamic-create-pb-max" controls-position="right" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="近 12 个月股息率至少（%，可选）">
+                <el-input-number v-model="dynamicDividendYieldMinimum" data-testid="dynamic-create-dividend-yield-min" controls-position="right" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="净利润同比至少（%，可选）">
+                <el-input-number v-model="dynamicNetProfitYoyMinimum" data-testid="dynamic-create-net-profit-yoy-min" controls-position="right" />
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item label="最多成分数">
-                <el-input-number v-model="dynamicTopN" data-testid="dynamic-top-n" :min="1" :max="500" controls-position="right" />
+                <el-input-number v-model="dynamicTopN" data-testid="dynamic-create-top-n" :min="1" :max="500" controls-position="right" />
               </el-form-item>
             </el-col>
           </el-row>
           <el-row :gutter="14">
-            <el-col :xs="24" :sm="12"><el-form-item label="排序字段"><el-select v-model="dynamicRanking" data-testid="dynamic-ranking" style="width:100%"><el-option label="总市值" value="daily_basic.total_mv" /><el-option label="市净率" value="daily_basic.pb" /><el-option label="滚动市盈率" value="daily_basic.pe_ttm" /><el-option label="换手率" value="daily_basic.turnover_rate" /><el-option label="20日平均成交额" value="window.avg_amount_20" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :sm="12"><el-form-item label="排序字段"><el-select v-model="dynamicRanking" data-testid="dynamic-create-ranking" style="width:100%"><el-option label="按股票代码" value="" /><el-option label="总市值" value="daily_basic.total_mv" /><el-option label="市净率" value="daily_basic.pb" /><el-option label="滚动市盈率" value="daily_basic.pe_ttm" /><el-option label="近 12 个月股息率" value="daily_basic.dv_ttm" /><el-option label="净利润同比" value="financial.netprofit_yoy" /><el-option label="换手率" value="daily_basic.turnover_rate" /><el-option label="20日平均成交额" value="window.avg_amount_20" /></el-select></el-form-item></el-col>
             <el-col :xs="24" :sm="12"><el-form-item label="排序方向"><el-select v-model="dynamicDirection" style="width:100%"><el-option label="从高到低" value="desc" /><el-option label="从低到高" value="asc" /></el-select></el-form-item></el-col>
           </el-row>
           <el-row :gutter="14">
@@ -788,7 +1171,19 @@ onMounted(async () => {
           </el-row>
           <el-form-item label="截至日期（可选）"><el-date-picker v-model="requestedAsOf" value-format="YYYY-MM-DD" placeholder="默认使用当前日期前最新完整交易日" /></el-form-item>
           <el-form-item label="创建后立即激活"><el-switch v-model="dynamicActivate" /></el-form-item>
-          <div class="preview-actions"><el-button data-testid="dynamic-preview" :loading="busy" @click="previewDynamic">预览规则结果</el-button><span v-if="dynamicPreview">预览 {{ dynamicPreview.member_count }} 只 · 数据日 {{ dynamicPreview.effective_trade_date }}；创建时会再次核验</span></div>
+          <details class="dynamic-advanced" data-testid="dynamic-create-advanced">
+            <summary>高级规则 JSON（可选）</summary>
+            <el-input v-model="dynamicRuleText" data-testid="dynamic-create-rule-json" type="textarea" :rows="10" aria-label="动态股票池高级规则 JSON" @input="onDynamicRuleTextInput" />
+            <p class="edit-state">高级规则会与上方常用条件一起提交；不支持的字段和操作会由系统拒绝。</p>
+          </details>
+          <p v-if="dynamicAdvancedConditionNotice" class="dynamic-rule-notice" data-testid="dynamic-advanced-condition-notice" role="status">重复或类型不兼容的高级条件仍会参与筛选；上方控件不会改写它们，可在高级规则 JSON 中查看。</p>
+          <p v-if="dynamicRuleError" class="dynamic-rule-error" data-testid="dynamic-rule-error" role="alert">{{ dynamicRuleError }}</p>
+          <div class="preview-actions"><el-button data-testid="dynamic-preview" :disabled="Boolean(dynamicRuleError)" :loading="busy" @click="previewDynamic">预览规则结果</el-button></div>
+          <div v-if="dynamicPreview" class="dynamic-preview-result" data-testid="dynamic-preview-result">
+            <strong>数据截至 {{ formatDynamicPreviewDate(dynamicPreview.effective_trade_date) }}</strong>
+            <span>输入证券 {{ dynamicPreviewInputCount ?? "未提供" }} 只 · 参与计算 {{ dynamicPreviewRecordCount ?? "未提供" }} 只 · 符合 {{ dynamicPreview.member_count }} 只</span>
+            <small>缺少筛选或排序字段的股票会被排除；本次预览不证明全市场覆盖，尚未保存成员版本。</small>
+          </div>
           <el-table v-if="dynamicPreview" :data="dynamicPreview.members" size="small" max-height="180"><el-table-column prop="symbol" label="预览成分" /><el-table-column label="权重"><template #default="{ row }">{{ formatPoolWeight(row.weight) }}</template></el-table-column></el-table>
         </template>
         <el-form-item v-if="poolType === 'custom'" label="搜索股票">
@@ -835,7 +1230,7 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="closeCreate">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="submit">{{ poolType === "custom" ? "创建股票池" : "创建并生成快照" }}</el-button>
+        <el-button type="primary" :loading="busy" :disabled="poolType === 'dynamic' && Boolean(dynamicRuleError)" @click="submit">{{ poolType === "custom" ? "创建股票池" : "创建并生成快照" }}</el-button>
       </template>
     </el-dialog>
 
@@ -852,7 +1247,7 @@ onMounted(async () => {
       <template #return>返回投研对话</template>
       <template #actions>
         <el-button @click="refreshPools">刷新</el-button>
-        <el-button type="primary" @click="showCreate = true">新建股票池</el-button>
+        <el-button type="primary" @click="openCreate">新建股票池</el-button>
       </template>
       <template #summary>更新名单不会改变已完成研究使用的股票</template>
       <template #catalog>
@@ -875,7 +1270,7 @@ onMounted(async () => {
       <div v-else-if="!filteredPools.length && !pools.length" class="pool-empty">
         <el-empty description="还没有股票池" />
         <p>添加几只关注的股票，保存后即可继续研究。</p>
-        <el-button type="primary" @click="showCreate = true">新建股票池</el-button>
+        <el-button type="primary" @click="openCreate">新建股票池</el-button>
       </div>
       <div v-else-if="!filteredPools.length" class="pool-empty">
         <el-empty description="没有找到符合条件的股票池" />
@@ -966,10 +1361,36 @@ onMounted(async () => {
             <el-button :disabled="!metadataDirty || busy" @click="saveMetadata">保存目录信息</el-button>
           </el-form>
           <section v-if="selected.pool_type === 'dynamic' && producer" class="dynamic-definition">
-            <h3 class="section-title">封闭动态规则</h3>
-            <el-input v-model="dynamicRuleText" data-testid="dynamic-rule-json" type="textarea" :rows="12" aria-label="动态股票池规则 JSON" />
+            <h3 class="section-title">动态选股条件</h3>
+            <el-alert type="info" :closable="false" class="dynamic-data-note">
+              <template #title>常用条件与创建时使用相同的规则</template>
+              <p>行业按当次截止日期可见的证券资料精确匹配；估值和股息使用当次完整交易日数据，财务指标按当次截止日期可见记录筛选。市值单位为万元，PE/PB为倍，股息率和净利润同比为百分比。</p>
+              <p>规则所需字段或排序值缺失的股票会被排除。修改并保存会生成新的规则版本；已有成员快照不会被改写。</p>
+            </el-alert>
+            <el-row :gutter="14" class="dynamic-form-row">
+              <el-col :xs="24" :sm="12"><el-form-item label="行业（可选，精确匹配）"><el-input v-model="dynamicIndustry" data-testid="dynamic-edit-industry" placeholder="例如：银行" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="最低总市值（万元，可选）"><el-input-number v-model="dynamicMinimumMarketCap" data-testid="dynamic-edit-min-market-cap" :min="0" :step="10000" controls-position="right" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="滚动市盈率上限（倍，可选）"><el-input-number v-model="dynamicPeTtmMaximum" data-testid="dynamic-edit-pe-ttm-max" controls-position="right" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="市净率上限（倍，可选）"><el-input-number v-model="dynamicPbMaximum" data-testid="dynamic-edit-pb-max" controls-position="right" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="近 12 个月股息率至少（%，可选）"><el-input-number v-model="dynamicDividendYieldMinimum" data-testid="dynamic-edit-dividend-yield-min" controls-position="right" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="净利润同比至少（%，可选）"><el-input-number v-model="dynamicNetProfitYoyMinimum" data-testid="dynamic-edit-net-profit-yoy-min" controls-position="right" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="最多成分数"><el-input-number v-model="dynamicTopN" data-testid="dynamic-edit-top-n" :min="1" :max="500" controls-position="right" /></el-form-item></el-col>
+            </el-row>
+            <el-row :gutter="14">
+              <el-col :xs="24" :sm="12"><el-form-item label="排序字段"><el-select v-model="dynamicRanking" data-testid="dynamic-edit-ranking" style="width:100%"><el-option label="按股票代码" value="" /><el-option label="总市值" value="daily_basic.total_mv" /><el-option label="市净率" value="daily_basic.pb" /><el-option label="滚动市盈率" value="daily_basic.pe_ttm" /><el-option label="近 12 个月股息率" value="daily_basic.dv_ttm" /><el-option label="净利润同比" value="financial.netprofit_yoy" /><el-option label="换手率" value="daily_basic.turnover_rate" /><el-option label="20日平均成交额" value="window.avg_amount_20" /></el-select></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="排序方向"><el-select v-model="dynamicDirection" style="width:100%"><el-option label="从高到低" value="desc" /><el-option label="从低到高" value="asc" /></el-select></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="刷新频率"><el-select v-model="dynamicCadence" style="width:100%"><el-option label="手动" value="manual" /><el-option label="每日交易日" value="daily" /><el-option label="每周" value="weekly" /><el-option label="每月" value="monthly" /></el-select></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="权重模式"><el-select v-model="dynamicWeightMode" style="width:100%"><el-option label="等权" value="equal_weight" /><el-option label="无权重" value="unweighted" /></el-select></el-form-item></el-col>
+            </el-row>
+            <details class="dynamic-advanced" data-testid="dynamic-edit-advanced">
+              <summary>高级规则 JSON（可选）</summary>
+              <el-input v-model="dynamicRuleText" data-testid="dynamic-rule-json" type="textarea" :rows="10" aria-label="动态股票池高级规则 JSON" @input="onDynamicRuleTextInput" />
+              <p class="edit-state">上方条件与高级 JSON 是同一份规则；保存后会进行服务端校验。</p>
+            </details>
+            <p v-if="dynamicAdvancedConditionNotice" class="dynamic-rule-notice" data-testid="dynamic-advanced-condition-notice" role="status">重复或类型不兼容的高级条件仍会参与筛选；上方控件不会改写它们，可在高级规则 JSON 中查看。</p>
+            <p v-if="dynamicRuleError" class="dynamic-rule-error" data-testid="dynamic-rule-error" role="alert">{{ dynamicRuleError }}</p>
             <p class="edit-state">{{ dynamicDefinitionDirty ? "规则有未保存更改" : `规则 v${producer.version} 已保存` }}</p>
-            <div class="button-row"><el-button :disabled="!dynamicDefinitionDirty" @click="saveDynamicDefinition('draft')">保存草稿</el-button><el-button type="primary" @click="saveDynamicDefinition('active')">校验并激活</el-button><el-button @click="saveDynamicDefinition('paused')">暂停调度</el-button></div>
+            <div class="button-row"><el-button :disabled="!dynamicDefinitionDirty || Boolean(dynamicRuleError) || busy" @click="saveDynamicDefinition('draft')">保存草稿</el-button><el-button type="primary" :disabled="Boolean(dynamicRuleError) || busy" @click="saveDynamicDefinition('active')">校验并激活</el-button><el-button :disabled="Boolean(dynamicRuleError) || busy" @click="saveDynamicDefinition('paused')">暂停调度</el-button></div>
           </section>
         </el-tab-pane>
         <el-tab-pane label="成员与权重" name="members" lazy>
@@ -1135,6 +1556,15 @@ onMounted(async () => {
 .catalog-option-meta { color: var(--byq-text-muted); float: right; margin-left: 18px; }
 .section-title { font-size: 14px; margin: 20px 0 10px; }
 .dynamic-form-row { margin-top: 14px; }
+.dynamic-data-note { margin-bottom: 12px; }
+.dynamic-data-note p { margin: 6px 0 0; }
+.dynamic-advanced { border-top: 1px solid var(--byq-border-subtle); margin: 14px 0; padding-top: 12px; }
+.dynamic-advanced summary { color: var(--byq-text-muted); cursor: pointer; font-size: 13px; }
+.dynamic-advanced .el-input { margin-top: 10px; }
+.dynamic-rule-notice { background: var(--byq-surface-subtle); border-radius: 6px; color: var(--byq-text-muted); font-size: 12px; margin: 8px 0; padding: 8px 10px; }
+.dynamic-rule-error { color: var(--el-color-danger); font-size: 12px; margin: 8px 0; }
+.dynamic-preview-result { background: var(--byq-surface-subtle); border-radius: 8px; display: grid; font-size: 12px; gap: 4px; margin: 8px 0 12px; padding: 10px 12px; }
+.dynamic-preview-result small { color: var(--byq-text-muted); }
 .preview-actions { align-items: center; color: var(--byq-text-muted); display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 12px; }
 .dynamic-definition { border-top: 1px solid var(--byq-border-subtle); margin-top: 18px; padding-top: 2px; }
 .edit-state { color: var(--byq-text-muted); display: inline-block; font-size: 12px; margin: 0 8px 8px 0; }

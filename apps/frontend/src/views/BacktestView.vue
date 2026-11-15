@@ -878,6 +878,11 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
       </el-tabs>
     </el-dialog>
     <el-dialog v-model="showCreate" title="生成信号并新建回测" width="min(700px, 94vw)">
+      <ol class="backtest-steps" aria-label="回测准备步骤">
+        <li :class="{ complete: Boolean(selectedOption) }"><strong>1. 选择已批准策略</strong><span>{{ selectedOption ? "策略版本已选择" : "没有可用版本时，先到策略管理完成创建与批准。" }}</span></li>
+        <li :class="{ complete: Boolean(selectedSnapshot) }"><strong>2. 取得历史买卖信号</strong><span>{{ selectedSnapshot ? "已有信号已选择" : "选择已有信号，或选择股票池和日期后生成；缺数据时等待准备结果。" }}</span></li>
+        <li><strong>3. 核对参数后创建回测</strong><span>资金和费用随所选信号记录。确认后才提交；此页面不会连接真实券商。</span></li>
+      </ol>
       <el-form label-position="top">
         <el-form-item label="回测名称">
           <el-input v-model="backtestName" maxlength="120" show-word-limit placeholder="可选；留空时按策略名称与创建时间自动生成" />
@@ -1038,6 +1043,11 @@ onMounted(async () => { await loadList(); if (typeof route.query.strategy === "s
   padding: 0.75rem;
   white-space: pre-wrap;
 }
+
+.backtest-steps { display: grid; gap: .65rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+.backtest-steps li { display: grid; gap: .25rem; padding: .75rem; border: 1px solid var(--byq-border); border-radius: 8px; }
+.backtest-steps li.complete { background: var(--byq-brand-soft); }
+.backtest-steps span { color: var(--byq-text-muted); font-size: 12px; }
 
 .wizard-hint {
   color: var(--byq-text-muted);

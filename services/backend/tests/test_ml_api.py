@@ -770,3 +770,118 @@ def test_ml_training_read_is_workspace_scoped_and_returns_safe_not_found() -> No
     )
     assert response.status_code == 404
     assert response.json() == {"detail": "ML training run not found"}
+
+
+@pytest.mark.parametrize("dates,expected,with_data,first,last", [
+    ({}, "members_without_data", 0, None, None),
+    ({"000001.SZ": ["20240102"]}, "members_without_data", 1, None, None),
+    ({"000001.SZ": ["20240102"], "000002.SZ": ["20240104"]},
+     "no_overlapping_bounds", 2, None, None),
+    ({"000001.SZ": ["20240102", "20240103"], "000002.SZ": ["20240103", "20240104"]},
+     "observed_bounds", 2, "20240103", "20240103"),
+])
+def test_ml_options_date_reference_is_owner_scoped_and_not_readiness(
+    dates, expected, with_data, first, last,
+):
+    owner = "ml-date-reference-owner"
+    headers = trusted_agent_context(owner, actor=owner)
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Date reference", "symbols": ["000001.SZ", "000002.SZ"]},
+        trusted_owner=owner, trusted_workspace=headers["x-byq-workspace-id"],
+    )
+    for symbol, sessions in dates.items():
+        for date in sessions:
+            backend_main.market_data_store._execute("""INSERT INTO market_daily_bars
+                (symbol,trade_date,open,high,low,close,adjust,asset_type,data_source,
+                 content_sha256,provenance_json,imported_at)
+                VALUES (:symbol,:date,10,10,10,10,'none','stock','tushare','fixture','{}',now())""",
+                {"symbol": symbol, "date": date})
+    response = client.get("/v1/research/ml/options", headers=headers,
+                          params={"pool_id": pool["pool_id"]})
+    assert response.status_code == 200, response.text
+    value = response.json()["selected_pool_data_reference"]
+    assert value["stock_pool_snapshot_id"] == pool["current_snapshot_id"]
+    assert value["member_count"] == 2
+    assert value["members_with_data"] == with_data
+    assert value["state"] == expected
+    assert value["observed_start_date"] == first
+    assert value["observed_end_date"] == last
+    assert value["reference_only"] is True
+    assert value["continuous_history_verified"] is False
+    assert value["training_readiness_verified"] is False
+    assert value["recommended_dates"] is None
+    other = trusted_agent_context("other-date-owner", actor="other-date-owner")
+    assert client.get("/v1/research/ml/options", headers=other,
+                      params={"pool_id": pool["pool_id"]}).status_code == 404
+    direct = backend_main.market_data_store.pool_daily_date_reference(
+        pool["current_snapshot_id"], trusted_owner="other-date-owner",
+        trusted_workspace=headers["x-byq-workspace-id"],
+    )
+    assert direct["member_count"] == 0
+    assert "selected_pool_data_reference" not in client.get(
+        "/v1/research/ml/options", headers=headers).json()
+
+
+def test_ml_options_does_not_recommend_for_inactive_missing_or_deleted_pool():
+    owner = "ml-date-lifecycle-owner"
+    headers = trusted_agent_context(owner, actor=owner)
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Date lifecycle", "symbols": ["000001.SZ"]}, trusted_owner=owner,
+        trusted_workspace=headers["x-byq-workspace-id"],
+    )
+    backend_main.paper_store._execute(
+        "UPDATE stock_pools SET current_snapshot_id=NULL WHERE pool_id=:id", {"id": pool["pool_id"]})
+    value = client.get("/v1/research/ml/options", headers=headers,
+                       params={"pool_id": pool["pool_id"]}).json()["selected_pool_data_reference"]
+    assert value["state"] == "no_snapshot" and value["recommended_dates"] is None
+    backend_main.paper_store._execute(
+        "UPDATE stock_pools SET status='archived' WHERE pool_id=:id", {"id": pool["pool_id"]})
+    value = client.get("/v1/research/ml/options", headers=headers,
+                       params={"pool_id": pool["pool_id"]}).json()["selected_pool_data_reference"]
+    assert value["state"] == "inactive_pool" and value["observed_start_date"] is None
+    backend_main.paper_store._execute(
+        "UPDATE stock_pools SET status='deleted' WHERE pool_id=:id", {"id": pool["pool_id"]})
+    assert client.get("/v1/research/ml/options", headers=headers,
+                      params={"pool_id": pool["pool_id"]}).status_code == 404
+
+
+def test_ml_date_reference_rejects_a_mismatched_workspace_context(monkeypatch):
+    owner = "ml-date-workspace-owner"
+    headers = trusted_agent_context(owner, actor=owner)
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Workspace reference", "symbols": ["000001.SZ"]},
+        trusted_owner=owner, trusted_workspace=headers["x-byq-workspace-id"],
+    )
+    # The current DB only permits one personal workspace per owner and fences
+    # invalid reassignment. Inject a mismatched service context, never disable it.
+    monkeypatch.setattr(backend_main, "_required_agent_context", lambda *a, **kw: {
+        "owner_principal": owner, "actor_principal": owner, "workspace_id": "workspace_other_scope",
+    })
+    assert client.get("/v1/research/ml/options", headers=headers,
+                      params={"pool_id": pool["pool_id"]}).status_code == 404
+    choices = client.get("/v1/research/ml/options", headers=headers).json()["pools"]
+    assert pool["pool_id"] not in [item["pool_id"] for item in choices]
+    direct = backend_main.market_data_store.pool_daily_date_reference(
+        pool["current_snapshot_id"], trusted_owner=owner, trusted_workspace="workspace_other_scope",
+    )
+    assert direct["member_count"] == 0 and direct["observed_start_date"] is None
+
+
+def test_ml_date_reference_fails_closed_for_legacy_null_workspace_metadata(monkeypatch):
+    owner = "ml-date-legacy-owner"
+    headers = trusted_agent_context(owner, actor=owner)
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Legacy metadata boundary", "symbols": ["000001.SZ"]},
+        trusted_owner=owner, trusted_workspace=headers["x-byq-workspace-id"],
+    )
+    # Normal current writes fill workspace_id via the reset fence. Exercise
+    # defensive handling at the store boundary rather than forge an invalid row.
+    legacy = {**pool, "workspace_id": None}
+    monkeypatch.setattr(backend_main.paper_store, "get_pool", lambda *a, **kw: legacy)
+    monkeypatch.setattr(backend_main.paper_store, "list_pools", lambda *a, **kw: {"pools": [legacy]})
+    def forbidden(*args, **kwargs):
+        raise AssertionError("date aggregation must not run before scope validation")
+    monkeypatch.setattr(backend_main.market_data_store, "pool_daily_date_reference", forbidden)
+    assert client.get("/v1/research/ml/options", headers=headers,
+                      params={"pool_id": pool["pool_id"]}).status_code == 404
+    assert client.get("/v1/research/ml/options", headers=headers).json()["pools"] == []

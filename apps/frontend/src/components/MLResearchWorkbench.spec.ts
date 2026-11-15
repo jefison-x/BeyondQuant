@@ -128,6 +128,60 @@ describe("MLResearchWorkbench", () => {
     });
   });
 
+  it("loads a selected pool's date reference lazily without inventing study dates", async () => {
+    const pool = { pool_id: "pool_1", name: "One day", status: "active", current_snapshot_id: "snapshot_1" };
+    const reference = { pool_id: "pool_1", stock_pool_snapshot_id: "snapshot_1", state: "observed_bounds",
+      member_count: 1, members_with_data: 1, minimum_rows_per_member: 1,
+      observed_start_date: "20261113", observed_end_date: "20261113", reference_only: true,
+      continuous_history_verified: false, training_readiness_verified: false, recommended_dates: null };
+    getMLOptions.mockImplementation(async (id?: string) => ({
+      schema_version: "ml-options.v1", tasks: [], pools: [pool],
+      ...(id ? { selected_pool_data_reference: reference } : {}),
+    }));
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    expect(getMLOptions).toHaveBeenCalledTimes(1);
+    const vm = wrapper.vm as any;
+    vm.showCreate = true; await flushPromises();
+    expect(getMLOptions).toHaveBeenLastCalledWith("pool_1");
+    expect(vm.poolReferenceMessage).toContain("2026-11-13");
+    expect(vm.poolReferenceMessage).toContain("无法据此推荐");
+    expect(vm.form.train_start).toBe("");
+    Object.assign(vm.form, { train_start: "2025-01-01", train_end: "2025-03-01",
+      validation_start: "2025-03-02", validation_end: "2025-04-01",
+      prediction_start: "2025-04-02", prediction_end: "2025-05-01" });
+    expect(vm.datesOutsideReference).toBe(true);
+    expect(vm.dateWindowError).toBe(""); // Planning is allowed before data preparation.
+    expect(createMLStrategy).not.toHaveBeenCalled(); expect(createTask).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("discards a date reference after switching pools or snapshot versions", async () => {
+    const pools = [
+      { pool_id: "pool_1", status: "active", current_snapshot_id: "snapshot_1" },
+      { pool_id: "pool_2", status: "active", current_snapshot_id: "snapshot_2" },
+    ];
+    let resolveOld: (value: unknown) => void = () => undefined;
+    const second = { pool_id: "pool_2", stock_pool_snapshot_id: "snapshot_2", state: "observed_bounds",
+      member_count: 1, members_with_data: 1, minimum_rows_per_member: 10,
+      observed_start_date: "20250101", observed_end_date: "20250201",
+      reference_only: true, continuous_history_verified: false, training_readiness_verified: false, recommended_dates: null };
+    getMLOptions.mockImplementation((id?: string) => {
+      if (id === "pool_1") return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve({ schema_version: "ml-options.v1", tasks: [], pools,
+        ...(id ? { selected_pool_data_reference: second } : {}) });
+    });
+    const wrapper = shallowMount(MLResearchWorkbench); await flushPromises();
+    const vm = wrapper.vm as any; vm.showCreate = true; await flushPromises();
+    vm.form.pool_id = "pool_2"; await flushPromises();
+    expect(vm.poolDataReference.pool_id).toBe("pool_2");
+    resolveOld({ selected_pool_data_reference: { ...second, pool_id: "pool_1", stock_pool_snapshot_id: "snapshot_1" } });
+    await flushPromises(); expect(vm.poolDataReference.pool_id).toBe("pool_2");
+    vm.options.pools[1].current_snapshot_id = "snapshot_new"; await flushPromises();
+    expect(vm.poolDataReference).toBeNull(); expect(vm.poolReferenceError).toContain("版本");
+    wrapper.unmount();
+  });
+
   it("requires user-selected date windows before saving a study", async () => {
     const wrapper = shallowMount(MLResearchWorkbench);
     await flushPromises();

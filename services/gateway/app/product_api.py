@@ -920,11 +920,12 @@ def product_ml_capabilities(request: Request) -> dict[str, object]:
 
 
 @router.get("/ml/options")
-def product_ml_options(request: Request) -> dict[str, object]:
+def product_ml_options(request: Request, pool_id: str | None = None) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request(
-        "GET", "/v1/research/ml/options", headers=_trusted_agent_headers(request)
-    )
+    path = "/v1/research/ml/options"
+    if pool_id is not None:
+        path += "?" + urlencode({"pool_id": pool_id})
+    return _backend_request("GET", path, headers=_trusted_agent_headers(request))
 
 
 @router.get("/ml/studies")

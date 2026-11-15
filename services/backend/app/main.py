@@ -3848,6 +3848,7 @@ def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
     raw_pools = paper_store.list_pools(
         trusted_owner=context["owner_principal"], limit=100, offset=0
     )["pools"]
+    raw_pools = [pool for pool in raw_pools if pool.get("workspace_id") == context["workspace_id"]]
     return {
         "tasks": [
             {key: task.get(key) for key in ("task_id", "title", "status", "created_at")}
@@ -3862,10 +3863,41 @@ def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
     }
 
 
+def _ml_pool_date_reference(pool_id: str, context: dict[str, str]) -> dict[str, object]:
+    pool = paper_store.get_pool(pool_id, trusted_owner=context["owner_principal"], include_members=False)
+    if pool.get("status") == "deleted" or pool.get("workspace_id") != context["workspace_id"]:
+        raise PaperTradingNotFound("stock pool not found")
+    snapshot_id = pool.get("current_snapshot_id")
+    if pool.get("status") != "active" or not snapshot_id:
+        return {
+            "pool_id": pool["pool_id"], "stock_pool_snapshot_id": snapshot_id,
+            "state": "inactive_pool" if pool.get("status") != "active" else "no_snapshot",
+            "member_count": 0, "members_with_data": 0, "minimum_rows_per_member": 0,
+            "observed_start_date": None, "observed_end_date": None,
+            "reference_only": True, "continuous_history_verified": False,
+            "training_readiness_verified": False, "recommended_dates": None,
+        }
+    snapshot = paper_store.get_pool_snapshot(
+        snapshot_id, trusted_owner=context["owner_principal"], include_members=False,
+    )
+    if snapshot.get("pool_id") != pool["pool_id"]:
+        raise PaperTradingConflict("stock-pool current snapshot is inconsistent")
+    return {
+        "pool_id": pool["pool_id"],
+        **market_data_store.pool_daily_date_reference(
+            str(snapshot_id), trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        ),
+    }
+
+
 @app.get("/v1/research/ml/options")
-def get_ml_options(request: Request) -> dict[str, object]:
+def get_ml_options(request: Request, pool_id: str | None = None) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
+    result = {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
+    if pool_id is not None:
+        result["selected_pool_data_reference"] = _paper_call(lambda: _ml_pool_date_reference(pool_id, context))
+    return result
 
 
 @app.get("/v1/research/ml/studies")

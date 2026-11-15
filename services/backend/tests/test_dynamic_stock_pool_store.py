@@ -116,3 +116,29 @@ def test_dynamic_preview_materialization_waiting_and_schedule_are_point_in_time(
     assert cancelled["error_code"] == "stale_definition"
     store.close()
     paper.close()
+
+
+@pytest.mark.parametrize("hour, expected", [(15, "20261115"), (21, "20261116")])
+def test_dynamic_default_date_uses_shanghai_and_preserves_explicit_history(monkeypatch, hour, expected) -> None:
+    import app.stock_pool_producer as producer
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 11, 15, hour, 30, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr(producer, "datetime", FrozenDatetime)
+    context = trusted_agent_context("dynamic-clock-owner")
+    store = StockPoolProducerStore(paper_store=PaperTradingStore())
+    _seed_dynamic_inputs(store)
+    rule = {**_rule(), "filters": [], "ranking": None}
+    scope = dict(trusted_owner="dynamic-clock-owner", trusted_workspace=context["x-byq-workspace-id"])
+    preview = store.preview_dynamic_pool({"rule": rule}, **scope)
+    assert preview["requested_as_of"] == expected
+    assert store.preview_dynamic_pool({"rule": rule, "requested_as_of": "20240103"}, **scope)["requested_as_of"] == "20240103"
+    created = store.create_dynamic_pool({"name": "clock boundary", "rule": rule, "activate": True,
+                                         "idempotency_key": "clock-create"}, **scope)
+    assert created["run"]["requested_as_of"] == expected
+    refresh = store.enqueue_dynamic_refresh(created["pool"]["pool_id"], {"idempotency_key": "clock-refresh"}, **scope)
+    assert refresh["requested_as_of"] == expected
