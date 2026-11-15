@@ -178,7 +178,7 @@ COPY config/dsh/acp-0.2.0-rc.2.identity.json /opt/byq/releases/deployment.identi
 
 # Reviewed runtime plugins and skills (adapter + product load skills; judgment
 # disables skill plugins at profile level, so the bytes stay inert for it).
-COPY plugins/dsh-byq/runtime/package.json plugins/dsh-byq/runtime/byq-acp-mcp-identity.js plugins/dsh-byq/runtime/byq-continuation-budget.js plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/
+COPY plugins/dsh-byq/runtime/package.json plugins/dsh-byq/runtime/byq-acp-mcp-identity.js plugins/dsh-byq/runtime/byq-continuation-budget.js plugins/dsh-byq/runtime/byq-runtime-time-context.js plugins/dsh-byq/runtime/byq-pdf-read.js plugins/dsh-byq/runtime/byq-pdf-extract.js /opt/byq/runtime/
 COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
 
 # Runner servers and contract modules, in their original on-image layout so the

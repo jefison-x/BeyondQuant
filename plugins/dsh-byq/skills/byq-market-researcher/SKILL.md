@@ -347,3 +347,12 @@ premium or discount. Profitability, asset quality, growth, risk and industry
 claims require a value returned in this conversation. If the evidence only
 supports the observed valuation difference, report the difference and say its
 cause is not established by the available data.
+
+
+For an issuer filing in PDF form, use `pdf_read` on the exact public URL returned
+by search or supplied by the user. Select one-based pages, at most five per call,
+and quote the actual page number with the exact source URL. The tool extracts
+text only. It provides neither OCR nor a guarantee that table columns align.
+Empty pages, truncation and parse failures are extraction limits. Do not infer
+that the issuer made no disclosure from those limits, and keep PDF evidence
+out of deterministic market-data inputs.

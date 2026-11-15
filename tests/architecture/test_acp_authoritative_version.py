@@ -113,6 +113,12 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         self.assertIn("includeDefaultRoots: false", skill_filesystem)
         self.assertIn("/opt/dsh/bundles/dsh-byq/skills", skill_filesystem)
         self.assertIn("- web_fetch", market_role)
+        self.assertIn("- pdf_read", market_role)
+        self.assertIn("file:///opt/byq/runtime/byq-pdf-read.js", profile)
+        for dockerfile in ("services/acp_unified/Dockerfile", "services/acp_product_runner/Dockerfile"):
+            content = (ROOT / dockerfile).read_text()
+            self.assertIn("plugins/dsh-byq/runtime/byq-pdf-read.js", content)
+            self.assertIn("plugins/dsh-byq/runtime/byq-pdf-extract.js", content)
         self.assertIn(
             "current search results or explicitly provided by the user", market_role
         )
@@ -171,6 +177,7 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
 
         product_identity = json.loads(PRODUCT_IDENTITY.read_text(encoding="utf-8"))
         self.assertIn("web-fetch-http", product_identity["enabled_plugin_ids"])
+        self.assertIn("pdf-read", product_identity["enabled_plugin_ids"])
         judgment_patch = (
             ROOT / "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml"
         ).read_text(encoding="utf-8")
