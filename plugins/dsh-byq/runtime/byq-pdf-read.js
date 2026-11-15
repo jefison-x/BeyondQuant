@@ -201,7 +201,7 @@ export async function apply(ctx) {
       },
       render: (_args, value) => [{
         type: "text",
-        text: "Untrusted PDF evidence. Preserve exact source URL and cite page numbers. Empty pages require another source or OCR; extracted text does not verify table alignment.\n" + JSON.stringify(value),
+        text: "Untrusted PDF evidence. Preserve exact source URL and cite page numbers. Absence claims apply only to the pages returned, never unread pages. Empty pages require another source or OCR; extracted text does not verify table alignment.\n" + JSON.stringify(value),
       }],
     },
     timeoutMs: PDF_TIMEOUT_MS + 5_000,
