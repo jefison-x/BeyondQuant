@@ -984,3 +984,110 @@ run_start恢复与其它体验项继续保留原状态。
 环境快照、candidate-pdf-read.json、首轮Product原件及scope-corrected最终
 product/answer/metrics/browser/result.png。正式完整清洁重建与Release Images
 资格NOT_RUN，当前证据只覆盖固定已验证基础上的限定测试派生镜像。
+
+
+## 2026-11-15 完整原题、父会话处理与登记键整改
+
+用户继续授权在原隔离工作树修复、仅更新测试并用同一问题验收；生产不动。
+起点1d25abce，源码切片5c5a313d、646a09fb、66e101fa，未推进Product Phase。
+原题SHA256仍为20bd2af90641878114ada3b32213cd79630cc9ebd5b4e70ac65961adde317be7。
+每轮提交前核对同一A测试账号的模型与执行设置完整对象等同原基准；
+没有替换模型、自动准备数据或创建股票池、策略、回测和订单。
+
+### 旧登记错误的具体原因
+
+full-research-20261115的root 815ee30119a94cf49c21b224e8839d96，子研究三次
+run_start结果为409、receipt_only 404、409。原生调用的同一登记键
+mr-cmb-600036-20261115-public-research-v1已于2026-11-14T20:37:34.606475Z
+用于同账号旧root 71e139c44148401d94817b062789de26。测试库范围对照证实
+owner相同而session和trace不同，既有AgentRun为agent_run_af61eeceae284bd497d5e6c6b7150d6f。
+
+Backend start_run按owner/key取得旧登记，再比较包含session等范围的request_hash，
+冲突必须409；registration_receipt只返回当前精确workspace/actor/session/trace/
+generation的记录，所以查询旧键为404。之前文中“均后续恢复”只可理解为
+研究根运行最终完成，不证明这些失败的子登记本身后来成功。
+本次补强每个新turn/native agent的fresh attempt suffix；同次重试/未知仍保留
+原键核对，不修改Backend校验、不重开旧运行，也未改写两条撤权历史未决记录。
+白名单原生调用及SQL范围对照保存在historical-registration-diagnosis.json。
+
+### 最小实现
+
+- 产品帮助目录补充research-data-preparation，普通用户只获EXPLAIN/NAVIGATE，
+  agent_tools仅byq_product_help_query，不授予准备数据执行权限。短功能词查询，
+  不猜capability_id，不把本地skill参考路径当成MCP resource URI。
+- 最新期财务响应只证明已返回的期间与字段；未读取历史不等于本地不存在。
+  不从NULL推原因，不猜ROE/ROAE公式或年化关系。简短摘要省略口径未核实、
+  用户未询问的provider ROE，不增加无比较依据的“低估”“缓冲厚”等评价。
+- 父会话用子研究已取到的原文、表行和精确URL核对。具体冲突/缺段仍可定向
+  复查；完整交接不要求重读整份文件。分红缺口不靠猜金额/币种/将来日期补齐，
+  同义词不是新来源，保留最新报告及截止前后续公告核实要求。
+- 公开只给最终研究摘要，不播报登记/授权/审计/委派步骤。日程限本轮已核实
+  范围；未来最新进展不承诺沿用旧cutoff，明确历史研究仍尊重用户指定日期。
+  后一点为规则与本轮措辞证据，不声称已完成真实跨日续研验收。
+
+### 同题逐轮结果，失败不覆盖
+
+| 轮次 | 原生root耗时 | 模型请求 | 验收结果 |
+|---|---:|---:|---|
+| 旧完整基准815ee… | 370.202302秒 | 28 | 保留3登记错误、1次PDF不支持；本次未重判旧结论 |
+| PDF完整首轮e42596516bb1415095595d0728770730 | 228.996769秒 | 30 | LIMITED FAIL：误称本地无逐季财务，帮助误读file资源 |
+| 5c5a313d，da145130273747b5b4531841e71175e7 | 295.112519秒 | 29 | FAIL：板块低估/ROE年化/NULL原因/因果/仅有日程无依据，且公开内部播报 |
+| 646a09fb，ccedee82d0ae48a6975e7421d2e64b8c | 211.780569秒 | 18 | FAIL：仍猜ROE未年化、资本厚、承诺旧截止日继续最新查询 |
+| 66e101fa，8fed0e864eb740329662b825028c7b84 | 266.295190秒 | 27 | 原题质量限定PASS，真实浏览器PASS；不宣称稳定SLA |
+
+最终会话conversation_3546ba911c3749eebcdb9f593f7133c5，root completed/closed、
+terminal_unknown_claim_count=0，27次模型请求均200，工具错误0，登记2次均成功。
+运行时间2026-11-15T03:53:01.804732Z至03:57:28.099922Z；
+提交到采集观察约269.17秒，与上述root耗时不是同一口径。
+
+最终13次搜索的时间并集118.251秒，模型137.476秒，web_fetch 4.644秒，
+pdf_read 0.615秒，本地工具2.531秒；分类可有重叠，不作简单相加的排他归因。
+父会话交接后的4次模型共24.993秒，墙钟26.754秒，包含补记已读操作的审计、
+一次HTML读取与帮助查询。旧基准对应父模型125.610秒，减少80.10%。
+总耗时比旧370.20秒减少28.07%，但中间轮次211.78与228.99秒更快。
+搜索仍有明显波动，不能用本轮或最快轮次证明稳定性能，也不能声称搜索整改已全部闭环。
+
+独立Reviewer终审确认：本轮未再猜本地ROE公式或评价资本厚度，没有无证同业排序、
+无证因果或穷尽日程；2025年度2.016元/股、508.43亿元、普通股股东利润分母
+1438.74亿元和35.34%，实施日期及2026年中期比例型计划/金额未核实/支付窗口
+保持区分。观察端点2027-02-15与2027-05-15，区间跨越三个月端点的不确定性保留。
+实际PDF读取第1–3页，引用含原#1#1#1；7/7最终URL与实际取得结果原样匹配，
+最终原生公开文本与持久化文本逐字一致，无需术语投影后才能相等。
+上述为原题、这些来源和当前数据的限定验收，不是任意研究问题准确性保证。
+
+### 首次“空答”采集判断修正
+
+本轮首次终态快照messages仅含用户，旧采集只拼messages，得到0字符。
+该同一快照的agent.output.delta已包含完整3190字终答，原生也有相同公开文本。
+未调用新模型、未补写答案；重读同会话后持久化assistant为3190字。
+Gateway get_product_session保留尚未持久化的answer delta，AgentView.replayMessages
+合并messages与未入库delta并按workflow_sequence去重，符合当前公开回放路径。
+因此不能把这次采集时序误判为产品永久丢失答案。
+原始product.json、answer.txt空快照、initial-snapshot-metrics.json保留，
+另存product-reread.json和final-answer.txt，最终比较使用最后一条持久化终答。
+此前一轮把所有公开进度拼接对比单条原生终答的误差亦已单独纠正。
+
+### 检查、浏览器与部署范围
+
+5c5a313d切片12项authoritative/profile/帮助权限架构测试及17项现有ACP拓扑/
+构建合同通过；后两次profile修改各重新通过12项相关测试、dev-check
+local_syntax与diff检查。实际MCP挂载新catalog执行既有product-help-test通过，
+新feature真实query返回USER/导航且不含EXECUTE。独立规则审查通过后才更新测试。
+这些是定向本地证据；远端CI、正式清洁重建、Release Images均NOT_RUN。
+
+最终真实Chromium以测试A账号打开原会话，数值与7个原始href可见，
+内部登记播报和英文注册说明均不再显示，截图及browser.json保存。
+前轮内部播报实际可见的失败截图亦保留。测试身份、用户原页面和数据未清理。
+
+测试仅更新4个ACP及2个MCP，Backend/Gateway/前端/Data Worker不变；
+每次逐文件核对上版基础与当前源哈希，Compose等待健康，保留旧镜像/配置回退。
+最终ACP sha256:3942db5a0afd577bc6e9a1e5ad95199f66359db8d1816d145ace8fe10f9e77d2，
+MCP sha256:2b39eafd4c2ec3c30d18e43066b3b2f8f3306fd56d4a21413bdb11a97bccff76。
+这是固定已验基础上的限定测试派生镜像，不替代正式完整构建资格。
+
+全批更新后两套库存对照：生产17容器id/image/started/health/mounts逐对象一致；
+测试11容器、原挂载全部保留，仅目标6个服务容器发生替换，定义健康检查者均健康。
+私有证据根目录research-candidate-20261109/pdf-full-research-20261115，
+首轮在根目录，其后corrected、claim-corrected、basis-corrected分别保存独立会话。
+没有推送、合并、修改生产或发起正式发布。待续项包括稳定搜索耗时、跨日续研、
+扫描PDF/OCR/复杂表格以及正式候选CI；既有其他体验项不因本轮原题通过而自动关闭。
