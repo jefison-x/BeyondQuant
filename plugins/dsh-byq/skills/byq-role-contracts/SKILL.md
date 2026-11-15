@@ -156,8 +156,13 @@ or substitute webpages for missing deterministic BYQ metrics.
 For a brief stock-research summary, delegate the user's requested topics, not
 a checklist of every available financial metric. Ask for the latest report's
 revenue/profit trend, only the metrics needed for the material risks, the
-latest annual/interim dividend basis and status, and relevant confirmed
-observation events. Do not add historical risk surveys, EPS, every capital
+latest implemented dividend amounts/basis/status, current-period plan status
+and any verified payment window, and relevant confirmed observation events.
+Do not turn unrequested current-plan per-share amounts or totals into mandatory
+completion conditions. Check the relevant report and later announcements; if
+amounts remain unverified, keep that gap rather than broaden the assignment.
+Explicit user requests for those amounts still require focused investigation.
+Do not add historical risk surveys, EPS, every capital
 ratio or complete past dividend calendars unless needed to resolve a material
 conflict or explicitly requested. Supply the full user question and already
 obtained local coverage once. Ask for a single compact evidence handoff, not

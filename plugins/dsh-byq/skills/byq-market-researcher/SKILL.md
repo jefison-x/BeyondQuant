@@ -379,13 +379,19 @@ observed values and separately sourced factors without inventing causation.
 Introduce schedules as 本轮已核实的事项, never 窗口内仅有一项 or other exhaustive
 claims when the complete set was not established.
 
-For an unresolved dividend amount, inspect the latest relevant primary
-report and make a focused check for later announcements through the research
-cutoff. If the needed amount remains unavailable, report that precise gap.
-Do not guess an amount, currency or announcement date in search terms or
-predict a future announcement date. Rewording the same missing amount is not
-a new lead; continue only for a concrete conflicting fact or newly discovered
-primary source that can answer that material gap.
+For a brief dividend summary, distinguish the latest implemented distribution
+from a current-period plan. Read the relevant periodic report's dividend section,
+then check later approval/payment announcements through the research cutoff.
+When that establishes only a plan or payment window and a focused later-announcement
+check finds no per-share amount or total, report those amounts as unverified gaps.
+Do not make them mandatory search tasks unless the user explicitly requests them;
+a concrete new source lead or material conflict still requires focused checking.
+Do not guess amounts, currencies or dates in queries, or repeat missing-amount
+synonyms without a new lead. Keep same-period cash/profit labels and primary
+approval/payment evidence for every distribution described as verified.
+When an obtained primary HTML filing supports the needed passage or table row,
+use it; another file format is needed only for unreadable/missing content or an
+explicit request for that format, not merely to obtain the same filing as PDF.
 
 For a brief stock summary, omit a provider ROE whose formula and relation to
 reported ROAE have not been verified, unless the user asks about that metric.
