@@ -59,12 +59,20 @@ const success = await fetchByqMarketDaily(
           row_count: 1,
         },
         coverage: { usable: true, requested_sessions: ["20240102", "20240103"], missing: [] },
+        evidence_scope: {
+          requested_start_date: "20240102", requested_end_date: "20240103",
+          outside_requested_range_checked: false,
+        },
       }),
       { status: 200 },
     );
   },
 );
 assert.equal(success.isError, false);
+assert.deepEqual(JSON.parse(success.content[0].text).evidence_scope, {
+  requested_start_date: "20240102", requested_end_date: "20240103",
+  outside_requested_range_checked: false,
+});
 assert.match(success.content[0].text, /persisted_byq/);
 assert.match(success.content[0].text, /live_provider_called/);
 
@@ -113,10 +121,17 @@ const fundamentals = await fetchByqMarketFundamentals(
         announcement_date: "20250430", effective_date: "20250501", values: { roe: 8 },
       }],
       coverage: { usable: true, missing: [] },
+      evidence_scope: { historical_report_series_returned: false },
+      field_semantics: { roe: { annualization: "unverified", comparability_to_reported_roae: "unverified" } },
     }), { status: 200 });
   },
 );
 assert.equal(fundamentals.isError, false);
+assert.equal(JSON.parse(fundamentals.content[0].text).rows[0].values.roe, 8);
+assert.deepEqual(JSON.parse(fundamentals.content[0].text).field_semantics, {
+  roe: { annualization: "unverified", comparability_to_reported_roae: "unverified" },
+});
+assert.equal(JSON.parse(fundamentals.content[0].text).evidence_scope.historical_report_series_returned, false);
 assert.match(fundamentals.content[0].text, /announcement_date/);
 
 const safeFailure = await fetchByqMarketFundamentals(

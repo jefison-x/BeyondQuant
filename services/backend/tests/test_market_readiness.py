@@ -340,6 +340,24 @@ def test_agent_fundamental_read_obeys_next_day_visibility_and_completeness() -> 
     assert after["rows"][0]["report_period"] == "20250630"
     assert after["rows"][0]["announcement_date"] == "20250825"
     assert after["rows"][0]["effective_date"] == "20250826"
+    assert before["evidence_scope"]["selection"] == "latest_visible_report_per_requested_symbol"
+    assert before["evidence_scope"]["requested_symbols"] == ["000001.SZ"]
+    assert before["evidence_scope"]["historical_report_series_returned"] is False
+    assert before["evidence_scope"]["historical_absence_established"] is False
+    assert before["coverage"]["datasets"][0]["dataset_row_count"] == 2
+    assert len(before["rows"]) == 1  # Dataset count is not the returned report inventory.
+    assert before["field_semantics"]["roe"] == {
+        "null_cause": "unverified", "formula": "unverified",
+        "annualization": "unverified", "comparability_to_reported_roae": "unverified",
+        "summary_use": "omit_until_basis_verified",
+    }
+    assert before["field_semantics"]["netprofit_yoy"] == {"null_cause": "unverified"}
+    other = store.research_fundamentals(
+        symbols=["000001.SZ"], as_of_date="20250826", fields=["roa"],
+    )
+    assert other["rows"][0]["values"]["roa"] is None
+    assert other["field_semantics"] == {"roa": {"null_cause": "unverified"}}
+    assert other["coverage"]["usable"] is False
 
 
 def test_agent_research_read_rejects_unbounded_or_unknown_input() -> None:

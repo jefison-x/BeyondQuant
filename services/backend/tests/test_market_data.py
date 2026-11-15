@@ -90,3 +90,65 @@ def test_daily_research_reads_only_durable_verified_source_without_provider() ->
     assert result["coverage"]["usable"] is True
     assert result["data"][0]["close"] == 10.5
     store.close()
+
+
+@pytest.mark.parametrize(
+    "calendar,bar_dates,suspended,symbol,verified,usable,reason",
+    [
+        ([("20240101", False), ("20240103", True)], ["20240103"], False,
+         "000001.SZ", False, False, "calendar_incomplete"),
+        ([("20240101", False), ("20240102", True), ("20240103", False)], ["20240102"], False,
+         "000001.SZ", True, True, "complete"),
+        ([("20240101", False), ("20240102", False), ("20240103", False)], [], False,
+         "000001.SZ", True, False, "no_open_session"),
+        ([("20240102", True)], [], False,
+         "000001.SZ", True, False, "daily_bars_missing"),
+        ([("20240102", True)], [], True,
+         "000001.SZ", True, True, "complete"),
+        ([("20240102", True)], ["20240102"], False,
+         None, True, False, "symbol_universe_unverified"),
+    ],
+)
+def test_daily_research_scope_and_calendar_completeness(
+    calendar, bar_dates, suspended, symbol, verified, usable, reason,
+) -> None:
+    store = MarketDataStore()
+    for date, is_open in calendar:
+        store._execute("""INSERT INTO market_trading_sessions
+            (exchange,trade_date,is_open,previous_open_date,data_source,request_fingerprint,
+             retrieved_at,content_sha256,updated_at)
+            VALUES ('SSE',:date,:is_open,NULL,'tushare','fixture',now(),:sha,now())""",
+            {"date": date, "is_open": is_open, "sha": "calendar-" + date})
+    for date in bar_dates:
+        store.import_bars([_row(trade_date=date)], conflict_policy=KEEP_NEW)
+    if suspended:
+        store._execute("""INSERT INTO market_daily_status
+            (symbol,trade_date,is_suspended,pre_close,up_limit,down_limit,data_source,
+             provenance_json,content_sha256,updated_at)
+            VALUES ('000001.SZ','20240102',TRUE,10,11,9,'tushare','{}','suspended',now())""")
+    start, end = calendar[0][0], calendar[-1][0]
+    request = (DailyRequest(ts_code=symbol, start_date=start, end_date=end)
+               if symbol else DailyRequest(trade_date=start))
+    result = store.research_daily(request)
+    coverage, scope = result["coverage"], result["evidence_scope"]
+    assert coverage["calendar_verified"] is verified
+    assert coverage["usable"] is usable
+    assert coverage["reason"] == reason
+    assert scope["requested_symbol"] == symbol
+    assert scope["requested_start_date"] == start
+    assert scope["requested_end_date"] == end
+    assert scope["requested_range_checked"] is True
+    assert scope["outside_requested_range_checked"] is False
+    assert scope["returned_rows"] == len(bar_dates)
+    assert scope["returned_date_min"] == (min(bar_dates) if bar_dates else None)
+    assert scope["returned_date_max"] == (max(bar_dates) if bar_dates else None)
+    if not verified:
+        assert coverage["missing_calendar_dates"] == ["20240102"]
+        assert coverage["missing_calendar_count"] == 1
+        assert coverage["missing"] == []  # Not a known-open day; no fabricated bar gap.
+    if reason == "daily_bars_missing":
+        assert coverage["missing"] == [
+            {"symbol": "000001.SZ", "trade_date": "20240102", "reason": "daily_bar_unavailable"}
+        ]
+    assert coverage["suspended_sessions"] == (["20240102"] if suspended else [])
+    store.close()

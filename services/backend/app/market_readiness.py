@@ -1303,6 +1303,23 @@ class MarketReadinessStore(PgStoreMixin):
             "as_of_date": normalized_date,
             "fields": normalized_fields,
             "rows": evidence,
+            "evidence_scope": {
+                "selection": "latest_visible_report_per_requested_symbol",
+                "requested_symbols": normalized_symbols,
+                "as_of_date": normalized_date,
+                "historical_report_series_returned": False,
+                "historical_absence_established": False,
+            },
+            "field_semantics": {
+                **{field: {"null_cause": "unverified"} for field in normalized_fields},
+                **({"roe": {
+                    "null_cause": "unverified",
+                    "formula": "unverified",
+                    "annualization": "unverified",
+                    "comparability_to_reported_roae": "unverified",
+                    "summary_use": "omit_until_basis_verified",
+                }} if "roe" in normalized_fields else {}),
+            },
             "coverage": {
                 "usable": not missing,
                 "requested_symbols": len(normalized_symbols),

@@ -12,6 +12,8 @@ import hashlib
 import json
 import os
 from contextlib import nullcontext
+from datetime import datetime, timedelta
+from itertools import islice
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -409,11 +411,24 @@ class MarketDataStore(PgStoreMixin):
         )
         if len(rows) > 6000:
             raise ValueError("daily research result exceeds 6000 rows")
-        sessions = [str(row["trade_date"]) for row in self._execute(
-            """SELECT trade_date FROM market_trading_sessions
-               WHERE is_open=TRUE AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+        calendar_rows = self._execute(
+            """SELECT trade_date,is_open FROM market_trading_sessions
+               WHERE exchange='SSE' AND data_source='tushare'
+                 AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
             {"start": start, "end": end},
-        )]
+        )
+        first_day = datetime.strptime(start, "%Y%m%d")
+        expected_days = (datetime.strptime(end, "%Y%m%d") - first_day).days + 1
+        calendar_dates = {str(row["trade_date"]) for row in calendar_rows}
+        missing_calendar_count = expected_days - len(calendar_dates)
+        missing_calendar_dates = list(islice(
+            ((first_day + timedelta(days=offset)).strftime("%Y%m%d")
+             for offset in range(expected_days)
+             if (first_day + timedelta(days=offset)).strftime("%Y%m%d") not in calendar_dates),
+            200,
+        )) if missing_calendar_count else []
+        calendar_verified = missing_calendar_count == 0
+        sessions = [str(row["trade_date"]) for row in calendar_rows if row["is_open"] is True]
         statuses = self._execute(
             f"""SELECT symbol,trade_date,is_suspended FROM market_daily_status
                 WHERE trade_date BETWEEN :start AND :end{symbol_clause}""",
@@ -443,6 +458,15 @@ class MarketDataStore(PgStoreMixin):
                 "content_sha256": str(row["content_sha256"]),
             })
         latest = max((str(row["trade_date"]) for row in rows), default=None)
+        earliest = min((str(row["trade_date"]) for row in rows), default=None)
+        suspended = [date for date in sessions if normalized.ts_code
+                     and (normalized.ts_code, date) not in bar_keys
+                     and status_map.get((normalized.ts_code, date)) is True]
+        universe_verified = normalized.ts_code is not None
+        reason = ("calendar_incomplete" if not calendar_verified else
+                  "no_open_session" if not sessions else
+                  "symbol_universe_unverified" if not universe_verified else
+                  "daily_bars_missing" if missing else "complete")
         return {
             "schema_version": "market-daily-research.v1",
             "data": data,
@@ -452,9 +476,24 @@ class MarketDataStore(PgStoreMixin):
                 "latest_trade_date": latest, "row_count": len(data), "live_provider_called": False,
             },
             "coverage": {
-                "usable": bool(sessions) and not missing,
-                "calendar_verified": bool(sessions), "requested_sessions": sessions,
+                "usable": calendar_verified and bool(sessions) and universe_verified and not missing,
+                "reason": reason,
+                "calendar_verified": calendar_verified, "requested_sessions": sessions,
+                "missing_calendar_count": missing_calendar_count,
+                "missing_calendar_dates": missing_calendar_dates,
+                "symbol_universe_verified": universe_verified,
+                "suspended_sessions": suspended,
                 "returned_rows": len(data), "missing": missing[:200],
+            },
+            "evidence_scope": {
+                "selection": "requested_date_range",
+                "requested_symbol": normalized.ts_code,
+                "requested_start_date": start, "requested_end_date": end,
+                "requested_range_checked": True,
+                "outside_requested_range_checked": False,
+                "returned_date_min": earliest, "returned_date_max": latest,
+                "returned_rows": len(data),
+                "missing_bar_inventory": "known_open_sessions_only",
             },
         }
 
