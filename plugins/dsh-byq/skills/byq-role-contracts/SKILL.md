@@ -387,3 +387,13 @@ the same failed input. If no evidence-based correction exists or the summary
 identifies a real business blocker, report it instead of guessing task states,
 roles, identifiers, or alternative payload shapes. Reconcile an unknown outcome
 against the exact original request before retrying; never blindly repeat it.
+
+Require evidence for comparative, causal and completeness claims. A single
+stock's PE/PB does not establish its rank or cheapness within a sector. A NULL
+field does not establish its cause or that the field is inapplicable. Never
+infer a metric's formula, annualization or NULL semantics from its value or
+industry; an unverified ROE/ROAE difference is 口径本轮尚未核实. Different revenue
+and profit growth rates do not prove a cost or impairment bridge; state the
+observed values and separately sourced factors without inventing causation.
+Introduce schedules as 本轮已核实的事项, never 窗口内仅有一项 or other exhaustive
+claims when the complete set was not established.

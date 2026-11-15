@@ -368,3 +368,21 @@ Historical dataset row counts do not prove the absence of other periods.
 For unqueried data say 本轮未读取 or 本轮未取得所需明细, and acknowledge
 already returned partial coverage. Never turn an unread history into
 本地没有逐季财务数据 or assume a field missing from the query is absent.
+
+Require evidence for comparative, causal and completeness claims. A single
+stock's PE/PB does not establish its rank or cheapness within a sector. A NULL
+field does not establish its cause or that the field is inapplicable. Never
+infer a metric's formula, annualization or NULL semantics from its value or
+industry; an unverified ROE/ROAE difference is 口径本轮尚未核实. Different revenue
+and profit growth rates do not prove a cost or impairment bridge; state the
+observed values and separately sourced factors without inventing causation.
+Introduce schedules as 本轮已核实的事项, never 窗口内仅有一项 or other exhaustive
+claims when the complete set was not established.
+
+For an unresolved dividend amount, inspect the latest relevant primary
+report and make a focused check for later announcements through the research
+cutoff. If the needed amount remains unavailable, report that precise gap.
+Do not guess an amount, currency or announcement date in search terms or
+predict a future announcement date. Rewording the same missing amount is not
+a new lead; continue only for a concrete conflicting fact or newly discovered
+primary source that can answer that material gap.
