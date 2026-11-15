@@ -1162,3 +1162,91 @@ health/mounts与本批前完全一致；测试11容器及挂载保留。用户�
 无推送、合并、生产修改或发布。正式清洁构建、远端CI、Release Images NOT_RUN；
 质量FAIL的搜索候选不进入发布验收。下一步需从工具返回的ROE可比性与查询/
 覆盖范围语义收口，再验证摘要；本批没有实现这项后续工作。
+
+
+## 2026-11-15 工具证据范围与日历完整性修复：原题限定PASS
+
+用户继续授权只改测试，起点36d275ae。复用既有工作树、原题与合格266.295190秒
+基准，未重复跑基准。源码1c5c1380只修改Backend日线/财务返回和必要测试，
+没有继续追加Product提示词；ACP仍为66e101fa，MCP仍为ebaf2f3b目录修复。
+
+### 已证明并修复的代码问题
+
+research_daily原来只查开市日，并以bool(sessions)设置整个请求的
+calendar_verified。故部分日历只有一个开市日也可能使整个区间usable=true，
+全闭市区间反而不能区分“日历已验证但无交易”和“日历缺失”。
+
+现在查询区间全部SSE+tushare自然日日历，含闭市；按完整日期集合计数核实，
+缺日历日与已知开市缺bar分开，缺日历计数精确、样例最多200。
+完整闭市calendar_verified=true、usable=false、reason=no_open_session。
+明确停牌日期列入suspended_sessions；停牌时usable=true仅表示缺bar有依据，
+不代表存在价格或能计算收益。无ts_code的单日全市场请求仍返回原数据，
+但不能由已返回symbol集合推全市场完整，因此usable=false/
+symbol_universe_unverified，这是故意收紧旧语义。
+
+daily evidence_scope含请求代码/起止日期、本区间已查询、区间外未查询、
+实际返回最早/最晚和行数；missing-bar inventory只针对已知开市日。
+fundamentals evidence_scope明确每个请求股票的latest visible report，
+不返回历史序列、不能从dataset_row_count推断没有其他期间。
+field_semantics对NULL原因保持unverified，对请求的roe明确formula/
+annualization/ROAE comparability均unverified及omit_until_basis_verified；
+不把未知说成“相同”或“不同”。原始数值、PIT、缺失字段均不改。
+
+规范见docs/contracts/market-research-evidence-scope.md。无DB迁移、数据重写、
+provider刷新、新接口/权限、DSH修改或第二harness。
+
+### 本地与部署
+
+复用既有Backend镜像依赖和pytest，在network-none、tmpfs专用PG的
+byq_domain_test执行11项真实SQL测试通过：含缺中间日历、完整含闭市、
+纯闭市、开市缺bar、明确停牌、全市场范围，以及原导入/PIT两期/NULL语义。
+MCP当前源码无网络编译通过，既有market-data-test新增元信息透传断言通过。
+dev-check local_syntax/diff通过；独立代码审查Functional/Tests/Architecture限定PASS。
+临时PG已按精确id、标签、无持久卷校验后停止，业务测试库和生产库未运行这些测试。
+
+仅替换测试Backend，Compose等待健康。新镜像：
+sha256:984a02c383c49593eb4d0f23abfd5fe30c5b30baa0a9bc36d66ae09e043e036d。
+逐文件核对上一基础和新源哈希，原Backend镜像/配置仍保留回退。
+测试ACP保持sha256:3942db5a0afd577bc6e9a1e5ad95199f66359db8d1816d145ace8fe10f9e77d2，
+MCP保持sha256:628d851d2d65afd6b8d2ccad179293b3c935f0c0962fd324bdaec43d861346c4。
+
+### 同原题Product与浏览器
+
+问题SHA仍20bd2af90641878114ada3b32213cd79630cc9ebd5b4e70ac65961adde317be7，
+同一A账号，模型与执行设置完整对象等同基准。会话
+conversation_7b27070872804fc58ebae0a24cec3728，
+root 974c870cd9c5402da128da374f9cd9bc，completed/closed、unknown=0。
+2026-11-15T12:43:02.199780Z至12:46:10.955359Z，
+root耗时188.755579秒，提交至观察约192.58秒，分别记录。
+24模型请求均200、工具错误0，7搜索69.120秒、4PDF2.549秒、
+7web_fetch1.880秒、本地1.478秒、模型并集111.988秒。
+父交接后仅一次模型16.310秒、墙钟16.499秒，无后续重读。
+比上一合格266.30秒减少29.12%，比旧370.20秒减少49.01%；
+分类可重叠，且仍为单次实测，不能据此认定全部收益由本改动造成或承诺SLA。
+
+实际模型收到的daily MCP结果：600036.SH，
+20260914～20261113区间，仅返回20261113一行；
+missing_calendar_count=60、calendar_verified=false、
+usable=false、reason=calendar_incomplete，区间外未检查。
+这直接证实旧bool(sessions)误判路径已消除，不以一根bar证明全区间或全历史完整。
+财务实际结果也含latest限定与NULL原因unknown。本轮未请求roe字段，
+所以新增ROE语义由真实PG和MCP合同验证，不声称模型本轮实际读取了该条元信息。
+live-tool-evidence-scope.json保存实际输入/返回摘要。
+
+独立Reviewer给予原题质量限定PASS：未再呈现/猜释本地ROE，日线范围限本轮，
+无穷尽日程；分红508.43/1438.74/35.34%及2026中期35%计划、
+获批状态和2027 Jan–Feb窗口区分。新增末期A股206.91亿元有实施公告
+A股股数×1.003元的摘录支持。7/7 URL exact，原生最终与持久化逐字相同。
+浏览器数值、7个href、内部播报消除和现有审批历史页面确认通过。
+
+非阻断措辞仍可更清楚：‘其余交易日没有取得’宜写成‘请求区间内其他日期未返回’，
+最终摘要可带出具体起止日。未改写模型答案，未为该项再调用模型。
+本地范围合同不能证明公开公告全集，仍不能把本次未找到当作绝对未披露；
+原题PASS不替代跨日、更多股票或任意研究的质量验收。
+
+最终库存对照生产17容器id/image/started/health/mounts完全等同本批前；
+测试11容器原挂载保留，仅Backend容器替换，定义健康检查者均健康。
+私有证据research-candidate-20261109/research-evidence-scope-20261115，
+包括测试、构建、部署、环境、原题、模型/工具计时及browser.png。
+测试环境、原浏览器页、身份与历史失败保留。无推送、合并或生产变更。
+正式完整清洁重建、远端CI、Release Images均NOT_RUN。
