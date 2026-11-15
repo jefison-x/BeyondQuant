@@ -1121,16 +1121,34 @@ class MarketReadinessStore(PgStoreMixin):
         for item in rows:
             announcement_date = str(getattr(item, "announcement_date"))
             effective_date = (datetime.strptime(announcement_date, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+            revision_observed_date = getattr(item, "revision_observed_date", None)
+            if revision_observed_date is not None:
+                effective_date = max(effective_date, _research_date(revision_observed_date, "revision_observed_date"))
             row = {
                 "symbol": symbol, "end_date": str(getattr(item, "end_date")),
                 "announcement_date": announcement_date, "effective_date": effective_date,
                 "values": dict(getattr(item, "values")), "update_flag": getattr(item, "update_flag"),
                 "data_source": "tushare", "provenance": provenance,
             }
-            row["content_sha256"] = _hash(row)
             normalized.append(row)
-        identity = _hash([row["content_sha256"] for row in normalized])
         with self._transaction() as connection:
+            previous = {
+                (str(row["end_date"]), str(row["announcement_date"])): row
+                for row in execute(connection, """SELECT end_date,announcement_date,effective_date,
+                    values_json,update_flag,data_source FROM market_financial_indicators
+                    WHERE symbol=:symbol AND end_date BETWEEN :start AND :end FOR UPDATE""",
+                    {"symbol": symbol, "start": report_start_date, "end": report_end_date})
+            }
+            for row in normalized:
+                prior = previous.get((row["end_date"], row["announcement_date"]))
+                if (
+                    prior and prior["values_json"] == row["values"]
+                    and prior["update_flag"] == row["update_flag"]
+                    and prior["data_source"] == row["data_source"]
+                ):
+                    row["effective_date"] = min(str(prior["effective_date"]), str(row["effective_date"]))
+                row["content_sha256"] = _hash(row)
+            identity = _hash([row["content_sha256"] for row in normalized])
             execute(connection, """DELETE FROM market_financial_indicators
                 WHERE symbol=:symbol AND end_date BETWEEN :start AND :end""",
                 {"symbol": symbol, "start": report_start_date, "end": report_end_date})

@@ -9,10 +9,11 @@ import time
 import urllib.error
 import urllib.request
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Callable, Protocol
+from zoneinfo import ZoneInfo
 
 
 DAILY_FIELDS = (
@@ -603,6 +604,7 @@ class FinancialIndicator:
     end_date: str
     values: dict[str, float | None]
     update_flag: str | None
+    revision_observed_date: str | None = None
 
     @classmethod
     def from_row(cls, fields: list[str], row: list[Any]) -> "FinancialIndicator":
@@ -1509,10 +1511,26 @@ class TushareProvider:
         values = tuple(FinancialIndicator.from_row(fields, row) for row in rows)
         if any(item.ts_code != normalized_symbol or not start <= item.end_date <= end for item in values):
             raise ProviderProtocolError("provider returned financial indicators outside the report range")
-        if len({(item.end_date, item.announcement_date) for item in values}) != len(values):
-            raise ProviderProtocolError("provider returned duplicate financial-indicator rows")
+        by_report: dict[tuple[str, str], list[FinancialIndicator]] = {}
+        for item in values:
+            by_report.setdefault((item.end_date, item.announcement_date), []).append(item)
+        selected: list[FinancialIndicator] = []
+        for versions in by_report.values():
+            if len(versions) == 1:
+                selected.append(versions[0])
+                continue
+            # Tushare marks the revised record 1 and the original record 0.
+            revised = [item for item in versions if item.update_flag == "1"]
+            if len(revised) != 1 or any(item.update_flag not in {"0", "1"} for item in versions):
+                raise ProviderProtocolError("provider returned ambiguous financial-indicator revisions")
+            # The flag has no correction publication date. Do not backdate
+            # this newly observed revision to its original announcement.
+            observed_date = datetime.fromisoformat(provenance.retrieved_at).astimezone(
+                ZoneInfo("Asia/Shanghai"),
+            ).strftime("%Y%m%d")
+            selected.append(replace(revised[0], revision_observed_date=observed_date))
         return FinancialIndicatorResult(
-            tuple(sorted(values, key=lambda item: (item.announcement_date, item.end_date))), provenance,
+            tuple(sorted(selected, key=lambda item: (item.announcement_date, item.end_date))), provenance,
         )
 
     def _fetch_bounded_dataset(

@@ -508,3 +508,45 @@ def test_agent_research_marks_null_requested_fields_unusable() -> None:
 
     assert result["coverage"]["usable"] is False
     assert result["coverage"]["missing_fields"] == [{"symbol": "000001.SZ", "fields": ["pb"]}]
+
+@pytest.mark.parametrize("observed_date", [None, "20261115"])
+def test_observed_financial_revision_never_appears_before_observation(observed_date):
+    from app.data_provider import FinancialIndicator
+    store = MarketReadinessStore()
+    try:
+        row = FinancialIndicator("000001.SZ", "20260829", "20260630", {"eps": 1.1}, "1",
+                                 revision_observed_date=observed_date)
+        store.import_financial_indicators("000001.SZ", "20250512", "20261113", [row],
+                                          {"provider": "tushare", "endpoint": "fina_indicator"})
+        stored = store._fetch_one("SELECT effective_date FROM market_financial_indicators")
+        assert stored["effective_date"] == (observed_date or "20260830")
+        earlier = store.research_fundamentals(symbols=["000001.SZ"], as_of_date="20260830", fields=["eps"])
+        assert earlier["coverage"]["usable"] is (observed_date is None)
+        current = store.research_fundamentals(symbols=["000001.SZ"], as_of_date="20261115", fields=["eps"])
+        assert current["coverage"]["usable"] is True
+        assert current["rows"][0]["values"]["eps"] == 1.1
+    finally:
+        store.close()
+
+def test_financial_revision_refresh_preserves_first_observation_for_identical_values():
+    from app.data_provider import FinancialIndicator
+    store = MarketReadinessStore()
+    try:
+        def ingest(value, observed):
+            row = FinancialIndicator("000001.SZ", "20260829", "20260630", {"eps": value}, "1",
+                                     revision_observed_date=observed)
+            store.import_financial_indicators("000001.SZ", "20250512", "20261113", [row],
+                                              {"provider": "tushare", "endpoint": "fina_indicator"})
+        ingest(1.1, "20261115")
+        ingest(1.1, "20261120")
+        record = store._fetch_one("SELECT effective_date FROM market_financial_indicators")
+        assert record["effective_date"] == "20261115"
+        visible = store.research_fundamentals(symbols=["000001.SZ"], as_of_date="20261117", fields=["eps"])
+        assert visible["coverage"]["usable"] is True
+        ingest(1.2, "20261121")
+        record = store._fetch_one("SELECT effective_date FROM market_financial_indicators")
+        assert record["effective_date"] == "20261121"
+        hidden = store.research_fundamentals(symbols=["000001.SZ"], as_of_date="20261117", fields=["eps"])
+        assert hidden["coverage"]["usable"] is False
+    finally:
+        store.close()
