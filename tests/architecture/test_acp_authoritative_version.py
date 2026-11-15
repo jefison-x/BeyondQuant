@@ -51,6 +51,19 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         self.assertEqual(set(feature["support"]), {"EXPLAIN", "NAVIGATE"})
         self.assertEqual(feature["agent_tools"], ["byq_product_help_query"])
 
+    def test_approval_help_matches_the_read_only_history_page(self) -> None:
+        catalog = json.loads(
+            (ROOT / "docs/contracts/product-capability-catalog.v1.json").read_text()
+        )
+        feature = next(item for item in catalog["capabilities"]
+                       if item["capability_id"] == "research-and-approvals")
+        self.assertEqual(feature["name"], "审批历史")
+        self.assertEqual(feature["route_id"], "/user/research")
+        self.assertEqual(set(feature["support"]), {"EXPLAIN", "NAVIGATE"})
+        self.assertEqual(feature["agent_tools"], [])
+        self.assertIn('aria-label="审批历史"',
+                      (ROOT / "apps/frontend/src/views/ResearchCenterView.vue").read_text())
+
     def test_release_identity_and_single_version_roles(self) -> None:
         identity = json.loads(
             (ROOT / "config/dsh/acp-0.2.0-rc.2.identity.json").read_text(encoding="utf-8")

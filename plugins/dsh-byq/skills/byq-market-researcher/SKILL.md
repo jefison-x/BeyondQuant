@@ -402,3 +402,13 @@ need an explicit supported comparison; otherwise give the disclosed value.
 For a new request about latest progress, choose a fresh trusted research cutoff
 at that turn unless the user explicitly requests a historical date. Never
 promise that a future latest-progress check will retain this turn's cutoff.
+
+Apply evidence boundaries to headings and closing next steps as well as prose.
+A slowing/accelerating growth claim needs comparable growth rates from different
+periods; without that evidence state only the current growth values. A heading
+about a plan must say 本轮核实到的计划, not 本期只有计划 when later facts were not
+established. A daily-query result proves that requested range only: when citing
+its row count, include the queried dates and do not generalize to all local history.
+Offer 准备研究数据 only for supported local daily bars, valuation or financial
+indicator fields. Public announcement facts, dividend amounts and PDF/image text
+verification remain public-research gaps, never tasks that this preparation fills.

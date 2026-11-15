@@ -20,7 +20,7 @@
       "name": "准备研究数据",
       "route_id": "/agent",
       "audience": "USER",
-      "purpose": "在原研究会话确认标的、日期和字段，检查覆盖；缺少数据时将只含范围的链接交给管理员准备，复查通过后带入续研草稿。",
+      "purpose": "在原研究会话检查本地日线、估值或财务指标覆盖；缺少适用数据时分享范围给管理员准备，复查后带入续研草稿。",
       "keywords": [
         "准备研究数据",
         "研究数据准备",
@@ -44,6 +44,7 @@
       "limitations": [
         "普通用户在会话界面检查覆盖并分享范围；同步由管理员在数据中心确认",
         "准备回执不代表指标有值，需在原会话复查并核实具体数据",
+        "只准备受支持的本地日线、估值和财务指标，不补公告、PDF表格或核实分红金额",
         "带入续研草稿后由用户确认发送，不会自动发送"
       ]
     },
@@ -193,15 +194,15 @@
     },
     {
       "capability_id": "research-and-approvals",
-      "name": "研究与审批",
+      "name": "审批历史",
       "route_id": "/user/research",
       "audience": "USER",
-      "purpose": "查看研究任务、实验、策略版本、Artifact 和审批记录。",
-      "keywords": ["研究任务", "实验", "审批", "研究记录", "制品"],
+      "purpose": "只读查看已决定的 Agent 审批、BYQ 业务审批记录及相关领域详情。",
+      "keywords": ["审批历史", "已决审批", "Agent审批", "业务审批"],
       "prerequisites": ["有效个人工作区"],
-      "support": ["EXPLAIN", "NAVIGATE", "READ"],
-      "agent_tools": ["byq_research_get"],
-      "limitations": ["Approval 只授权尝试，不代表执行成功"]
+      "support": ["EXPLAIN", "NAVIGATE"],
+      "agent_tools": [],
+      "limitations": ["不是研究对话或全部研究记录列表", "新的申请、审批决定和许可撤销在审批中心处理"]
     },
     {
       "capability_id": "system-overview",
