@@ -99,21 +99,56 @@ const { confirmDiscard } = useUnsavedChanges(editorDirty);
 const STRATEGY_TEMPLATES = [
   {
     id: "momentum",
-    label: "动量轮动模板",
+    label: "动量轮动代码骨架（需实现）",
     script:
       "class CustomStrategy:\n" +
-      '    """Momentum rotation skeleton. Signals: 1 buy, 0 hold, -1 sell."""\n' +
+      '    """代码骨架：请先补充指标和买卖规则；当前返回空结果，不会产生交易信号。"""\n' +
       "    def generate_signals(self, data, parameters=None):\n" +
       "        return {}\n",
+    parameters: {},
+    parameterSchema: {},
   },
   {
     id: "ma_cross",
-    label: "均线交叉模板",
+    label: "5/20 日均线交叉示例",
     script:
       "class CustomStrategy:\n" +
-      '    """Moving-average cross skeleton. Replace with a real indicator."""\n' +
+      '    """5/20 日均线交叉示例：上穿为 1，下穿为 -1，其余为 0。前 20 个交易日不发信号。\n' +
+      '    只使用当日及历史收盘价，不读取未来数据；这是规则演示，不代表或保证收益。"""\n' +
       "    def generate_signals(self, data, parameters=None):\n" +
-      "        return {}\n",
+      "        parameters = parameters or {}\n" +
+      "        short_window = parameters.get('short_window', 5)\n" +
+      "        long_window = parameters.get('long_window', 20)\n" +
+      "        if (not isinstance(short_window, int) or isinstance(short_window, bool) or\n" +
+      "                not isinstance(long_window, int) or isinstance(long_window, bool) or\n" +
+      "                short_window <= 0 or long_window <= short_window):\n" +
+      "            raise ValueError('long_window 必须大于 short_window，且窗口须为正数')\n" +
+      "        signals = {}\n" +
+      "        symbols = data.index.get_level_values('symbol').unique()\n" +
+      "        for symbol in symbols:\n" +
+      "            bars = data.xs(symbol, level='symbol')\n" +
+      "            close = bars['close'].astype(float)\n" +
+      "            short_avg = close.rolling(short_window, min_periods=short_window).mean()\n" +
+      "            long_avg = close.rolling(long_window, min_periods=long_window).mean()\n" +
+      "            previous_short = short_avg.shift(1)\n" +
+      "            previous_long = long_avg.shift(1)\n" +
+      "            crosses_up = (short_avg > long_avg) & (previous_short <= previous_long)\n" +
+      "            crosses_down = (short_avg < long_avg) & (previous_short >= previous_long)\n" +
+      "            signal = pd.Series(0, index=bars.index, dtype=int)\n" +
+      "            signal.loc[crosses_up.fillna(False)] = 1\n" +
+      "            signal.loc[crosses_down.fillna(False)] = -1\n" +
+      "            signals[str(symbol)] = signal\n" +
+      "        return signals\n",
+    parameters: { short_window: 5, long_window: 20 },
+    parameterSchema: {
+      type: "object",
+      properties: {
+        short_window: { type: "integer", minimum: 1, maximum: 60, default: 5, description: "短期均线窗口" },
+        long_window: { type: "integer", minimum: 2, maximum: 250, default: 20, description: "长期均线窗口，须大于短期窗口" },
+      },
+      required: ["short_window", "long_window"],
+      additionalProperties: false,
+    },
   },
 ];
 
@@ -590,6 +625,8 @@ function insertTemplate() {
   const template = STRATEGY_TEMPLATES.find((item) => item.id === templateId.value);
   if (template) {
     script.value = template.script;
+    parametersJson.value = JSON.stringify(template.parameters, null, 2);
+    parameterSchemaJson.value = JSON.stringify(template.parameterSchema, null, 2);
   }
 }
 
