@@ -708,8 +708,10 @@ onMounted(async () => {
     requestedSessionUnavailable.value = true;
     agent.clearActiveSession();
   }
+  const bootstrapGeneration = conversationGeneration;
   try {
     await refreshCatalog();
+    if (bootstrapGeneration !== conversationGeneration) return;
     const requested = typeof route.query.session === "string" ? route.query.session : "";
     if (typeof route.query.new === "string") startNewSession(typeof route.query.draft === "string");
     else if (requested) await openSession(requested, false, true);
@@ -718,6 +720,7 @@ onMounted(async () => {
     await retryApprovalContinuation(route.query.approval);
     if (route.query.history) await showHistory();
   } catch (exc) {
+    if (bootstrapGeneration !== conversationGeneration) return;
     if (initialRequested && !explicitNew) {
       requestedSessionUnavailable.value = true;
       agent.clearActiveSession();
@@ -728,7 +731,7 @@ onMounted(async () => {
   }
   finally { initialized.value = true; }
 });
-watch(() => route.query.new, (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) startNewSession(typeof route.query.draft === "string"); });
+watch(() => route.query.new, (value, previous) => { if (typeof value === "string" && value !== previous) startNewSession(typeof route.query.draft === "string"); });
 watch(() => route.query.session, async (value, previous) => {
   if (initialized.value && typeof value === "string" && value !== previous
       && value !== agent.activeSessionId) await openSession(value, false, true);

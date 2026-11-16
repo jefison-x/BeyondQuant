@@ -735,6 +735,69 @@ describe("AgentView", () => {
     wrapper.unmount();
   });
 
+  it("lets a new-conversation route supersede a delayed initial session replay", async () => {
+    let releaseReplay: (value: any) => void = () => undefined;
+    getAgentSession.mockReturnValueOnce(new Promise(resolve => { releaseReplay = resolve; }));
+    createAgentSession.mockResolvedValue({ session_id: "session-2", trace_id: "trace-2", title: "新会话" });
+
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    expect(getAgentSession).toHaveBeenCalledWith("session-1", "");
+    expect((wrapper.vm as any).loading).toBe(true);
+
+    routerHarness.proxy.query = { new: "new-intent" };
+    await flushPromises();
+    expect((wrapper.vm as any).loading).toBe(false);
+    expect(useAgentStore().activeSessionId).toBe("");
+    expect(createAgentSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+
+    releaseReplay({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "旧会话" },
+      messages: [{ message_id: "old-message", sequence: 1, role: "user", content: "旧问题", created_at: "2026-08-28T00:00:00Z" }],
+      events: [],
+    });
+    await flushPromises();
+    expect(useAgentStore().activeSessionId).toBe("");
+    expect(useAgentStore().messages).toEqual([]);
+
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "新研究问题";
+    await view.send();
+    await flushPromises();
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).toHaveBeenCalledWith("session-2", "新研究问题", "");
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("keeps the new-conversation draft when the initial session catalog resolves late", async () => {
+    let releaseCatalog: (value: any) => void = () => undefined;
+    listAgentSessions.mockReturnValueOnce(new Promise(resolve => { releaseCatalog = resolve; }));
+
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    expect((wrapper.vm as any).initialized).toBe(false);
+
+    routerHarness.proxy.query = { new: "new-intent" };
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; error: string; initialized: boolean };
+    view.prompt = "新对话里尚未发送的研究草稿";
+    expect(createAgentSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+
+    releaseCatalog({ sessions: [{ session_id: "session-1", trace_id: "trace-1", title: "旧会话" }], total: 1 });
+    await flushPromises();
+
+    expect(view.prompt).toBe("新对话里尚未发送的研究草稿");
+    expect(view.error).toBe("");
+    expect(useAgentStore().activeSessionId).toBe("");
+    expect(getAgentSession).not.toHaveBeenCalled();
+    expect(createAgentSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it.each(["stock", "screen", "idea", "compare"])("prepares the %s example without creating a conversation or sending", async (id) => {
     routerHarness.route.query = { new: "true" };
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
