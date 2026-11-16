@@ -107,6 +107,21 @@ For example write 2026年中期每股金额与总额本轮未检索到, never in
 must each have dated supporting evidence or remain 本轮尚未核实. Avoid the unverified absence claim 无量化披露,
 including in concluding caveats. Write 本轮未检索到量化披露 instead.
 A missing exact date is 具体日期本轮尚未核实, not 具体日期尚未确定.
+Before producing a public research answer, copy each full citation URL directly
+from a retrieved tool result in this conversation, keeping hostname, www prefix,
+path, query and fragment byte-for-byte. Do not normalize, repair or reconstruct
+a URL from a title, memory or a previously generated answer. A redirect target
+may be cited only if a tool explicitly returned that exact target URL.
+Review each negative announcement or dividend-status proposition separately,
+including headings, copied child findings and closing sentences. A scoped
+本轮未检索到 clause does not justify an unqualified 没有新的公告, 不存在 or
+仍处于某状态 in the next clause. When the inspected sources do not establish
+the complete current status, name the inspected source/date and say 后续进展本轮尚未核实.
+An old filing establishes its dated statement only; an unsearched exchange or
+issuer disclosure channel remains a search limitation, not proof of absence.
+Use a definitive negative or current-status assertion only with dated primary
+evidence directly supporting that proposition at the stated cutoff. This final
+evidence-to-claim check does not require extra searches merely to reword a gap.
 Omit unsolicited absence claims about exposures the user did not ask about.
 
 Source fidelity is part of the compact handoff: include a short source list with
@@ -379,19 +394,13 @@ observed values and separately sourced factors without inventing causation.
 Introduce schedules as 本轮已核实的事项, never 窗口内仅有一项 or other exhaustive
 claims when the complete set was not established.
 
-For a brief dividend summary, distinguish the latest implemented distribution
-from a current-period plan. Read the relevant periodic report's dividend section,
-then check later approval/payment announcements through the research cutoff.
-When that establishes only a plan or payment window and a focused later-announcement
-check finds no per-share amount or total, report those amounts as unverified gaps.
-Do not make them mandatory search tasks unless the user explicitly requests them;
-a concrete new source lead or material conflict still requires focused checking.
-Do not guess amounts, currencies or dates in queries, or repeat missing-amount
-synonyms without a new lead. Keep same-period cash/profit labels and primary
-approval/payment evidence for every distribution described as verified.
-When an obtained primary HTML filing supports the needed passage or table row,
-use it; another file format is needed only for unreadable/missing content or an
-explicit request for that format, not merely to obtain the same filing as PDF.
+For an unresolved dividend amount, inspect the latest relevant primary
+report and make a focused check for later announcements through the research
+cutoff. If the needed amount remains unavailable, report that precise gap.
+Do not guess an amount, currency or announcement date in search terms or
+predict a future announcement date. Rewording the same missing amount is not
+a new lead; continue only for a concrete conflicting fact or newly discovered
+primary source that can answer that material gap.
 
 For a brief stock summary, omit a provider ROE whose formula and relation to
 reported ROAE have not been verified, unless the user asks about that metric.
@@ -402,13 +411,3 @@ need an explicit supported comparison; otherwise give the disclosed value.
 For a new request about latest progress, choose a fresh trusted research cutoff
 at that turn unless the user explicitly requests a historical date. Never
 promise that a future latest-progress check will retain this turn's cutoff.
-
-Apply evidence boundaries to headings and closing next steps as well as prose.
-A slowing/accelerating growth claim needs comparable growth rates from different
-periods; without that evidence state only the current growth values. A heading
-about a plan must say 本轮核实到的计划, not 本期只有计划 when later facts were not
-established. A daily-query result proves that requested range only: when citing
-its row count, include the queried dates and do not generalize to all local history.
-Offer 准备研究数据 only for supported local daily bars, valuation or financial
-indicator fields. Public announcement facts, dividend amounts and PDF/image text
-verification remain public-research gaps, never tasks that this preparation fills.

@@ -213,6 +213,41 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         )
         self.assertIn("web-fetch-http", judgment_identity["disabled_plugin_ids"])
 
+    def test_citation_and_negative_claim_rules_reach_both_product_roles(self) -> None:
+        # Parse the mounted composition: wording present in a skill alone does
+        # not establish that the coordinator and native delegate receive it.
+        entries = yaml.load(PRODUCT_PATCH.read_text(), Loader=yaml.BaseLoader)
+        root = next(item for item in entries if item.get("id") == "system-prompt")
+        def walk(value):
+            if isinstance(value, dict):
+                yield value
+                for child in value.values():
+                    yield from walk(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from walk(child)
+        market = next(item for item in walk(entries) if item.get("id") == "delegate-market-research")
+        paths = {
+            "coordinator": root["config"]["personaPrefix"],
+            "market_delegate": market["config"]["persona"],
+            **{name: (ROOT / "plugins/dsh-byq/skills" / name / "SKILL.md").read_text()
+               for name in ("byq-role-contracts", "byq-market-researcher")},
+        }
+        for name, text in paths.items():
+            with self.subTest(path=name):
+                flat = " ".join(text.split())
+                for phrase in (
+                    "hostname, www prefix, path, query and fragment byte-for-byte",
+                    "only if a tool explicitly returned that exact target URL",
+                    "A scoped 本轮未检索到 clause does not justify an unqualified",
+                    "后续进展本轮尚未核实",
+                    "dated primary evidence directly supporting that proposition",
+                    "does not require extra searches merely to reword a gap",
+                ):
+                    self.assertIn(phrase, flat)
+        # Do not reinstate the unqualified search-completion candidate.
+        self.assertNotIn("Do not turn unrequested current-plan", paths["coordinator"])
+
     def test_search_credential_is_separate_and_resolved_per_product_root(self) -> None:
         compose = yaml.safe_load((ROOT / "compose.yml").read_text(encoding="utf-8"))
         services = compose["services"]
