@@ -31,12 +31,14 @@ const getStrategyVersionApproval = vi.fn();
 const getStrategyBacktestCount = vi.fn();
 const getStrategyVersions = vi.fn();
 const saveStrategyDraft = vi.fn();
+const createStrategyVersion = vi.fn();
+const validateStrategy = vi.fn();
 const deleteStrategyDraft = vi.fn();
 const submitProductApprovalRequestOnce = vi.fn();
 
 vi.mock("@/api/quant", () => ({
   listStrategies: (...args: unknown[]) => listStrategies(...args),
-  createStrategyVersion: vi.fn(),
+  createStrategyVersion: (...args: unknown[]) => createStrategyVersion(...args),
   deleteStrategyDraft: (...args: unknown[]) => deleteStrategyDraft(...args),
   exportStrategyVersion: vi.fn(),
   getResearchEntity: (...args: unknown[]) => getResearchEntity(...args),
@@ -44,7 +46,7 @@ vi.mock("@/api/quant", () => ({
   getStrategyVersionApproval: (...args: unknown[]) => getStrategyVersionApproval(...args),
   getStrategyVersions: (...args: unknown[]) => getStrategyVersions(...args),
   saveStrategyDraft: (...args: unknown[]) => saveStrategyDraft(...args),
-  validateStrategy: vi.fn(),
+  validateStrategy: (...args: unknown[]) => validateStrategy(...args),
 }));
 
 vi.mock("@/api/research", () => ({
@@ -105,6 +107,8 @@ describe("StrategyView", () => {
     getStrategyVersions.mockReset();
     getStrategyVersions.mockResolvedValue({ versions: [] });
     saveStrategyDraft.mockReset();
+    createStrategyVersion.mockReset();
+    validateStrategy.mockReset();
     deleteStrategyDraft.mockReset();
     submitProductApprovalRequestOnce.mockReset();
     replaceRoute.mockReset();
@@ -230,6 +234,94 @@ describe("StrategyView", () => {
     );
     await (wrapper.vm as unknown as { removeDraft: () => Promise<void> }).removeDraft();
     expect(deleteStrategyDraft).toHaveBeenCalledWith("artifact_draft", "strategy-test");
+  });
+
+  it("keeps the newly validated draft selected when an older version is also listed", async () => {
+    const olderVersion = {
+      artifact_id: "artifact_old_version", kind: "strategy_version", status: "validated", task_id: "task_1",
+      content: { snapshot: { strategy_id: "RealBankMA", name: "旧版本", script: "class CustomStrategy: pass" } },
+    };
+    const validatedDraft = {
+      artifact_id: "artifact_validated_draft", kind: "strategy_draft", status: "validated", task_id: "task_1",
+      content: { snapshot: { strategy_id: "RealBankMA", name: "新草稿", script: "class CustomStrategy: pass" } },
+    };
+    listStrategies
+      .mockResolvedValueOnce({ strategies: [olderVersion], total: 1, limit: 50, offset: 0 })
+      .mockResolvedValueOnce({ strategies: [olderVersion], total: 1, limit: 50, offset: 0 });
+    listTaskOptions.mockResolvedValue({ tasks: [{ task_id: "task_1" }] });
+    getResearchEntity.mockImplementation(async (_kind: string, artifactId: string) =>
+      artifactId === olderVersion.artifact_id ? olderVersion : validatedDraft);
+    validateStrategy.mockResolvedValue({ artifact: validatedDraft, validation: { success: true } });
+
+    const wrapper = mountView();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      newDraft: () => Promise<void>; validateDraft: () => Promise<void>;
+      script: string; selected: Record<string, unknown> | null; editorOpen: boolean;
+      lifecycle: string; filter: string; page: number;
+    };
+    await vm.newDraft();
+    vm.script = "class CustomStrategy:\n    pass";
+    vm.lifecycle = "superseded";
+    vm.filter = "version";
+    vm.page = 4;
+    await vm.validateDraft();
+
+    expect(validateStrategy).toHaveBeenCalledTimes(1);
+    expect(vm.selected?.artifact_id).toBe(validatedDraft.artifact_id);
+    expect(vm.editorOpen).toBe(true);
+    expect(vm.lifecycle).toBe("active");
+    expect(vm.filter).toBe("draft");
+    expect(vm.page).toBe(1);
+    expect(listStrategies).toHaveBeenLastCalledWith(
+      "strategy-test",
+      expect.objectContaining({ lifecycle: "active", offset: 0 }),
+    );
+    expect(getResearchEntity).toHaveBeenCalledWith("artifacts", validatedDraft.artifact_id, "strategy-test");
+    expect(createStrategyVersion).not.toHaveBeenCalled();
+    expect(submitProductApprovalRequestOnce).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("selects the newly created version and shows it in the active filter", async () => {
+    const olderVersion = {
+      artifact_id: "artifact_old_version", kind: "strategy_version", status: "validated", task_id: "task_1",
+      content: { snapshot: { strategy_id: "RealBankMA", name: "旧版本", script: "class CustomStrategy: pass" } },
+    };
+    const sourceDraft = {
+      artifact_id: "artifact_source_draft", kind: "strategy_draft", status: "validated", task_id: "task_1",
+      content: { snapshot: { strategy_id: "RealBankMA", name: "待冻结草稿", script: "class CustomStrategy: pass" } },
+    };
+    const newVersion = {
+      artifact_id: "artifact_new_version", kind: "strategy_version", status: "validated", task_id: "task_1",
+      content: { snapshot: { strategy_id: "RealBankMA", name: "新版本", script: "class CustomStrategy: pass" } },
+    };
+    listStrategies
+      .mockResolvedValueOnce({ strategies: [olderVersion, sourceDraft], total: 2, limit: 50, offset: 0 })
+      .mockResolvedValueOnce({ strategies: [olderVersion, sourceDraft, newVersion], total: 3, limit: 50, offset: 0 });
+    listTaskOptions.mockResolvedValue({ tasks: [{ task_id: "task_1" }] });
+    getResearchEntity.mockImplementation(async (_kind: string, artifactId: string) => {
+      if (artifactId === sourceDraft.artifact_id) return sourceDraft;
+      return artifactId === newVersion.artifact_id ? newVersion : olderVersion;
+    });
+    createStrategyVersion.mockResolvedValue({ artifact: newVersion, source_draft_artifact_id: sourceDraft.artifact_id });
+
+    const wrapper = mountView();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      select: (row: Record<string, unknown>) => Promise<void>; createVersion: () => Promise<void>;
+      selected: Record<string, unknown> | null; filter: string; isReadonly: boolean; editorOpen: boolean;
+    };
+    await vm.select(sourceDraft);
+    await vm.createVersion();
+
+    expect(createStrategyVersion).toHaveBeenCalledTimes(1);
+    expect(vm.selected?.artifact_id).toBe(newVersion.artifact_id);
+    expect(vm.filter).toBe("version");
+    expect(vm.isReadonly).toBe(true);
+    expect(vm.editorOpen).toBe(false);
+    expect(submitProductApprovalRequestOnce).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("submits a typed approval request and does not start a backtest when approval is missing", async () => {

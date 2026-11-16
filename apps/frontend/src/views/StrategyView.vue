@@ -656,10 +656,17 @@ async function validateDraft() {
       auth.token,
     );
     detail.value = result as Record<string, unknown>;
-    lastDraftId.value = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    const validatedArtifactId = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    lastDraftId.value = validatedArtifactId;
     syncEditorBaseline();
     ElMessage.success("草稿验证通过，已保存为策略草稿");
+    lifecycle.value = "active";
+    filter.value = "draft";
+    page.value = 1;
     await loadList();
+    const validatedArtifact = artifacts.value.find((item) => String(item.artifact_id) === validatedArtifactId)
+      ?? (result as { artifact?: Record<string, unknown> }).artifact;
+    if (validatedArtifact) await select(validatedArtifact);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "验证失败";
     ElMessage.error(error.value);
@@ -690,8 +697,15 @@ async function createVersion() {
       auth.token,
     );
     detail.value = result as Record<string, unknown>;
+    const versionArtifactId = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
     ElMessage.success("已创建不可变策略版本");
+    lifecycle.value = "active";
+    filter.value = "version";
+    page.value = 1;
     await loadList();
+    const versionArtifact = artifacts.value.find((item) => String(item.artifact_id) === versionArtifactId)
+      ?? (result as { artifact?: Record<string, unknown> }).artifact;
+    if (versionArtifact) await select(versionArtifact);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "创建版本失败";
     ElMessage.error(error.value);
