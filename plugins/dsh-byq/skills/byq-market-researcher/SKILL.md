@@ -122,6 +122,12 @@ issuer disclosure channel remains a search limitation, not proof of absence.
 Use a definitive negative or current-status assertion only with dated primary
 evidence directly supporting that proposition at the stated cutoff. This final
 evidence-to-claim check does not require extra searches merely to reword a gap.
+For unresolved announcement or dividend status, use neutral section titles
+such as 本轮核实结果 or 已核实事实与待核实事项, not 仍只有计划 or another
+unverified overall-status conclusion. Review headings independently from body caveats.
+In conditional conclusions describe the evidence gap itself: 本轮尚未核实金额及登记日，无法据此量化,
+not 金额与登记日未落地前. A missing retrieved value does not establish that
+an issuer event has not occurred; this applies to conditional clauses too.
 Omit unsolicited absence claims about exposures the user did not ask about.
 
 Source fidelity is part of the compact handoff: include a short source list with

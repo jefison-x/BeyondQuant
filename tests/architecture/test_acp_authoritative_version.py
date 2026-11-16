@@ -243,6 +243,8 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
                     "后续进展本轮尚未核实",
                     "dated primary evidence directly supporting that proposition",
                     "does not require extra searches merely to reword a gap",
+                    "use neutral section titles",
+                    "this applies to conditional clauses too",
                 ):
                     self.assertIn(phrase, flat)
         # Do not reinstate the unqualified search-completion candidate.
