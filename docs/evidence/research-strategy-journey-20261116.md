@@ -168,3 +168,9 @@ C普通账号没有模型配置，本轮其新对话与权限引导通过，完�
 独立Reviewer：Functional限定PASS、Tests真实Product/独立算术/浏览器PASS、Clean Break Architecture PASS。
 Root对上述具名旅程限定PASS，保留无持仓卖单原因码语义缺陷及全部未验范围。
 最终独立复审明确：该原因码缺陷不影响本次收益/持久化计算，未要求扩大部署。
+
+## 后续R14定向整改
+
+本记录中的旧原因码与失败保持不变。11月17日98e423b0已修复空仓分类，
+同冻结输入的新回测正确输出no_position，成交/费用/收益完全一致；
+旧结果没有重写，详见[新旧对照验收](backtest-empty-position-reason-20261117.md)。
