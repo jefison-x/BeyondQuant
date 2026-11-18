@@ -810,6 +810,8 @@ def test_ml_options_date_reference_is_owner_scoped_and_not_readiness(
     assert value["continuous_history_verified"] is False
     assert value["training_readiness_verified"] is False
     assert value["recommended_dates"] is None
+    assert value["recommendation"]["state"] == "unavailable"
+    assert value["recommendation"]["training_quality_verified"] is False
     other = trusted_agent_context("other-date-owner", actor="other-date-owner")
     assert client.get("/v1/research/ml/options", headers=other,
                       params={"pool_id": pool["pool_id"]}).status_code == 404
@@ -843,6 +845,33 @@ def test_ml_options_does_not_recommend_for_inactive_missing_or_deleted_pool():
         "UPDATE stock_pools SET status='deleted' WHERE pool_id=:id", {"id": pool["pool_id"]})
     assert client.get("/v1/research/ml/options", headers=headers,
                       params={"pool_id": pool["pool_id"]}).status_code == 404
+
+
+def test_ml_options_keeps_no_pool_shape_and_forwards_only_explicit_horizon(monkeypatch):
+    owner = "ml-options-horizon-owner"
+    monkeypatch.setattr(backend_main, "_required_agent_context", lambda *_args, **_kwargs: {
+        "owner_principal": owner, "actor_principal": owner,
+        "workspace_id": "workspace_ml_options_horizon",
+    })
+    monkeypatch.setattr(backend_main, "_ml_workspace_options", lambda _context: {"tasks": [], "pools": []})
+    calls = []
+
+    def reference(pool_id, context, *, horizon_sessions):
+        calls.append((pool_id, context["owner_principal"], horizon_sessions))
+        return {"recommendation": {"horizon_sessions": horizon_sessions}}
+
+    monkeypatch.setattr(backend_main, "_ml_pool_date_reference", reference)
+    baseline = client.get("/v1/research/ml/options")
+    assert baseline.status_code == 200
+    assert baseline.json() == {"schema_version": "ml-options.v1", "tasks": [], "pools": []}
+    selected = client.get("/v1/research/ml/options",
+                          params={"pool_id": "stock_pool_test", "horizon_sessions": 7})
+    assert selected.status_code == 200
+    assert calls == [("stock_pool_test", owner, 7)]
+    assert selected.json()["selected_pool_data_reference"]["recommendation"]["horizon_sessions"] == 7
+    for invalid in (0, 21):
+        response = client.get("/v1/research/ml/options", params={"horizon_sessions": invalid})
+        assert response.status_code == 422
 
 
 def test_ml_date_reference_rejects_a_mismatched_workspace_context(monkeypatch):

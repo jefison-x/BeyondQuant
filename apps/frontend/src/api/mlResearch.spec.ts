@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMLStrategy, createMLTraining, deleteMLStudy, getMLPredictionRows, getMLWorkspace, setMLStudyLifecycle } from "./mlResearch";
+import { createMLStrategy, createMLTraining, deleteMLStudy, getMLPredictionRows, getMLOptions, getMLWorkspace, setMLStudyLifecycle } from "./mlResearch";
 
 describe("ML research Product API client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -22,6 +22,20 @@ describe("ML research Product API client", () => {
     vi.stubGlobal("fetch", fetchMock);
     await getMLPredictionRows("run /1", "000001.SZ", 50, 50);
     expect(fetchMock.mock.calls[0][0]).toBe("/api/product/ml/prediction-runs/run%20%2F1/rows?query=000001.SZ&limit=50&offset=50");
+  });
+  it("adds a bounded horizon only to selected-pool options requests", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ schema_version: "ml-options.v1", tasks: [], pools: [] }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    await getMLOptions();
+    await getMLOptions(undefined, 5);
+    await getMLOptions("pool /1", 5);
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      "/api/product/ml/options",
+      "/api/product/ml/options",
+      "/api/product/ml/options?pool_id=pool+%2F1&horizon_sessions=5",
+    ]);
+    await expect(getMLOptions("pool_1", 21)).rejects.toThrow("1 到 20");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
   it("sends a stable transport idempotency key outside the domain payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ training_run: { training_run_id: "mlrun_1" } }), { status: 202 }));

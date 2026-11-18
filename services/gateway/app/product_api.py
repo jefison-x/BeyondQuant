@@ -18,7 +18,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from urllib.parse import quote, urlencode, urlsplit
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
@@ -920,11 +920,19 @@ def product_ml_capabilities(request: Request) -> dict[str, object]:
 
 
 @router.get("/ml/options")
-def product_ml_options(request: Request, pool_id: str | None = None) -> dict[str, object]:
+def product_ml_options(
+    request: Request, pool_id: str | None = None,
+    horizon_sessions: int | None = Query(default=None, ge=1, le=20),
+) -> dict[str, object]:
     _product_principal(request)
     path = "/v1/research/ml/options"
+    params: dict[str, object] = {}
     if pool_id is not None:
-        path += "?" + urlencode({"pool_id": pool_id})
+        params["pool_id"] = pool_id
+    if horizon_sessions is not None:
+        params["horizon_sessions"] = horizon_sessions
+    if params:
+        path += "?" + urlencode(params)
     return _backend_request("GET", path, headers=_trusted_agent_headers(request))
 
 

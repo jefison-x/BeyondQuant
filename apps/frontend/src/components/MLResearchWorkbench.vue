@@ -7,8 +7,8 @@ import {
   deleteMLStudy, setMLStudyLifecycle,
   getMLCapabilities, getMLOptions, getMLPrediction, getMLPredictionRows,
   getMLStudies, getMLStudy, getMLTraining, getMLTrainingSubmission, type MLReceiptWatch,
-  type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLRun,
-  type MLOptions, type MLPoolDataReference, type MLStudyDetail, type MLStudySummary,
+  type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLDateRecommendation, type MLRecommendedDates, type MLRun,
+  type MLOptions, type MLPoolDataReference, type MLRecommendationReason, type MLStudyDetail, type MLStudySummary,
 } from "@/api/mlResearch";
 import { createTask } from "@/api/research";
 import { submitProductApprovalRequestOnce, type ApprovalRequestOutcome } from "@/api/approvalRequestSubmissions";
@@ -74,14 +74,77 @@ const activePools = computed(() => options.value.pools.filter(pool => pool.statu
 const chosenPool = computed(() => activePools.value.find(pool => pool.pool_id === form.pool_id));
 const poolDataReference = ref<MLPoolDataReference | null>(null);
 const poolReferenceLoading = ref(false), poolReferenceError = ref("");
+const poolRecommendation = ref<MLDateRecommendation | null>(null);
+const poolRecommendedDates = ref<MLRecommendedDates | null>(null);
+const poolReferenceHorizon = ref<number | null>(null), poolReferenceScope = ref("");
 let poolReferenceRequest = 0;
 const referenceDate = (value: string) => value.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+const recommendationReasonMessages: Record<MLRecommendationReason, string> = {
+  no_common_history: "所选股票池没有共同可用的历史日期，暂时无法生成建议。",
+  calendar_incomplete: "所需交易日历不完整，暂时无法计算建议日期。",
+  data_not_ready: "当前本地数据尚不满足日期建议条件；准备或更新数据后可以重新查询。",
+  insufficient_samples: "所选预测周期下，现有数据不足以安排最小训练、验证和预测样本。",
+  inspection_limit: "可核对的历史范围有限，暂时无法确认足够样本。",
+};
+function isCompactDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{8}$/.test(value)) return false;
+  const year = Number(value.slice(0, 4)), month = Number(value.slice(4, 6)), day = Number(value.slice(6, 8));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+const recommendedDatesAreValid = (dates: MLRecommendedDates | null): dates is MLRecommendedDates => {
+  if (!dates) return false;
+  const values = [dates.train_start, dates.train_end, dates.validation_start, dates.validation_end, dates.prediction_start, dates.prediction_end];
+  return values.every(isCompactDate)
+    && dates.train_start <= dates.train_end && dates.train_end < dates.validation_start
+    && dates.validation_start <= dates.validation_end && dates.validation_end < dates.prediction_start
+    && dates.prediction_start <= dates.prediction_end;
+};
+const poolReferenceMatchesCurrent = computed(() => {
+  const reference = poolDataReference.value;
+  const pool = chosenPool.value;
+  return Boolean(showCreate.value && !poolReferenceLoading.value && !poolReferenceError.value
+    && reference && pool && reference.pool_id === form.pool_id
+    && reference.stock_pool_snapshot_id === pool.current_snapshot_id
+    && poolReferenceHorizon.value === form.horizon && poolReferenceScope.value === authScope.value);
+});
+const currentPoolRecommendation = computed(() => poolReferenceMatchesCurrent.value ? poolRecommendation.value : null);
+const currentRecommendedDates = computed(() => poolReferenceMatchesCurrent.value ? poolRecommendedDates.value : null);
+const canApplyRecommendedDates = computed(() => {
+  const recommendation = currentPoolRecommendation.value;
+  return form.mode === "compatible" && recommendation?.state === "available"
+    && recommendation.mode === "compatible" && recommendation.horizon_sessions === form.horizon
+    && recommendation.continuous_history_verified === true && recommendation.minimum_samples_verified === true
+    && recommendedDatesAreValid(currentRecommendedDates.value);
+});
+const recommendationMessage = computed(() => {
+  const recommendation = currentPoolRecommendation.value;
+  if (!recommendation) return "";
+  if (form.mode !== "compatible") return "这份建议只适用于单模型入门模式；当前方案请手工填写开发和预测日期。";
+  if (recommendation.mode !== "compatible") return "当前方案不支持这份日期建议，请手工填写日期。";
+  if (recommendation.horizon_sessions !== form.horizon) return "日期建议与当前预测周期不一致，请重新查询。";
+  if (recommendation.state === "unavailable") {
+    const reason = recommendation.reason;
+    return reason ? (recommendationReasonMessages[reason] ?? "暂时无法生成日期建议；你仍可手工填写，并在训练前核验数据。")
+      : "暂时无法生成日期建议；你仍可手工填写，并在训练前核验数据。";
+  }
+  if (recommendation.state !== "available") return "日期建议状态无法识别；暂不提供自动采用，请手工填写并在训练前核验。";
+  if (!recommendedDatesAreValid(currentRecommendedDates.value)) return "系统返回的建议日期不完整，暂不能采用；你仍可手工填写日期。";
+  const window = recommendation.window_start && recommendation.window_end
+    ? `建议窗口 ${referenceDate(recommendation.window_start)} 至 ${referenceDate(recommendation.window_end)}。` : "";
+  const counts = recommendation.counts
+    ? `最小流程样本数：训练 ${recommendation.counts.train}、验证 ${recommendation.counts.validation}、预测 ${recommendation.counts.prediction} 条样本。`
+    : "建议样本数未提供。";
+  const minimum = recommendation.minimum_samples_verified ? "满足最低流程样本要求。" : "最低样本要求尚未核实。";
+  return `${window}${counts}${minimum}这不代表全部历史连续、训练已就绪或模型质量已验证。`;
+});
 const poolReferenceMessage = computed(() => {
   if (!chosenPool.value) return "请先选择股票池，再核对该版本已有的本地数据。";
   if (poolReferenceLoading.value) return "正在读取所选股票池的本地日线参考范围…";
   if (poolReferenceError.value) return poolReferenceError.value;
   const value = poolDataReference.value;
   if (!value) return "暂未取得日期范围，不会自动填入示例日期。";
+  if (recommendationMessage.value) return recommendationMessage.value;
   if (!value.observed_start_date || !value.observed_end_date) {
     return "当前版本 " + value.member_count + " 只股票中，" + value.members_with_data + " 只有本地日线；未取得所有成员可用的日期参考范围，不能自动推荐训练日期。";
   }
@@ -128,6 +191,19 @@ const dateWindowError = computed(() => {
     && form.prediction_start <= form.prediction_end
     ? "" : "请按时间先后设置开发和预测区间，区间不能重叠。";
 });
+
+function applyRecommendedDates() {
+  const dates = currentRecommendedDates.value;
+  if (!canApplyRecommendedDates.value || !dates) return;
+  const dateFields = [form.train_start, form.train_end, form.validation_start, form.validation_end, form.prediction_start, form.prediction_end];
+  if (dateFields.some(Boolean) && !window.confirm("采用建议日期会替换当前填写的训练、验证和预测日期。是否继续？")) return;
+  const iso = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  Object.assign(form, {
+    train_start: iso(dates.train_start), train_end: iso(dates.train_end),
+    validation_start: iso(dates.validation_start), validation_end: iso(dates.validation_end),
+    prediction_start: iso(dates.prediction_start), prediction_end: iso(dates.prediction_end),
+  });
+}
 
 const predictionRows = ref<Record<string, any>[]>([]), predictionRowsTotal = ref(0);
 const predictionRowsLoading = ref(false), predictionRowsQuery = ref(""), predictionRowsPage = ref(1);
@@ -316,29 +392,39 @@ async function bootstrap() {
 
 onBeforeUnmount(() => { poolReferenceRequest += 1; });
 
-watch([showCreate, () => form.pool_id, () => chosenPool.value?.current_snapshot_id, authScope], async ([open, poolId]) => {
+watch([showCreate, () => form.pool_id, () => chosenPool.value?.current_snapshot_id, () => form.horizon, authScope], async ([open, poolId, , horizon]) => {
   const request = ++poolReferenceRequest;
   const referenceScope = authScope.value;
   poolDataReference.value = null; poolReferenceError.value = ""; poolReferenceLoading.value = false;
+  poolRecommendation.value = null; poolRecommendedDates.value = null;
+  poolReferenceHorizon.value = null; poolReferenceScope.value = "";
   const snapshotId = chosenPool.value?.current_snapshot_id;
   if (!open || !poolId || !snapshotId) return;
+  const requestHorizon = Number(horizon);
   poolReferenceLoading.value = true;
   try {
-    const response = await getMLOptions(String(poolId));
-    if (request !== poolReferenceRequest || referenceScope !== authScope.value || !showCreate.value) return;
+    const response = await getMLOptions(String(poolId), requestHorizon);
+    if (request !== poolReferenceRequest || referenceScope !== authScope.value || !showCreate.value
+      || form.pool_id !== poolId || form.horizon !== requestHorizon
+      || chosenPool.value?.current_snapshot_id !== snapshotId) return;
     const value = response.selected_pool_data_reference;
     if (value && value.pool_id === poolId && value.stock_pool_snapshot_id === snapshotId
       && chosenPool.value?.current_snapshot_id === snapshotId) {
       poolDataReference.value = value;
+      poolRecommendation.value = value.recommendation ?? null;
+      poolRecommendedDates.value = value.recommended_dates ?? null;
+      poolReferenceHorizon.value = requestHorizon;
+      poolReferenceScope.value = referenceScope;
     } else {
       poolReferenceError.value = "股票池版本或参考范围尚未核对，请刷新页面后重新选择。";
     }
   } catch (cause) {
-    if (request === poolReferenceRequest && referenceScope === authScope.value) poolReferenceError.value = cause instanceof Error ? cause.message : "日期参考范围加载失败，请稍后重试。";
+    if (request === poolReferenceRequest && referenceScope === authScope.value && showCreate.value
+      && form.pool_id === poolId && form.horizon === requestHorizon) poolReferenceError.value = cause instanceof Error ? cause.message : "日期参考范围加载失败，请稍后重试。";
   } finally {
     if (request === poolReferenceRequest && referenceScope === authScope.value) poolReferenceLoading.value = false;
   }
-});
+}, { flush: "sync" });
 
 watch(catalogQuery, () => {
   catalogPage.value = 1;
@@ -880,7 +966,8 @@ onBeforeUnmount(() => {
       <p class="date-validation" role="status">{{ dateWindowError || "日期顺序已检查；不代表训练数据已就绪。" }}</p>
       <section class="data-reference" aria-label="所选股票池日期参考">
         <strong>所选股票池的数据参考</strong><p role="status">{{ poolReferenceMessage }}</p>
-        <p>该范围不是完整训练覆盖证明，也不会自动改写你填写的日期；缺失数据须在训练前准备和复查。</p>
+        <el-button v-if="canApplyRecommendedDates" plain data-testid="ml-apply-recommended-dates" @click="applyRecommendedDates">采用建议日期</el-button>
+        <p>所列范围不代表完整历史连续，也不会自动改写你填写的日期；缺失数据须在训练前准备和复查。</p>
         <p v-if="datesOutsideReference" role="alert">所选日期超出当前已有日线的参考范围。可以先保存研究定义，但训练前需要补齐并核验数据。</p>
       </section>
     </el-form>

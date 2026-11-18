@@ -541,6 +541,25 @@ class MarketDataStore(PgStoreMixin):
             "recommended_dates": None,
         }
 
+    def list_open_trading_sessions(self, start_date: str, end_date: str) -> list[str]:
+        """Return a small, bounded slice of the persisted canonical calendar."""
+        try:
+            start = datetime.strptime(start_date, "%Y%m%d")
+            end = datetime.strptime(end_date, "%Y%m%d")
+        except ValueError as error:
+            raise ValueError("trading-session dates must use YYYYMMDD") from error
+        if start.strftime("%Y%m%d") != start_date or end.strftime("%Y%m%d") != end_date or start > end:
+            raise ValueError("trading-session date range is invalid")
+        if (end - start).days > 400:
+            raise ValueError("trading-session lookup exceeds 401 calendar days")
+        rows = self._execute(
+            """SELECT trade_date FROM market_trading_sessions
+               WHERE is_open=TRUE AND trade_date BETWEEN :start AND :end
+               ORDER BY trade_date""",
+            {"start": start_date, "end": end_date},
+        )
+        return [str(row["trade_date"]) for row in rows]
+
     def coverage(self) -> dict[str, Any]:
         rows = self._execute(
             """SELECT data_source, asset_type, SUM(row_count)::bigint AS row_count,

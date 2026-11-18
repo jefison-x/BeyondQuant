@@ -16,10 +16,91 @@ from app.ml_training import (
     generate_walk_forward_folds,
     load_feature_snapshot,
     promote_waiting_training_runs,
+    recommend_compatible_training_dates,
 )
 from app.research import ResearchStore
 from tests.test_ml_strategy import valid_regime_strategy_v2, valid_strategy, valid_strategy_v2
 from tests.workspace_helpers import trusted_agent_context
+
+
+def _ready_training_input(symbols: list[str], sessions: list[str]) -> dict[str, object]:
+    return {
+        "research_view_sha256": "b" * 64,
+        "research_bars": [
+            {
+                "symbol": symbol, "trade_date": f"{session[:4]}-{session[4:6]}-{session[6:]}",
+                "close": float(index + 10), "volume": 100.0,
+            }
+            for symbol in symbols for index, session in enumerate(sessions)
+        ],
+    }
+
+
+def test_compatible_date_recommendation_uses_canonical_builder_counts():
+    symbols = ["000001.SZ", "000002.SZ", "600000.SH"]
+    sessions = [
+        (date(2026, 9, 1) + timedelta(days=index)).strftime("%Y%m%d")
+        for index in range(50)
+    ]
+    result = recommend_compatible_training_dates(
+        sessions=sessions, symbols=symbols,
+        ready_input=_ready_training_input(symbols, sessions),
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=5,
+    )
+    assert result["recommendation"] == {
+        "state": "available", "reason": None, "mode": "compatible",
+        "horizon_sessions": 5, "counts": {"train": 30, "validation": 9, "prediction": 21},
+        "window_start": sessions[0], "window_end": sessions[-1],
+        "continuous_history_verified": True, "minimum_samples_verified": True,
+        "training_quality_verified": False,
+    }
+    dates = result["recommended_dates"]
+    assert dates["train_start"] == sessions[0]
+    assert dates["train_end"] == sessions[34]
+    assert dates["validation_start"] == sessions[35]
+    assert dates["validation_end"] == sessions[42]
+    assert dates["prediction_start"] == sessions[43]
+    assert dates["prediction_end"] == sessions[-1]
+    assert all(len(value) == 8 for value in dates.values())
+
+
+def test_compatible_date_recommendation_fails_closed_for_calendar_bars_and_sample_gaps():
+    sessions = [
+        (date(2026, 9, 1) + timedelta(days=index)).strftime("%Y%m%d")
+        for index in range(50)
+    ]
+    symbols = ["000001.SZ", "000002.SZ", "600000.SH"]
+    ready_input = _ready_training_input(symbols, sessions)
+    calendar_gap = recommend_compatible_training_dates(
+        sessions=sessions, symbols=symbols, ready_input=ready_input,
+        readiness={"state": "missing", "calendar_complete": False}, horizon_sessions=5,
+    )
+    assert calendar_gap["recommendation"]["reason"] == "calendar_incomplete"
+    assert calendar_gap["recommended_dates"] is None
+
+    missing_bar_input = {**ready_input, "research_bars": ready_input["research_bars"][1:]}
+    missing_bar = recommend_compatible_training_dates(
+        sessions=sessions, symbols=symbols, ready_input=missing_bar_input,
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64}, horizon_sessions=5,
+    )
+    assert missing_bar["recommendation"]["reason"] == "data_not_ready"
+    assert missing_bar["recommendation"]["continuous_history_verified"] is False
+    assert missing_bar["recommended_dates"] is None
+
+    one_stock = recommend_compatible_training_dates(
+        sessions=sessions, symbols=symbols[:1],
+        ready_input=_ready_training_input(symbols[:1], sessions),
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=5,
+    )
+    assert one_stock["recommendation"]["reason"] == "insufficient_samples"
+    assert one_stock["recommendation"]["continuous_history_verified"] is True
+    assert one_stock["recommendation"]["minimum_samples_verified"] is False
+    assert one_stock["recommended_dates"] is None
 
 
 def compact_strategy() -> dict[str, object]:

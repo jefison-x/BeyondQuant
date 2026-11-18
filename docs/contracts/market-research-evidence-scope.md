@@ -79,10 +79,32 @@ of common sessions or continuous history. No-data, partial, inactive and missing
 snapshot cases return no suggested dates.
 
 reference_only=true, continuous_history_verified=false and
-training_readiness_verified=false remain explicit; recommended_dates is null.
-The form displays a reference and warnings, never silently fills example dates or
-blocks saving a valid future research definition solely for absent data. Training
-retains its existing preparation and approval requirements. Client requests are
-lazy and scoped to the selected snapshot; stale pool/snapshot/auth responses and
-responses after close/unmount are discarded. No new model, Job or provider call
-is started by this metadata read.
+training_readiness_verified=false remain explicit at the date-reference level:
+observed bounds do not certify the entire history. For an active current
+snapshot, an optional horizon_sessions query (integer 1–20, default 5) also
+evaluates a bounded compatible/v1 date recommendation. The recommendation checks
+the persisted complete calendar, canonical ready input for every member and
+session, and the existing feature builder's minimum counts (20 training rows,
+5 validation rows and at least 1 prediction row). Forward-return labels remain
+inside their own training or validation split. It creates no feature artifact,
+study, training run, Job or provider/model call.
+
+recommendation.state is available or unavailable. Its mode is compatible and
+horizon_sessions binds the exact requested horizon. Only available returns six
+compact YYYYMMDD recommended_dates fields plus train/validation/prediction counts.
+Unavailable keeps recommended_dates=null and reports one of no_common_history,
+calendar_incomplete, data_not_ready, insufficient_samples or inspection_limit;
+counts is null. Inspection is limited to 401 calendar days and 50,000
+symbol-session cells; exceeding a limit does not silently truncate the history.
+Nested continuous_history_verified and minimum_samples_verified apply only to
+the inspected recommendation window. training_quality_verified is always false:
+meeting workflow minima does not establish model quality or training readiness.
+Walk-forward and regime studies do not adopt compatible recommendations.
+
+The form displays the reference and limitations. An explicit adopt action fills
+the six dates only; loading data or changing pool, horizon or mode never
+overwrites user dates or starts a write. It does not block saving a valid future
+research definition solely for absent data. Training retains its existing
+preparation and approval requirements. Requests are lazy and scoped to the
+selected snapshot and horizon; stale pool/snapshot/auth/horizon responses and
+responses after close/unmount are discarded.

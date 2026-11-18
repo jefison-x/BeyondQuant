@@ -2418,3 +2418,11 @@ def test_ml_options_only_forwards_optional_pool_reference_with_trusted_identity(
     assert client.get("/api/product/ml/options?pool_id=stock_pool_test&owner=other",
                       headers=headers).status_code == 200
     assert calls[-1] == "/v1/research/ml/options?pool_id=stock_pool_test"
+    assert client.get(
+        "/api/product/ml/options?pool_id=stock_pool_test&horizon_sessions=7",
+        headers=headers,
+    ).status_code == 200
+    assert calls[-1] == "/v1/research/ml/options?pool_id=stock_pool_test&horizon_sessions=7"
+    assert client.get(
+        "/api/product/ml/options?horizon_sessions=21", headers=headers,
+    ).status_code == 422

@@ -22,9 +22,32 @@ export interface MLPoolDataReference {
   member_count: number; members_with_data: number; minimum_rows_per_member: number;
   observed_start_date: string | null; observed_end_date: string | null;
   reference_only: true; continuous_history_verified: false; training_readiness_verified: false;
-  recommended_dates: null;
+  recommendation?: MLDateRecommendation;
+  recommended_dates: MLRecommendedDates | null;
 }
-export interface MLOptions { schema_version: string; tasks: Array<Record<string, any>>; pools: Array<Record<string, any>>; selected_pool_data_reference?: MLPoolDataReference }
+export type MLRecommendationReason = "no_common_history" | "calendar_incomplete" | "data_not_ready" | "insufficient_samples" | "inspection_limit";
+export interface MLRecommendationCounts { train: number; validation: number; prediction: number }
+export interface MLRecommendedDates {
+  train_start: string; train_end: string;
+  validation_start: string; validation_end: string;
+  prediction_start: string; prediction_end: string;
+}
+export interface MLDateRecommendation {
+  state: "available" | "unavailable";
+  reason: MLRecommendationReason | null;
+  mode: "compatible";
+  horizon_sessions: number;
+  counts: MLRecommendationCounts | null;
+  window_start: string | null;
+  window_end: string | null;
+  continuous_history_verified: boolean;
+  minimum_samples_verified: boolean;
+  training_quality_verified: false;
+}
+export interface MLOptions {
+  schema_version: string; tasks: Array<Record<string, any>>; pools: Array<Record<string, any>>;
+  selected_pool_data_reference?: MLPoolDataReference;
+}
 export interface MLStudySummary { artifact_id: string; task_id: string; task_title: string; status: string; lifecycle_status?: "active" | "archived"; created_at?: string; schema_version: string; name: string; learner_profile?: string; regime_enabled: boolean; horizon_sessions?: string; training_status?: string; prediction_status?: string; backtest_status?: string; stage: string }
 export interface MLStudyPage { schema_version: string; studies: MLStudySummary[]; total: number; limit: number; offset: number; has_more: boolean }
 export interface MLStudyManagement { lifecycle_status: "active" | "archived"; can_delete: boolean; can_archive: boolean; can_restore: boolean; history_count: number; active_run_count: number; reason: string }
@@ -42,9 +65,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 const post = <T>(path: string, payload?: Record<string, unknown>) => request<T>(path, { method: "POST", ...(payload ? { body: JSON.stringify(payload) } : {}) });
 export const getMLWorkspace = () => request<MLWorkspace>("/workspace");
 export const getMLCapabilities = () => request<MLCapabilities>("/capabilities");
-export const getMLOptions = (poolId?: string) => request<MLOptions>(
-  poolId ? "/options?" + new URLSearchParams({ pool_id: poolId }).toString() : "/options",
-);
+export const getMLOptions = (poolId?: string, horizonSessions?: number) => {
+  if (!poolId) return request<MLOptions>("/options");
+  if (horizonSessions !== undefined
+    && (!Number.isInteger(horizonSessions) || horizonSessions < 1 || horizonSessions > 20)) {
+    return Promise.reject(new RangeError("预测周期必须是 1 到 20 个交易日"));
+  }
+  const params = new URLSearchParams({ pool_id: poolId });
+  if (horizonSessions !== undefined) params.set("horizon_sessions", String(horizonSessions));
+  return request<MLOptions>(`/options?${params.toString()}`);
+};
 export const getMLStudies = (query = "", status = "all", limit = 20, offset = 0) => {
   const params = new URLSearchParams({ query, status, limit: String(limit), offset: String(offset) });
   return request<MLStudyPage>(`/studies?${params.toString()}`);

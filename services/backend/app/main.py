@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import anyio
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, Query
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -66,7 +66,7 @@ from .workspace_runtime_reset import (
     WorkspaceRuntimeResetStore,
 )
 from .market_data import MarketDataPersistenceError, MarketDataStore
-from .market_readiness import MarketReadinessPersistenceError, MarketReadinessStore
+from .market_readiness import MAX_REQUIRED_CELLS, MarketReadinessPersistenceError, MarketReadinessStore
 from .market_plan import (
     MAX_PARTITION_CHUNK_DAYS,
     aggregate_market_readiness,
@@ -227,6 +227,7 @@ from .ml_training import (
     MLTrainingPersistenceError,
     MLTrainingRunStore,
     aggregate_ml_readiness,
+    recommend_compatible_training_dates,
 )
 from .task_progress import task_progress
 from .ml_prediction import (
@@ -3863,7 +3864,131 @@ def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _ml_pool_date_reference(pool_id: str, context: dict[str, str]) -> dict[str, object]:
+def _unavailable_ml_recommendation(
+    *, horizon_sessions: int, reason: str, window_start: str | None = None,
+    window_end: str | None = None, continuous_history_verified: bool = False,
+) -> dict[str, object]:
+    return {
+        "recommendation": {
+            "state": "unavailable", "reason": reason, "mode": "compatible",
+            "horizon_sessions": horizon_sessions, "counts": None,
+            "window_start": window_start, "window_end": window_end,
+            "continuous_history_verified": continuous_history_verified,
+            "minimum_samples_verified": False, "training_quality_verified": False,
+        },
+        "recommended_dates": None,
+    }
+
+
+def _recommend_ml_pool_dates(
+    *, pool: dict[str, object], snapshot: dict[str, object], reference: dict[str, object],
+    horizon_sessions: int,
+) -> dict[str, object]:
+    if reference.get("state") != "observed_bounds":
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="no_common_history",
+        )
+    members = snapshot.get("members")
+    if not isinstance(members, list):
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="no_common_history",
+        )
+    symbols = sorted(str(item.get("symbol", "")).strip().upper()
+                     for item in members if isinstance(item, dict))
+    symbols = [symbol for symbol in symbols if symbol]
+    if (
+        not symbols or len(symbols) != len(members)
+        or len(symbols) != int(reference.get("member_count") or 0)
+    ):
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="no_common_history",
+        )
+    max_sessions = MAX_REQUIRED_CELLS // len(symbols)
+    minimum_sessions = (
+        20 + horizon_sessions + (20 + len(symbols) - 1) // len(symbols)
+        + horizon_sessions + (5 + len(symbols) - 1) // len(symbols) + 1
+    )
+    if max_sessions < minimum_sessions:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="inspection_limit",
+        )
+
+    try:
+        first_observed = datetime.strptime(str(reference["observed_start_date"]), "%Y%m%d")
+        last_observed = datetime.strptime(str(reference["observed_end_date"]), "%Y%m%d")
+        if (last_observed - first_observed).days > 400:
+            return _unavailable_ml_recommendation(
+                horizon_sessions=horizon_sessions, reason="inspection_limit",
+                window_start=first_observed.strftime("%Y%m%d"),
+                window_end=last_observed.strftime("%Y%m%d"),
+            )
+        available_sessions = market_data_store.list_open_trading_sessions(
+            first_observed.strftime("%Y%m%d"), last_observed.strftime("%Y%m%d"),
+        )
+    except (KeyError, TypeError, ValueError):
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+        )
+    if not available_sessions:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+        )
+    window_start = first_observed.strftime("%Y%m%d")
+    window_end = last_observed.strftime("%Y%m%d")
+    if len(available_sessions) > max_sessions or len(symbols) * len(available_sessions) > MAX_REQUIRED_CELLS:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="inspection_limit",
+            window_start=window_start, window_end=window_end,
+        )
+
+    master = security_master_store.latest_snapshot()
+    if master is None:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="data_not_ready",
+            window_start=window_start, window_end=window_end,
+        )
+    try:
+        declared, _membership_mode = _ml_pool_market_scope(pool, snapshot)
+        requirement = market_readiness_store.requirement(
+            symbols=symbols, start_date=window_start, end_date=window_end,
+            membership_fingerprint=str(snapshot["membership_fingerprint"]),
+            security_master_snapshot_id=str(master["snapshot_id"]),
+            data_requirements=declared,
+        )
+        readiness = market_readiness_store.assess(requirement)
+    except ValueError as error:
+        reason = "inspection_limit" if "50000 symbol-session cells" in str(error) else "data_not_ready"
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason=reason,
+            window_start=window_start, window_end=window_end,
+        )
+    if readiness.get("calendar_complete") is not True:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+            window_start=window_start, window_end=window_end,
+        )
+    if readiness.get("state") != "ready":
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="data_not_ready",
+            window_start=window_start, window_end=window_end,
+        )
+    try:
+        ready_input = market_readiness_store.build_ready_input(requirement)
+    except ValueError as error:
+        reason = "inspection_limit" if "bounded row limit" in str(error) else "data_not_ready"
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason=reason,
+            window_start=window_start, window_end=window_end,
+        )
+    return recommend_compatible_training_dates(
+        sessions=available_sessions, symbols=symbols, ready_input=ready_input,
+        readiness=readiness, horizon_sessions=horizon_sessions,
+    )
+
+
+def _ml_pool_date_reference(
+    pool_id: str, context: dict[str, str], *, horizon_sessions: int = 5,
+) -> dict[str, object]:
     pool = paper_store.get_pool(pool_id, trusted_owner=context["owner_principal"], include_members=False)
     if pool.get("status") == "deleted" or pool.get("workspace_id") != context["workspace_id"]:
         raise PaperTradingNotFound("stock pool not found")
@@ -3878,25 +4003,51 @@ def _ml_pool_date_reference(pool_id: str, context: dict[str, str]) -> dict[str, 
             "training_readiness_verified": False, "recommended_dates": None,
         }
     snapshot = paper_store.get_pool_snapshot(
-        snapshot_id, trusted_owner=context["owner_principal"], include_members=False,
+        snapshot_id, trusted_owner=context["owner_principal"], include_members=True,
     )
     if snapshot.get("pool_id") != pool["pool_id"]:
         raise PaperTradingConflict("stock-pool current snapshot is inconsistent")
-    return {
+    reference = {
         "pool_id": pool["pool_id"],
         **market_data_store.pool_daily_date_reference(
             str(snapshot_id), trusted_owner=context["owner_principal"],
             trusted_workspace=context["workspace_id"],
         ),
     }
+    recommendation = _recommend_ml_pool_dates(
+        pool=pool, snapshot=snapshot, reference=reference,
+        horizon_sessions=horizon_sessions,
+    )
+    current = paper_store.get_pool(
+        pool_id, trusted_owner=context["owner_principal"], include_members=False,
+    )
+    if (
+        current.get("status") != "active"
+        or current.get("workspace_id") != context["workspace_id"]
+        or current.get("current_snapshot_id") != snapshot_id
+    ):
+        raise PaperTradingConflict("stock-pool current snapshot changed during recommendation")
+    reference.update(recommendation)
+    return reference
 
 
 @app.get("/v1/research/ml/options")
-def get_ml_options(request: Request, pool_id: str | None = None) -> dict[str, object]:
+def get_ml_options(
+    request: Request, pool_id: str | None = None,
+    horizon_sessions: int = Query(default=5, ge=1, le=20),
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     result = {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
     if pool_id is not None:
-        result["selected_pool_data_reference"] = _paper_call(lambda: _ml_pool_date_reference(pool_id, context))
+        try:
+            result["selected_pool_data_reference"] = _paper_call(
+                lambda: _ml_pool_date_reference(
+                    pool_id, context, horizon_sessions=horizon_sessions,
+                )
+            )
+        except (MarketDataPersistenceError, MarketReadinessPersistenceError,
+                SecurityMasterPersistenceError):
+            raise HTTPException(status_code=503, detail="market research data is unavailable")
     return result
 
 

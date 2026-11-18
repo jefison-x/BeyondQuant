@@ -513,6 +513,159 @@ def build_feature_snapshot(
     return document
 
 
+def recommend_compatible_training_dates(
+    *, sessions: list[str], symbols: list[str], ready_input: dict[str, object],
+    readiness: dict[str, object], horizon_sessions: int,
+) -> dict[str, object]:
+    """Validate one bounded compatible split with the canonical ML feature builder.
+
+    ``sessions`` is the exact open-session calendar selected by the caller in
+    compact YYYYMMDD form. The function is deliberately read-only: it builds
+    no durable feature artifact, run, or Job.
+    """
+    normalized_sessions = list(sessions)
+    window_start = normalized_sessions[0] if normalized_sessions else None
+    window_end = normalized_sessions[-1] if normalized_sessions else None
+
+    def unavailable(
+        reason: str, *, continuous: bool = False,
+    ) -> dict[str, object]:
+        return {
+            "recommendation": {
+                "state": "unavailable", "reason": reason, "mode": "compatible",
+                "horizon_sessions": horizon_sessions, "counts": None,
+                "window_start": window_start, "window_end": window_end,
+                "continuous_history_verified": continuous,
+                "minimum_samples_verified": False, "training_quality_verified": False,
+            },
+            "recommended_dates": None,
+        }
+
+    if isinstance(horizon_sessions, bool) or not isinstance(horizon_sessions, int) or not 1 <= horizon_sessions <= 20:
+        return unavailable("data_not_ready")
+    normalized_symbols = sorted(set(symbols))
+    if not normalized_sessions or not normalized_symbols or len(normalized_symbols) != len(symbols):
+        return unavailable("no_common_history")
+    if len(normalized_sessions) != len(set(normalized_sessions)):
+        return unavailable("calendar_incomplete")
+    try:
+        iso_sessions = [
+            datetime.strptime(str(session), "%Y%m%d").strftime("%Y-%m-%d")
+            for session in normalized_sessions
+        ]
+    except ValueError:
+        return unavailable("calendar_incomplete")
+    if iso_sessions != sorted(iso_sessions):
+        return unavailable("calendar_incomplete")
+    if readiness.get("calendar_complete") is not True:
+        return unavailable("calendar_incomplete")
+    if (
+        readiness.get("state") != "ready"
+        or not isinstance(readiness.get("ready_input_sha256"), str)
+        or not readiness.get("ready_input_sha256")
+    ):
+        return unavailable("data_not_ready")
+
+    expected_dates = set(iso_sessions)
+    rows = ready_input.get("research_bars")
+    if not isinstance(rows, list):
+        return unavailable("data_not_ready")
+    if len(rows) > MAX_ROWS:
+        return unavailable("inspection_limit")
+    member_dates = {symbol: set() for symbol in normalized_symbols}
+    for row in rows:
+        if not isinstance(row, dict):
+            return unavailable("data_not_ready")
+        symbol, date = row.get("symbol"), row.get("trade_date")
+        if not isinstance(symbol, str) or symbol not in member_dates or not isinstance(date, str):
+            return unavailable("data_not_ready")
+        if date not in expected_dates or date in member_dates[symbol]:
+            return unavailable("data_not_ready")
+        member_dates[symbol].add(date)
+    if any(dates_for_symbol != expected_dates for dates_for_symbol in member_dates.values()):
+        return unavailable("data_not_ready")
+
+    symbol_count = len(normalized_symbols)
+    minimum_train_sessions = 20 + horizon_sessions + math.ceil(20 / symbol_count)
+    minimum_validation_sessions = horizon_sessions + math.ceil(5 / symbol_count)
+    total_sessions = len(iso_sessions)
+    if total_sessions < minimum_train_sessions + minimum_validation_sessions + 1:
+        return unavailable("insufficient_samples", continuous=True)
+
+    train_sessions = max(int(total_sessions * 0.70), minimum_train_sessions)
+    validation_sessions = max(int(total_sessions * 0.16), minimum_validation_sessions)
+    prediction_sessions = total_sessions - train_sessions - validation_sessions
+    if prediction_sessions < 1:
+        shortfall = 1 - prediction_sessions
+        train_reduction = min(shortfall, train_sessions - minimum_train_sessions)
+        train_sessions -= train_reduction
+        shortfall -= train_reduction
+        validation_reduction = min(shortfall, validation_sessions - minimum_validation_sessions)
+        validation_sessions -= validation_reduction
+        prediction_sessions = total_sessions - train_sessions - validation_sessions
+    if prediction_sessions < 1:
+        return unavailable("insufficient_samples", continuous=True)
+
+    validation_start_index = train_sessions
+    prediction_start_index = train_sessions + validation_sessions
+    strategy = {
+        "schema_version": "ml-strategy-version.v1",
+        "feature_set": {"id": FEATURE_SET},
+        "target": {"kind": "forward_return", "horizon_sessions": horizon_sessions},
+        "split": {
+            "train": {"start": iso_sessions[0], "end": iso_sessions[train_sessions - 1]},
+            "validation": {
+                "start": iso_sessions[validation_start_index],
+                "end": iso_sessions[prediction_start_index - 1],
+            },
+            "prediction": {
+                "start": iso_sessions[prediction_start_index], "end": iso_sessions[-1],
+            },
+        },
+    }
+    try:
+        snapshot = build_feature_snapshot(
+            strategy=strategy, universe={"symbols": normalized_symbols},
+            ready_input=ready_input, readiness=readiness,
+        )
+    except ValueError as error:
+        reason = "insufficient_samples" if "insufficient" in str(error) else "data_not_ready"
+        return unavailable(reason, continuous=True)
+    except (KeyError, TypeError, OverflowError):
+        return unavailable("data_not_ready", continuous=True)
+    counts = snapshot.get("counts")
+    if (
+        not isinstance(counts, dict)
+        or int(counts.get("train") or 0) < 20
+        or int(counts.get("validation") or 0) < 5
+        or int(counts.get("prediction") or 0) < 1
+    ):
+        return unavailable("insufficient_samples", continuous=True)
+
+    split = strategy["split"]
+    recommended_dates = {
+        field: str(split[name][edge]).replace("-", "")
+        for field, name, edge in (
+            ("train_start", "train", "start"), ("train_end", "train", "end"),
+            ("validation_start", "validation", "start"),
+            ("validation_end", "validation", "end"),
+            ("prediction_start", "prediction", "start"),
+            ("prediction_end", "prediction", "end"),
+        )
+    }
+    return {
+        "recommendation": {
+            "state": "available", "reason": None, "mode": "compatible",
+            "horizon_sessions": horizon_sessions,
+            "counts": {name: int(counts[name]) for name in ("train", "validation", "prediction")},
+            "window_start": window_start, "window_end": window_end,
+            "continuous_history_verified": True,
+            "minimum_samples_verified": True, "training_quality_verified": False,
+        },
+        "recommended_dates": recommended_dates,
+    }
+
+
 class MLTrainingRunStore(PgStoreMixin):
     SCHEMA_DDL = [
         """
