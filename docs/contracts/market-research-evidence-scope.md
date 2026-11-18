@@ -1,6 +1,6 @@
 # Market research evidence scope
 
-This additive contract applies to the existing durable daily and fundamentals
+This additive contract applies to the existing durable daily, valuation and fundamentals
 research reads. It changes no input, authorization, provider access, stored value,
 PIT selection, schema migration or DSH runtime. Research responses retain v1 and
 add explicit evidence metadata. It does not certify public search completeness.
@@ -32,6 +32,22 @@ not establish the full security universe. It now reports usable=false and
 `symbol_universe_unverified`. This deliberately replaces the old inference of
 full-market completeness from the returned symbol set. Use separately verified
 market-session completeness when that broader claim is required.
+
+## Valuation reads
+
+The selection is exactly the requested symbols and fields on trade_date.
+For compatibility, coverage.complete still means that the date dataset snapshot
+is present; complete_scope names this basis. coverage.usable and usable_scope
+check the requested selection, including missing symbols and fields. Neither
+flag establishes full-market field completeness. dataset_row_count counts stored
+rows, not non-NULL values. evidence_scope explicitly leaves other symbols and
+fields unchecked and all_market_field_completeness_verified=false.
+
+For requested dv_ratio/dv_ttm, field_semantics returns only the provider field
+label and percent unit. Its calculation basis and implemented distributions
+remain unverified. The read does not reconcile dividend periods, issuer payouts
+or payment status; it cannot turn a dividend yield into a payout ratio. Values,
+NULLs and existing authorization/provider/PIT behavior stay unchanged.
 
 ## Fundamentals
 

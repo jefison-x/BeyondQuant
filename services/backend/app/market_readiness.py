@@ -1223,8 +1223,31 @@ class MarketReadinessStore(PgStoreMixin):
             "trade_date": normalized_date,
             "fields": normalized_fields,
             "rows": evidence,
+            "evidence_scope": {
+                "selection": "requested_symbols_and_fields",
+                "requested_trade_date": normalized_date,
+                "requested_symbols": normalized_symbols,
+                "requested_fields": normalized_fields,
+                "outside_requested_symbols_checked": False,
+                "outside_requested_fields_checked": False,
+                "all_market_field_completeness_verified": False,
+                "dataset_row_count_basis": "stored_rows_not_non_null_field_count",
+            },
+            "field_semantics": {
+                field: {
+                    "label": {"dv_ratio": "股息率", "dv_ttm": "股息率（TTM）"}[field],
+                    "unit": "percent",
+                    "calculation_basis": "unverified",
+                    "implemented_distributions": "unverified",
+                    "payout_ratio": False,
+                    "basis_note": "仅为数据源已入库的股息率数值；此读取未核实具体分红期次、计算公式或实施状态。",
+                }
+                for field in normalized_fields if field in {"dv_ratio", "dv_ttm"}
+            },
             "coverage": {
                 "complete": complete,
+                "complete_scope": "date_dataset_snapshot_present",
+                "usable_scope": "requested_symbols_and_fields",
                 "usable": usable,
                 "requested_symbols": len(normalized_symbols),
                 "returned_symbols": len(evidence),

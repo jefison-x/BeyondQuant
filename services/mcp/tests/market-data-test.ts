@@ -87,23 +87,28 @@ assert.doesNotMatch(unavailable.content[0].text, /provider token/);
 
 const valuation = await fetchByqMarketValuation(
   "http://backend:8000",
-  { symbols: ["000001.SZ"], trade_date: "20260825", fields: ["pe_ttm", "pb"] },
+  { symbols: ["000001.SZ"], trade_date: "20260825", fields: ["pe_ttm", "pb", "dv_ttm"] },
   async (url, init) => {
     assert.equal(url, "http://backend:8000/v1/data/research/valuation");
     assert.equal(init?.method, "POST");
     assert.deepEqual(JSON.parse(String(init?.body)), {
-      symbols: ["000001.SZ"], trade_date: "20260825", fields: ["pe_ttm", "pb"],
+      symbols: ["000001.SZ"], trade_date: "20260825", fields: ["pe_ttm", "pb", "dv_ttm"],
     });
     return new Response(JSON.stringify({
       schema_version: "market-valuation-research.v1",
       trade_date: "20260825",
-      rows: [{ symbol: "000001.SZ", values: { pe_ttm: 6.5, pb: 0.7 } }],
+      rows: [{ symbol: "000001.SZ", values: { pe_ttm: 6.5, pb: 0.7, dv_ttm: 4.5 } }],
       coverage: { usable: true, missing_symbols: [] },
+      evidence_scope: { selection: "requested_symbols_and_fields", all_market_field_completeness_verified: false },
+      field_semantics: { dv_ttm: { calculation_basis: "unverified", implemented_distributions: "unverified" } },
     }), { status: 200 });
   },
 );
 assert.equal(valuation.isError, false);
 assert.match(valuation.content[0].text, /market-valuation-research\.v1/);
+
+assert.equal(JSON.parse(valuation.content[0].text).evidence_scope.all_market_field_completeness_verified, false);
+assert.equal(JSON.parse(valuation.content[0].text).field_semantics.dv_ttm.implemented_distributions, "unverified");
 
 const fundamentals = await fetchByqMarketFundamentals(
   "http://backend:8000",
