@@ -1478,7 +1478,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("name: '../runtime/byq-runtime-time-context.js'", composition)
         self.assertIn("timezone: Asia/Shanghai", composition)
         self.assertIn("plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/", dockerfile)
-        self.assertIn("node --test /opt/byq/runtime/*.test.js", (ROOT / "scripts/ci/local-ci.sh").read_text())
+        runtime_checks = (ROOT / "scripts/ci/local-ci.sh").read_text().split("check_runtime() {", 1)[1].split("check_mcp() {", 1)[0]
+        self.assertIn("for spec in /opt/byq/runtime/*.test.js", runtime_checks)
+        self.assertIn('node --test "$@"', runtime_checks)
+        self.assertIn("node --test /opt/byq/runtime/byq-pdf-*.test.js", runtime_checks)
         self.assertIn("renderContextSnapshot", verifier)
         self.assertIn('"market-session-context.v1"', backend)
         self.assertIn('"byq_market_session_context"', mcp)
