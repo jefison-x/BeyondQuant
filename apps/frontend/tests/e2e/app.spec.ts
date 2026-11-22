@@ -231,8 +231,10 @@ test("agent workbench renders a normalized BYQ workflow surface", async ({ page 
     }),
   );
   await login(page);
+  await page.goto("/agent?session=session-1");
+  await expect(page).toHaveURL(/\/agent\?session=session-1$/);
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
-  await expect(page.getByText("BYQ 规范化工作流 · 持久会话")).toBeVisible();
+  await expect(page.getByText("研究对话 · 历史自动保存", { exact: true })).toBeVisible();
   await expect(page.getByText("研究动量")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 600 });
   const scrollLayout = await page.evaluate(() => {
@@ -531,18 +533,22 @@ test("strategy workspace renders strategy version list and detail", async ({ pag
   );
   await login(page);
   await page.goto("/strategy?artifact=artifact_version_1&from=agent&session=session-1");
-  await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
-  await expect(page.getByText("策略目录与版本谱系", { exact: true })).toBeVisible();
+  const strategyWorkspace = page.locator(".management-workspace");
+  await expect(strategyWorkspace.getByRole("heading", { name: "策略管理", exact: true })).toBeVisible();
+  await expect(strategyWorkspace.locator(".workspace-summary").getByText("策略资产", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "返回投研对话" })).toBeVisible();
-  await expect(page.getByText("策略编辑器", { exact: true })).not.toBeVisible();
+  await expect(page.locator(".strategy-editor-pane")).toHaveCount(0);
   await expect(page.getByText("技术与审计详情", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "已批准" })).toHaveCount(0);
   await expect(page.getByText("已授权执行", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始回测" })).toBeEnabled();
-  await page.getByRole("button", { name: "新建策略" }).click();
-  await expect(page.getByText("策略编辑器", { exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "策略名称", exact: true })).toHaveValue("自定义策略");
-  await expect(page.getByRole("textbox", { name: "数据依赖（JSON）", exact: true })).toHaveValue('{\n  "benchmark": "000300.SH"\n}');
+  await strategyWorkspace.locator(".workspace-actions").getByRole("button", { name: "手工新建策略", exact: true }).click();
+  const strategyEditor = page.locator(".strategy-editor-pane");
+  await expect(strategyEditor.getByText("手工策略编辑器", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByRole("textbox", { name: "策略名称", exact: true })).toHaveValue("自定义策略");
+  await strategyEditor.getByText("高级设置：参数、数据依赖与 Python 代码", { exact: true }).click();
+  await expect(strategyEditor.getByRole("textbox", { name: "数据依赖（JSON）", exact: true }))
+    .toHaveValue('{\n  "benchmark": "000300.SH"\n}');
 });
 
 test("backtest workspace renders backtest result list", async ({ page }) => {
@@ -851,6 +857,9 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
       body: JSON.stringify({ profile: { subject: "testuser", workspace: {workspace_id:"workspace-test-user",display_name:"测试个人工作区"}, display_name: "老李", preferences: "低波动", default_prompt: "先给结论", role: "user", status: "active" } }),
     }),
   );
+  await page.route(/\/v1\/agent\/sessions(?:\?.*)?$/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sessions: [] }) }),
+  );
   await mockAdminOps(page);
   await mockResearchLists(page);
   await page.route("**/api/product/ml/capabilities", (route) =>
@@ -890,16 +899,22 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
   await page.goto("/agent");
   await expect(page.getByRole("heading", { name: "小巴投研" })).toBeVisible();
-  await openNav(page, "策略管理");
-  await expect(page.getByRole("heading", { name: "策略管理" })).toBeVisible();
-  await expect(page.getByText("研究任务", { exact: true })).toBeVisible();
-  await expect(page.getByText("策略 ID", { exact: true })).toBeVisible();
-  await expect(page.getByText("策略名称", { exact: true })).toBeVisible();
-  await expect(page.getByText("策略说明", { exact: true })).toBeVisible();
-  await expect(page.getByText("参数默认值（JSON）", { exact: true })).toBeVisible();
-  await expect(page.getByText("参数规范（JSON Schema）", { exact: true })).toBeVisible();
-  await expect(page.getByText("数据依赖（JSON）", { exact: true })).toBeVisible();
-  await expect(page.getByText("Python 策略脚本", { exact: true })).toBeVisible();
+  await primaryNavigation.getByRole("button", { name: "策略管理", exact: true }).click();
+  const strategyWorkspace = page.locator(".management-workspace");
+  await expect(strategyWorkspace.getByRole("heading", { name: "策略管理", exact: true })).toBeVisible();
+  await expect(strategyWorkspace.locator(".strategy-empty-state")).toContainText("还没有可显示的策略");
+  await strategyWorkspace.locator(".workspace-actions").getByRole("button", { name: "手工新建策略", exact: true }).click();
+  const strategyEditor = page.locator(".strategy-editor-pane");
+  await expect(strategyEditor.getByText("手工策略编辑器", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("研究任务", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("策略 ID", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("策略名称", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("策略说明", { exact: true })).toBeVisible();
+  await strategyEditor.getByText("高级设置：参数、数据依赖与 Python 代码", { exact: true }).click();
+  await expect(strategyEditor.getByText("参数默认值（JSON）", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("参数规范（JSON Schema）", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("数据依赖（JSON）", { exact: true })).toBeVisible();
+  await expect(strategyEditor.getByText("Python 策略脚本", { exact: true })).toBeVisible();
   await openNav(page, "模型研究");
   await expect(page).toHaveURL(/\/model-research$/);
   await expect(page.getByRole("heading", { name: "模型研究", exact: true })).toBeVisible();
@@ -908,7 +923,10 @@ test("mocked UI navigation covers core product routes", async ({ page }) => {
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
   await expect(page.getByRole("dialog", { name: "新建模型研究" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "新建模型研究" }).getByText("LightGBM 收益排序", { exact: true })).toBeVisible();
-  await expect(page.getByText("能力来自已验证注册表")).toBeVisible();
+  const modelResearchDialog = page.getByRole("dialog", { name: "新建模型研究" });
+  await expect(modelResearchDialog.getByText("先选股票池，再规划研究区间")).toBeVisible();
+  await expect(modelResearchDialog.getByTestId("ml-no-pool")).toContainText("还没有可用的选股范围");
+  await expect(modelResearchDialog.getByRole("button", { name: "去股票池管理" })).toBeVisible();
   await page.getByRole("dialog", { name: "新建模型研究" }).getByRole("button", { name: "取消" }).click();
   await openNav(page, "个性化");
   await expect(page.getByRole("heading", { name: "外观与主题" }).first()).toBeVisible();

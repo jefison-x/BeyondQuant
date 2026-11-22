@@ -69,7 +69,25 @@ def test_readonly_mode_requires_its_separate_readonly_engineering_manifest(tmp_p
                     native_root_session_id="11111111-1111-4111-8111-111111111111")
     path.write_bytes(canonical_product_json(manifest))
     path.chmod(0o444)
+    real_fstat = cleanup.os.fstat
+    file_identity = path.stat()
+    engineering_uid = 0
+
+    def fstat(fd):
+        info = real_fstat(fd)
+        if (info.st_dev, info.st_ino) != (file_identity.st_dev, file_identity.st_ino):
+            return info
+        # Preserve the opened file identity, mode and size. The synthetic file
+        # is created by the pytest user, unlike the mounted Engineering input.
+        return SimpleNamespace(st_mode=info.st_mode, st_ino=info.st_ino, st_dev=info.st_dev,
+                               st_nlink=info.st_nlink, st_uid=engineering_uid, st_size=info.st_size)
+
+    monkeypatch.setattr(cleanup.os, "fstat", fstat)
     assert cleanup._read_trusted_manifest(readonly_market_error=True) == manifest
+    engineering_uid = cleanup._PRODUCT_UID
+    with pytest.raises(cleanup.HistoricalCleanupHold, match="file is unsafe"):
+        cleanup._read_trusted_manifest(readonly_market_error=True)
+    engineering_uid = 0
     path.chmod(0o644)
     manifest["schema_version"] = cleanup.EXPECTED_MANIFEST_SCHEMA
     path.write_bytes(canonical_product_json(manifest))

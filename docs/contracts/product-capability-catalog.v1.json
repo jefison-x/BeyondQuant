@@ -19,6 +19,7 @@
       "capability_id": "research-data-preparation",
       "name": "准备研究数据",
       "route_id": "/agent",
+      "route_parent_capability_id": "xiaoba-research-conversation",
       "audience": "USER",
       "purpose": "在原研究会话检查本地日线、估值或财务指标覆盖；缺少适用数据时分享范围给管理员准备，复查后带入续研草稿。",
       "keywords": [

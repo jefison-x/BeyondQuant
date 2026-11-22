@@ -102,6 +102,26 @@ paths:
     get: {summary: 返回 an honest audit of persisted observed market-data coverage and quality., responses: *okResponses}
   /api/product/data-center/readiness:
     post: {summary: 检查一个有界研究或回测范围能否使用已持久化 BYQ 行情，并返回缺口和下一步。, responses: *okResponses}
+  /api/product/data-center/research-preparations:
+    post: {summary: 管理员确认并登记有界研究数据准备范围；若现有数据已就绪则直接返回就绪。, responses: *okResponses}
+  /api/product/data-center/research-preparations/{request_id}:
+    parameters: [{$ref: "#/components/parameters/RequestId"}]
+    get: {summary: 管理员读取原研究数据准备任务及当前状态。, responses: *okResponses}
+  /api/product/data-center/research-preparations/{request_id}/retry:
+    parameters: [{$ref: "#/components/parameters/RequestId"}]
+    post:
+      summary: 管理员使用终态回执重试同一准备范围；回执变化后需刷新。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [retry_token]
+              properties:
+                retry_token: {type: string, pattern: '^[0-9a-f]{64}$'}
+      responses: *okResponses
   /api/product/feedback/options:
     get: {summary: 返回反馈类别、组件、限制、隐私提示和无密钥 Cloudflare Hub 可用状态。, responses: *okResponses}
   /api/product/feedback/items:

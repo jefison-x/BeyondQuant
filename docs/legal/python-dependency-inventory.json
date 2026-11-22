@@ -25,6 +25,11 @@
     {
       "source": "services/backend/pyproject.toml",
       "group": "runtime",
+      "requirement": "pypinyin==0.55.0"
+    },
+    {
+      "source": "services/backend/pyproject.toml",
+      "group": "runtime",
       "requirement": "uvicorn[standard]==0.35.0"
     },
     {

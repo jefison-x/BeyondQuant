@@ -1,7 +1,9 @@
+import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from scripts.validate_product_capability_catalog import validate
+from scripts.validate_product_capability_catalog import CATALOG, validate
 
 
 class ProductCapabilityCatalogTests(unittest.TestCase):
@@ -21,6 +23,21 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
 
     def test_product_capability_catalog_matches_product_and_mcp_surfaces(self) -> None:
         validate()
+
+    def test_route_sections_require_a_declared_parent_on_the_same_page(self) -> None:
+        for parent, error in ((None, "duplicate route_id"), ("dashboard", "invalid parent")):
+            with self.subTest(parent=parent):
+                document = json.loads(CATALOG.read_text(encoding="utf-8"))
+                section = next(item for item in document["capabilities"]
+                               if item["capability_id"] == "research-data-preparation")
+                if parent is None:
+                    section.pop("route_parent_capability_id")
+                else:
+                    section["route_parent_capability_id"] = parent
+                with patch("scripts.validate_product_capability_catalog.CATALOG") as fixture:
+                    fixture.read_text.return_value = json.dumps(document)
+                    with self.assertRaisesRegex(ValueError, error):
+                        validate()
 
     def test_product_guide_is_bundled_and_help_is_root_read_only_metadata(self) -> None:
         root = Path(__file__).resolve().parents[2]
