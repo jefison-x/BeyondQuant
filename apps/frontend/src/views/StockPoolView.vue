@@ -1197,9 +1197,9 @@ onMounted(async () => {
             :debounce="250"
             :remote-method="searchSecurities"
             :loading="securitySearchLoading"
-            aria-label="按代码或中文名称搜索股票"
+            aria-label="按代码、中文名称或拼音搜索股票"
             data-testid="stock-pool-create-search"
-            placeholder="输入股票代码或中文名称"
+            placeholder="输入代码、中文名、拼音或首字母"
             style="width: 100%"
             @change="syncCreateMembers"
           >
@@ -1210,7 +1210,7 @@ onMounted(async () => {
             <el-button v-if="auth.isAdmin" link @click="openSecurityDataCenter">查看数据中心</el-button>
           </div>
           <small v-if="securitySearchError" class="card-sub" role="alert">{{ securitySearchError }}</small>
-          <small v-else class="card-sub">输入代码或中文名称搜索，可同时选择多只股票；名称未匹配时只接受规范股票代码。</small>
+          <small v-else class="card-sub">支持代码、中文名、拼音和首字母，可同时选择多只股票；名称未匹配时只接受规范股票代码。</small>
         </el-form-item>
         <el-form-item v-if="poolType === 'custom'" label="成员与权重">
           <p class="member-weight-hint">权重按百分比填写；每只股票须大于 0，合计为 100%。全部留空表示不设置权重。</p>
@@ -1411,9 +1411,9 @@ onMounted(async () => {
                 :debounce="250"
                 :remote-method="searchSecurities"
                 :loading="securitySearchLoading"
-                aria-label="按代码或中文名称搜索股票"
+                aria-label="按代码、中文名称或拼音搜索股票"
                 data-testid="stock-pool-edit-search"
-                placeholder="输入股票代码或中文名称"
+                placeholder="输入代码、中文名、拼音或首字母"
                 style="width: 100%"
                 @change="syncEditMembers"
               >

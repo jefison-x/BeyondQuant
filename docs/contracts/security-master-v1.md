@@ -24,6 +24,15 @@ Dataset ID 对 canonical ordered records 取 hash，排除 actor/timestamps。�
 
 `GET /api/product/data-center/securities` 接受有界 `query`、逗号分隔 `statuses`/`exchanges`、`limit`（1–200）及非负 `offset`。返回 normalized records、精确 total、page information 和拥有该 page 的 snapshot；不返回 database columns、actor identities、credentials、raw provider fields 或 workspace identity。
 
+Catalogue queries match stock code, Chinese display name, unaccented
+pinyin and pinyin initials. Pinyin lookup is case insensitive and accepts
+typed spaces, hyphens or apostrophes between syllables. It runs only for normalized
+queries of at least two alphanumeric characters containing a Latin letter.
+The search aliases are derived from the selected snapshot's persisted
+display names with pinned pypinyin. They do not enter the canonical record,
+response, dataset hash or snapshot identity. SQL applies status and exchange
+filters, symbol ordering, pagination and total after merging matches.
+
 Security-master sync creation/job reads 仅 admin 可用；catalogue reads 要求 durable authentication。Browser 只调用 Gateway/Product API。
 
 ## Daily-bar selection

@@ -127,6 +127,17 @@ def test_atomic_security_master_sync_bootstraps_searchable_catalogue() -> None:
     page = store.list_securities(query="银行", statuses=("L",), exchanges=("SZSE",))
     assert page["total"] == 1
     assert page["securities"][0]["symbol"] == "000001.SZ"
+    for query in ("ping an yin hang", "PAYH", "000001", "平安银行"):
+        matching = store.list_securities(query=query, statuses=("L",), exchanges=("SZSE",))
+        assert [item["symbol"] for item in matching["securities"]] == ["000001.SZ"]
+        assert matching["total"] == 1
+        assert matching["snapshot"]["snapshot_id"] == completed["snapshot_id"]
+    second_page = store.list_securities(query="yinhang", statuses=("L",), limit=1, offset=1)
+    assert second_page["total"] == 2
+    assert [item["symbol"] for item in second_page["securities"]] == ["600000.SH"]
+    assert store.list_securities(query="payh", exchanges=("SSE",))["total"] == 0
+    assert store.list_securities(query="lsgs", statuses=("L",))["total"] == 0
+    assert store.list_securities(query="lsgs", statuses=("D",))["total"] == 1
     symbols, selection = store.resolve_symbols(statuses=("L",), exchanges=("SSE",))
     assert symbols == ["600000.SH"]
     assert selection["snapshot_id"] == completed["snapshot_id"]
@@ -194,6 +205,7 @@ def test_latest_snapshot_changes_catalogue_without_destroying_history() -> None:
         actor="admin",
     )
     assert created is True
+    assert store.list_securities(query="jiumingcheng")["total"] == 1
     second, created = store.import_result(
         _result((_record("000001.SZ", "新名称"), _record("600000.SH", "浦发银行")), "2026-08-24T02:00:00+00:00"),
         actor="admin",
@@ -202,6 +214,8 @@ def test_latest_snapshot_changes_catalogue_without_destroying_history() -> None:
     assert first["snapshot_id"] != second["snapshot_id"]
     assert store.list_securities(query="旧名称")["total"] == 0
     assert store.list_securities(query="新名称")["total"] == 1
+    assert store.list_securities(query="jiumingcheng")["total"] == 0
+    assert store.list_securities(query="xinmingcheng")["total"] == 1
     historical = store._fetch_one(
         "SELECT name FROM security_master_snapshot_members WHERE snapshot_id = :snapshot_id AND symbol = '000001.SZ'",
         {"snapshot_id": first["snapshot_id"]},

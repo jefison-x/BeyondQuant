@@ -12,6 +12,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -442,6 +443,26 @@ class SecurityMasterStore(PgStoreMixin):
             "exchange_counts": exchange_counts,
         }
 
+    @lru_cache(maxsize=2)
+    def _snapshot_pinyin(self, snapshot_id: str) -> tuple[tuple[str, str, str], ...]:
+        # Only catalogue search needs the transliteration dictionary.
+        from pypinyin import lazy_pinyin
+
+        rows = self._execute(
+            "SELECT symbol, name FROM security_master_snapshot_members WHERE snapshot_id = :snapshot_id",
+            {"snapshot_id": snapshot_id},
+        )
+        aliases = []
+        for row in rows:
+            syllables = [
+                re.sub(r"[^a-z0-9]", "", part.lower())
+                for part in lazy_pinyin(row["name"], errors=list)
+            ]
+            full = "".join(syllables)
+            initials = "".join(part[0] for part in syllables if part)
+            aliases.append((row["symbol"], full, initials))
+        return tuple(aliases)
+
     def list_securities(
         self,
         *,
@@ -470,8 +491,18 @@ class SecurityMasterStore(PgStoreMixin):
         clauses = ["snapshot_id = :snapshot_id"]
         params: dict[str, Any] = {"snapshot_id": snapshot["snapshot_id"], "limit": limit, "offset": offset}
         if query:
-            clauses.append("(symbol ILIKE :query OR local_symbol ILIKE :query OR name ILIKE :query)")
+            matches = ["symbol ILIKE :query", "local_symbol ILIKE :query", "name ILIKE :query"]
             params["query"] = f"%{query}%"
+            pinyin = re.sub(r"[ '’-]", "", query.lower())
+            if re.fullmatch(r"[a-z0-9]{2,}", pinyin) and re.search(r"[a-z]", pinyin):
+                symbols = [
+                    symbol for symbol, full, initials in self._snapshot_pinyin(str(snapshot["snapshot_id"]))
+                    if pinyin in full or pinyin in initials
+                ]
+                if symbols:
+                    matches.append("symbol IN (SELECT jsonb_array_elements_text(:pinyin_symbols))")
+                    params["pinyin_symbols"] = symbols
+            clauses.append("(" + " OR ".join(matches) + ")")
         if normalized_statuses:
             clauses.append("list_status IN (SELECT jsonb_array_elements_text(:statuses))")
             params["statuses"] = list(normalized_statuses)
