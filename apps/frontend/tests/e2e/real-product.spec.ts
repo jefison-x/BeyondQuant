@@ -17,6 +17,14 @@ async function enterStudyDates(dialog: Locator, dates: string[]) {
   await expect(dialog.getByTestId("ml-save")).toBeEnabled();
 }
 
+async function openStockPoolForm(page: Page) {
+  await page.locator(".workspace-actions")
+    .getByRole("button", { name: "新建股票池", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 test("R3 legacy feedback bookmarks return to the conversation", legacyFeedbackBookmarkJourney);
 
 test("ADR-0091 ordinary-user Workspace reset through Gateway Product API", async ({ page, baseURL }) => {
@@ -121,19 +129,23 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
 
   await page.goto("/stock-pool");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
-  await page.getByRole("button", { name: "新建股票池" }).click();
-
+  const dialog = await openStockPoolForm(page);
   const poolName = `CI股票池-${Date.now()}`;
-  await page.getByPlaceholder("Pool name").fill(poolName);
-  await page.getByPlaceholder("股票池用途或说明").fill("真实 Product API E2E");
-  await page.getByPlaceholder("000001.SZ,600000.SH").fill("000001.SZ,600000.SH");
+  await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
+  await dialog.getByPlaceholder("股票池用途或说明").fill("真实 Product API E2E");
+  const search = dialog.getByTestId("stock-pool-create-search").getByRole("combobox");
+  for (const symbol of ["000001.SZ", "600000.SH"]) {
+    await search.fill(symbol);
+    await page.getByRole("option").filter({ hasText: `（${symbol}）` }).click();
+    await expect(dialog.getByRole("row").filter({ hasText: symbol })).toBeVisible();
+  }
 
   const createdResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/product/paper/pools") &&
       response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "创建股票池" }).click();
+  await dialog.getByRole("button", { name: "创建股票池", exact: true }).click();
   const response = await createdResponse;
   expect(response.status()).toBe(201);
   const created = await response.json() as { pool: { pool_id: string; current_snapshot_id: string } };
@@ -151,7 +163,7 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   await expect(page.getByRole("row", { name: "数据就绪度 已就绪" })).toBeVisible();
   await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
-  await page.getByRole("tab", { name: "快照历史" }).click();
+  await page.getByRole("tab", { name: "历史版本" }).click();
   await page.getByRole("button", { name: "比较最近两个快照" }).click();
   await expect(page.getByTestId("stock-pool-snapshot-diff")).toContainText("新增");
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
@@ -427,8 +439,7 @@ test("real Product API index pool materializes validated point-in-time weights",
   await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
   await page.goto("/stock-pool");
-  await page.getByRole("button", { name: "新建股票池" }).click();
-  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  const dialog = await openStockPoolForm(page);
   await dialog.getByText("指数型股票池", { exact: true }).click();
   await dialog.locator(".el-select").click();
   await expect(page.getByRole("option")).toHaveCount(6);
@@ -437,7 +448,7 @@ test("real Product API index pool materializes validated point-in-time weights",
   await expect(page.getByRole("option", { name: /中证1000/ })).toBeEnabled();
   await page.getByRole("option", { name: /沪深300/ }).click();
   const poolName = `CI指数池-${Date.now()}`;
-  await dialog.getByPlaceholder("Pool name").fill(poolName);
+  await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
   const createdResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/product/paper/index-pools") && response.request().method() === "POST",
   );
@@ -457,9 +468,9 @@ test("real Product API index pool materializes validated point-in-time weights",
   await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("600000.SH", { exact: true }).first()).toBeVisible();
-  await page.getByRole("tab", { name: "快照历史" }).click();
+  await page.getByRole("tab", { name: "历史版本" }).click();
   await expect(
-    page.getByRole("tabpanel", { name: "快照历史" }).getByText("succeeded", { exact: true }).first(),
+    page.getByRole("tabpanel", { name: "历史版本" }).getByText("succeeded", { exact: true }).first(),
   ).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) {
@@ -490,18 +501,24 @@ test("real Product API dynamic pool previews and materializes a closed rule", as
   await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
   await page.goto("/stock-pool");
-  await page.getByRole("button", { name: "新建股票池" }).click();
-  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  const dialog = await openStockPoolForm(page);
   await dialog.getByText("动态股票池", { exact: true }).click();
   const poolName = `CI动态池-${Date.now()}`;
-  await dialog.getByPlaceholder("Pool name").fill(poolName);
-  await dialog.getByTestId("dynamic-top-n").locator("input").fill("2");
+  await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
+  const topN = dialog.getByTestId("dynamic-create-top-n").getByRole("spinbutton");
+  await topN.fill("2");
+  await topN.press("Tab");
+  const cutoff = dialog.getByPlaceholder("默认使用当前日期前最新完整交易日");
+  await cutoff.fill("2026-08-28");
+  await cutoff.press("Enter");
   const previewResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/product/paper/dynamic-pools/preview") && response.request().method() === "POST",
   );
   await dialog.getByTestId("dynamic-preview").click();
   expect((await previewResponse).status()).toBe(200);
-  await expect(dialog.getByText(/非权威预览：2 只/)).toBeVisible();
+  const preview = dialog.getByTestId("dynamic-preview-result");
+  await expect(preview).toContainText("符合 2 只");
+  await expect(preview).toContainText("2026-08-28");
   const createResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/product/paper/dynamic-pools") && response.request().method() === "POST",
   );
