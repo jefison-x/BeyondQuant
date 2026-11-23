@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from time import monotonic
+from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 from app import main
@@ -41,20 +42,27 @@ def test_locked_credential_write_returns_bounded_safe_error_without_late_commit(
 
 
 def test_busy_local_credential_store_returns_before_database_wait(monkeypatch):
-    store=_store();monkeypatch.setattr(main,'credential_store',store)
-    client=TestClient(main.app,raise_server_exceptions=False)
-    response=None
+    store = _store()
+    monkeypatch.setattr(main, "credential_store", store)
+    begin_transaction = Mock(wraps=store.engine.begin)
+    monkeypatch.setattr(store.engine, "begin", begin_transaction)
+    client = TestClient(main.app, raise_server_exceptions=False)
+    headers = trusted_agent_context("timeout-owner")
+
     try:
         with ThreadPoolExecutor(1) as executor:
             with store._lock:
-                start=monotonic()
-                future=executor.submit(client.get,'/v1/users/model-credentials',headers=trusted_agent_context('timeout-owner'))
-                try:response=future.result(timeout=3)
-                except TimeoutError:pass
-            future.result(timeout=5)
-        assert response is not None and response.status_code==503 and monotonic()-start<3
-        assert response.json()=={'detail':'credential storage is unavailable'}
-    finally:store.close()
+                future = executor.submit(client.get, "/v1/users/model-credentials", headers=headers)
+                # Bound the request while the lock is held, before executor cleanup.
+                try:
+                    response = future.result(timeout=3)
+                except TimeoutError:
+                    pytest.fail("credential listing remained blocked beyond its response budget")
+        assert response.status_code == 503
+        assert response.json() == {"detail": "credential storage is unavailable"}
+        begin_transaction.assert_not_called()
+    finally:
+        store.close()
 
 
 def test_private_resolver_storage_failure_is_safe_and_not_a_model_selection_result(monkeypatch):
