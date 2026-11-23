@@ -531,6 +531,29 @@ def _run_to_idle(runtime: RuntimeAdapter, session_id: str, content: str) -> tupl
     return root, record.terminal_receipts[root]
 
 
+def test_product_prompt_records_durable_input_identity(slot_runtime):
+    from hashlib import sha256
+    from packages.contracts.workflow_trace import validate_workflow_trace_event
+
+    runtime, _compatibility, _registry = slot_runtime
+    session_id = "slot-owned-prompt"
+    _create(runtime, session_id, "workspace_slot_a")
+    content = "synthetic owned Product research"
+    key = "message_" + "a" * 32
+    root = runtime.submit_prompt(session_id, content, idempotency_key=key,
+                                 require_model_key=True, conversation_context=[])
+    _wait_status(runtime, session_id, SessionStatus.IDLE)
+    history = runtime._get(session_id).history
+    intake, acceptance = [(entry["kind"], entry) for entry in history if entry["kind"] in {
+        "session.started", "session.prompt.accepted",
+    }]
+    assert intake[0] == "session.started" and acceptance[0] == "session.prompt.accepted"
+    assert intake[1]["sequence"] + 1 == acceptance[1]["sequence"]
+    assert validate_workflow_trace_event(acceptance[1])["payload"] == {
+        "run_id": root, "message_id": key, "content_sha256": sha256(content.encode()).hexdigest(),
+    }
+
+
 def _f6_reservation(owner: str, workspace: str, suffix: str) -> dict:
     from packages.contracts.continuation_request import profile_binding, request_limits
 

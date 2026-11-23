@@ -129,6 +129,13 @@ export function updateAgentSession(
   });
 }
 
+export function getAgentRetryDraft(sessionId: string, terminalSequence: number, token: string) {
+  const path = `${AGENT_ROOT}/sessions/${encodeURIComponent(sessionId)}/retry-draft`;
+  return jsonRequest<{ terminal_sequence: number; content: string }>(
+    `${path}?terminal_sequence=${terminalSequence}`, token,
+  );
+}
+
 export function submitTurn(
   sessionId: string,
   content: string,

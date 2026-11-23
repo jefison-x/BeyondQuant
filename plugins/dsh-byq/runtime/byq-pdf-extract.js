@@ -120,7 +120,12 @@ export async function extractPdfText(bytes, pages, { runtimeRoot = process.env.B
       const page = await pdf.getPage(pageNumber);
       try {
         const content = await page.getTextContent({ includeMarkedContent: false });
-        extractedPages.push({ page: pageNumber, ...textFromContent(content) });
+        const extracted = textFromContent(content);
+        extractedPages.push({
+          page: pageNumber,
+          ...extracted,
+          extraction_method: extracted.has_text ? "native_text" : "empty",
+        });
       } finally {
         await ignoreCleanup(() => page.cleanup?.());
       }

@@ -2146,6 +2146,13 @@ class RuntimeAdapter:
                         record.cleanup_harness = None
                     self._persist_acp_binding(record)
                 self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
+                if (require_model_key and record.workspace_id and not has_continuation
+                        and idempotency_key and re.fullmatch(r"message_[0-9a-f]{32}", idempotency_key)):
+                    self._emit(record, "session.prompt.accepted", "runtime-adapter", {
+                        "run_id": run.run_id,
+                        "message_id": idempotency_key,
+                        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                    })
             except BaseException:
                 record.active_run = None
                 record.status = SessionStatus.FAILED

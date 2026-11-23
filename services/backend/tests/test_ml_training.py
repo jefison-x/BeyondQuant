@@ -17,6 +17,7 @@ from app.ml_training import (
     load_feature_snapshot,
     promote_waiting_training_runs,
     recommend_compatible_training_dates,
+    recommend_walk_forward_training_dates,
 )
 from app.research import ResearchStore
 from tests.test_ml_strategy import valid_regime_strategy_v2, valid_strategy, valid_strategy_v2
@@ -101,6 +102,92 @@ def test_compatible_date_recommendation_fails_closed_for_calendar_bars_and_sampl
     assert one_stock["recommendation"]["continuous_history_verified"] is True
     assert one_stock["recommendation"]["minimum_samples_verified"] is False
     assert one_stock["recommended_dates"] is None
+
+
+def test_walk_forward_date_recommendation_uses_verified_v2_fold_and_feature_builders():
+    symbols = ["000001.SZ", "000002.SZ", "600000.SH"]
+    sessions = [
+        (date(2026, 1, 5) + timedelta(days=index)).strftime("%Y%m%d")
+        for index in range(140)
+    ]
+    result = recommend_walk_forward_training_dates(
+        sessions=sessions, symbols=symbols,
+        ready_input=_ready_training_input(symbols, sessions),
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=5,
+        validation_parameters={
+            "mode": "expanding", "train_sessions": 60,
+            "validation_sessions": 10, "step_sessions": 10,
+            "folds": 2, "purge_sessions": 5, "embargo_sessions": 0,
+        },
+    )
+    assert result["recommendation"] == {
+        "state": "available", "reason": None, "mode": "walk_forward",
+        "horizon_sessions": 5,
+        "counts": {"development": 261, "prediction": 84, "folds": 2},
+        "window_start": sessions[0], "window_end": sessions[-1],
+        "continuous_history_verified": True, "minimum_samples_verified": True,
+        "training_quality_verified": False,
+    }
+    dates = result["recommended_dates"]
+    assert dates == {
+        "development_start": sessions[0], "development_end": sessions[111],
+        "prediction_start": sessions[112], "prediction_end": sessions[-1],
+    }
+
+
+def test_walk_forward_date_recommendation_keeps_unverified_or_invalid_inputs_unavailable():
+    symbols = ["000001.SZ", "000002.SZ", "600000.SH"]
+    sessions = [
+        (date(2026, 1, 5) + timedelta(days=index)).strftime("%Y%m%d")
+        for index in range(100)
+    ]
+    params = {
+        "mode": "expanding", "train_sessions": 60,
+        "validation_sessions": 10, "step_sessions": 10,
+        "folds": 2, "purge_sessions": 5, "embargo_sessions": 0,
+    }
+    insufficient = recommend_walk_forward_training_dates(
+        sessions=sessions[:85], symbols=symbols,
+        ready_input=_ready_training_input(symbols, sessions[:85]),
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=5, validation_parameters=params,
+    )
+    assert insufficient["recommendation"]["reason"] == "insufficient_samples"
+    assert insufficient["recommended_dates"] is None
+
+    missing_bar = recommend_walk_forward_training_dates(
+        sessions=sessions, symbols=symbols,
+        ready_input={**_ready_training_input(symbols, sessions),
+                     "research_bars": _ready_training_input(symbols, sessions)["research_bars"][1:]},
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=5, validation_parameters=params,
+    )
+    assert missing_bar["recommendation"]["reason"] == "data_not_ready"
+    assert missing_bar["recommended_dates"] is None
+
+    invalid = recommend_walk_forward_training_dates(
+        sessions=sessions, symbols=symbols,
+        ready_input=_ready_training_input(symbols, sessions),
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=5, validation_parameters={**params, "step_sessions": 9},
+    )
+    assert invalid["recommendation"]["reason"] == "invalid_parameters"
+    assert invalid["recommended_dates"] is None
+
+    short_fold_labels = recommend_walk_forward_training_dates(
+        sessions=sessions, symbols=symbols,
+        ready_input=_ready_training_input(symbols, sessions),
+        readiness={"state": "ready", "calendar_complete": True,
+                   "ready_input_sha256": "a" * 64},
+        horizon_sessions=10, validation_parameters={**params, "purge_sessions": 10},
+    )
+    assert short_fold_labels["recommendation"]["reason"] == "insufficient_samples"
+    assert short_fold_labels["recommended_dates"] is None
 
 
 def compact_strategy() -> dict[str, object]:

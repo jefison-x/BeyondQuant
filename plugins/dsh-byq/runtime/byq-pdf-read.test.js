@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import {
   apply, downloadPublicPdf, loadPdfSdk, MAX_PDF_BYTES, readPublicPdf,
   extractInWorker, validatePdfArguments,
@@ -8,6 +9,7 @@ import {
 
 const sdk = await loadPdfSdk();
 const bytes = new TextEncoder().encode("%PDF-1.7\nfixture");
+const scanBytes = new Uint8Array(await readFile(new URL("./byq-pdf-scan-fixture.pdf", import.meta.url)));
 function transport(responses) {
   const calls = [];
   const closed = [];
@@ -128,6 +130,16 @@ test("cancellation terminates parser Worker startup", async () => {
   controller.abort();
   await assert.rejects(result, /PDF_ABORTED/);
   assert.ok(Date.now() - started < 2000);
+});
+
+test("PDF worker preserves the scan bytes for the parent OCR fallback", async () => {
+  const original = scanBytes.slice();
+  const result = await extractInWorker(scanBytes, [1], new AbortController().signal);
+
+  assert.deepEqual(scanBytes, original);
+  assert.deepEqual(result.pages, [{
+    page: 1, text: "", truncated: false, has_text: false, extraction_method: "empty",
+  }]);
 });
 
 test("registers with the actual DSH schema compiler", async () => {

@@ -11,6 +11,7 @@ const submitTurn = vi.fn();
 const cancelSession = vi.fn();
 const resumeSession = vi.fn();
 const getAgentSession = vi.fn();
+const getAgentRetryDraft = vi.fn();
 const createAgentSession = vi.fn();
 const deleteAgentSession = vi.fn();
 const listAgentSessions = vi.fn();
@@ -50,6 +51,7 @@ vi.mock("@/api/agent", async (importOriginal) => ({
   createAgentSession: (...args: unknown[]) => createAgentSession(...args),
   deleteAgentSession: (...args: unknown[]) => deleteAgentSession(...args),
   getAgentSession: (...args: unknown[]) => getAgentSession(...args),
+  getAgentRetryDraft: (...args: unknown[]) => getAgentRetryDraft(...args),
   listAgentSessions: (...args: unknown[]) => listAgentSessions(...args),
   resumeSession: (...args: unknown[]) => resumeSession(...args),
   streamWorkflowEvents: (...args: unknown[]) => streamWorkflowEvents(...args),
@@ -86,6 +88,7 @@ describe("AgentView", () => {
     resumeSession.mockReset();
     resumeSession.mockResolvedValue({ status: "ready" });
     getAgentSession.mockReset();
+    getAgentRetryDraft.mockReset();
     getAgentSession.mockResolvedValue({
       conversation: { session_id: "session-1", trace_id: "trace-1", title: "测试会话" },
       messages: [{ message_id: "message-1", sequence: 1, role: "user", content: "已有问题", created_at: "2026-08-28T00:00:00Z" }],
@@ -102,6 +105,37 @@ describe("AgentView", () => {
     });
     updateAgentSession.mockReset();
     updateAgentSession.mockResolvedValue({ session: {} });
+  });
+
+  it("prepares a fresh draft from a confirmed provider failure without submitting", async () => {
+    const now = "2026-11-23T00:00:00Z";
+    getAgentSession.mockResolvedValue({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "测试会话" },
+      messages: [{ message_id: "message-1", sequence: 1, role: "user", content: "比较这两只股票", created_at: now }],
+      events: [
+        { session_id: "session-1", trace_id: "trace-1", sequence: 1, timestamp: now, kind: "session.started",
+          source: "runtime-adapter", payload: { run_id: "run-1" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 2, timestamp: now, kind: "session.failed",
+          source: "runtime-adapter", payload: { run_id: "run-1", code: "model-service-unavailable", retryable: false } },
+      ],
+    });
+    getAgentRetryDraft.mockResolvedValue({ terminal_sequence: 2, content: "比较这两只股票" });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    vi.stubGlobal("crypto", { getRandomValues: (bytes: Uint8Array) => bytes.fill(37) });
+    try {
+      await wrapper.get('[data-testid="research-retry-draft"]').trigger("click");
+      await flushPromises();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(getAgentRetryDraft).toHaveBeenCalledWith("session-1", 2, "");
+    expect(routerHarness.route.query.new).toBeTruthy();
+    expect(JSON.stringify(routerHarness.route.query)).not.toContain("比较这两只股票");
+    expect(wrapper.getComponent({ name: "ElInput" }).props("modelValue")).toBe("比较这两只股票");
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(createAgentSession).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("stops unknown approval continuation instead of retrying a write", async () => {

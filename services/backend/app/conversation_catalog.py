@@ -383,14 +383,16 @@ class ConversationCatalogStore(PgStoreMixin):
             "created_at": now,
         }
 
-    def messages(self, owner: object, conversation_id: object, *, limit: object = 200) -> list[dict[str, object]]:
+    def messages(self, owner: object, conversation_id: object, *, limit: object = 200,
+                 newest_first: bool = False) -> list[dict[str, object]]:
         self.get(owner, conversation_id)
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
+        order = "DESC" if newest_first else "ASC"
         return self._execute(
-            """SELECT message_id, sequence, role, content, workflow_sequence, created_at
+            f"""SELECT message_id, sequence, role, content, workflow_sequence, created_at
             FROM product_conversation_messages WHERE owner_principal = :owner AND conversation_id = :id
-            ORDER BY sequence LIMIT :limit""",
+            ORDER BY sequence {order} LIMIT :limit""",
             {"owner": _owner(owner), "id": conversation_id, "limit": limit},
         )
 

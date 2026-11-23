@@ -151,9 +151,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Adapter runtime (venv). Product/judgment use the system python3 explicitly in
 # the dispatcher, so the venv cannot change their interpreter behavior.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-venv \
+        poppler-utils=22.12.0-2+deb12u3 \
+        tesseract-ocr=5.3.0-2 \
+        tesseract-ocr-chi-sim=1:4.1.0-2 \
+        tesseract-ocr-eng=1:4.1.0-2 \
+        tesseract-ocr-osd=1:4.1.0-2 \
     && rm -rf /var/lib/apt/lists/* \
-    && python3 -m venv /opt/byq-venv
+    && python3 -m venv /opt/byq-venv \
+    && test -x /usr/bin/pdftoppm \
+    && test -x /usr/bin/tesseract \
+    && test -x /usr/bin/prlimit \
+    && tesseract --list-langs 2>/dev/null | grep -Fxq chi_sim
 
 WORKDIR /app
 COPY services/runtime-adapter/requirements.acp-candidate.lock ./requirements.acp-candidate.lock

@@ -379,10 +379,13 @@ cause is not established by the available data.
 For an issuer filing in PDF form, use `pdf_read` on the exact public URL returned
 by search or supplied by the user. Select one-based pages, at most five per call,
 and quote the actual page number with the exact source URL. The tool extracts
-text only. It provides neither OCR nor a guarantee that table columns align.
-Empty pages, truncation and parse failures are extraction limits. Do not infer
-that the issuer made no disclosure from those limits, and keep PDF evidence
-out of deterministic market-data inputs.
+embedded text and applies bounded OCR to selected pages with no embedded text.
+Check `extraction_method` per page. OCR text and approximate row/x-position cues
+help inspect scanned tables, including side-by-side columns, but do not guarantee
+correct text, column alignment or merged-cell interpretation. Empty, failed,
+truncated or uncertain OCR does not establish missing disclosure.
+Verify material figures against the source page, and keep PDF evidence out of
+deterministic market-data inputs.
 
 A latest-report response describes the returned period and fields only.
 Historical dataset row counts do not prove the absence of other periods.

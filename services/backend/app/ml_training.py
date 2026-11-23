@@ -264,6 +264,57 @@ def generate_walk_forward_folds(
     return folds
 
 
+def require_walk_forward_fold_sample_counts(
+    train_rows: list[dict[str, object]], validation_rows: list[dict[str, object]],
+) -> None:
+    """Apply the qualified per-fold minimums shared by recommendation and Worker."""
+    if len(train_rows) < 20 or len(validation_rows) < 5:
+        raise ValueError("insufficient train or validation rows")
+
+
+def walk_forward_training_partitions(
+    feature_snapshot: dict[str, object], *,
+    training_regimes: set[str] | None = None,
+) -> list[tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]]:
+    """Resolve each fold's label-safe train and validation rows once canonically."""
+    rows = feature_snapshot.get("rows")
+    folds = feature_snapshot.get("folds")
+    if not isinstance(rows, list) or not isinstance(folds, list) or not folds:
+        raise ValueError("walk-forward feature snapshot is incomplete")
+    state_by_session: dict[str, str] = {}
+    if training_regimes is not None:
+        regime_snapshot = validate_regime_snapshot(feature_snapshot.get("regime_snapshot"))
+        state_by_session = {
+            str(row["session"]): str(row["state"])
+            for row in regime_snapshot["rows"]
+        }
+    development_rows = [
+        row for row in rows if isinstance(row, dict) and row.get("split") == "development"
+        and (
+            training_regimes is None
+            or state_by_session.get(str(row.get("session"))) in training_regimes
+        )
+    ]
+    partitions = []
+    for fold in folds:
+        if not isinstance(fold, dict) or not isinstance(fold.get("train"), dict) or not isinstance(fold.get("validation"), dict):
+            raise ValueError("walk-forward fold is invalid")
+        train_window, validation_window = fold["train"], fold["validation"]
+        validation_start = str(validation_window["start"])
+        train_rows = [
+            row for row in development_rows
+            if str(train_window["start"]) <= str(row["session"]) <= str(train_window["end"])
+            and str(row.get("label_end_date", "9999-12-31")) < validation_start
+        ]
+        validation_rows = [
+            row for row in development_rows
+            if str(validation_window["start"]) <= str(row["session"]) <= str(validation_window["end"])
+        ]
+        require_walk_forward_fold_sample_counts(train_rows, validation_rows)
+        partitions.append((fold, train_rows, validation_rows))
+    return partitions
+
+
 def _build_feature_snapshot_v2(
     *, strategy: dict[str, object], universe: dict[str, object], ready_input: dict[str, object],
     readiness: dict[str, object],
@@ -663,6 +714,151 @@ def recommend_compatible_training_dates(
             "minimum_samples_verified": True, "training_quality_verified": False,
         },
         "recommended_dates": recommended_dates,
+    }
+
+
+def recommend_walk_forward_training_dates(
+    *, sessions: list[str], symbols: list[str], ready_input: dict[str, object],
+    readiness: dict[str, object], horizon_sessions: int,
+    validation_parameters: dict[str, object],
+) -> dict[str, object]:
+    """Recommend a v2 development/prediction split from verified canonical inputs.
+
+    The candidate is checked with the same walk-forward fold and v2 feature
+    builders used by training. This function creates no durable artifacts or
+    training work.
+    """
+    normalized_sessions = list(sessions)
+    window_start = normalized_sessions[0] if normalized_sessions else None
+    window_end = normalized_sessions[-1] if normalized_sessions else None
+
+    def unavailable(reason: str, *, continuous: bool = False) -> dict[str, object]:
+        return {
+            "recommendation": {
+                "state": "unavailable", "reason": reason, "mode": "walk_forward",
+                "horizon_sessions": horizon_sessions, "counts": None,
+                "window_start": window_start, "window_end": window_end,
+                "continuous_history_verified": continuous,
+                "minimum_samples_verified": False, "training_quality_verified": False,
+            },
+            "recommended_dates": None,
+        }
+
+    if isinstance(horizon_sessions, bool) or not isinstance(horizon_sessions, int) or not 1 <= horizon_sessions <= 20:
+        return unavailable("data_not_ready")
+    if not normalized_sessions or not symbols or len(set(symbols)) != len(symbols):
+        return unavailable("no_common_history")
+    if len(normalized_sessions) != len(set(normalized_sessions)):
+        return unavailable("calendar_incomplete")
+    try:
+        iso_sessions = [datetime.strptime(str(item), "%Y%m%d").strftime("%Y-%m-%d") for item in normalized_sessions]
+    except ValueError:
+        return unavailable("calendar_incomplete")
+    if iso_sessions != sorted(iso_sessions) or readiness.get("calendar_complete") is not True:
+        return unavailable("calendar_incomplete")
+    if (readiness.get("state") != "ready"
+        or not isinstance(readiness.get("ready_input_sha256"), str)
+        or not readiness.get("ready_input_sha256")):
+        return unavailable("data_not_ready")
+
+    expected_dates = set(iso_sessions)
+    rows = ready_input.get("research_bars")
+    if not isinstance(rows, list) or len(rows) > MAX_ROWS:
+        return unavailable("inspection_limit" if isinstance(rows, list) else "data_not_ready")
+    member_dates = {symbol: set() for symbol in symbols}
+    for row in rows:
+        if not isinstance(row, dict):
+            return unavailable("data_not_ready")
+        symbol, session = row.get("symbol"), row.get("trade_date")
+        if not isinstance(symbol, str) or symbol not in member_dates or not isinstance(session, str):
+            return unavailable("data_not_ready")
+        if session not in expected_dates or session in member_dates[symbol]:
+            return unavailable("data_not_ready")
+        member_dates[symbol].add(session)
+    if any(dates != expected_dates for dates in member_dates.values()):
+        return unavailable("data_not_ready")
+
+    try:
+        mode = str(validation_parameters["mode"])
+        train_sessions = int(validation_parameters["train_sessions"])
+        validation_sessions = int(validation_parameters["validation_sessions"])
+        step_sessions = int(validation_parameters["step_sessions"])
+        fold_count = int(validation_parameters["folds"])
+        purge_sessions = int(validation_parameters["purge_sessions"])
+        embargo_sessions = int(validation_parameters["embargo_sessions"])
+        if (
+            mode not in ("expanding", "rolling") or not 60 <= train_sessions <= 1500
+            or not 10 <= validation_sessions <= 250 or not 10 <= step_sessions <= 250
+            or not 2 <= fold_count <= 12 or not horizon_sessions <= purge_sessions <= 20
+            or not 0 <= embargo_sessions <= 20 or step_sessions < validation_sessions + embargo_sessions
+        ):
+            return unavailable("invalid_parameters", continuous=True)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return unavailable("invalid_parameters", continuous=True)
+
+    required_development_sessions = (
+        train_sessions + purge_sessions + validation_sessions + step_sessions * (fold_count - 1)
+    )
+    if len(iso_sessions) <= required_development_sessions:
+        return unavailable("insufficient_samples", continuous=True)
+    development_count = min(max(required_development_sessions, int(len(iso_sessions) * 0.8)), len(iso_sessions) - 1)
+    development = {"start": iso_sessions[0], "end": iso_sessions[development_count - 1]}
+    prediction = {"start": iso_sessions[development_count], "end": iso_sessions[-1]}
+    strategy = {
+        "schema_version": ML_V2_SCHEMA,
+        "feature_set": {"id": FEATURE_SET, "parameters": {}},
+        "target": {"id": "forward-return-v1", "parameters": {"horizon_sessions": horizon_sessions}},
+        "validation_plan": {"id": "walk-forward-purged-v1", "parameters": {
+            "mode": mode, "train_sessions": train_sessions,
+            "validation_sessions": validation_sessions, "step_sessions": step_sessions,
+            "folds": fold_count, "purge_sessions": purge_sessions,
+            "embargo_sessions": embargo_sessions,
+        }},
+        "development_window": development,
+        "prediction_window": prediction,
+    }
+    try:
+        snapshot = build_feature_snapshot(
+            strategy=strategy, universe={"symbols": sorted(symbols)},
+            ready_input=ready_input, readiness=readiness,
+        )
+    except ValueError as error:
+        reason = "insufficient_samples" if "insufficient" in str(error) or "requires" in str(error) else "data_not_ready"
+        return unavailable(reason, continuous=True)
+    except (KeyError, TypeError, OverflowError):
+        return unavailable("data_not_ready", continuous=True)
+    counts = snapshot.get("counts")
+    folds = snapshot.get("folds")
+    if (
+        not isinstance(counts, dict) or int(counts.get("development") or 0) < 20
+        or int(counts.get("prediction") or 0) < 1
+        or not isinstance(folds, list) or len(folds) != fold_count
+    ):
+        return unavailable("insufficient_samples", continuous=True)
+    try:
+        partitions = walk_forward_training_partitions(snapshot)
+    except ValueError:
+        return unavailable("insufficient_samples", continuous=True)
+    if len(partitions) != fold_count:
+        return unavailable("insufficient_samples", continuous=True)
+    return {
+        "recommendation": {
+            "state": "available", "reason": None, "mode": "walk_forward",
+            "horizon_sessions": horizon_sessions,
+            "counts": {
+                "development": int(counts["development"]),
+                "prediction": int(counts["prediction"]), "folds": len(partitions),
+            },
+            "window_start": window_start, "window_end": window_end,
+            "continuous_history_verified": True,
+            "minimum_samples_verified": True, "training_quality_verified": False,
+        },
+        "recommended_dates": {
+            "development_start": development["start"].replace("-", ""),
+            "development_end": development["end"].replace("-", ""),
+            "prediction_start": prediction["start"].replace("-", ""),
+            "prediction_end": prediction["end"].replace("-", ""),
+        },
     }
 
 

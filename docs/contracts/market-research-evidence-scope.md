@@ -81,30 +81,49 @@ snapshot cases return no suggested dates.
 reference_only=true, continuous_history_verified=false and
 training_readiness_verified=false remain explicit at the date-reference level:
 observed bounds do not certify the entire history. For an active current
-snapshot, an optional horizon_sessions query (integer 1–20, default 5) also
-evaluates a bounded compatible/v1 date recommendation. The recommendation checks
-the persisted complete calendar, canonical ready input for every member and
-session, and the existing feature builder's minimum counts (20 training rows,
-5 validation rows and at least 1 prediction row). Forward-return labels remain
-inside their own training or validation split. It creates no feature artifact,
-study, training run, Job or provider/model call.
+snapshot, an optional horizon_sessions query (integer 1–20, default 5) supports
+two read-only recommendation modes. The default compatible mode checks the
+persisted complete calendar, canonical ready input for every member and
+session, and the v1 feature builder's minimum counts (20 training rows, 5
+validation rows and at least 1 prediction row). Forward-return labels remain
+inside their own training or validation split.
 
-recommendation.state is available or unavailable. Its mode is compatible and
-horizon_sessions binds the exact requested horizon. Only available returns six
-compact YYYYMMDD recommended_dates fields plus train/validation/prediction counts.
-Unavailable keeps recommended_dates=null and reports one of no_common_history,
-calendar_incomplete, data_not_ready, insufficient_samples or inspection_limit;
-counts is null. Inspection is limited to 401 calendar days and 50,000
-symbol-session cells; exceeding a limit does not silently truncate the history.
+For mode=walk_forward, the request also carries the current v2 validation plan:
+validation_mode, train_sessions, validation_sessions, step_sessions, folds,
+purge_sessions and embargo_sessions. Date selection keeps a trailing prediction
+window while reserving at least the exact development session count required by
+the selected canonical walk-forward fold parameters. The candidate is checked
+with the same v2 feature builder, label-safe fold partitioning and per-fold
+minimums used by the Worker (at least 20 train rows and 5 validation rows for
+every fold). Only a verified candidate returns four compact YYYYMMDD dates (development and
+prediction bounds) and development/prediction sample and fold counts. Mode
+regime remains manual because its benchmark readiness is outside this date
+reference's scope. Neither recommendation creates a feature artifact, study,
+training run, Job or provider/model call.
+
+recommendation.state is available or unavailable, and horizon_sessions binds
+the exact requested horizon and mode. Compatible returns six date fields plus
+train/validation/prediction counts; walk_forward returns four date fields plus
+development/prediction sample and fold counts. Unavailable keeps
+recommended_dates=null and reports no_common_history, calendar_incomplete,
+data_not_ready, insufficient_samples, inspection_limit, invalid_parameters or
+unsupported_mode; counts is null. Each readiness inspection is limited to 401
+calendar days and 50,000 symbol-session cells. If the observed member bounds
+cover more than 401 days, walk_forward checks the trailing 401-day window and
+reports that inspected window; compatible returns inspection_limit without
+truncating its history. Exceeding the symbol-session cell limit remains
+unavailable and is never silently truncated.
 Nested continuous_history_verified and minimum_samples_verified apply only to
 the inspected recommendation window. training_quality_verified is always false:
 meeting workflow minima does not establish model quality or training readiness.
-Walk-forward and regime studies do not adopt compatible recommendations.
+minimum_samples_verified means only that the relevant builder produced its
+required sample and fold structure; it does not establish data readiness for a
+later run or training quality.
 
 The form displays the reference and limitations. An explicit adopt action fills
-the six dates only; loading data or changing pool, horizon or mode never
-overwrites user dates or starts a write. It does not block saving a valid future
-research definition solely for absent data. Training retains its existing
-preparation and approval requirements. Requests are lazy and scoped to the
-selected snapshot and horizon; stale pool/snapshot/auth/horizon responses and
-responses after close/unmount are discarded.
+only the dates for the selected mode; loading data or changing pool, horizon,
+mode or fold parameters never overwrites user dates or starts a write. It does
+not block saving a valid future research definition solely for absent data.
+Training retains its existing preparation and approval requirements. Requests
+are lazy and scoped to the selected snapshot, horizon, mode and fold parameters;
+stale responses and responses after close/unmount are discarded.

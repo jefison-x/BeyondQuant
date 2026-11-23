@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from fastapi.testclient import TestClient
 import pytest
 
@@ -856,8 +857,8 @@ def test_ml_options_keeps_no_pool_shape_and_forwards_only_explicit_horizon(monke
     monkeypatch.setattr(backend_main, "_ml_workspace_options", lambda _context: {"tasks": [], "pools": []})
     calls = []
 
-    def reference(pool_id, context, *, horizon_sessions):
-        calls.append((pool_id, context["owner_principal"], horizon_sessions))
+    def reference(pool_id, context, *, horizon_sessions, mode, validation_parameters):
+        calls.append((pool_id, context["owner_principal"], horizon_sessions, mode, validation_parameters))
         return {"recommendation": {"horizon_sessions": horizon_sessions}}
 
     monkeypatch.setattr(backend_main, "_ml_pool_date_reference", reference)
@@ -867,11 +868,94 @@ def test_ml_options_keeps_no_pool_shape_and_forwards_only_explicit_horizon(monke
     selected = client.get("/v1/research/ml/options",
                           params={"pool_id": "stock_pool_test", "horizon_sessions": 7})
     assert selected.status_code == 200
-    assert calls == [("stock_pool_test", owner, 7)]
+    assert calls == [(
+        "stock_pool_test", owner, 7, "compatible", {
+            "mode": "expanding", "train_sessions": 60,
+            "validation_sessions": 10, "step_sessions": 10,
+            "folds": 2, "purge_sessions": 5, "embargo_sessions": 0,
+        },
+    )]
     assert selected.json()["selected_pool_data_reference"]["recommendation"]["horizon_sessions"] == 7
     for invalid in (0, 21):
         response = client.get("/v1/research/ml/options", params={"horizon_sessions": invalid})
         assert response.status_code == 422
+
+    rolling = client.get("/v1/research/ml/options", params={
+        "pool_id": "stock_pool_test", "mode": "walk_forward", "horizon_sessions": 10,
+        "train_sessions": 100, "validation_sessions": 20, "step_sessions": 25,
+        "folds": 3, "validation_mode": "rolling", "purge_sessions": 10,
+        "embargo_sessions": 2,
+    })
+    assert rolling.status_code == 200
+    assert calls[-1] == (
+        "stock_pool_test", owner, 10, "walk_forward", {
+            "mode": "rolling", "train_sessions": 100,
+            "validation_sessions": 20, "step_sessions": 25,
+            "folds": 3, "purge_sessions": 10, "embargo_sessions": 2,
+        },
+    )
+
+
+def test_walk_forward_date_recommendation_uses_only_verified_recent_suffix(monkeypatch):
+    symbol = "000001.SZ"
+    last = date(2026, 11, 20)
+    first = last - timedelta(days=400)
+    calendar = [
+        current.strftime("%Y%m%d")
+        for offset in range((last - first).days + 1)
+        if (current := first + timedelta(days=offset)).weekday() < 5
+    ]
+    requests = []
+    monkeypatch.setattr(
+        backend_main.market_data_store, "list_open_trading_sessions",
+        lambda start, end: requests.append((start, end)) or calendar,
+    )
+    monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master"})
+    monkeypatch.setattr(backend_main, "_ml_pool_market_scope", lambda *_: ({}, "fixed_snapshot"))
+    requirements = []
+    monkeypatch.setattr(
+        backend_main.market_readiness_store, "requirement",
+        lambda **kwargs: requirements.append(kwargs) or {"start_date": kwargs["start_date"], "end_date": kwargs["end_date"]},
+    )
+    monkeypatch.setattr(
+        backend_main.market_readiness_store, "assess",
+        lambda _requirement: {"state": "ready", "calendar_complete": True, "ready_input_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        backend_main.market_readiness_store, "build_ready_input",
+        lambda _requirement: {"research_bars": [
+            {"symbol": symbol, "trade_date": f"{session[:4]}-{session[4:6]}-{session[6:]}",
+             "close": float(index + 10), "volume": 100.0}
+            for index, session in enumerate(calendar)
+        ]},
+    )
+    reference = {
+        "state": "observed_bounds", "member_count": 1,
+        "observed_start_date": "20170101", "observed_end_date": last.strftime("%Y%m%d"),
+    }
+    params = {
+        "mode": "expanding", "train_sessions": 60,
+        "validation_sessions": 10, "step_sessions": 10,
+        "folds": 2, "purge_sessions": 5, "embargo_sessions": 0,
+    }
+    rolling = backend_main._recommend_ml_pool_dates(
+        pool={"pool_type": "fixed"},
+        snapshot={"members": [{"symbol": symbol}], "membership_fingerprint": "membership"},
+        reference=reference, horizon_sessions=5, mode="walk_forward", validation_parameters=params,
+    )
+    assert requests == [(first.strftime("%Y%m%d"), last.strftime("%Y%m%d"))]
+    assert requirements[0]["start_date"] == first.strftime("%Y%m%d")
+    assert rolling["recommendation"]["state"] == "available"
+    assert rolling["recommendation"]["window_start"] == calendar[0]
+    assert rolling["recommendation"]["window_end"] == calendar[-1]
+
+    compatible = backend_main._recommend_ml_pool_dates(
+        pool={"pool_type": "fixed"},
+        snapshot={"members": [{"symbol": symbol}], "membership_fingerprint": "membership"},
+        reference=reference, horizon_sessions=5, mode="compatible",
+    )
+    assert compatible["recommendation"]["reason"] == "inspection_limit"
+    assert compatible["recommended_dates"] is None
 
 
 def test_ml_date_reference_rejects_a_mismatched_workspace_context(monkeypatch):

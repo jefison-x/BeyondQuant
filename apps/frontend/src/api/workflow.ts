@@ -157,6 +157,8 @@ export function workflowOutcomes(events: WorkflowTraceEvent[], sessionId: string
       diagnosticId: `${event.trace_id}:${event.sequence}`,
       message,
       laterTurnStarted: latestStart > event.sequence,
+      retryDraftCandidate: event.kind === "session.failed"
+        && ["model-service-unavailable", "model-service-rate-limited"].includes(code),
     }];
   });
 }

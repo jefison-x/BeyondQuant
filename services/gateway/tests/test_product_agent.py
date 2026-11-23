@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import threading
 from types import SimpleNamespace
 import pytest
@@ -14,6 +15,84 @@ from app.trace_store import TraceStore
 
 TOKEN = "phase7-product-token"
 TEST_BOOT_ID = "a" * 32
+
+
+@pytest.mark.parametrize("case", [
+    "safe", "durable_after_release", "wrong_durable_message", "tool_ingress", "unknown_claim", "active",
+    "wrong_event", "newer_turn", "missing_prompt_receipt", "wrong_prompt_root", "short_followup",
+    "message_history_changed",
+])
+def test_product_retry_draft_requires_exact_settled_no_tool_prompt(monkeypatch, tmp_path, case):
+    root_id = "a" * 32
+    message_id = "message_" + "b" * 32
+    content = "继续。" if case == "short_followup" else "请比较这两只股票。"
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "trace_store", store)
+    body = {"conversation": {"status": "active", "runtime_session_id": "runtime_1", "trace_id": "trace_1",
+                             "message_count": 2 if case == "message_history_changed" else 1},
+            "messages": [{"message_id": message_id, "sequence": 1, "role": "user", "content": content}]}
+
+    def catalog(method, path, *_args, **_kwargs):
+        assert (method, path) == ("GET", "/v1/product/conversations/conversation_1")
+        assert _kwargs["params"] == {"latest_message_only": "true"}
+        return body
+
+    def append(sequence, kind, payload):
+        event = {"session_id": "runtime_1", "trace_id": "trace_1", "sequence": sequence,
+                 "timestamp": "2026-11-23T00:00:00Z", "source": "runtime-adapter",
+                 "kind": kind, "payload": payload}
+        store.append(event)
+        return event
+
+    append(1, "session.started", {"run_id": root_id})
+    durable = case in {"durable_after_release", "wrong_durable_message"}
+    if durable:
+        append(2, "session.prompt.accepted", {
+            "run_id": root_id,
+            "message_id": message_id if case == "durable_after_release" else "message_" + "e" * 32,
+            "content_sha256": hashlib.sha256(content.encode()).hexdigest(),
+        })
+    terminal_sequence = 3 if durable else 2
+    failure = append(terminal_sequence, "session.failed", {
+        "run_id": root_id, "retryable": False, "code": "model-service-unavailable",
+    })
+    if case == "newer_turn":
+        append(terminal_sequence + 1, "session.started", {"run_id": "c" * 32})
+    if durable:
+        append(terminal_sequence + 1, "session.closed", {"reason": "released"})
+    projected = main.project_lifecycle_event(failure, "runtime_1", "trace_1")
+    row = {
+        "root_run_id": root_id, "status": "failed",
+        "authority_status": "active" if case == "active" else "closed",
+        "terminal_sequence": terminal_sequence,
+        "terminal_event_sha256": ("c" * 64 if case == "wrong_event"
+                                  else main.lifecycle_receipt(projected)["event_sha256"]),
+        "terminal_acp_ingress_sequence": int(case == "tool_ingress"),
+        "terminal_unknown_claim_count": int(case == "unknown_claim"),
+    }
+
+    def read_prompt(session, key, exact_content):
+        assert not durable
+        assert (session, key, exact_content) == ("runtime_1", message_id, content)
+        if case == "missing_prompt_receipt":
+            return None
+        return {"run_id": "d" * 32 if case == "wrong_prompt_root" else root_id}
+
+    monkeypatch.setattr(main, "_catalog_request", catalog)
+    monkeypatch.setattr(main, "_runtime_root_rows", lambda _session: [row])
+    monkeypatch.setattr(main, "_adapter_prompt_receipt", read_prompt)
+    client = TestClient(main.app)
+    response = client.get("/v1/agent/sessions/conversation_1/retry-draft",
+                          params={"terminal_sequence": terminal_sequence},
+                          headers={"Authorization": f"Bearer {TOKEN}"})
+    if case in {"safe", "durable_after_release"}:
+        assert response.status_code == 200 and response.json() == {
+            "terminal_sequence": terminal_sequence, "content": content}
+        assert response.headers["Cache-Control"] == "private, no-store"
+    else:
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "agent_retry_draft_unavailable"
 
 
 def test_active_catalog_status_requires_a_current_live_adapter_binding(monkeypatch, tmp_path):
