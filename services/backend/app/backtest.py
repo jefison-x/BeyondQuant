@@ -1103,6 +1103,10 @@ def run_native_backtest(manifest: dict[str, object]) -> dict[str, object]:
                 commission_rate = float(execution["commission_rate"])
                 tax_rate = float(execution["stamp_tax_rate"]) if side == "sell" else 0.0
                 if side == "sell":
+                    held = sum(int(lot["quantity"]) for lot in positions.get(symbol, []))
+                    if held <= 0:
+                        block(symbol, current_date, side, "no_position", "no position is held for this symbol")
+                        continue
                     sellable = available(symbol, current_date)
                     if sellable <= 0:
                         block(symbol, current_date, side, "t_plus_one", "no prior-session lot is sellable")

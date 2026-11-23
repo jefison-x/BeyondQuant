@@ -373,6 +373,14 @@ class WorkspaceResetStore(PgStoreMixin):
                 "ADR-0113 reconciliation proof has no durable Gateway ACK and slot-release record"
             )
 
+        from .readonly_market_reconciliation import WORKSPACE_ID, readonly_market_reconciliation_id
+        if owner == "admin" and workspace == WORKSPACE_ID:
+            readonly_proof = WorkspaceResetStore._first_row(connection,
+                "SELECT audit_id FROM agent_audit WHERE audit_id=:id",
+                {"id": readonly_market_reconciliation_id()})
+            if readonly_proof is not None:
+                raise WorkspaceResetBlocked("ADR-0117 recovery proof must retain its original history")
+
         from .agent_research import (
             AgentConflict,
             _LOCAL_VALIDATION_CALLBACK_EXIT_ACTION,

@@ -18,7 +18,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from urllib.parse import quote, urlencode, urlsplit
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
@@ -920,11 +920,20 @@ def product_ml_capabilities(request: Request) -> dict[str, object]:
 
 
 @router.get("/ml/options")
-def product_ml_options(request: Request) -> dict[str, object]:
+def product_ml_options(
+    request: Request, pool_id: str | None = None,
+    horizon_sessions: int | None = Query(default=None, ge=1, le=20),
+) -> dict[str, object]:
     _product_principal(request)
-    return _backend_request(
-        "GET", "/v1/research/ml/options", headers=_trusted_agent_headers(request)
-    )
+    path = "/v1/research/ml/options"
+    params: dict[str, object] = {}
+    if pool_id is not None:
+        params["pool_id"] = pool_id
+    if horizon_sessions is not None:
+        params["horizon_sessions"] = horizon_sessions
+    if params:
+        path += "?" + urlencode(params)
+    return _backend_request("GET", path, headers=_trusted_agent_headers(request))
 
 
 @router.get("/ml/studies")
@@ -1760,6 +1769,41 @@ def product_data_readiness(request: Request, payload: dict[str, object]) -> dict
         "/v1/data-center/readiness",
         payload,
         headers=_data_actor_headers(request),
+    )
+
+
+@router.post("/data-center/research-preparations")
+def product_research_preparation_create(
+    request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    """Create an admin-confirmed bounded repair using the Product API boundary."""
+
+    return _backend_request(
+        "POST",
+        "/v1/data-center/research-preparations",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.get("/data-center/research-preparations/{request_id}")
+def product_research_preparation_get(request_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET",
+        f"/v1/data-center/research-preparations/{request_id}",
+        headers=_data_actor_headers(request, require_admin=True),
+    )
+
+
+@router.post("/data-center/research-preparations/{request_id}/retry")
+def product_research_preparation_retry(
+    request_id: str, request: Request, payload: dict[str, object],
+) -> dict[str, object]:
+    return _backend_request(
+        "POST",
+        f"/v1/data-center/research-preparations/{request_id}/retry",
+        payload,
+        headers=_data_actor_headers(request, require_admin=True),
     )
 
 

@@ -1121,16 +1121,41 @@ class MarketReadinessStore(PgStoreMixin):
         for item in rows:
             announcement_date = str(getattr(item, "announcement_date"))
             effective_date = (datetime.strptime(announcement_date, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+            revision_observed_date = getattr(item, "revision_observed_date", None)
+            if revision_observed_date is not None:
+                effective_date = max(effective_date, _research_date(revision_observed_date, "revision_observed_date"))
             row = {
                 "symbol": symbol, "end_date": str(getattr(item, "end_date")),
                 "announcement_date": announcement_date, "effective_date": effective_date,
                 "values": dict(getattr(item, "values")), "update_flag": getattr(item, "update_flag"),
                 "data_source": "tushare", "provenance": provenance,
             }
-            row["content_sha256"] = _hash(row)
+            if revision_observed_date is not None:
+                row["provenance"] = {**provenance, "revision_observed_date": revision_observed_date}
             normalized.append(row)
-        identity = _hash([row["content_sha256"] for row in normalized])
         with self._transaction() as connection:
+            previous = {
+                (str(row["end_date"]), str(row["announcement_date"])): row
+                for row in execute(connection, """SELECT end_date,announcement_date,effective_date,
+                    values_json,update_flag,data_source,provenance_json FROM market_financial_indicators
+                    WHERE symbol=:symbol AND end_date BETWEEN :start AND :end FOR UPDATE""",
+                    {"symbol": symbol, "start": report_start_date, "end": report_end_date})
+            }
+            for row in normalized:
+                prior = previous.get((row["end_date"], row["announcement_date"]))
+                if (
+                    prior and prior["values_json"] == row["values"]
+                    and prior["update_flag"] == row["update_flag"]
+                    and prior["data_source"] == row["data_source"]
+                ):
+                    prior_observation = prior["provenance_json"].get("revision_observed_date")
+                    if prior_observation:
+                        row["effective_date"] = str(prior["effective_date"])
+                        row["provenance"] = {**row["provenance"], "revision_observed_date": prior_observation}
+                    elif "revision_observed_date" not in row["provenance"]:
+                        row["effective_date"] = min(str(prior["effective_date"]), str(row["effective_date"]))
+                row["content_sha256"] = _hash(row)
+            identity = _hash([row["content_sha256"] for row in normalized])
             execute(connection, """DELETE FROM market_financial_indicators
                 WHERE symbol=:symbol AND end_date BETWEEN :start AND :end""",
                 {"symbol": symbol, "start": report_start_date, "end": report_end_date})
@@ -1198,8 +1223,31 @@ class MarketReadinessStore(PgStoreMixin):
             "trade_date": normalized_date,
             "fields": normalized_fields,
             "rows": evidence,
+            "evidence_scope": {
+                "selection": "requested_symbols_and_fields",
+                "requested_trade_date": normalized_date,
+                "requested_symbols": normalized_symbols,
+                "requested_fields": normalized_fields,
+                "outside_requested_symbols_checked": False,
+                "outside_requested_fields_checked": False,
+                "all_market_field_completeness_verified": False,
+                "dataset_row_count_basis": "stored_rows_not_non_null_field_count",
+            },
+            "field_semantics": {
+                field: {
+                    "label": {"dv_ratio": "股息率", "dv_ttm": "股息率（TTM）"}[field],
+                    "unit": "percent",
+                    "calculation_basis": "unverified",
+                    "implemented_distributions": "unverified",
+                    "payout_ratio": False,
+                    "basis_note": "仅为数据源已入库的股息率数值；此读取未核实具体分红期次、计算公式或实施状态。",
+                }
+                for field in normalized_fields if field in {"dv_ratio", "dv_ttm"}
+            },
             "coverage": {
                 "complete": complete,
+                "complete_scope": "date_dataset_snapshot_present",
+                "usable_scope": "requested_symbols_and_fields",
                 "usable": usable,
                 "requested_symbols": len(normalized_symbols),
                 "returned_symbols": len(evidence),
@@ -1278,6 +1326,23 @@ class MarketReadinessStore(PgStoreMixin):
             "as_of_date": normalized_date,
             "fields": normalized_fields,
             "rows": evidence,
+            "evidence_scope": {
+                "selection": "latest_visible_report_per_requested_symbol",
+                "requested_symbols": normalized_symbols,
+                "as_of_date": normalized_date,
+                "historical_report_series_returned": False,
+                "historical_absence_established": False,
+            },
+            "field_semantics": {
+                **{field: {"null_cause": "unverified"} for field in normalized_fields},
+                **({"roe": {
+                    "null_cause": "unverified",
+                    "formula": "unverified",
+                    "annualization": "unverified",
+                    "comparability_to_reported_roae": "unverified",
+                    "summary_use": "omit_until_basis_verified",
+                }} if "roe" in normalized_fields else {}),
+            },
             "coverage": {
                 "usable": not missing,
                 "requested_symbols": len(normalized_symbols),

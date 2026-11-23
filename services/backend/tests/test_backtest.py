@@ -184,6 +184,38 @@ def test_native_engine_executes_next_session_and_applies_sell_tax() -> None:
     assert result["reproducibility"] == "reproducible"
 
 
+
+@pytest.mark.parametrize("a_share_rules", [True, False])
+@pytest.mark.parametrize("sold_out", [False, True])
+def test_native_engine_distinguishes_no_position_from_t_plus_one(
+    a_share_rules: bool, sold_out: bool,
+) -> None:
+    panel = bars()
+    panel.append({**panel[-1], "trade_date": "2026-01-08"})
+    signals = [
+        {"symbol": SYMBOL, "trade_date": "2026-01-05", "side": "sell", "quantity": 100},
+    ]
+    if sold_out:
+        signals = [
+            {"symbol": SYMBOL, "trade_date": "2026-01-05", "side": "buy", "quantity": 100},
+            {"symbol": SYMBOL, "trade_date": "2026-01-06", "side": "sell", "quantity": 100},
+            {"symbol": SYMBOL, "trade_date": "2026-01-07", "side": "sell", "quantity": 100},
+        ]
+    payload = normalized(
+        bars=panel, signals=signals,
+        execution={"initial_capital": 2_000.0, "commission_rate": 0,
+                   "stamp_tax_rate": 0, "lot_size": 100, "a_share_rules": a_share_rules},
+    )
+    result = run_native_backtest(payload["manifest"])
+
+    assert result["blocked_trades"] == [{
+        "symbol": SYMBOL, "trade_date": "2026-01-08" if sold_out else "2026-01-06",
+        "side": "sell", "reason_code": "no_position", "detail": "no position is held for this symbol",
+    }]
+    assert [row["order_type"] for row in result["trades"]] == (["buy", "sell"] if sold_out else [])
+    assert result["final_value"] == 2_000.0
+    assert build_backtest_analysis(result)["summary"]["blocked_reason_counts"] == {"no_position": 1}
+
 def test_native_engine_reports_frozen_benchmark_and_excess_return() -> None:
     payload = normalized(benchmark=[
         {"symbol": "000300.SH", "trade_date": "2026-01-05", "open": 100, "high": 100, "low": 100, "close": 100},

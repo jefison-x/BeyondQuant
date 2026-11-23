@@ -282,6 +282,8 @@ class DomainCallEvidenceMixin:
             _local_validation_unknown_ingress_digest, local_validation_callback_exit_audit_id,
             _require_local_validation_root_unfenced)
 
+        from .readonly_market_reconciliation import readonly_market_reconciliation_row, readonly_unknown_coverage
+
         local_final = None
         try:
             _require_local_validation_root_unfenced(connection, root_run_id)
@@ -336,8 +338,11 @@ class DomainCallEvidenceMixin:
             audit_row = _historical_reconciliation_row(connection, root_run_id)
             receipt = (audit_row.get("detail_json", {}).get("acp_control")
                        if audit_row is not None else None)
+            readonly_row = readonly_market_reconciliation_row(connection, root_run_id)
             if isinstance(receipt, dict):
                 _historical_audit_unknown_coverage(connection, root_run_id, receipt)
+            elif readonly_row is not None:
+                readonly_unknown_coverage(connection, root_run_id, readonly_row["receipt"])
             else:
                 local_row = fetch_one(connection, """SELECT a.*,r.root_run_id AS audit_root_run_id
                     FROM agent_audit a LEFT JOIN agent_runs r ON r.run_id=a.run_id WHERE a.audit_id=:id""",
@@ -1664,6 +1669,20 @@ class DomainCallEvidenceMixin:
                 "original_ingress_rows_sha256": _historical_ingress_rows_sha256(ingress_rows),
                 "audit_unknown_count": reconciliation["unknown_count"],
                 "audit_unknown_disposition": reconciliation["unknown_disposition"],
+                "reconciliation_receipt_sha256": reconciliation["receipt_sha256"],
+            })
+        from .readonly_market_reconciliation import readonly_market_reconciliation_row, readonly_unknown_coverage
+        readonly_row = readonly_market_reconciliation_row(connection, root_run_id)
+        if readonly_row is not None:
+            reconciliation = readonly_row["receipt"]
+            readonly_unknown_coverage(connection, root_run_id, reconciliation)
+            ingress_sha256 = acp_binding_sha256({
+                "schema_version": "byq-acp-readonly-ingress-reconciliation-snapshot.v1",
+                "root_run_id": root_run_id, "sequence": ingress_sequence,
+                "original_cursor_sha256": ingress_sha256,
+                "original_ingress_rows_sha256": reconciliation["original_ingress_rows_sha256"],
+                "readonly_unknown_count": reconciliation["unknown_count"],
+                "readonly_unknown_disposition": reconciliation["unknown_disposition"],
                 "reconciliation_receipt_sha256": reconciliation["receipt_sha256"],
             })
         return {"terminal_acp_ingress_sequence": ingress_sequence,

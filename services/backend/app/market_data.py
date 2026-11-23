@@ -12,6 +12,8 @@ import hashlib
 import json
 import os
 from contextlib import nullcontext
+from datetime import datetime, timedelta
+from itertools import islice
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -409,11 +411,24 @@ class MarketDataStore(PgStoreMixin):
         )
         if len(rows) > 6000:
             raise ValueError("daily research result exceeds 6000 rows")
-        sessions = [str(row["trade_date"]) for row in self._execute(
-            """SELECT trade_date FROM market_trading_sessions
-               WHERE is_open=TRUE AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+        calendar_rows = self._execute(
+            """SELECT trade_date,is_open FROM market_trading_sessions
+               WHERE exchange='SSE' AND data_source='tushare'
+                 AND trade_date BETWEEN :start AND :end ORDER BY trade_date""",
             {"start": start, "end": end},
-        )]
+        )
+        first_day = datetime.strptime(start, "%Y%m%d")
+        expected_days = (datetime.strptime(end, "%Y%m%d") - first_day).days + 1
+        calendar_dates = {str(row["trade_date"]) for row in calendar_rows}
+        missing_calendar_count = expected_days - len(calendar_dates)
+        missing_calendar_dates = list(islice(
+            ((first_day + timedelta(days=offset)).strftime("%Y%m%d")
+             for offset in range(expected_days)
+             if (first_day + timedelta(days=offset)).strftime("%Y%m%d") not in calendar_dates),
+            200,
+        )) if missing_calendar_count else []
+        calendar_verified = missing_calendar_count == 0
+        sessions = [str(row["trade_date"]) for row in calendar_rows if row["is_open"] is True]
         statuses = self._execute(
             f"""SELECT symbol,trade_date,is_suspended FROM market_daily_status
                 WHERE trade_date BETWEEN :start AND :end{symbol_clause}""",
@@ -443,6 +458,15 @@ class MarketDataStore(PgStoreMixin):
                 "content_sha256": str(row["content_sha256"]),
             })
         latest = max((str(row["trade_date"]) for row in rows), default=None)
+        earliest = min((str(row["trade_date"]) for row in rows), default=None)
+        suspended = [date for date in sessions if normalized.ts_code
+                     and (normalized.ts_code, date) not in bar_keys
+                     and status_map.get((normalized.ts_code, date)) is True]
+        universe_verified = normalized.ts_code is not None
+        reason = ("calendar_incomplete" if not calendar_verified else
+                  "no_open_session" if not sessions else
+                  "symbol_universe_unverified" if not universe_verified else
+                  "daily_bars_missing" if missing else "complete")
         return {
             "schema_version": "market-daily-research.v1",
             "data": data,
@@ -452,11 +476,89 @@ class MarketDataStore(PgStoreMixin):
                 "latest_trade_date": latest, "row_count": len(data), "live_provider_called": False,
             },
             "coverage": {
-                "usable": bool(sessions) and not missing,
-                "calendar_verified": bool(sessions), "requested_sessions": sessions,
+                "usable": calendar_verified and bool(sessions) and universe_verified and not missing,
+                "reason": reason,
+                "calendar_verified": calendar_verified, "requested_sessions": sessions,
+                "missing_calendar_count": missing_calendar_count,
+                "missing_calendar_dates": missing_calendar_dates,
+                "symbol_universe_verified": universe_verified,
+                "suspended_sessions": suspended,
                 "returned_rows": len(data), "missing": missing[:200],
             },
+            "evidence_scope": {
+                "selection": "requested_date_range",
+                "requested_symbol": normalized.ts_code,
+                "requested_start_date": start, "requested_end_date": end,
+                "requested_range_checked": True,
+                "outside_requested_range_checked": False,
+                "returned_date_min": earliest, "returned_date_max": latest,
+                "returned_rows": len(data),
+                "missing_bar_inventory": "known_open_sessions_only",
+            },
         }
+
+    def pool_daily_date_reference(
+        self, snapshot_id: str, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, Any]:
+        """Observed per-member date bounds only, not a training-readiness proof."""
+        rows = self._execute(
+            """SELECT member.symbol,MIN(bar.trade_date) AS date_min,
+                      MAX(bar.trade_date) AS date_max,COUNT(bar.trade_date) AS row_count
+               FROM stock_pool_snapshot_members member
+               JOIN stock_pool_snapshots snapshot ON snapshot.snapshot_id=member.snapshot_id
+               JOIN stock_pools pool ON pool.pool_id=snapshot.pool_id
+               LEFT JOIN market_daily_bars bar
+                 ON bar.symbol=member.symbol AND bar.data_source='tushare'
+               WHERE member.snapshot_id=:snapshot AND pool.owner_principal=:owner
+                 AND pool.workspace_id=:workspace AND pool.status='active'
+                 AND pool.current_snapshot_id=member.snapshot_id
+               GROUP BY member.symbol ORDER BY member.symbol""",
+            {"snapshot": snapshot_id, "owner": trusted_owner, "workspace": trusted_workspace},
+        )
+        populated = [row for row in rows if int(row["row_count"]) > 0]
+        first = max((str(row["date_min"]) for row in populated), default=None)
+        last = min((str(row["date_max"]) for row in populated), default=None)
+        if not rows:
+            state = "no_members"
+        elif len(populated) != len(rows):
+            state = "members_without_data"
+        elif first is None or last is None or first > last:
+            state = "no_overlapping_bounds"
+        else:
+            state = "observed_bounds"
+        return {
+            "schema_version": "ml-pool-daily-reference.v1",
+            "stock_pool_snapshot_id": snapshot_id,
+            "state": state,
+            "member_count": len(rows), "members_with_data": len(populated),
+            "minimum_rows_per_member": min((int(row["row_count"]) for row in rows), default=0),
+            "observed_start_date": first if state == "observed_bounds" else None,
+            "observed_end_date": last if state == "observed_bounds" else None,
+            "source": "persisted_tushare_daily",
+            "reference_only": True,
+            "continuous_history_verified": False,
+            "training_readiness_verified": False,
+            "recommended_dates": None,
+        }
+
+    def list_open_trading_sessions(self, start_date: str, end_date: str) -> list[str]:
+        """Return a small, bounded slice of the persisted canonical calendar."""
+        try:
+            start = datetime.strptime(start_date, "%Y%m%d")
+            end = datetime.strptime(end_date, "%Y%m%d")
+        except ValueError as error:
+            raise ValueError("trading-session dates must use YYYYMMDD") from error
+        if start.strftime("%Y%m%d") != start_date or end.strftime("%Y%m%d") != end_date or start > end:
+            raise ValueError("trading-session date range is invalid")
+        if (end - start).days > 400:
+            raise ValueError("trading-session lookup exceeds 401 calendar days")
+        rows = self._execute(
+            """SELECT trade_date FROM market_trading_sessions
+               WHERE is_open=TRUE AND trade_date BETWEEN :start AND :end
+               ORDER BY trade_date""",
+            {"start": start_date, "end": end_date},
+        )
+        return [str(row["trade_date"]) for row in rows]
 
     def coverage(self) -> dict[str, Any]:
         rows = self._execute(

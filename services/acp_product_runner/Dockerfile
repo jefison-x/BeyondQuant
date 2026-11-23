@@ -100,7 +100,9 @@ COPY config/dsh/acp-0.2.0-rc.2.identity.json /opt/byq/releases/deployment.identi
 COPY plugins/dsh-byq/runtime/package.json \
      plugins/dsh-byq/runtime/byq-acp-mcp-identity.js \
      plugins/dsh-byq/runtime/byq-continuation-budget.js \
-     plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/
+     plugins/dsh-byq/runtime/byq-runtime-time-context.js \
+     plugins/dsh-byq/runtime/byq-pdf-read.js \
+     plugins/dsh-byq/runtime/byq-pdf-extract.js /opt/byq/runtime/
 COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
 COPY services/acp_judgment_runner/server.py /opt/byq/acp_judgment_runner/server.py
 COPY services/acp_product_runner/server.py /opt/byq/acp_product_runner/server.py

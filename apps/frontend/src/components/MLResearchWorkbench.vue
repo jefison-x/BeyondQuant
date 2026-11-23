@@ -7,8 +7,8 @@ import {
   deleteMLStudy, setMLStudyLifecycle,
   getMLCapabilities, getMLOptions, getMLPrediction, getMLPredictionRows,
   getMLStudies, getMLStudy, getMLTraining, getMLTrainingSubmission, type MLReceiptWatch,
-  type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLRun,
-  type MLOptions, type MLStudyDetail, type MLStudySummary,
+  type MLArtifact, type MLCapabilities, type MLCapabilityComponent, type MLDateRecommendation, type MLRecommendedDates, type MLRun,
+  type MLOptions, type MLPoolDataReference, type MLRecommendationReason, type MLStudyDetail, type MLStudySummary,
 } from "@/api/mlResearch";
 import { createTask } from "@/api/research";
 import { submitProductApprovalRequestOnce, type ApprovalRequestOutcome } from "@/api/approvalRequestSubmissions";
@@ -43,10 +43,10 @@ let trainingPollGeneration = 0, predictionPollGeneration = 0;
 const formDefaults = {
   mode: "compatible" as StudyMode, capability_id: "", task_id: "", pool_id: "",
   name: "LightGBM 收益排序",
-  train_start: "2026-01-01", train_end: "2026-02-19",
-  validation_start: "2026-02-20", validation_end: "2026-03-11",
-  development_start: "2025-10-01", development_end: "2026-02-28",
-  prediction_start: "2026-03-12", prediction_end: "2026-03-30",
+  train_start: "", train_end: "",
+  validation_start: "", validation_end: "",
+  development_start: "", development_end: "",
+  prediction_start: "", prediction_end: "",
   feature_set: "", target: "", validation_plan: "", learner: "", portfolio_policy: "",
   regime_definition: "", routing_policy: "", fallback: "neutral",
   horizon: 5, top_n: 1, rebalance: "weekly", validation_mode: "expanding",
@@ -72,6 +72,97 @@ const routers = computed(() => qualified("routing_policy"));
 const legacyCapabilities = computed(() => capabilities.value?.capabilities ?? []);
 const activePools = computed(() => options.value.pools.filter(pool => pool.status === "active" && pool.current_snapshot_id));
 const chosenPool = computed(() => activePools.value.find(pool => pool.pool_id === form.pool_id));
+const poolDataReference = ref<MLPoolDataReference | null>(null);
+const poolReferenceLoading = ref(false), poolReferenceError = ref("");
+const poolRecommendation = ref<MLDateRecommendation | null>(null);
+const poolRecommendedDates = ref<MLRecommendedDates | null>(null);
+const poolReferenceHorizon = ref<number | null>(null), poolReferenceScope = ref("");
+let poolReferenceRequest = 0;
+const referenceDate = (value: string) => value.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+const recommendationReasonMessages: Record<MLRecommendationReason, string> = {
+  no_common_history: "所选股票池没有共同可用的历史日期，暂时无法生成建议。",
+  calendar_incomplete: "所需交易日历不完整，暂时无法计算建议日期。",
+  data_not_ready: "当前本地数据尚不满足日期建议条件；准备或更新数据后可以重新查询。",
+  insufficient_samples: "所选预测周期下，现有数据不足以安排最小训练、验证和预测样本。",
+  inspection_limit: "可核对的历史范围有限，暂时无法确认足够样本。",
+};
+function isCompactDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{8}$/.test(value)) return false;
+  const year = Number(value.slice(0, 4)), month = Number(value.slice(4, 6)), day = Number(value.slice(6, 8));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+const recommendedDatesAreValid = (dates: MLRecommendedDates | null): dates is MLRecommendedDates => {
+  if (!dates) return false;
+  const values = [dates.train_start, dates.train_end, dates.validation_start, dates.validation_end, dates.prediction_start, dates.prediction_end];
+  return values.every(isCompactDate)
+    && dates.train_start <= dates.train_end && dates.train_end < dates.validation_start
+    && dates.validation_start <= dates.validation_end && dates.validation_end < dates.prediction_start
+    && dates.prediction_start <= dates.prediction_end;
+};
+const poolReferenceMatchesCurrent = computed(() => {
+  const reference = poolDataReference.value;
+  const pool = chosenPool.value;
+  return Boolean(showCreate.value && !poolReferenceLoading.value && !poolReferenceError.value
+    && reference && pool && reference.pool_id === form.pool_id
+    && reference.stock_pool_snapshot_id === pool.current_snapshot_id
+    && poolReferenceHorizon.value === form.horizon && poolReferenceScope.value === authScope.value);
+});
+const currentPoolRecommendation = computed(() => poolReferenceMatchesCurrent.value ? poolRecommendation.value : null);
+const currentRecommendedDates = computed(() => poolReferenceMatchesCurrent.value ? poolRecommendedDates.value : null);
+const canApplyRecommendedDates = computed(() => {
+  const recommendation = currentPoolRecommendation.value;
+  return form.mode === "compatible" && recommendation?.state === "available"
+    && recommendation.mode === "compatible" && recommendation.horizon_sessions === form.horizon
+    && recommendation.continuous_history_verified === true && recommendation.minimum_samples_verified === true
+    && recommendedDatesAreValid(currentRecommendedDates.value);
+});
+const recommendationMessage = computed(() => {
+  const recommendation = currentPoolRecommendation.value;
+  if (!recommendation) return "";
+  if (form.mode !== "compatible") return "这份建议只适用于单模型入门模式；当前方案请手工填写开发和预测日期。";
+  if (recommendation.mode !== "compatible") return "当前方案不支持这份日期建议，请手工填写日期。";
+  if (recommendation.horizon_sessions !== form.horizon) return "日期建议与当前预测周期不一致，请重新查询。";
+  if (recommendation.state === "unavailable") {
+    const reason = recommendation.reason;
+    return reason ? (recommendationReasonMessages[reason] ?? "暂时无法生成日期建议；你仍可手工填写，并在训练前核验数据。")
+      : "暂时无法生成日期建议；你仍可手工填写，并在训练前核验数据。";
+  }
+  if (recommendation.state !== "available") return "日期建议状态无法识别；暂不提供自动采用，请手工填写并在训练前核验。";
+  if (!recommendedDatesAreValid(currentRecommendedDates.value)) return "系统返回的建议日期不完整，暂不能采用；你仍可手工填写日期。";
+  const window = recommendation.window_start && recommendation.window_end
+    ? `建议窗口 ${referenceDate(recommendation.window_start)} 至 ${referenceDate(recommendation.window_end)}。` : "";
+  const counts = recommendation.counts
+    ? `最小流程样本数：训练 ${recommendation.counts.train}、验证 ${recommendation.counts.validation}、预测 ${recommendation.counts.prediction} 条样本。`
+    : "建议样本数未提供。";
+  const minimum = recommendation.minimum_samples_verified ? "满足最低流程样本要求。" : "最低样本要求尚未核实。";
+  return `${window}${counts}${minimum}这不代表全部历史连续、训练已就绪或模型质量已验证。`;
+});
+const poolReferenceMessage = computed(() => {
+  if (!chosenPool.value) return "请先选择股票池，再核对该版本已有的本地数据。";
+  if (poolReferenceLoading.value) return "正在读取所选股票池的本地日线参考范围…";
+  if (poolReferenceError.value) return poolReferenceError.value;
+  const value = poolDataReference.value;
+  if (!value) return "暂未取得日期范围，不会自动填入示例日期。";
+  if (recommendationMessage.value) return recommendationMessage.value;
+  if (!value.observed_start_date || !value.observed_end_date) {
+    return "当前版本 " + value.member_count + " 只股票中，" + value.members_with_data + " 只有本地日线；未取得所有成员可用的日期参考范围，不能自动推荐训练日期。";
+  }
+  const limited = value.minimum_rows_per_member < 3
+    ? "最少记录数不足三个日期，无法据此推荐训练、验证与预测区间。"
+    : "日期边界只作填写参考；区间连续性和所需字段须在训练前核验。";
+  return "本地日线参考范围：" + referenceDate(value.observed_start_date) + " 至 " + referenceDate(value.observed_end_date)
+    + "；每只股票最少 " + value.minimum_rows_per_member + " 条。" + limited;
+});
+const datesOutsideReference = computed(() => {
+  const value = poolDataReference.value;
+  if (!value?.observed_start_date || !value.observed_end_date) return false;
+  const first = referenceDate(value.observed_start_date), last = referenceDate(value.observed_end_date);
+  const dates = form.mode === "compatible"
+    ? [form.train_start, form.train_end, form.validation_start, form.validation_end, form.prediction_start, form.prediction_end]
+    : [form.development_start, form.development_end, form.prediction_start, form.prediction_end];
+  return dates.some(date => date && (date < first || date > last));
+});
 const selected = computed(() => detail.value?.study ?? null);
 const selectedSummary = computed(() => studies.value.find(item => item.artifact_id === selectedStrategy.value));
 const content = computed<Record<string, any>>(() => selected.value?.content ?? {});
@@ -85,6 +176,34 @@ const regimeSnapshot = computed(() => artifacts.value.find(item => item.kind ===
 const signal = computed(() => artifact(prediction.value?.signal_artifact_id));
 const isV2 = computed(() => content.value.schema_version === "ml-strategy-version.v2");
 const isRegime = computed(() => Boolean(content.value.regime?.enabled));
+const dateWindowError = computed(() => {
+  if (form.mode === "compatible") {
+    const dates = [form.train_start, form.train_end, form.validation_start, form.validation_end, form.prediction_start, form.prediction_end];
+    if (dates.some((value) => !value)) return "请选择训练、验证和预测的开始及结束日期。";
+    return form.train_start <= form.train_end && form.train_end < form.validation_start
+      && form.validation_start <= form.validation_end && form.validation_end < form.prediction_start
+      && form.prediction_start <= form.prediction_end
+      ? "" : "请按时间先后设置训练、验证和预测区间，区间不能重叠。";
+  }
+  const dates = [form.development_start, form.development_end, form.prediction_start, form.prediction_end];
+  if (dates.some((value) => !value)) return "请选择开发区间和预测区间的开始及结束日期。";
+  return form.development_start <= form.development_end && form.development_end < form.prediction_start
+    && form.prediction_start <= form.prediction_end
+    ? "" : "请按时间先后设置开发和预测区间，区间不能重叠。";
+});
+
+function applyRecommendedDates() {
+  const dates = currentRecommendedDates.value;
+  if (!canApplyRecommendedDates.value || !dates) return;
+  const dateFields = [form.train_start, form.train_end, form.validation_start, form.validation_end, form.prediction_start, form.prediction_end];
+  if (dateFields.some(Boolean) && !window.confirm("采用建议日期会替换当前填写的训练、验证和预测日期。是否继续？")) return;
+  const iso = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  Object.assign(form, {
+    train_start: iso(dates.train_start), train_end: iso(dates.train_end),
+    validation_start: iso(dates.validation_start), validation_end: iso(dates.validation_end),
+    prediction_start: iso(dates.prediction_start), prediction_end: iso(dates.prediction_end),
+  });
+}
 
 const predictionRows = ref<Record<string, any>[]>([]), predictionRowsTotal = ref(0);
 const predictionRowsLoading = ref(false), predictionRowsQuery = ref(""), predictionRowsPage = ref(1);
@@ -271,6 +390,42 @@ async function bootstrap() {
   finally { if (scopeVersion === scopeGeneration && scope === authScope.value) loading.value = false; }
 }
 
+onBeforeUnmount(() => { poolReferenceRequest += 1; });
+
+watch([showCreate, () => form.pool_id, () => chosenPool.value?.current_snapshot_id, () => form.horizon, authScope], async ([open, poolId, , horizon]) => {
+  const request = ++poolReferenceRequest;
+  const referenceScope = authScope.value;
+  poolDataReference.value = null; poolReferenceError.value = ""; poolReferenceLoading.value = false;
+  poolRecommendation.value = null; poolRecommendedDates.value = null;
+  poolReferenceHorizon.value = null; poolReferenceScope.value = "";
+  const snapshotId = chosenPool.value?.current_snapshot_id;
+  if (!open || !poolId || !snapshotId) return;
+  const requestHorizon = Number(horizon);
+  poolReferenceLoading.value = true;
+  try {
+    const response = await getMLOptions(String(poolId), requestHorizon);
+    if (request !== poolReferenceRequest || referenceScope !== authScope.value || !showCreate.value
+      || form.pool_id !== poolId || form.horizon !== requestHorizon
+      || chosenPool.value?.current_snapshot_id !== snapshotId) return;
+    const value = response.selected_pool_data_reference;
+    if (value && value.pool_id === poolId && value.stock_pool_snapshot_id === snapshotId
+      && chosenPool.value?.current_snapshot_id === snapshotId) {
+      poolDataReference.value = value;
+      poolRecommendation.value = value.recommendation ?? null;
+      poolRecommendedDates.value = value.recommended_dates ?? null;
+      poolReferenceHorizon.value = requestHorizon;
+      poolReferenceScope.value = referenceScope;
+    } else {
+      poolReferenceError.value = "股票池版本或参考范围尚未核对，请刷新页面后重新选择。";
+    }
+  } catch (cause) {
+    if (request === poolReferenceRequest && referenceScope === authScope.value && showCreate.value
+      && form.pool_id === poolId && form.horizon === requestHorizon) poolReferenceError.value = cause instanceof Error ? cause.message : "日期参考范围加载失败，请稍后重试。";
+  } finally {
+    if (request === poolReferenceRequest && referenceScope === authScope.value) poolReferenceLoading.value = false;
+  }
+}, { flush: "sync" });
+
 watch(catalogQuery, () => {
   catalogPage.value = 1;
   if (catalogTimer) clearTimeout(catalogTimer);
@@ -354,11 +509,15 @@ function buildStrategy() {
 
 async function ensureTask() {
   if (!form.task_id) {
-    const body: any = await createTask("模型收益排序研究", "验证可信训练、样本外预测、冻结信号与可复现回测");
+    const body: any = await createTask("模型收益排序研究", "验证模型训练、预测结果、策略信号和回测流程");
     form.task_id = body.task_id ?? body.task?.task_id;
   }
 }
 async function saveStrategy() {
+  if (dateWindowError.value) {
+    ElMessage.error(dateWindowError.value);
+    return;
+  }
   busy.value = true;
   try {
     await ensureTask();
@@ -366,7 +525,7 @@ async function saveStrategy() {
     const id = String(response.artifact.artifact_id);
     showCreate.value = false; catalogPage.value = 1; catalogQuery.value = ""; statusFilter.value = "all";
     await loadCatalog(); await selectStudy(id);
-    ElMessage.success("研究定义已冻结，可以进入训练");
+    ElMessage.success("研究定义已保存，可以开始训练");
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : "研究定义保存失败"); }
   finally { busy.value = false; }
 }
@@ -469,7 +628,7 @@ async function startTraining() {
     if (receiptWatch.value && receiptWatch.value.state !== "confirmed") {
       throw new Error("原提交身份缺失，请先人工核查；不会发起训练。");
     }
-    await ElMessageBox.confirm(`将使用“${poolName}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
+    await ElMessageBox.confirm(`将使用“${poolName}”的当前股票名单开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
     if (!isCurrentStudy()) return;
     if (!selectedApproval.value) {
       const approvalScope = {
@@ -630,20 +789,20 @@ async function backtestSignal() {
 
 function stepState(value: Record<string, any> | MLRun | null) { return !value ? "pending" : value.status === "completed" ? "completed" : ["failed", "cancelled"].includes(value.status) ? "failed" : "active"; }
 const steps = computed(() => [
-  { label: "研究定义", hint: "范围与方法已冻结", state: selected.value ? "completed" : "pending" },
+  { label: "研究定义", hint: "研究方案已保存", state: selected.value ? "completed" : "pending" },
   { label: "训练验证", hint: isV2.value ? "净化走步验证" : "训练集与验证集隔离", state: stepState(training.value) },
-  { label: "预测与信号", hint: isRegime.value ? "按冻结市场状态路由" : "只使用样本外数据", state: stepState(prediction.value) },
-  { label: "回测复核", hint: "复用冻结信号", state: stepState(backtest.value) },
+  { label: "预测与信号", hint: isRegime.value ? "按市场状态选择模型" : "只使用样本外数据", state: stepState(prediction.value) },
+  { label: "回测复核", hint: "复用已生成的策略信号", state: stepState(backtest.value) },
 ]);
 const next = computed(() => {
   if (receiptWatch.value && receiptWatch.value.state !== "confirmed") return {
     title: "核对原训练提交", hint: receiptWatchLabel.value, action: "train", label: "核对原提交",
   };
   if (!selected.value) return { title: "选择或创建一项模型研究", hint: "目录与详情分开加载，首屏不会下载历史大制品。", action: "create", label: "新建模型研究" };
-  if (!training.value || ["failed", "cancelled"].includes(training.value.status)) return { title: "开始可信训练", hint: "确认冻结股票池后，在可信计算环境中训练。", action: "train", label: training.value ? "重新开始训练" : "开始训练" };
+  if (!training.value || ["failed", "cancelled"].includes(training.value.status)) return { title: "开始模型训练", hint: "选择股票池后开始训练。", action: "train", label: training.value ? "重新开始训练" : "开始训练" };
   if (training.value.status !== "completed") return { title: "模型正在训练", hint: "完成后即可生成样本外预测。", action: "wait", label: "训练进行中" };
-  if (!prediction.value || ["failed", "cancelled"].includes(prediction.value.status)) return { title: "生成样本外预测", hint: isRegime.value ? "每个交易日按冻结的沪深300状态选择专家。" : "使用已验证模型生成排名和冻结信号。", action: "predict", label: prediction.value ? "重新生成预测" : "生成预测与信号" };
-  if (prediction.value.status !== "completed") return { title: "正在生成预测与信号", hint: "系统正在完成排名与信号冻结。", action: "wait", label: "预测进行中" };
+  if (!prediction.value || ["failed", "cancelled"].includes(prediction.value.status)) return { title: "生成样本外预测", hint: isRegime.value ? "每个交易日根据沪深300行情状态选择模型。" : "使用已验证模型生成排名和策略信号。", action: "predict", label: prediction.value ? "重新生成预测" : "生成预测与信号" };
+  if (prediction.value.status !== "completed") return { title: "正在生成预测与信号", hint: "系统正在生成排名与策略信号。", action: "wait", label: "预测进行中" };
   if (!backtest.value || ["failed", "cancelled"].includes(String(backtest.value.status))) return { title: "用回测复核研究结论", hint: "回测不会重新训练或改变模型路由。", action: "backtest", label: "提交并运行回测" };
   if (backtest.value.status !== "completed") return { title: "回测正在运行", hint: "完成后可查看完整收益与成交证据。", action: "wait", label: "回测进行中" };
   return { title: "研究闭环已完成", hint: "模型、预测、信号和回测结果均已留存。", action: "view", label: "查看完整回测" };
@@ -737,7 +896,7 @@ onBeforeUnmount(() => {
 <section class="ml-workbench">
   <div v-if="loading" class="base-loading" role="status">加载模型研究能力与目录...</div>
   <div v-else-if="error && !capabilities" class="base-error" role="alert">{{ error }} <el-button link @click="bootstrap">重试</el-button></div>
-  <ManagementWorkspace v-else eyebrow="核心研究资产" title="模型研究目录与实验进程" description="从研究定义、可信训练和样本外预测，逐步推进到冻结信号与可复现回测。" catalog-label="模型研究" :count="studiesTotal" @return="router.push('/agent')">
+  <ManagementWorkspace v-else eyebrow="核心研究资产" title="模型研究目录与实验进程" description="从研究定义和模型训练开始，逐步生成预测结果并用回测复核。" catalog-label="模型研究" :count="studiesTotal" @return="router.push('/agent')">
     <template #return>返回投研对话</template>
     <template #actions><el-button :loading="catalogLoading" @click="loadCatalog">刷新</el-button><el-button type="primary" @click="showCreate = true">新建模型研究</el-button></template>
     <template #summary>能力来自运行时注册表；目录与详情均按需加载</template>
@@ -765,16 +924,16 @@ onBeforeUnmount(() => {
         <el-alert v-if="receiptWatch" title="训练提交核对" :description="`${receiptWatchLabel}；已核对 ${receiptWatch.check_count}/${receiptWatch.check_limit} 次。`" type="warning" :closable="false" show-icon />
         <el-button v-if="receiptWatch && receiptWatch.state !== 'confirmed'" :disabled="busy" @click="reconcileOriginalSubmission">核对原提交（不重新训练）</el-button>
         <el-button v-if="receiptWatch?.state === 'rejected'" :disabled="busy" @click="acknowledgeRejectedSubmission">检查后准备重新提交</el-button>
-        <section class="next-step"><div><span>建议下一步</span><strong>{{ isArchived?'研究已归档':next.title }}</strong><p>{{ isArchived?'恢复后才可发起新的训练或执行动作；历史结果仍可查看。':next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" :disabled="isArchived" aria-label="训练使用的冻结股票池" data-testid="ml-pool" placeholder="选择冻结股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="isArchived||next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
+        <section class="next-step"><div><span>建议下一步</span><strong>{{ isArchived?'研究已归档':next.title }}</strong><p>{{ isArchived?'恢复后才可发起新的训练或执行动作；历史结果仍可查看。':next.hint }}</p></div><div class="next-actions"><el-select v-if="next.action==='train'" v-model="form.pool_id" :disabled="isArchived" aria-label="训练使用的股票池" data-testid="ml-pool" placeholder="选择股票池"><el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id"/></el-select><el-button type="primary" :disabled="isArchived||next.action==='wait'||(next.action==='train'&&!chosenPool)" :loading="busy" :data-testid="next.action==='train'?'ml-train':next.action==='predict'?'ml-predict':next.action==='backtest'?'ml-backtest':undefined" @click="runNext">{{ next.label }}</el-button></div></section>
         <el-tabs v-model="activeTab" class="research-tabs">
-          <el-tab-pane label="研究概览" name="overview"><div class="summary-grid"><div><span>研究方法</span><strong>{{ methodLabel(selected) }}</strong><small>{{ isV2?'净化走步验证':'兼容单次验证' }}</small></div><div><span>研究范围</span><strong>{{ selectedPool?.name || '训练时选择股票池' }}</strong><small>{{ selectedPool?`${selectedPool.member_count} 只股票`:'使用不可变成员快照' }}</small></div><div><span>预测目标</span><strong>未来 {{ targetHorizon ?? form.horizon }} 个交易日收益</strong><small>样本外预测不包含标签</small></div><div><span>组合规则</span><strong>前 {{ portfolio?.top_n ?? form.top_n }} 名等权</strong><small>{{ rebalance(portfolio?.rebalance ?? form.rebalance) }}调仓</small></div></div>
+          <el-tab-pane label="研究概览" name="overview"><div class="summary-grid"><div><span>研究方法</span><strong>{{ methodLabel(selected) }}</strong><small>{{ isV2?'净化走步验证':'兼容单次验证' }}</small></div><div><span>研究范围</span><strong>{{ selectedPool?.name || '训练时选择股票池' }}</strong><small>{{ selectedPool?`${selectedPool.member_count} 只股票`:'使用创建时的股票名单' }}</small></div><div><span>预测目标</span><strong>未来 {{ targetHorizon ?? form.horizon }} 个交易日收益</strong><small>样本外预测不包含标签</small></div><div><span>组合规则</span><strong>前 {{ portfolio?.top_n ?? form.top_n }} 名等权</strong><small>{{ rebalance(portfolio?.rebalance ?? form.rebalance) }}调仓</small></div></div>
             <section class="content-section"><h4>数据与验证时间窗</h4><p>{{ isV2?'开发区间内生成有净化间隔的走步折；预测区间位于所有模型选择之后。':'训练、验证和预测按时间先后隔离。' }}</p><dl class="periods" :class="{two:isV2}"><template v-if="isV2"><div><dt>开发与走步验证</dt><dd>{{ period(content.development_window) }}</dd></div><div><dt>生成样本外预测</dt><dd>{{ period(content.prediction_window) }}</dd></div></template><template v-else><div><dt>学习历史规律</dt><dd>{{ period(content.split?.train) }}</dd></div><div><dt>验证模型表现</dt><dd>{{ period(content.split?.validation) }}</dd></div><div><dt>生成样本外预测</dt><dd>{{ period(content.split?.prediction) }}</dd></div></template></dl></section>
-            <section v-if="isRegime" class="content-section"><h4>市场状态专家路由</h4><p>状态只由冻结的沪深300当日及历史行情判定；证据不足时使用已批准的后备专家。</p><div class="expert-grid"><article v-for="expert in content.experts" :key="expert.key"><strong>{{ ({risk_on:'进取',neutral:'中性',risk_off:'防守'} as Record<string,string>)[expert.key] }}</strong><span>{{ learners.find(item=>item.id===expert.learner.profile)?.display_name ?? expert.learner.profile }}</span><small>训练状态：{{ expert.training_regimes.join('、') }}</small></article></div><div v-if="regimeSnapshot" class="regime-counts"><span>沪深300 · 60 日暖机</span><el-tag v-for="(count,state) in regimeSnapshot.content.counts" :key="state" size="small">{{ state }} {{ count }}</el-tag></div></section>
+            <section v-if="isRegime" class="content-section"><h4>市场状态专家路由</h4><p>系统根据沪深300行情判断市场状态；证据不足时使用已批准的后备专家。</p><div class="expert-grid"><article v-for="expert in content.experts" :key="expert.key"><strong>{{ ({risk_on:'进取',neutral:'中性',risk_off:'防守'} as Record<string,string>)[expert.key] }}</strong><span>{{ learners.find(item=>item.id===expert.learner.profile)?.display_name ?? expert.learner.profile }}</span><small>训练状态：{{ expert.training_regimes.join('、') }}</small></article></div><div v-if="regimeSnapshot" class="regime-counts"><span>沪深300 · 60 日暖机</span><el-tag v-for="(count,state) in regimeSnapshot.content.counts" :key="state" size="small">{{ state }} {{ count }}</el-tag></div></section>
             <section v-if="model" class="content-section"><h4>训练结果</h4><p>指标来自验证折，不代表未来收益承诺。</p><div class="metrics"><div><span>验证误差 RMSE</span><strong>{{ metric(foldMetrics.validation_rmse ?? foldMetrics.validation_rmse_mean,6) }}</strong></div><div><span>排序相关 Rank IC</span><strong>{{ metric(foldMetrics.validation_rank_ic ?? foldMetrics.validation_rank_ic_mean) }}</strong></div><div><span>有效验证折</span><strong>{{ model.content.folds?.length ?? expertModels[0]?.content.folds?.length ?? '-' }}</strong></div><div><span>训练模型</span><strong>{{ isRegime?expertModels.length:1 }}</strong></div></div></section>
           </el-tab-pane>
-          <el-tab-pane label="预测结果" name="prediction"><div v-if="predictionRowsLoading" class="base-loading" role="status">加载预测排名...</div><el-empty v-else-if="!predictionRowsTotal" description="完成训练后可在这里查看样本外排名"/><template v-else><div class="result-intro"><div><strong>样本外排名</strong><span>共 {{ predictionRowsTotal }} 条记录</span></div><el-tag v-if="signal" type="success">冻结信号已生成</el-tag></div><ListFilterPagination v-model:query="predictionRowsQuery" v-model:page="predictionRowsPage" :page-size="predictionRowsPageSize" :total="predictionRowsTotal" placeholder="筛选股票、交易日或排名" label="模型预测分页"><el-table :data="predictionRows" max-height="420"><el-table-column prop="session" label="交易日" min-width="118"/><el-table-column prop="rank" label="排名" width="70" align="right"/><el-table-column prop="symbol" label="股票" min-width="108"/><el-table-column v-if="isRegime" prop="regime" label="市场状态" min-width="105"/><el-table-column v-if="isRegime" prop="expert_key" label="使用专家" min-width="105"/><el-table-column label="预测分" min-width="115" align="right"><template #default="{row}">{{ metric(row.score,6) }}</template></el-table-column></el-table></ListFilterPagination></template></el-tab-pane>
-          <el-tab-pane label="运行记录" name="runs"><div class="run-list"><article v-for="(row,index) in [{name:'可信训练',run:training,hint:'尚未开始'},{name:'样本外预测与信号',run:prediction,hint:'等待训练完成'},{name:'可复现回测',run:backtest,hint:'等待冻结信号'}]" :key="row.name"><b>{{ index+1 }}</b><div><strong>{{ row.name }}</strong><small>{{ row.run?statusLabel(row.run.status):row.hint }}</small></div><el-tag size="small" :type="row.run?.status==='completed'?'success':'info'">{{ row.run?statusLabel(row.run.status):'待执行' }}</el-tag></article></div></el-tab-pane>
-          <el-tab-pane label="技术信息" name="technical"><el-alert title="可信机器学习闭环" description="能力、策略、走步验证、模型或专家包、预测、信号和回测均可审计；浏览器看不到模型文件、原始特征行或 Worker 请求。" type="info" show-icon :closable="false"/><el-descriptions :column="1" border class="technical"><el-descriptions-item label="研究定义">{{ shortReference(selected.artifact_id) }}</el-descriptions-item><el-descriptions-item label="注册表">{{ capabilities?.registry.schema_version }}</el-descriptions-item><el-descriptions-item label="训练任务">{{ shortReference(training?.training_run_id) }}</el-descriptions-item><el-descriptions-item :label="isRegime?'模型包':'模型制品'">{{ shortReference(model?.artifact_id) }}</el-descriptions-item><el-descriptions-item label="预测任务">{{ shortReference(prediction?.prediction_run_id) }}</el-descriptions-item><el-descriptions-item label="信号快照">{{ shortReference(signal?.artifact_id) }}</el-descriptions-item></el-descriptions></el-tab-pane>
+          <el-tab-pane label="预测结果" name="prediction"><div v-if="predictionRowsLoading" class="base-loading" role="status">加载预测排名...</div><el-empty v-else-if="!predictionRowsTotal" description="完成训练后可在这里查看样本外排名"/><template v-else><div class="result-intro"><div><strong>样本外排名</strong><span>共 {{ predictionRowsTotal }} 条记录</span></div><el-tag v-if="signal" type="success">策略信号已生成</el-tag></div><ListFilterPagination v-model:query="predictionRowsQuery" v-model:page="predictionRowsPage" :page-size="predictionRowsPageSize" :total="predictionRowsTotal" placeholder="筛选股票、交易日或排名" label="模型预测分页"><el-table :data="predictionRows" max-height="420"><el-table-column prop="session" label="交易日" min-width="118"/><el-table-column prop="rank" label="排名" width="70" align="right"/><el-table-column prop="symbol" label="股票" min-width="108"/><el-table-column v-if="isRegime" prop="regime" label="市场状态" min-width="105"/><el-table-column v-if="isRegime" prop="expert_key" label="使用专家" min-width="105"/><el-table-column label="预测分" min-width="115" align="right"><template #default="{row}">{{ metric(row.score,6) }}</template></el-table-column></el-table></ListFilterPagination></template></el-tab-pane>
+          <el-tab-pane label="运行记录" name="runs"><div class="run-list"><article v-for="(row,index) in [{name:'模型训练',run:training,hint:'尚未开始'},{name:'样本外预测与信号',run:prediction,hint:'等待训练完成'},{name:'可复现回测',run:backtest,hint:'等待策略信号'}]" :key="row.name"><b>{{ index+1 }}</b><div><strong>{{ row.name }}</strong><small>{{ row.run?statusLabel(row.run.status):row.hint }}</small></div><el-tag size="small" :type="row.run?.status==='completed'?'success':'info'">{{ row.run?statusLabel(row.run.status):'待执行' }}</el-tag></article></div></el-tab-pane>
+          <el-tab-pane label="技术信息" name="technical"><el-alert title="可信机器学习闭环" description="能力、策略、走步验证、模型或专家包、预测、信号和回测均可审计；模型文件、原始特征和后台任务详情不会在浏览器中展示。" type="info" show-icon :closable="false"/><el-descriptions :column="1" border class="technical"><el-descriptions-item label="研究定义">{{ shortReference(selected.artifact_id) }}</el-descriptions-item><el-descriptions-item label="注册表">{{ capabilities?.registry.schema_version }}</el-descriptions-item><el-descriptions-item label="训练任务">{{ shortReference(training?.training_run_id) }}</el-descriptions-item><el-descriptions-item :label="isRegime?'模型包':'模型制品'">{{ shortReference(model?.artifact_id) }}</el-descriptions-item><el-descriptions-item label="预测任务">{{ shortReference(prediction?.prediction_run_id) }}</el-descriptions-item><el-descriptions-item label="策略信号">{{ shortReference(signal?.artifact_id) }}</el-descriptions-item></el-descriptions></el-tab-pane>
         </el-tabs>
       </el-card>
       <el-card v-else shadow="never"><el-empty description="选择一项模型研究后才加载详情"><el-button type="primary" @click="showCreate=true">新建模型研究</el-button></el-empty></el-card>
@@ -782,11 +941,21 @@ onBeforeUnmount(() => {
   </ManagementWorkspace>
 
   <el-dialog v-model="showCreate" title="新建模型研究" width="min(820px, calc(100vw - 28px))" destroy-on-close>
-    <div class="create-intro"><strong>能力来自已验证注册表</strong><p>兼容方案保持既有 LightGBM 路径；走步方案支持独立学习器；市场状态方案按沪深300状态使用不同专家。</p></div>
+    <div class="create-intro"><strong>先选股票池，再规划研究区间</strong><p>查看当前版本已有的日线参考范围，再填写日期；保存研究定义不会启动训练或准备数据。</p></div>
+    <div v-if="!activePools.length" class="data-reference" data-testid="ml-no-pool">
+      <strong>还没有可用的选股范围</strong><p>先创建一个有成员的活动股票池，再返回这里规划模型研究。</p>
+      <el-button plain type="primary" @click="showCreate = false; router.push('/stock-pool')">去股票池管理</el-button>
+    </div>
     <el-form label-position="top">
-      <el-form-item label="研究方案"><el-radio-group v-model="form.mode" aria-label="研究方案"><el-radio-button value="compatible">兼容单模型</el-radio-button><el-radio-button value="walk_forward">净化走步模型</el-radio-button><el-radio-button value="regime" :disabled="!regimes.length||!routers.length">市场状态专家</el-radio-button></el-radio-group></el-form-item>
+      <el-form-item label="日期参考股票池">
+        <el-select v-model="form.pool_id" aria-label="日期参考股票池" data-testid="ml-reference-pool" placeholder="选择股票池" style="width:100%">
+          <el-option v-for="pool in activePools" :key="pool.pool_id" :label="`${pool.name} · ${pool.member_count}只`" :value="pool.pool_id" />
+        </el-select>
+        <small>这里只查看已有日线范围；实际训练时仍需确认股票池版本。</small>
+      </el-form-item>
+      <el-form-item label="研究方案"><el-radio-group v-model="form.mode" aria-label="研究方案"><el-radio-button value="compatible">单模型入门</el-radio-button><el-radio-button value="walk_forward">滚动训练验证</el-radio-button><el-radio-button value="regime" :disabled="!regimes.length||!routers.length">市场状态专家</el-radio-button></el-radio-group></el-form-item>
       <div class="form-grid"><el-form-item label="研究名称"><el-input v-model="form.name" aria-label="研究名称"/></el-form-item><el-form-item label="研究任务"><el-select v-model="form.task_id" aria-label="研究任务" clearable placeholder="留空将自动创建"><el-option v-for="task in options.tasks" :key="task.task_id" :label="task.title" :value="task.task_id"/></el-select></el-form-item></div>
-      <el-form-item v-if="form.mode==='compatible'" label="兼容能力"><el-select v-model="form.capability_id" aria-label="兼容能力"><el-option v-for="item in legacyCapabilities" :key="item.capability_id" :label="item.name" :value="item.capability_id"/></el-select></el-form-item>
+      <el-form-item v-if="form.mode==='compatible'" label="模型方法"><el-select v-model="form.capability_id" aria-label="模型方法"><el-option v-for="item in legacyCapabilities" :key="item.capability_id" :label="item.name" :value="item.capability_id"/></el-select></el-form-item>
       <template v-else>
         <div class="form-grid three"><el-form-item label="特征集"><el-select v-model="form.feature_set"><el-option v-for="item in featureSets" :key="item.id" :label="componentLabel(item)" :value="item.id"/></el-select></el-form-item><el-form-item label="验证方案"><el-select v-model="form.validation_plan"><el-option v-for="item in validations" :key="item.id" :label="componentLabel(item)" :value="item.id" :disabled="!item.id.includes('walk-forward')"/></el-select></el-form-item><el-form-item v-if="form.mode==='walk_forward'" label="学习器"><el-select v-model="form.learner" data-testid="ml-learner"><el-option v-for="item in learners" :key="item.id" :label="componentLabel(item)" :value="item.id"/></el-select></el-form-item></div>
         <div class="validation-grid"><el-form-item label="训练交易日"><el-input-number v-model="form.train_sessions" :min="60" :max="1500"/></el-form-item><el-form-item label="验证交易日"><el-input-number v-model="form.validation_sessions" :min="10" :max="250"/></el-form-item><el-form-item label="步长"><el-input-number v-model="form.step_sessions" :min="10" :max="250"/></el-form-item><el-form-item label="折数"><el-input-number v-model="form.folds" :min="2" :max="12"/></el-form-item></div>
@@ -794,12 +963,19 @@ onBeforeUnmount(() => {
       <section v-if="form.mode==='regime'" class="expert-config"><div><strong>沪深300状态专家</strong><span>未知状态自动使用“中性”后备专家</span></div><div class="expert-grid"><el-form-item v-for="expert in experts" :key="expert.key" :label="expert.label"><el-select v-model="expert.learner" :data-testid="`ml-expert-${expert.key}`"><el-option v-for="item in learners" :key="item.id" :label="componentLabel(item)" :value="item.id"/></el-select></el-form-item></div></section>
       <div class="form-grid three"><el-form-item label="预测未来交易日"><el-input-number v-model="form.horizon" :min="1" :max="20"/></el-form-item><el-form-item label="每次选择前 N 名"><el-input-number v-model="form.top_n" :min="1" :max="100"/></el-form-item><el-form-item label="调仓频率"><el-select v-model="form.rebalance" aria-label="调仓频率"><el-option label="每日" value="daily"/><el-option label="每周" value="weekly"/><el-option label="每月" value="monthly"/></el-select></el-form-item></div>
       <section class="dates"><div><strong>数据时间窗</strong><span>{{ form.mode==='compatible'?'三个区间严格前后排列':'预测区间位于开发与模型选择之后' }}</span></div><template v-if="form.mode==='compatible'"><div v-for="row in [{label:'训练',start:'train_start',end:'train_end'},{label:'验证',start:'validation_start',end:'validation_end'},{label:'预测',start:'prediction_start',end:'prediction_end'}]" :key="row.label" class="date-row"><label>{{ row.label }}</label><el-date-picker v-model="form[row.start as keyof typeof form]" value-format="YYYY-MM-DD" placeholder="开始日期"/><span>至</span><el-date-picker v-model="form[row.end as keyof typeof form]" value-format="YYYY-MM-DD" placeholder="结束日期"/></div></template><template v-else><div class="date-row"><label>开发</label><el-date-picker v-model="form.development_start" value-format="YYYY-MM-DD"/><span>至</span><el-date-picker v-model="form.development_end" value-format="YYYY-MM-DD"/></div><div class="date-row"><label>预测</label><el-date-picker v-model="form.prediction_start" value-format="YYYY-MM-DD"/><span>至</span><el-date-picker v-model="form.prediction_end" value-format="YYYY-MM-DD"/></div></template></section>
+      <p class="date-validation" role="status">{{ dateWindowError || "日期顺序已检查；不代表训练数据已就绪。" }}</p>
+      <section class="data-reference" aria-label="所选股票池日期参考">
+        <strong>所选股票池的数据参考</strong><p role="status">{{ poolReferenceMessage }}</p>
+        <el-button v-if="canApplyRecommendedDates" plain data-testid="ml-apply-recommended-dates" @click="applyRecommendedDates">采用建议日期</el-button>
+        <p>所列范围不代表完整历史连续，也不会自动改写你填写的日期；缺失数据须在训练前准备和复查。</p>
+        <p v-if="datesOutsideReference" role="alert">所选日期超出当前已有日线的参考范围。可以先保存研究定义，但训练前需要补齐并核验数据。</p>
+      </section>
     </el-form>
-    <template #footer><el-button @click="showCreate=false">取消</el-button><el-button type="primary" :loading="busy" data-testid="ml-save" @click="saveStrategy">冻结研究定义</el-button></template>
+    <template #footer><el-button @click="showCreate=false">取消</el-button><el-button type="primary" :loading="busy" :disabled="Boolean(dateWindowError)" data-testid="ml-save" @click="saveStrategy">保存研究定义</el-button></template>
   </el-dialog>
 </section>
 </template>
 
 <style scoped>
-.ml-workbench{min-width:0}.research-list{display:grid;gap:9px;margin-top:4px}.research-list-item{background:transparent;border:1px solid var(--byq-border-subtle);border-radius:9px;color:var(--byq-text);cursor:pointer;display:grid;gap:7px;padding:12px;text-align:left;width:100%}.research-list-item:hover{background:var(--byq-surface-subtle)}.research-list-item.active{background:var(--byq-brand-soft);border-color:color-mix(in srgb,var(--byq-brand) 42%,var(--byq-border))}.list-head,.list-meta,.detail-heading,.result-intro{align-items:center;display:flex;gap:8px;justify-content:space-between;min-width:0}.list-head strong,.list-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.method,.list-meta,.detail-heading p,.content-section p,.result-intro span,.run-list small,.expert-grid small{color:var(--byq-text-muted);font-size:11px}.detail-heading{align-items:flex-start}.detail-actions{align-items:flex-end;display:flex;flex-direction:column;gap:8px}.detail-heading>div>span{color:var(--byq-brand);font-size:10px;font-weight:800;letter-spacing:.08em}.detail-heading h3{font-size:19px;margin:3px 0}.detail-heading p,.content-section p{margin:0}.pipeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;margin:0 0 16px;padding:0}.pipeline li{align-items:flex-start;display:flex;gap:8px;min-width:0;position:relative}.pipeline li:not(:last-child):after{background:var(--byq-border);content:"";height:1px;left:30px;position:absolute;right:4px;top:13px}.pipeline b,.run-list>article>b{align-items:center;background:var(--byq-surface);border:1px solid var(--byq-border);border-radius:50%;color:var(--byq-text-muted);display:flex;flex:0 0 25px;font-size:11px;height:25px;justify-content:center;position:relative;z-index:1}.pipeline li>span{display:grid;gap:2px;position:relative;z-index:1}.pipeline strong{font-size:12px}.pipeline small{color:var(--byq-text-soft);font-size:10px}.pipeline .is-completed b{background:var(--byq-brand);border-color:var(--byq-brand);color:var(--byq-on-brand)}.pipeline .is-active b{border-color:var(--byq-brand);color:var(--byq-brand);box-shadow:0 0 0 3px var(--byq-brand-soft)}.pipeline .is-failed b{background:var(--byq-danger-soft);color:var(--byq-danger)}.next-step{align-items:center;background:var(--byq-brand-soft);border:1px solid color-mix(in srgb,var(--byq-brand) 24%,var(--byq-border));border-radius:10px;display:flex;gap:16px;justify-content:space-between;padding:14px 16px}.next-step>div:first-child{display:grid;gap:3px}.next-step>div:first-child>span{color:var(--byq-brand);font-size:10px;font-weight:800}.next-step p{color:var(--byq-text-muted);font-size:11px;margin:0}.next-actions{align-items:center;display:flex;gap:8px}.next-actions .el-select{min-width:190px}.research-tabs{margin-top:12px}.summary-grid,.metrics{display:grid;gap:9px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-grid>div{background:var(--byq-surface-subtle);border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:12px}.summary-grid span,.metrics span{color:var(--byq-text-muted);font-size:11px}.summary-grid strong{font-size:13px}.summary-grid small{color:var(--byq-text-soft);font-size:10px}.content-section{border-top:1px solid var(--byq-border-subtle);margin-top:18px;padding-top:16px}.content-section h4{font-size:14px;margin:0}.periods{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0 0}.periods.two{grid-template-columns:repeat(2,minmax(0,1fr))}.periods>div{border-left:2px solid var(--byq-border);display:grid;gap:4px;padding:4px 10px}.periods dt{color:var(--byq-text-muted);font-size:11px}.periods dd{font-size:12px;margin:0}.metrics{margin-top:12px}.metrics>div{display:grid;gap:4px}.metrics strong{font-size:17px}.result-intro{margin-bottom:10px}.result-intro>div{display:grid;gap:3px}.run-list{display:grid;gap:8px}.run-list article{align-items:center;border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:10px;grid-template-columns:auto minmax(0,1fr) auto;padding:12px}.run-list article>div{display:grid;gap:3px}.technical{margin-top:12px}.technical :deep(.el-descriptions__content){overflow-wrap:anywhere}.create-intro{background:var(--byq-surface-subtle);border-radius:9px;margin-bottom:16px;padding:12px 14px}.create-intro p{color:var(--byq-text-muted);font-size:12px;margin:4px 0}.form-grid,.validation-grid,.expert-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.form-grid :deep(.el-input-number),.form-grid :deep(.el-select),.validation-grid :deep(.el-input-number),.expert-grid :deep(.el-select){width:100%}.dates,.expert-config{border-top:1px solid var(--byq-border-subtle);display:grid;gap:10px;padding-top:14px}.dates>div:first-child,.expert-config>div:first-child{display:flex;justify-content:space-between}.dates>div:first-child span,.expert-config>div:first-child span{color:var(--byq-text-muted);font-size:11px}.date-row{align-items:center;display:grid;gap:9px;grid-template-columns:44px minmax(0,1fr) auto minmax(0,1fr)}.date-row label{color:var(--byq-text-muted);font-size:12px;font-weight:700}.date-row :deep(.el-date-editor){width:100%}.expert-grid article{border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:11px}.expert-grid article span{font-size:12px}.regime-counts{align-items:center;display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.regime-counts>span{color:var(--byq-text-muted);font-size:11px;margin-right:auto}@media(max-width:1120px){.summary-grid,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.pipeline small{display:none}}@media(max-width:760px){.next-step,.next-actions{align-items:stretch;flex-direction:column}.next-actions .el-select,.next-actions .el-button{width:100%}.pipeline{gap:4px}.pipeline li{align-items:center;display:grid;gap:5px;justify-items:center;text-align:center}.pipeline li:not(:last-child):after{left:calc(50% + 13px);right:calc(-50% + 13px)}.periods,.periods.two,.form-grid,.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:1fr}.date-row{grid-template-columns:1fr}.date-row>span{display:none}.dates>div:first-child,.expert-config>div:first-child{align-items:flex-start;flex-direction:column}}@media(max-width:480px){.summary-grid,.metrics{grid-template-columns:1fr}.list-meta time{display:none}}
+.ml-workbench{min-width:0}.research-list{display:grid;gap:9px;margin-top:4px}.research-list-item{background:transparent;border:1px solid var(--byq-border-subtle);border-radius:9px;color:var(--byq-text);cursor:pointer;display:grid;gap:7px;padding:12px;text-align:left;width:100%}.research-list-item:hover{background:var(--byq-surface-subtle)}.research-list-item.active{background:var(--byq-brand-soft);border-color:color-mix(in srgb,var(--byq-brand) 42%,var(--byq-border))}.list-head,.list-meta,.detail-heading,.result-intro{align-items:center;display:flex;gap:8px;justify-content:space-between;min-width:0}.list-head strong,.list-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.method,.list-meta,.detail-heading p,.content-section p,.result-intro span,.run-list small,.expert-grid small{color:var(--byq-text-muted);font-size:11px}.detail-heading{align-items:flex-start}.detail-actions{align-items:flex-end;display:flex;flex-direction:column;gap:8px}.detail-heading>div>span{color:var(--byq-brand);font-size:10px;font-weight:800;letter-spacing:.08em}.detail-heading h3{font-size:19px;margin:3px 0}.detail-heading p,.content-section p{margin:0}.pipeline{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;margin:0 0 16px;padding:0}.pipeline li{align-items:flex-start;display:flex;gap:8px;min-width:0;position:relative}.pipeline li:not(:last-child):after{background:var(--byq-border);content:"";height:1px;left:30px;position:absolute;right:4px;top:13px}.pipeline b,.run-list>article>b{align-items:center;background:var(--byq-surface);border:1px solid var(--byq-border);border-radius:50%;color:var(--byq-text-muted);display:flex;flex:0 0 25px;font-size:11px;height:25px;justify-content:center;position:relative;z-index:1}.pipeline li>span{display:grid;gap:2px;position:relative;z-index:1}.pipeline strong{font-size:12px}.pipeline small{color:var(--byq-text-soft);font-size:10px}.pipeline .is-completed b{background:var(--byq-brand);border-color:var(--byq-brand);color:var(--byq-on-brand)}.pipeline .is-active b{border-color:var(--byq-brand);color:var(--byq-brand);box-shadow:0 0 0 3px var(--byq-brand-soft)}.pipeline .is-failed b{background:var(--byq-danger-soft);color:var(--byq-danger)}.next-step{align-items:center;background:var(--byq-brand-soft);border:1px solid color-mix(in srgb,var(--byq-brand) 24%,var(--byq-border));border-radius:10px;display:flex;gap:16px;justify-content:space-between;padding:14px 16px}.next-step>div:first-child{display:grid;gap:3px}.next-step>div:first-child>span{color:var(--byq-brand);font-size:10px;font-weight:800}.next-step p{color:var(--byq-text-muted);font-size:11px;margin:0}.next-actions{align-items:center;display:flex;gap:8px}.next-actions .el-select{min-width:190px}.research-tabs{margin-top:12px}.summary-grid,.metrics{display:grid;gap:9px;grid-template-columns:repeat(4,minmax(0,1fr))}.summary-grid>div{background:var(--byq-surface-subtle);border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:12px}.summary-grid span,.metrics span{color:var(--byq-text-muted);font-size:11px}.summary-grid strong{font-size:13px}.summary-grid small{color:var(--byq-text-soft);font-size:10px}.content-section{border-top:1px solid var(--byq-border-subtle);margin-top:18px;padding-top:16px}.content-section h4{font-size:14px;margin:0}.periods{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0 0}.periods.two{grid-template-columns:repeat(2,minmax(0,1fr))}.periods>div{border-left:2px solid var(--byq-border);display:grid;gap:4px;padding:4px 10px}.periods dt{color:var(--byq-text-muted);font-size:11px}.periods dd{font-size:12px;margin:0}.metrics{margin-top:12px}.metrics>div{display:grid;gap:4px}.metrics strong{font-size:17px}.result-intro{margin-bottom:10px}.result-intro>div{display:grid;gap:3px}.run-list{display:grid;gap:8px}.run-list article{align-items:center;border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:10px;grid-template-columns:auto minmax(0,1fr) auto;padding:12px}.run-list article>div{display:grid;gap:3px}.technical{margin-top:12px}.technical :deep(.el-descriptions__content){overflow-wrap:anywhere}.create-intro{background:var(--byq-surface-subtle);border-radius:9px;margin-bottom:16px;padding:12px 14px}.create-intro p{color:var(--byq-text-muted);font-size:12px;margin:4px 0}.form-grid,.validation-grid,.expert-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.form-grid :deep(.el-input-number),.form-grid :deep(.el-select),.validation-grid :deep(.el-input-number),.expert-grid :deep(.el-select){width:100%}.data-reference{border:1px solid var(--byq-border-subtle);border-radius:8px;padding:12px;font-size:12px}.data-reference p{margin:6px 0;color:var(--byq-text-muted)}.data-reference [role=alert]{color:var(--el-color-warning)}.date-validation{color:var(--byq-text-muted);font-size:12px;margin:0}.dates,.expert-config{border-top:1px solid var(--byq-border-subtle);display:grid;gap:10px;padding-top:14px}.dates>div:first-child,.expert-config>div:first-child{display:flex;justify-content:space-between}.dates>div:first-child span,.expert-config>div:first-child span{color:var(--byq-text-muted);font-size:11px}.date-row{align-items:center;display:grid;gap:9px;grid-template-columns:44px minmax(0,1fr) auto minmax(0,1fr)}.date-row label{color:var(--byq-text-muted);font-size:12px;font-weight:700}.date-row :deep(.el-date-editor){width:100%}.expert-grid article{border:1px solid var(--byq-border-subtle);border-radius:9px;display:grid;gap:5px;padding:11px}.expert-grid article span{font-size:12px}.regime-counts{align-items:center;display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.regime-counts>span{color:var(--byq-text-muted);font-size:11px;margin-right:auto}@media(max-width:1120px){.summary-grid,.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.pipeline small{display:none}}@media(max-width:760px){.next-step,.next-actions{align-items:stretch;flex-direction:column}.next-actions .el-select,.next-actions .el-button{width:100%}.pipeline{gap:4px}.pipeline li{align-items:center;display:grid;gap:5px;justify-items:center;text-align:center}.pipeline li:not(:last-child):after{left:calc(50% + 13px);right:calc(-50% + 13px)}.periods,.periods.two,.form-grid,.form-grid.three,.validation-grid,.expert-grid{grid-template-columns:1fr}.date-row{grid-template-columns:1fr}.date-row>span{display:none}.dates>div:first-child,.expert-config>div:first-child{align-items:flex-start;flex-direction:column}}@media(max-width:480px){.summary-grid,.metrics{grid-template-columns:1fr}.list-meta time{display:none}}
 </style>

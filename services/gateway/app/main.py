@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -1856,10 +1856,39 @@ class ProductSession:
     continuation_cancel_runtime_ack: bool = False
 
 
+@dataclass(slots=True)
+class _ProductSessionRestoreGate:
+    lock: threading.Lock
+    users: int = 0
+
+
 class ProductSessionRegistry:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._sessions: dict[str, ProductSession] = {}
+        self._restore_gates: dict[tuple[str, str, str], _ProductSessionRestoreGate] = {}
+
+    @contextmanager
+    def restore_gate(self, owner: str, workspace_id: str, conversation_id: str) -> Iterator[None]:
+        key = (owner, workspace_id, conversation_id)
+        with self._lock:
+            gate = self._restore_gates.get(key)
+            if gate is None:
+                gate = _ProductSessionRestoreGate(threading.Lock())
+                self._restore_gates[key] = gate
+            gate.users += 1
+        acquired = False
+        try:
+            gate.lock.acquire()
+            acquired = True
+            yield
+        finally:
+            if acquired:
+                gate.lock.release()
+            with self._lock:
+                gate.users -= 1
+                if gate.users == 0 and self._restore_gates.get(key) is gate:
+                    del self._restore_gates[key]
 
     def add(self, session: ProductSession) -> None:
         with self._lock:
@@ -3937,27 +3966,35 @@ def _reject_ambiguous_continuation_after_failure(
 
 def _product_session(request: Request, session_id: str) -> ProductSession:
     principal, workspace_id = _trusted_request_identity(request)
-    try:
-        session = product_sessions.get_owned(session_id, principal)
-    except HTTPException as exc:
-        if exc.status_code != 404:
-            raise
-        return _restore_product_session(session_id, principal, workspace_id)
-    snapshot = _runtime_authority_snapshot()
-    if snapshot.get("ready") is not True or not _valid_runtime_boot_id(snapshot.get("boot_id")):
-        raise HTTPException(status_code=503, detail="Agent runtime authority is not ready")
-    if session.boot_id == snapshot["boot_id"] and session.workspace_id == workspace_id:
+    # This gate covers ordinary Product cache lookup/restoration only. Direct
+    # continuation observers and force+required-state recovery retain their
+    # explicit proof paths and do not reuse this cache shortcut.
+    with product_sessions.restore_gate(principal.subject, workspace_id, session_id):
+        try:
+            session = product_sessions.get_owned(session_id, principal)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            session = _restore_product_session(session_id, principal, workspace_id)
+        else:
+            snapshot = _runtime_authority_snapshot()
+            if snapshot.get("ready") is not True or not _valid_runtime_boot_id(snapshot.get("boot_id")):
+                raise HTTPException(status_code=503, detail="Agent runtime authority is not ready")
+            if session.boot_id == snapshot["boot_id"] and session.workspace_id == workspace_id:
+                return session
+            # A cached Gateway binding belongs to a superseded Adapter boot (or a
+            # different active Workspace context). Remove only the local binding; the
+            # owner-scoped restore path must obtain exact Backend proof before it can
+            # adopt the new Adapter boot.
+            previous_boot_id = session.boot_id
+            product_sessions.remove_owned(session_id, principal)
+            session = _restore_product_session(
+                session_id, principal, workspace_id,
+                force_recovery=previous_boot_id != snapshot["boot_id"],
+            )
+        if session.principal.subject != principal.subject or session.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="product session not found")
         return session
-    # A cached Gateway binding belongs to a superseded Adapter boot (or a
-    # different active Workspace context). Remove only the local binding; the
-    # owner-scoped restore path must obtain exact Backend proof before it can
-    # adopt the new Adapter boot.
-    previous_boot_id = session.boot_id
-    product_sessions.remove_owned(session_id, principal)
-    return _restore_product_session(
-        session_id, principal, workspace_id,
-        force_recovery=previous_boot_id != snapshot["boot_id"],
-    )
 
 
 def _adopt_runtime_session_boot(reply: object) -> str:

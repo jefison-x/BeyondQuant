@@ -2089,6 +2089,48 @@ def test_product_data_readiness_forwards_trusted_identity_and_bounded_request(mo
     assert captured["json"]["symbols"] == ["600036.SH"]
 
 
+def test_product_research_preparation_is_admin_only_and_uses_backend_boundary(monkeypatch) -> None:
+    captured: list[dict[str, object]] = []
+    role = {"value": "user"}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"request_id": "datarepair_1", "status": "queued"}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        captured.append({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "username": "alice", "role": role["value"],
+        "_workspace": {"workspace_id": "workspace_alice"},
+    })
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    client.cookies.set(product_api.SESSION_COOKIE, "session_alice")
+    payload = {
+        "symbols": ["600036.SH"], "start_date": "20260824", "end_date": "20260825",
+        "use_case": "research", "data_requirements": {"daily_basic": ["pe_ttm"]},
+    }
+
+    forbidden = client.post("/api/product/data-center/research-preparations", json=payload)
+    assert forbidden.status_code == 403
+    assert captured == []
+
+    role["value"] = "admin"
+    accepted = client.post("/api/product/data-center/research-preparations", json=payload)
+    assert accepted.status_code == 200
+    assert accepted.json() == {"request_id": "datarepair_1", "status": "queued"}
+    assert str(captured[0]["url"]).endswith("/v1/data-center/research-preparations")
+    assert captured[0]["method"] == "POST"
+    assert captured[0]["headers"]["x-byq-actor-principal"] == "alice"
+    assert captured[0]["headers"]["x-byq-actor-role"] == "admin"
+    assert captured[0]["json"] == payload
+
+
 def test_product_data_center_writes_are_admin_only_and_use_backend_boundary(monkeypatch) -> None:
     captured: list[dict[str, object]] = []
 
@@ -2358,3 +2400,29 @@ def test_ml_training_cancel_forwards_trusted_browser_context_without_agent_grant
     assert forwarded["x-byq-actor-principal"] == "phase12-browser-owner"
     assert forwarded["x-byq-session-id"] == "browser"
     assert forwarded["x-byq-dsh-run-id"] == "browser"
+
+
+def test_ml_options_only_forwards_optional_pool_reference_with_trusted_identity(monkeypatch):
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls = []
+    def backend(method, path, payload=None, *, headers=None):
+        assert method == "GET" and payload is None
+        assert headers["x-byq-owner-principal"] == "product-user"
+        calls.append(path)
+        return {"schema_version": "ml-options.v1", "tasks": [], "pools": []}
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer product-test-token"}
+    assert client.get("/api/product/ml/options", headers=headers).status_code == 200
+    assert calls[-1] == "/v1/research/ml/options"
+    assert client.get("/api/product/ml/options?pool_id=stock_pool_test&owner=other",
+                      headers=headers).status_code == 200
+    assert calls[-1] == "/v1/research/ml/options?pool_id=stock_pool_test"
+    assert client.get(
+        "/api/product/ml/options?pool_id=stock_pool_test&horizon_sessions=7",
+        headers=headers,
+    ).status_code == 200
+    assert calls[-1] == "/v1/research/ml/options?pool_id=stock_pool_test&horizon_sessions=7"
+    assert client.get(
+        "/api/product/ml/options?horizon_sessions=21", headers=headers,
+    ).status_code == 422

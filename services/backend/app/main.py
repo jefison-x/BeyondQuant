@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import anyio
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, Query
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -44,6 +44,7 @@ from .market_automation import (
     MarketAutomationNotFound,
     MarketAutomationPersistenceError,
     MarketAutomationStore,
+    data_repair_terminal_revision,
 )
 from .provider_runtime import resolved_tushare_provider
 from .security_master import (
@@ -65,8 +66,9 @@ from .workspace_runtime_reset import (
     WorkspaceRuntimeResetStore,
 )
 from .market_data import MarketDataPersistenceError, MarketDataStore
-from .market_readiness import MarketReadinessPersistenceError, MarketReadinessStore
+from .market_readiness import MAX_REQUIRED_CELLS, MarketReadinessPersistenceError, MarketReadinessStore
 from .market_plan import (
+    MAX_PARTITION_CHUNK_DAYS,
     aggregate_market_readiness,
     build_requirement_plan,
     partition_market_requirements,
@@ -225,6 +227,7 @@ from .ml_training import (
     MLTrainingPersistenceError,
     MLTrainingRunStore,
     aggregate_ml_readiness,
+    recommend_compatible_training_dates,
 )
 from .task_progress import task_progress
 from .ml_prediction import (
@@ -2199,79 +2202,278 @@ def query_data_readiness(payload: dict[str, Any], request: Request) -> dict[str,
     if not request.headers.get("x-byq-actor-principal", "").strip():
         raise HTTPException(status_code=401, detail="actor principal is required")
 
-    def operation() -> dict[str, object]:
-        if not isinstance(payload, dict) or set(payload) - {
-            "symbols", "start_date", "end_date", "use_case", "data_requirements",
-        }:
-            raise ValueError("readiness request contains unsupported fields")
-        raw_symbols = payload.get("symbols")
-        if not isinstance(raw_symbols, list) or not 1 <= len(raw_symbols) <= 20:
-            raise ValueError("symbols must contain between 1 and 20 entries")
-        symbols: list[str] = []
-        for value in raw_symbols:
-            normalized = DailyRequest(ts_code=value, trade_date="20000101").normalized().ts_code
-            if normalized is not None and normalized not in symbols:
-                symbols.append(normalized)
-        use_case = str(payload.get("use_case", "research")).strip()
-        if use_case not in {"research", "backtest"}:
-            raise ValueError("use_case must be research or backtest")
-        start_date = str(payload.get("start_date", ""))
-        end_date = str(payload.get("end_date", ""))
-        DailyRequest(ts_code=symbols[0], start_date=start_date, end_date=end_date).normalized()
-        data_requirements = payload.get("data_requirements", {})
-        if not isinstance(data_requirements, dict):
-            raise ValueError("data_requirements must be an object")
-        latest = security_master_store.latest_snapshot()
-        if latest is None:
-            raise ValueError("security master must be synchronized before checking readiness")
-        requirement = market_readiness_store.requirement(
-            symbols=symbols, start_date=start_date, end_date=end_date,
-            membership_fingerprint=membership_fingerprint(symbols),
-            security_master_snapshot_id=str(latest["snapshot_id"]),
-            data_requirements=data_requirements,
-        )
-        assessment = market_readiness_store.assess(requirement)
-        grouped: dict[str, int] = {}
-        public_issues: list[dict[str, object]] = []
-        missing = assessment.get("missing", [])
-        for item in missing if isinstance(missing, list) else []:
-            if not isinstance(item, dict):
-                continue
-            dataset = str(item.get("dataset", "unknown"))
-            grouped[dataset] = grouped.get(dataset, 0) + 1
-            if len(public_issues) < 50:
-                public_issues.append({
-                    "symbol": item.get("symbol"), "trade_date": item.get("trade_date"),
-                    "label": f"缺少{_READINESS_DATASET_LABELS.get(dataset, '必要数据')}",
-                    "impact": "当前范围不能完整用于回测" if use_case == "backtest" else "当前范围的研究结论可能不完整",
-                    "recommended_action": "前往数据同步补齐该范围",
-                })
-        state = str(assessment.get("state", "missing"))
-        missing_count = int(assessment.get("missing_count") or 0)
-        required_count = int(assessment.get("required_cell_count") or 0)
-        return {
-            "schema_version": "data-readiness-product.v1",
-            "verdict": "usable" if state == "ready" else "limited" if state == "partial" else "unavailable",
-            "scope": {
-                "selection_type": "explicit", "symbol_count": len(symbols), "symbols": symbols,
-                "start_date": start_date.replace("-", ""), "end_date": end_date.replace("-", ""),
-                "use_case": use_case,
-            },
-            "summary": {
-                "required_sessions": int(assessment.get("required_session_count") or 0),
-                "ready_items": max(0, required_count - missing_count), "missing_items": missing_count,
-                "calendar_complete": bool(assessment.get("calendar_complete")),
-            },
-            "datasets": [{
-                "label": _READINESS_DATASET_LABELS.get(dataset, "必要数据"),
-                "state": "missing", "missing_count": count,
-            } for dataset, count in sorted(grouped.items())],
-            "issues": public_issues,
-            "issues_truncated": missing_count > len(public_issues),
-            "checked_against": "persisted_byq",
-        }
+    return _market_research_read(
+        lambda: _assess_data_readiness(payload)["projection"]  # type: ignore[return-value]
+    )
 
-    return _market_research_read(operation)
+
+def _normalized_data_readiness_scope(
+    payload: dict[str, Any], *, max_calendar_days: int | None = None,
+    research_preparation: bool = False,
+) -> dict[str, object]:
+    """Normalize the shared Product readiness scope before assessment or repair."""
+
+    allowed = {"symbols", "start_date", "end_date", "use_case", "data_requirements"}
+    if not isinstance(payload, dict) or set(payload) - allowed:
+        raise ValueError("readiness request contains unsupported fields")
+    raw_symbols = payload.get("symbols")
+    if not isinstance(raw_symbols, list) or not 1 <= len(raw_symbols) <= 20:
+        raise ValueError("symbols must contain between 1 and 20 entries")
+    symbols: list[str] = []
+    for value in raw_symbols:
+        if not isinstance(value, str):
+            raise ValueError("symbols must contain stock codes as strings")
+        normalized = DailyRequest(ts_code=value, trade_date="20000101").normalized().ts_code
+        if normalized is not None and normalized not in symbols:
+            symbols.append(normalized)
+    if not symbols:
+        raise ValueError("symbols must contain at least one valid stock code")
+
+    use_case = str(payload.get("use_case", "research")).strip()
+    if use_case not in {"research", "backtest"}:
+        raise ValueError("use_case must be research or backtest")
+    if research_preparation and use_case != "research":
+        raise ValueError("research preparation only supports use_case=research")
+
+    start_date = payload.get("start_date")
+    end_date = payload.get("end_date")
+    if not isinstance(start_date, str) or not isinstance(end_date, str):
+        raise ValueError("start_date and end_date must be YYYYMMDD strings")
+    normalized_range = DailyRequest(
+        ts_code=symbols[0], start_date=start_date, end_date=end_date,
+    ).normalized()
+    start_date = str(normalized_range.start_date)
+    end_date = str(normalized_range.end_date)
+    if max_calendar_days is not None:
+        inclusive_days = (
+            datetime.strptime(end_date, "%Y%m%d") - datetime.strptime(start_date, "%Y%m%d")
+        ).days + 1
+        if inclusive_days > max_calendar_days:
+            raise ValueError(f"date range must contain at most {max_calendar_days} calendar days")
+
+    data_requirements = payload.get("data_requirements", {})
+    if not isinstance(data_requirements, dict):
+        raise ValueError("data_requirements must be an object")
+    if research_preparation:
+        unsupported = set(data_requirements) - {"daily_basic", "fundamentals"}
+        if unsupported:
+            raise ValueError("research preparation only supports daily_basic and fundamentals")
+        field_allowlists = {
+            "daily_basic": set(DAILY_BASIC_FIELDS[2:]),
+            "fundamentals": set(FINANCIAL_INDICATOR_FIELDS[3:-1]),
+        }
+        for dataset, fields in data_requirements.items():
+            if (not isinstance(fields, list) or not fields or len(fields) > 12
+                    or any(not isinstance(field, str) for field in fields)):
+                raise ValueError(f"data_requirements.{dataset} must contain 1 to 12 fields")
+            if any(field not in field_allowlists[dataset] for field in fields):
+                raise ValueError(f"data_requirements.{dataset} contains an unsupported field")
+            data_requirements[dataset] = sorted(set(fields))
+
+    return {
+        "symbols": symbols,
+        "start_date": start_date,
+        "end_date": end_date,
+        "use_case": use_case,
+        "data_requirements": data_requirements,
+    }
+
+
+def _assess_data_readiness(
+    payload: dict[str, Any], *, max_calendar_days: int | None = None,
+    research_preparation: bool = False,
+) -> dict[str, object]:
+    scope = _normalized_data_readiness_scope(
+        payload, max_calendar_days=max_calendar_days,
+        research_preparation=research_preparation,
+    )
+    symbols = list(scope["symbols"])
+    latest = security_master_store.latest_snapshot()
+    if latest is None:
+        raise ValueError("security master must be synchronized before checking readiness")
+    requirement = market_readiness_store.requirement(
+        symbols=symbols, start_date=str(scope["start_date"]), end_date=str(scope["end_date"]),
+        membership_fingerprint=membership_fingerprint(symbols),
+        security_master_snapshot_id=str(latest["snapshot_id"]),
+        data_requirements=dict(scope["data_requirements"]),
+    )
+    assessment = market_readiness_store.assess(requirement)
+    grouped: dict[str, int] = {}
+    public_issues: list[dict[str, object]] = []
+    missing = assessment.get("missing", [])
+    for item in missing if isinstance(missing, list) else []:
+        if not isinstance(item, dict):
+            continue
+        dataset = str(item.get("dataset", "unknown"))
+        grouped[dataset] = grouped.get(dataset, 0) + 1
+        if len(public_issues) < 50:
+            public_issues.append({
+                "symbol": item.get("symbol"), "trade_date": item.get("trade_date"),
+                "label": f"缺少{_READINESS_DATASET_LABELS.get(dataset, '必要数据')}",
+                "impact": "当前范围不能完整用于回测" if scope["use_case"] == "backtest" else "当前范围的研究结论可能不完整",
+                "recommended_action": "前往数据同步补齐该范围",
+            })
+    state = str(assessment.get("state", "missing"))
+    missing_count = int(assessment.get("missing_count") or 0)
+    required_count = int(assessment.get("required_cell_count") or 0)
+    projection = {
+        "schema_version": "data-readiness-product.v1",
+        "verdict": "usable" if state == "ready" else "limited" if state == "partial" else "unavailable",
+        "scope": {
+            "selection_type": "explicit", "symbol_count": len(symbols), "symbols": symbols,
+            "start_date": str(scope["start_date"]), "end_date": str(scope["end_date"]),
+            "use_case": scope["use_case"],
+        },
+        "summary": {
+            "required_sessions": int(assessment.get("required_session_count") or 0),
+            "ready_items": max(0, required_count - missing_count), "missing_items": missing_count,
+            "calendar_complete": bool(assessment.get("calendar_complete")),
+        },
+        "datasets": [{
+            "label": _READINESS_DATASET_LABELS.get(dataset, "必要数据"),
+            "state": "missing", "missing_count": count,
+        } for dataset, count in sorted(grouped.items())],
+        "issues": public_issues,
+        "issues_truncated": missing_count > len(public_issues),
+        "checked_against": "persisted_byq",
+    }
+    return {"scope": scope, "requirement": requirement, "assessment": assessment, "projection": projection}
+
+
+def _research_preparation_ready(assessment: dict[str, object]) -> bool:
+    if assessment.get("state") != "ready":
+        return False
+    if not assessment.get("required_session_count") or not assessment.get("required_cell_count"):
+        raise HTTPException(status_code=422, detail="该范围没有可研究的交易日或证券记录，请调整标的或日期。")
+    return True
+
+
+@app.post("/v1/data-center/research-preparations")
+def create_research_preparation(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Queue one admin-confirmed, bounded research data requirement idempotently."""
+
+    actor, _role = _require_data_admin(request)
+    evidence = _market_research_read(lambda: _assess_data_readiness(
+        payload, max_calendar_days=MAX_PARTITION_CHUNK_DAYS, research_preparation=True,
+    ))
+    assessment = evidence["assessment"]
+    if isinstance(assessment, dict) and _research_preparation_ready(assessment):
+        return {"request_id": None, "status": "ready"}
+
+    requirement = evidence["requirement"]
+    if not isinstance(requirement, dict):
+        raise HTTPException(status_code=503, detail="market data requirement is unavailable")
+    existing = _market_automation_call(lambda: market_automation_store.get_data_repair_by_requirement(
+        str(requirement["requirement_sha256"]),
+    ))
+    if isinstance(existing, dict):
+        return _research_preparation_receipt(existing)
+    if assessment.get("missing_by_dataset", {}).get("security_lifecycle", 0):
+        raise HTTPException(
+            status_code=409,
+            detail="证券目录缺少所选标的的上市状态。请管理员在数据中心的证券目录同步目录，完成后重新确认并提交同一范围。",
+        )
+
+    try:
+        _resolved_tushare_provider()
+    except ProviderCredentialsMissing as error:
+        # A concurrent submit may have created the unique requirement while
+        # this request was resolving credentials. Preserve its receipt.
+        existing = _market_automation_call(lambda: market_automation_store.get_data_repair_by_requirement(
+            str(requirement["requirement_sha256"]),
+        ))
+        if isinstance(existing, dict):
+            return _research_preparation_receipt(existing)
+        raise HTTPException(
+            status_code=409,
+            detail=("当前无法解析唯一有效的 Tushare 数据源（可能未配置、配置不唯一或配置存储不可用）。"
+                    "请管理员在数据中心检查并保存一个有效的数据源后重试。"),
+        ) from error
+
+    record = _market_automation_call(lambda: market_automation_store.request_data_repair(
+        requirement=requirement,
+        requested_by=f"research-preparation:{actor}",
+        retry_terminal=False,
+    ))
+    return _research_preparation_receipt(record)
+
+
+def _research_preparation_receipt(record: dict[str, object]) -> dict[str, object]:
+    request_id = record.get("request_id")
+    status = record.get("status")
+    if not isinstance(request_id, str) or not isinstance(status, str):
+        raise HTTPException(status_code=503, detail="market data preparation receipt is unavailable")
+    result: dict[str, object] = {"request_id": request_id, "status": status}
+    requested_by = str(record.get("requested_by") or "")
+    terminal_revision = data_repair_terminal_revision(record)
+    if terminal_revision is not None and requested_by.startswith("research-preparation:"):
+        result["retry_token"] = terminal_revision
+    error = record.get("error_message")
+    if error is not None:
+        failure_messages = {
+            "session_repair_failed": "目标交易日数据同步失败；检查数据中心同步任务后，可确认范围并重试。",
+            "readiness_not_satisfied": "任务结束后该范围仍有缺项；请复查缺项，再确认是否重新准备。",
+            "readiness_assessment_failed": "数据就绪检查暂时失败；请检查数据服务状态后再重试。",
+        }
+        known = str(error) if str(error) in failure_messages else "preparation_failed"
+        result["failure_reason"] = known
+        result["failure_message"] = failure_messages.get(
+            known, "数据准备任务未完成；请管理员检查数据中心任务详情后再确认重试。",
+        )
+    return result
+
+
+@app.get("/v1/data-center/research-preparations/{request_id}")
+def get_research_preparation(request_id: str, request: Request) -> dict[str, object]:
+    _require_data_admin(request)
+    record = _market_automation_call(lambda: market_automation_store.get_data_repair(request_id))
+    if not str(record.get("requested_by") or "").startswith("research-preparation:"):
+        raise HTTPException(status_code=404, detail="research preparation receipt not found")
+    return _research_preparation_receipt(record)
+
+
+@app.post("/v1/data-center/research-preparations/{request_id}/retry")
+def retry_research_preparation(
+    request_id: str, payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    _require_data_admin(request)
+    if not isinstance(payload, dict) or set(payload) != {"retry_token"}:
+        raise HTTPException(status_code=422, detail="retry request must contain only retry_token")
+    retry_token = payload.get("retry_token")
+    if not isinstance(retry_token, str) or not re.fullmatch(r"[0-9a-f]{64}", retry_token):
+        raise HTTPException(status_code=422, detail="retry_token is invalid")
+
+    record = _market_automation_call(lambda: market_automation_store.get_data_repair(request_id))
+    if not str(record.get("requested_by") or "").startswith("research-preparation:"):
+        raise HTTPException(status_code=404, detail="research preparation receipt not found")
+    current_revision = data_repair_terminal_revision(record)
+    if current_revision is None or not secrets.compare_digest(current_revision, retry_token):
+        raise HTTPException(status_code=409, detail="准备任务状态已变化，请刷新当前状态后再操作。")
+    requirement = record.get("requirement_json")
+    if not isinstance(requirement, dict):
+        raise HTTPException(status_code=503, detail="market data requirement is unavailable")
+    try:
+        assessment = market_readiness_store.assess(requirement)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail="该任务范围无法复核，请重新检查范围后再准备。") from error
+    except MarketReadinessPersistenceError as error:
+        raise HTTPException(status_code=503, detail="market research data is unavailable") from error
+    if _research_preparation_ready(assessment):
+        return {"request_id": None, "status": "ready"}
+
+    try:
+        _resolved_tushare_provider()
+    except ProviderCredentialsMissing as error:
+        raise HTTPException(
+            status_code=409,
+            detail=("当前无法解析唯一有效的 Tushare 数据源（可能未配置、配置不唯一或配置存储不可用）。"
+                    "请管理员在数据中心检查并保存一个有效的数据源后再重试。"),
+        ) from error
+
+    retried = _market_automation_call(lambda: market_automation_store.retry_data_repair_if_terminal(
+        request_id, terminal_revision=retry_token,
+    ))
+    return _research_preparation_receipt(retried)
 
 
 @app.post("/v1/data-sync/security-master/jobs", status_code=201)
@@ -3647,6 +3849,7 @@ def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
     raw_pools = paper_store.list_pools(
         trusted_owner=context["owner_principal"], limit=100, offset=0
     )["pools"]
+    raw_pools = [pool for pool in raw_pools if pool.get("workspace_id") == context["workspace_id"]]
     return {
         "tasks": [
             {key: task.get(key) for key in ("task_id", "title", "status", "created_at")}
@@ -3661,10 +3864,191 @@ def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
     }
 
 
+def _unavailable_ml_recommendation(
+    *, horizon_sessions: int, reason: str, window_start: str | None = None,
+    window_end: str | None = None, continuous_history_verified: bool = False,
+) -> dict[str, object]:
+    return {
+        "recommendation": {
+            "state": "unavailable", "reason": reason, "mode": "compatible",
+            "horizon_sessions": horizon_sessions, "counts": None,
+            "window_start": window_start, "window_end": window_end,
+            "continuous_history_verified": continuous_history_verified,
+            "minimum_samples_verified": False, "training_quality_verified": False,
+        },
+        "recommended_dates": None,
+    }
+
+
+def _recommend_ml_pool_dates(
+    *, pool: dict[str, object], snapshot: dict[str, object], reference: dict[str, object],
+    horizon_sessions: int,
+) -> dict[str, object]:
+    if reference.get("state") != "observed_bounds":
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="no_common_history",
+        )
+    members = snapshot.get("members")
+    if not isinstance(members, list):
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="no_common_history",
+        )
+    symbols = sorted(str(item.get("symbol", "")).strip().upper()
+                     for item in members if isinstance(item, dict))
+    symbols = [symbol for symbol in symbols if symbol]
+    if (
+        not symbols or len(symbols) != len(members)
+        or len(symbols) != int(reference.get("member_count") or 0)
+    ):
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="no_common_history",
+        )
+    max_sessions = MAX_REQUIRED_CELLS // len(symbols)
+    minimum_sessions = (
+        20 + horizon_sessions + (20 + len(symbols) - 1) // len(symbols)
+        + horizon_sessions + (5 + len(symbols) - 1) // len(symbols) + 1
+    )
+    if max_sessions < minimum_sessions:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="inspection_limit",
+        )
+
+    try:
+        first_observed = datetime.strptime(str(reference["observed_start_date"]), "%Y%m%d")
+        last_observed = datetime.strptime(str(reference["observed_end_date"]), "%Y%m%d")
+        if (last_observed - first_observed).days > 400:
+            return _unavailable_ml_recommendation(
+                horizon_sessions=horizon_sessions, reason="inspection_limit",
+                window_start=first_observed.strftime("%Y%m%d"),
+                window_end=last_observed.strftime("%Y%m%d"),
+            )
+        available_sessions = market_data_store.list_open_trading_sessions(
+            first_observed.strftime("%Y%m%d"), last_observed.strftime("%Y%m%d"),
+        )
+    except (KeyError, TypeError, ValueError):
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+        )
+    if not available_sessions:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+        )
+    window_start = first_observed.strftime("%Y%m%d")
+    window_end = last_observed.strftime("%Y%m%d")
+    if len(available_sessions) > max_sessions or len(symbols) * len(available_sessions) > MAX_REQUIRED_CELLS:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="inspection_limit",
+            window_start=window_start, window_end=window_end,
+        )
+
+    master = security_master_store.latest_snapshot()
+    if master is None:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="data_not_ready",
+            window_start=window_start, window_end=window_end,
+        )
+    try:
+        declared, _membership_mode = _ml_pool_market_scope(pool, snapshot)
+        requirement = market_readiness_store.requirement(
+            symbols=symbols, start_date=window_start, end_date=window_end,
+            membership_fingerprint=str(snapshot["membership_fingerprint"]),
+            security_master_snapshot_id=str(master["snapshot_id"]),
+            data_requirements=declared,
+        )
+        readiness = market_readiness_store.assess(requirement)
+    except ValueError as error:
+        reason = "inspection_limit" if "50000 symbol-session cells" in str(error) else "data_not_ready"
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason=reason,
+            window_start=window_start, window_end=window_end,
+        )
+    if readiness.get("calendar_complete") is not True:
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+            window_start=window_start, window_end=window_end,
+        )
+    if readiness.get("state") != "ready":
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="data_not_ready",
+            window_start=window_start, window_end=window_end,
+        )
+    try:
+        ready_input = market_readiness_store.build_ready_input(requirement)
+    except ValueError as error:
+        reason = "inspection_limit" if "bounded row limit" in str(error) else "data_not_ready"
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason=reason,
+            window_start=window_start, window_end=window_end,
+        )
+    return recommend_compatible_training_dates(
+        sessions=available_sessions, symbols=symbols, ready_input=ready_input,
+        readiness=readiness, horizon_sessions=horizon_sessions,
+    )
+
+
+def _ml_pool_date_reference(
+    pool_id: str, context: dict[str, str], *, horizon_sessions: int = 5,
+) -> dict[str, object]:
+    pool = paper_store.get_pool(pool_id, trusted_owner=context["owner_principal"], include_members=False)
+    if pool.get("status") == "deleted" or pool.get("workspace_id") != context["workspace_id"]:
+        raise PaperTradingNotFound("stock pool not found")
+    snapshot_id = pool.get("current_snapshot_id")
+    if pool.get("status") != "active" or not snapshot_id:
+        return {
+            "pool_id": pool["pool_id"], "stock_pool_snapshot_id": snapshot_id,
+            "state": "inactive_pool" if pool.get("status") != "active" else "no_snapshot",
+            "member_count": 0, "members_with_data": 0, "minimum_rows_per_member": 0,
+            "observed_start_date": None, "observed_end_date": None,
+            "reference_only": True, "continuous_history_verified": False,
+            "training_readiness_verified": False, "recommended_dates": None,
+        }
+    snapshot = paper_store.get_pool_snapshot(
+        snapshot_id, trusted_owner=context["owner_principal"], include_members=True,
+    )
+    if snapshot.get("pool_id") != pool["pool_id"]:
+        raise PaperTradingConflict("stock-pool current snapshot is inconsistent")
+    reference = {
+        "pool_id": pool["pool_id"],
+        **market_data_store.pool_daily_date_reference(
+            str(snapshot_id), trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        ),
+    }
+    recommendation = _recommend_ml_pool_dates(
+        pool=pool, snapshot=snapshot, reference=reference,
+        horizon_sessions=horizon_sessions,
+    )
+    current = paper_store.get_pool(
+        pool_id, trusted_owner=context["owner_principal"], include_members=False,
+    )
+    if (
+        current.get("status") != "active"
+        or current.get("workspace_id") != context["workspace_id"]
+        or current.get("current_snapshot_id") != snapshot_id
+    ):
+        raise PaperTradingConflict("stock-pool current snapshot changed during recommendation")
+    reference.update(recommendation)
+    return reference
+
+
 @app.get("/v1/research/ml/options")
-def get_ml_options(request: Request) -> dict[str, object]:
+def get_ml_options(
+    request: Request, pool_id: str | None = None,
+    horizon_sessions: int = Query(default=5, ge=1, le=20),
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
+    result = {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
+    if pool_id is not None:
+        try:
+            result["selected_pool_data_reference"] = _paper_call(
+                lambda: _ml_pool_date_reference(
+                    pool_id, context, horizon_sessions=horizon_sessions,
+                )
+            )
+        except (MarketDataPersistenceError, MarketReadinessPersistenceError,
+                SecurityMasterPersistenceError):
+            raise HTTPException(status_code=503, detail="market research data is unavailable")
+    return result
 
 
 @app.get("/v1/research/ml/studies")

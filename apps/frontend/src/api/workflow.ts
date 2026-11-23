@@ -118,6 +118,9 @@ export function workflowWaiting(events: WorkflowTraceEvent[], sessionId: string)
 }
 
 const FAILURE_MESSAGES: Record<string, string> = {
+  "model-service-unavailable": "模型服务暂时不可用，本轮未能完成回答。对话已保留，系统不会自动重发；请稍后重新发送。已提交的业务任务请先核对状态。",
+  "model-service-rate-limited": "模型服务当前请求过多或额度不足，本轮未能完成回答。系统不会自动重发；请稍后再试，持续出现时请检查模型服务额度。已提交的业务任务请先核对状态。",
+  "model-service-auth-failed": "模型服务验证未通过，本轮未能完成回答。请在模型设置中检查凭据和访问权限；系统不会自动重发。",
   "model-request-rejected": "模型服务拒绝了本轮请求，系统不会自动重试。请联系管理员检查模型接入配置；对话内容已保留。",
   "domain-correction-stopped": "本轮策略校验已停止，系统不会继续重复调用。请核对当前方案和已有结果后，再发起新的请求。",
   "domain-call-reference-unproven": "本轮调用缺少可核验的任务关联，系统已停止执行且不会自动重试。请确认研究对象后，再发起新的请求。",
@@ -151,6 +154,7 @@ export function workflowOutcomes(events: WorkflowTraceEvent[], sessionId: string
       key: `${event.session_id}:${event.sequence}`,
       sequence: event.sequence,
       timestamp: event.timestamp,
+      diagnosticId: `${event.trace_id}:${event.sequence}`,
       message,
       laterTurnStarted: latestStart > event.sequence,
     }];

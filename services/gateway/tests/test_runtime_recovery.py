@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -675,6 +677,127 @@ def test_cached_product_session_from_old_boot_forces_recovery(monkeypatch) -> No
     assert main._product_session(None, CONVERSATION_ID) is replacement
     assert calls == [((CONVERSATION_ID, PRINCIPAL, WORKSPACE_ID), {"force_recovery": True})]
     assert registry.find_owned(CONVERSATION_ID, PRINCIPAL) is None
+
+
+def test_concurrent_product_session_miss_restores_once(monkeypatch) -> None:
+    registry = main.ProductSessionRegistry()
+    monkeypatch.setattr(main, "product_sessions", registry)
+    identity_calls = 0
+    identity_lock = threading.Lock()
+    second_identity_ready = threading.Event()
+    restore_started = threading.Event()
+    second_restore_started = threading.Event()
+    release_restore = threading.Event()
+    restore_count = 0
+
+    def identity(_request):
+        nonlocal identity_calls
+        with identity_lock:
+            identity_calls += 1
+            if identity_calls == 2:
+                second_identity_ready.set()
+        return PRINCIPAL, WORKSPACE_ID
+
+    def restore(conversation_id, principal, workspace_id, **_kwargs):
+        nonlocal restore_count
+        restore_count += 1
+        if restore_count == 2:
+            second_restore_started.set()
+        if restore_count == 1:
+            restore_started.set()
+            assert release_restore.wait(2)
+        session = main.ProductSession(
+            conversation_id, SESSION_ID, TRACE_ID, principal,
+            workspace_id=workspace_id, boot_id=NEW_BOOT_ID,
+        )
+        try:
+            registry.add(session)
+        except RuntimeError:
+            return registry.get_owned(conversation_id, principal)
+        return session
+
+    monkeypatch.setattr(main, "_trusted_request_identity", identity)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": NEW_BOOT_ID})
+    monkeypatch.setattr(main, "_restore_product_session", restore)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(main._product_session, None, CONVERSATION_ID)
+        assert restore_started.wait(1)
+        second = pool.submit(main._product_session, None, CONVERSATION_ID)
+        assert second_identity_ready.wait(1)
+        try:
+            assert not second_restore_started.wait(0.1)
+        finally:
+            release_restore.set()
+        first_session = first.result(timeout=2)
+        second_session = second.result(timeout=2)
+
+    assert restore_count == 1
+    assert first_session is second_session is registry.find_owned(CONVERSATION_ID, PRINCIPAL)
+    assert registry._restore_gates == {}
+
+
+def test_product_session_restore_gates_do_not_block_other_conversations(monkeypatch) -> None:
+    registry = main.ProductSessionRegistry()
+    monkeypatch.setattr(main, "product_sessions", registry)
+    monkeypatch.setattr(main, "_trusted_request_identity", lambda _request: (PRINCIPAL, WORKSPACE_ID))
+    slow_started = threading.Event()
+    release_slow = threading.Event()
+
+    def restore(conversation_id, principal, workspace_id, **_kwargs):
+        if conversation_id == "conversation-slow":
+            slow_started.set()
+            assert release_slow.wait(2)
+        session = main.ProductSession(
+            conversation_id, f"runtime-{conversation_id}", f"trace-{conversation_id}", principal,
+            workspace_id=workspace_id, boot_id=NEW_BOOT_ID,
+        )
+        registry.add(session)
+        return session
+
+    monkeypatch.setattr(main, "_restore_product_session", restore)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        slow = pool.submit(main._product_session, None, "conversation-slow")
+        assert slow_started.wait(1)
+        fast = pool.submit(main._product_session, None, "conversation-fast")
+        try:
+            fast_session = fast.result(timeout=1)
+        finally:
+            release_slow.set()
+        slow_session = slow.result(timeout=2)
+
+    assert slow_session.conversation_id == "conversation-slow"
+    assert fast_session.conversation_id == "conversation-fast"
+    assert registry._restore_gates == {}
+
+
+def test_product_session_restore_gate_is_removed_after_error_and_allows_retry(monkeypatch) -> None:
+    registry = main.ProductSessionRegistry()
+    monkeypatch.setattr(main, "product_sessions", registry)
+    monkeypatch.setattr(main, "_trusted_request_identity", lambda _request: (PRINCIPAL, WORKSPACE_ID))
+    calls = 0
+
+    def restore(conversation_id, principal, workspace_id, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("bounded restore failure")
+        session = main.ProductSession(
+            conversation_id, SESSION_ID, TRACE_ID, principal,
+            workspace_id=workspace_id, boot_id=NEW_BOOT_ID,
+        )
+        registry.add(session)
+        return session
+
+    monkeypatch.setattr(main, "_restore_product_session", restore)
+    with pytest.raises(RuntimeError, match="bounded restore failure"):
+        main._product_session(None, CONVERSATION_ID)
+    assert registry._restore_gates == {}
+
+    restored = main._product_session(None, CONVERSATION_ID)
+    assert restored is registry.find_owned(CONVERSATION_ID, PRINCIPAL)
+    assert calls == 2
+    assert registry._restore_gates == {}
 
 
 def test_public_resume_does_not_send_byq_history_to_native_acp_resume(monkeypatch) -> None:

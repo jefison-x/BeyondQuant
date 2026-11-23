@@ -700,3 +700,39 @@ def test_index_daily_basic_rejects_provider_rows_outside_the_contract() -> None:
         instance_with([index_daily_basic_row(trade_date="20240110")]).fetch_index_daily_basic(
             IndexDailyBasicRequest(ts_code="000300.SH", start_date="20240101", end_date="20240105")
         )
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_financial_revisions_select_explicit_revised_row_without_merging_announcements(reverse):
+    from app.data_provider import FINANCIAL_INDICATOR_FIELDS
+    original = ["000001.SZ", "20260829", "20260630", 1.0, 5.0, 1.1, None, 40.0, 2.0, 3.0, "0"]
+    revised = [*original[:3], 1.1, 5.1, 1.1, None, 40.0, 2.1, 3.1, "1"]
+    earlier = [*original[:1], "20260820", *original[2:]]
+    rows = [original, revised, earlier]
+    if reverse:
+        rows.reverse()
+    result = provider(FakeTransport([TransportResponse(
+        200, envelope(rows, fields=list(FINANCIAL_INDICATOR_FIELDS)),
+    )])).fetch_financial_indicators("000001.SZ", "20260101", "20261113")
+    assert len(result.rows) == 2
+    assert result.rows[-1].announcement_date == "20260829"
+    assert result.rows[-1].values["eps"] == 1.1
+    assert result.rows[-1].update_flag == "1"
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    assert result.rows[-1].revision_observed_date == datetime.fromisoformat(
+        result.provenance.retrieved_at,
+    ).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
+    assert result.rows[0].revision_observed_date is None
+    assert result.rows[0].announcement_date == "20260820"
+    assert result.provenance.row_count == 3
+
+
+@pytest.mark.parametrize("flags", [("0", "0"), ("1", "1"), ("1", None), ("1", "2")])
+def test_financial_revisions_reject_ambiguous_or_unmarked_versions(flags):
+    from app.data_provider import FINANCIAL_INDICATOR_FIELDS
+    rows = [["000001.SZ", "20260829", "20260630", 1.0, 5.0, 1.1, None, 40.0, 2.0, 3.0, flag]
+            for flag in flags]
+    with pytest.raises(ProviderProtocolError, match="ambiguous financial-indicator revisions"):
+        provider(FakeTransport([TransportResponse(
+            200, envelope(rows, fields=list(FINANCIAL_INDICATOR_FIELDS)),
+        )])).fetch_financial_indicators("000001.SZ", "20260101", "20261113")

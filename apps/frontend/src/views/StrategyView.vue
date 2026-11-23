@@ -38,6 +38,7 @@ const tasks = ref<Array<Record<string, unknown>>>([]);
 const approval = ref<Record<string, unknown> | null>(null);
 const approvalArtifactId = ref("");
 const selected = ref<Record<string, unknown> | null>(null);
+const editorOpen = ref(false);
 const detail = ref<Record<string, unknown> | null>(null);
 const taskId = ref("");
 const filter = ref<"all" | "draft" | "version">("all");
@@ -98,21 +99,56 @@ const { confirmDiscard } = useUnsavedChanges(editorDirty);
 const STRATEGY_TEMPLATES = [
   {
     id: "momentum",
-    label: "动量轮动模板",
+    label: "动量轮动代码骨架（需实现）",
     script:
       "class CustomStrategy:\n" +
-      '    """Momentum rotation skeleton. Signals: 1 buy, 0 hold, -1 sell."""\n' +
+      '    """代码骨架：请先补充指标和买卖规则；当前返回空结果，不会产生交易信号。"""\n' +
       "    def generate_signals(self, data, parameters=None):\n" +
       "        return {}\n",
+    parameters: {},
+    parameterSchema: {},
   },
   {
     id: "ma_cross",
-    label: "均线交叉模板",
+    label: "5/20 日均线交叉示例",
     script:
       "class CustomStrategy:\n" +
-      '    """Moving-average cross skeleton. Replace with a real indicator."""\n' +
+      '    """5/20 日均线交叉示例：上穿为 1，下穿为 -1，其余为 0。前 20 个交易日不发信号。\n' +
+      '    只使用当日及历史收盘价，不读取未来数据；这是规则演示，不代表或保证收益。"""\n' +
       "    def generate_signals(self, data, parameters=None):\n" +
-      "        return {}\n",
+      "        parameters = parameters or {}\n" +
+      "        short_window = parameters.get('short_window', 5)\n" +
+      "        long_window = parameters.get('long_window', 20)\n" +
+      "        if (not isinstance(short_window, int) or isinstance(short_window, bool) or\n" +
+      "                not isinstance(long_window, int) or isinstance(long_window, bool) or\n" +
+      "                short_window <= 0 or long_window <= short_window):\n" +
+      "            raise ValueError('long_window 必须大于 short_window，且窗口须为正数')\n" +
+      "        signals = {}\n" +
+      "        symbols = data.index.get_level_values('symbol').unique()\n" +
+      "        for symbol in symbols:\n" +
+      "            bars = data.xs(symbol, level='symbol')\n" +
+      "            close = bars['close'].astype(float)\n" +
+      "            short_avg = close.rolling(short_window, min_periods=short_window).mean()\n" +
+      "            long_avg = close.rolling(long_window, min_periods=long_window).mean()\n" +
+      "            previous_short = short_avg.shift(1)\n" +
+      "            previous_long = long_avg.shift(1)\n" +
+      "            crosses_up = (short_avg > long_avg) & (previous_short <= previous_long)\n" +
+      "            crosses_down = (short_avg < long_avg) & (previous_short >= previous_long)\n" +
+      "            signal = pd.Series(0, index=bars.index, dtype=int)\n" +
+      "            signal.loc[crosses_up.fillna(False)] = 1\n" +
+      "            signal.loc[crosses_down.fillna(False)] = -1\n" +
+      "            signals[str(symbol)] = signal\n" +
+      "        return signals\n",
+    parameters: { short_window: 5, long_window: 20 },
+    parameterSchema: {
+      type: "object",
+      properties: {
+        short_window: { type: "integer", minimum: 1, maximum: 60, default: 5, description: "短期均线窗口" },
+        long_window: { type: "integer", minimum: 2, maximum: 250, default: 20, description: "长期均线窗口，须大于短期窗口" },
+      },
+      required: ["short_window", "long_window"],
+      additionalProperties: false,
+    },
   },
 ];
 
@@ -274,6 +310,7 @@ async function newDraft() {
   historyPage.value = 1;
   historyTotal.value = 0;
   selected.value = null;
+  editorOpen.value = true;
   detail.value = null;
   lifecycle.value = "active";
   filter.value = "draft";
@@ -360,6 +397,7 @@ async function changeLifecycle(value: "active" | "superseded") {
   lifecycle.value = value;
   page.value = 1;
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -374,6 +412,7 @@ async function changePage(value: number) {
   if (busy.value === "backtest") busy.value = "";
   page.value = value;
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -392,6 +431,7 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
   const targetId = String(row.artifact_id ?? "");
   if (!targetId) return;
   selected.value = row;
+  editorOpen.value = row.kind === "strategy_draft";
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -488,6 +528,7 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
   const id = String(row.artifact_id ?? "");
   if (!id) return;
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -497,6 +538,7 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
     if (selection !== selectionGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value) return;
     if (entity.artifact_id !== id) throw new Error("精确版本回包的 Artifact ID 不一致。");
     selected.value = entity;
+    editorOpen.value = entity.kind === "strategy_draft";
     detail.value = entity;
     const approvalBody = entity.kind === "strategy_version"
       ? await getStrategyVersionApproval(id, token)
@@ -583,6 +625,8 @@ function insertTemplate() {
   const template = STRATEGY_TEMPLATES.find((item) => item.id === templateId.value);
   if (template) {
     script.value = template.script;
+    parametersJson.value = JSON.stringify(template.parameters, null, 2);
+    parameterSchemaJson.value = JSON.stringify(template.parameterSchema, null, 2);
   }
 }
 
@@ -612,10 +656,17 @@ async function validateDraft() {
       auth.token,
     );
     detail.value = result as Record<string, unknown>;
-    lastDraftId.value = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    const validatedArtifactId = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
+    lastDraftId.value = validatedArtifactId;
     syncEditorBaseline();
     ElMessage.success("草稿验证通过，已保存为策略草稿");
+    lifecycle.value = "active";
+    filter.value = "draft";
+    page.value = 1;
     await loadList();
+    const validatedArtifact = artifacts.value.find((item) => String(item.artifact_id) === validatedArtifactId)
+      ?? (result as { artifact?: Record<string, unknown> }).artifact;
+    if (validatedArtifact) await select(validatedArtifact);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "验证失败";
     ElMessage.error(error.value);
@@ -646,8 +697,15 @@ async function createVersion() {
       auth.token,
     );
     detail.value = result as Record<string, unknown>;
+    const versionArtifactId = String((result as { artifact?: { artifact_id?: string } }).artifact?.artifact_id ?? "");
     ElMessage.success("已创建不可变策略版本");
+    lifecycle.value = "active";
+    filter.value = "version";
+    page.value = 1;
     await loadList();
+    const versionArtifact = artifacts.value.find((item) => String(item.artifact_id) === versionArtifactId)
+      ?? (result as { artifact?: Record<string, unknown> }).artifact;
+    if (versionArtifact) await select(versionArtifact);
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "创建版本失败";
     ElMessage.error(error.value);
@@ -673,6 +731,13 @@ async function exportVersion() {
 function returnToConversation() {
   const session = typeof route.query.session === "string" ? route.query.session : "";
   void router.push({ path: "/agent", query: session ? { session } : {} });
+}
+
+function discussStrategyIdea() {
+  void router.push({ path: "/agent", query: {
+    new: createRequestId(),
+    draft: "我想验证一个投资想法：\n\n请先帮我明确选股范围、买卖规则、数据日期与费用假设，指出缺少的信息。先讨论方案，确认后再创建策略或运行回测。",
+  } });
 }
 
 async function refreshList() {
@@ -722,6 +787,7 @@ watch(authScope, () => {
   total.value = 0;
   search.value = "";
   selected.value = null;
+  editorOpen.value = false;
   detail.value = null;
   approval.value = null;
   approvalArtifactId.value = "";
@@ -769,18 +835,19 @@ onUnmounted(() => {
     <AppStateBlock :loading="loading" :error="!selected ? error : ''" @retry="loadList">
       <ManagementWorkspace
         eyebrow="核心研究资产"
-        title="策略目录与版本谱系"
-        description="从可编辑草稿推进到不可变版本、人工审批、信号快照与回测。"
+        title="策略管理"
+        description="推荐先描述投资想法：只会打开一条可编辑的对话草稿，不会自动发送、创建策略或申请审批。确认方案后，再手工验证并保存草稿、创建版本和单独申请批准。"
         catalog-label="策略资产"
         :count="total"
         @return="returnToConversation"
       >
       <template #return>返回投研对话</template>
       <template #actions>
-        <el-button type="primary" @click="newDraft">新建策略</el-button>
+        <el-button type="primary" @click="discussStrategyIdea">先描述投资想法</el-button>
+        <el-button @click="newDraft">手工新建策略</el-button>
         <el-button @click="refreshList">刷新目录</el-button>
       </template>
-      <template #summary>审批只授权精确的不可变版本</template>
+      <template #summary>讨论、保存、创建版本和审批是不同步骤</template>
       <template #catalog>
       <el-card shadow="never" class="strategy-list-pane">
         <template #header>
@@ -804,7 +871,14 @@ onUnmounted(() => {
             <el-radio-button value="version">版本</el-radio-button>
           </el-radio-group>
         </div>
-        <el-empty v-if="!filteredArtifacts.length" description="暂无策略" />
+        <div v-if="!filteredArtifacts.length" class="strategy-empty-state">
+          <h3>还没有可显示的策略</h3>
+          <p>可以先描述想法并在对话中补齐规则；这只会生成待你检查的消息草稿，不会创建或批准策略。也可以直接手工新建。</p>
+          <div class="empty-state-actions">
+            <el-button type="primary" @click="discussStrategyIdea">先描述投资想法</el-button>
+            <el-button @click="newDraft">手工新建策略</el-button>
+          </div>
+        </div>
         <el-table
           v-else
           class="desktop-catalog-table"
@@ -850,12 +924,12 @@ onUnmounted(() => {
 
       <template #detail>
       <div class="strategy-detail-column">
-        <el-card v-if="!isReadonly" shadow="never" class="strategy-editor-pane">
+        <el-card v-if="editorOpen && !isReadonly" shadow="never" class="strategy-editor-pane">
           <template #header>
             <div class="panel-heading">
               <div>
-                <div class="panel-title">策略编辑器</div>
-                <div class="panel-sub">{{ isReadonly ? "版本只读" : "草稿可编辑" }}</div>
+                <div class="panel-title">手工策略编辑器</div>
+                <div class="panel-sub">讨论草稿不会自动成为策略；保存草稿、创建版本和审批均需分别操作。</div>
               </div>
               <div class="editor-actions">
                 <div class="template-field">
@@ -892,53 +966,57 @@ onUnmounted(() => {
             <el-form-item label="策略说明">
               <el-input v-model="description" aria-label="策略说明" placeholder="说明策略目标、适用市场和主要假设" :disabled="isReadonly" />
             </el-form-item>
-            <div class="strategy-meta-grid">
-              <el-form-item label="参数默认值（JSON）">
-                <el-input
-                  v-model="parametersJson"
-                  aria-label="参数默认值（JSON）"
-                  type="textarea"
-                  :rows="4"
-                  :disabled="isReadonly"
-                  spellcheck="false"
-                  placeholder="例如 {&quot;lookback&quot;: 20}"
-                />
-              </el-form-item>
-              <el-form-item label="参数规范（JSON Schema）">
-                <el-input
-                  v-model="parameterSchemaJson"
-                  aria-label="参数规范（JSON Schema）"
-                  type="textarea"
-                  :rows="4"
-                  :disabled="isReadonly"
-                  spellcheck="false"
-                  placeholder="声明参数类型、范围与必填项"
-                />
-              </el-form-item>
-            </div>
-            <el-form-item label="数据依赖（JSON）">
-              <el-input
-                v-model="dataRequirementsJson"
-                aria-label="数据依赖（JSON）"
-                type="textarea"
-                :rows="4"
-                :disabled="isReadonly"
-                spellcheck="false"
-                placeholder='例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
-              />
-              <div class="field-hint">新策略默认使用沪深300（000300.SH）作为回测对比基准；如需其他基准，请在版本冻结前修改。</div>
-            </el-form-item>
-            <el-form-item label="Python 策略脚本">
-              <el-input
-                v-model="script"
-                aria-label="Python 策略脚本"
-                type="textarea"
-                :rows="14"
-                :disabled="isReadonly"
-                spellcheck="false"
-                placeholder="定义 CustomStrategy 并实现 generate_signals"
-              />
-            </el-form-item>
+            <el-collapse class="strategy-advanced-settings">
+              <el-collapse-item title="高级设置：参数、数据依赖与 Python 代码" name="advanced">
+                <div class="strategy-meta-grid">
+                  <el-form-item label="参数默认值（JSON）">
+                    <el-input
+                      v-model="parametersJson"
+                      aria-label="参数默认值（JSON）"
+                      type="textarea"
+                      :rows="4"
+                      :disabled="isReadonly"
+                      spellcheck="false"
+                      placeholder="例如 {&quot;lookback&quot;: 20}"
+                    />
+                  </el-form-item>
+                  <el-form-item label="参数规范（JSON Schema）">
+                    <el-input
+                      v-model="parameterSchemaJson"
+                      aria-label="参数规范（JSON Schema）"
+                      type="textarea"
+                      :rows="4"
+                      :disabled="isReadonly"
+                      spellcheck="false"
+                      placeholder="声明参数类型、范围与必填项"
+                    />
+                  </el-form-item>
+                </div>
+                <el-form-item label="数据依赖（JSON）">
+                  <el-input
+                    v-model="dataRequirementsJson"
+                    aria-label="数据依赖（JSON）"
+                    type="textarea"
+                    :rows="4"
+                    :disabled="isReadonly"
+                    spellcheck="false"
+                    placeholder='例如 {"benchmark":"000300.SH","daily_basic":["pe_ttm","pb"]}'
+                  />
+                  <div class="field-hint">新策略默认使用沪深300（000300.SH）作为回测对比基准；如需其他基准，请在版本冻结前修改。</div>
+                </el-form-item>
+                <el-form-item label="Python 策略脚本">
+                  <el-input
+                    v-model="script"
+                    aria-label="Python 策略脚本"
+                    type="textarea"
+                    :rows="14"
+                    :disabled="isReadonly"
+                    spellcheck="false"
+                    placeholder="定义 CustomStrategy 并实现 generate_signals"
+                  />
+                </el-form-item>
+              </el-collapse-item>
+            </el-collapse>
           </el-form>
           <div class="editor-actions">
             <el-button type="primary" :loading="busy === 'validate'" :disabled="isReadonly" @click="validateDraft">
@@ -1019,6 +1097,10 @@ onUnmounted(() => {
 .template-field { min-width: min(230px, 100%); }
 .strategy-editor-form { margin-top: 0.75rem; }
 .strategy-editor-form :deep(.el-form-item) { margin-bottom: 0.8rem; }
+.strategy-empty-state { display: grid; gap: 0.6rem; padding: 1rem; }
+.strategy-empty-state h3 { font-size: 15px; margin: 0; }
+.strategy-empty-state p { color: var(--byq-text-muted); font-size: 12px; line-height: 1.55; margin: 0; }
+.empty-state-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 .strategy-detail-column {
   display: grid;

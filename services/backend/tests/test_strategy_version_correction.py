@@ -81,6 +81,9 @@ def test_version_schema_repair_commits_original_receipt_and_survives_restart(obs
 
 def test_version_repairs_are_atomic_and_do_not_share_other_action_evidence(observed):
     from concurrent.futures import ThreadPoolExecutor
+    from contextlib import ExitStack, closing
+    from threading import Barrier
+
     from app.domain_call_admission import DomainValidationRejected
     from app.agent_research import AgentConflict
     store, event, scope, _ = observed
@@ -110,14 +113,17 @@ def test_version_repairs_are_atomic_and_do_not_share_other_action_evidence(obser
                for index in range(2)]
     for index, repair in enumerate(repairs):
         prove(action, repair, 4 + index)
-    def claim(payload):
-        local = AgentResearchStore()
-        try:
-            return local.claim_domain_call(action, payload, **context)
-        finally:
-            local.close()
-    with ThreadPoolExecutor(2) as executor:
-        outcomes = list(executor.map(claim, repairs))
+    ready = Barrier(len(repairs))
+
+    def claim(local, payload):
+        ready.wait(timeout=10)
+        return local.claim_domain_call(action, payload, **context)
+
+    # Finish schema setup before racing claims on independent stores.
+    with ExitStack() as stack:
+        stores = [stack.enter_context(closing(AgentResearchStore())) for _ in repairs]
+        with ThreadPoolExecutor(len(stores)) as executor:
+            outcomes = list(executor.map(claim, stores, repairs))
     assert sorted(result["state"] for result in outcomes) == ["blocked", "claimed"]
     winner_index = next(index for index, result in enumerate(outcomes) if result["state"] == "claimed")
     winner = repairs[winner_index]

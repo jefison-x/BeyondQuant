@@ -906,6 +906,38 @@ def test_concurrent_repair_requests_share_identity_and_do_not_restart_terminal_w
             store.close()
 
 
+def test_research_preparation_terminal_retry_is_single_use() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from app.market_automation import MarketAutomationConflict, data_repair_terminal_revision
+
+    store = MarketAutomationStore()
+    try:
+        requirement = {"requirement_sha256": "c" * 64, "start_date": "20260824", "end_date": "20260824"}
+        repair = store.request_data_repair(requirement=requirement, requested_by="research-preparation:test")
+        request_id = repair["request_id"]
+        store.complete_data_repair(request_id, error="session_repair_failed")
+        first = data_repair_terminal_revision(store.get_data_repair(request_id))
+        barrier = Barrier(2)
+
+        def retry():
+            barrier.wait(timeout=5)
+            try:
+                return store.retry_data_repair_if_terminal(request_id, terminal_revision=first)["status"]
+            except MarketAutomationConflict:
+                return "stale"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(retry) for _ in range(2)]
+            assert sorted(f.result(timeout=10) for f in futures) == ["queued", "stale"]
+        store.complete_data_repair(request_id, error="session_repair_failed")
+        assert data_repair_terminal_revision(store.get_data_repair(request_id)) != first
+        with pytest.raises(MarketAutomationConflict):
+            store.retry_data_repair_if_terminal(request_id, terminal_revision=first)
+    finally:
+        store.close()
+
+
 def test_bad_waiting_repair_does_not_block_following_reconciliation() -> None:
     automation = MarketAutomationStore()
     repairs = []

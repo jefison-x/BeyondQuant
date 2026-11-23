@@ -111,7 +111,7 @@ from .compat import (
     ACP_COMPATIBILITY_FAMILY, RuntimeCompatibility, RuntimeObservation,
     compatibility_for_release,
 )
-from .compat.dsh_acp import AcpTransportError
+from .compat.dsh_acp import AcpRpcError, AcpTransportError
 from .identifiers import contained_session_path, validate_identifier
 from .continuation_budget import (
     CONTINUATION_MAX_OUTPUT_TOKENS,
@@ -181,6 +181,30 @@ def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _reject_json_constant(_value: str) -> None:
     raise ValueError("non-finite JSON number")
 
+
+
+def _adr0117_original_terminal_cursor(binding, receipt, initial_sequence, trace_tail) -> bool:
+    """One accepted closed-before-ACK gap; no general trace-cursor relaxation."""
+    if (type(initial_sequence) is not int or type(trace_tail) is not int
+            or initial_sequence != 38 or trace_tail != 38
+            or not isinstance(binding, dict)
+            or binding.get("process_exit_confirmed") is not True):
+        return False
+    original = {**binding, "process_exit_confirmed": False}
+    # Exact V1 binding captured before stopping the original Runner. This also
+    # excludes a recovery boundary, a settlement receipt, or any changed scope.
+    try:
+        raw = json.dumps(original, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True, allow_nan=False).encode("ascii")
+    except (TypeError, ValueError, UnicodeError):
+        return False
+    if hashlib.sha256(raw).hexdigest() != "6bb63a1ed858b88d164fa8b66a95a47ef07a8077f10ec739ed6d269adc25fb7d":
+        return False
+    return receipt == {
+        "schema_version": "agent-run-lifecycle-receipt.v1",
+        "root_run_id": "f6dc48f8c4e446c6912eed772a47493f", "sequence": 38,
+        "event_sha256": "3d33d004ca54667c98b1588ecb4a9838e93f47d05b236a5f5d533848141b29b6",
+    }
 
 class SessionConflict(RuntimeError):
     """The requested lifecycle operation is invalid for the current state."""
@@ -2286,6 +2310,15 @@ class RuntimeAdapter:
                 if isinstance(exc, AcpTransportError):
                     failure.update(code="runtime-transport-failed", retryable=False,
                                    reason=exc.reason)
+                elif isinstance(exc, AcpRpcError):
+                    code = run.domain_stop_code or "model-run-failed"
+                    generation = record.current_generation
+                    if (not run.domain_stop_code and generation is not None
+                            and generation.generation_id == generation_id
+                            and generation.continuation_proxy_closed is True
+                            and record.continuation_request_gate is not None):
+                        code = record.continuation_request_gate.provider_failure_code() or code
+                    failure.update(code=code, retryable=False)
                 self._emit(record, "session.failed", "runtime-adapter", failure)
                 self._close_generation(record, generation_id, "failed")
             return
@@ -6679,7 +6712,7 @@ class RuntimeAdapter:
             elif (trace_tail != binding["sequence"]
                     or initial_sequence != binding["sequence"]):
                 raise SessionConflict("acknowledged recovery boundary requires its exact durable tail")
-        elif trace_tail != binding["sequence"] or initial_sequence != binding["sequence"]:
+        elif (trace_tail != binding["sequence"] or initial_sequence != binding["sequence"]) and not _adr0117_original_terminal_cursor(binding, receipt, initial_sequence, trace_tail):
             raise SessionConflict("recovery trace does not meet its durable binding")
         if binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]:
             raise SessionConflict("undrained domain-call evidence blocks recovery")

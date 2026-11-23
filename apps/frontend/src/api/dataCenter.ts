@@ -2,6 +2,13 @@ import type { DataCenterStatus, DataReadinessResult, DataSyncJob, MarketSyncAuto
 
 const ROOT = "/api/product/data-center";
 
+export class DataCenterRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "DataCenterRequestError";
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${ROOT}${path}`, {
     ...init,
@@ -13,7 +20,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { message?: string }; detail?: string };
-    throw new Error(body.error?.message ?? body.detail ?? "data center request failed");
+    throw new DataCenterRequestError(body.error?.message ?? body.detail ?? "data center request failed", response.status);
   }
   return (await response.json()) as T;
 }
@@ -24,8 +31,37 @@ export function getDataCenterStatus(view: "summary" | "full" = "summary"): Promi
 
 export function queryDataReadiness(payload: {
   symbols: string[]; start_date: string; end_date: string; use_case: "research" | "backtest";
+  data_requirements?: { daily_basic?: string[]; fundamentals?: string[] };
 }): Promise<DataReadinessResult> {
   return request("/readiness", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export interface ResearchPreparationSubmission {
+  request_id: string | null;
+  status: string;
+  retry_token?: string | null;
+  failure_reason?: string | null;
+  failure_message?: string | null;
+}
+
+export function createResearchPreparation(payload: {
+  symbols: string[]; start_date: string; end_date: string; use_case: "research";
+  data_requirements?: { daily_basic?: string[]; fundamentals?: string[] };
+}): Promise<ResearchPreparationSubmission> {
+  return request("/research-preparations", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getResearchPreparation(requestId: string): Promise<ResearchPreparationSubmission> {
+  return request(`/research-preparations/${encodeURIComponent(requestId)}`);
+}
+
+export function retryResearchPreparation(
+  requestId: string,
+  retryToken: string,
+): Promise<ResearchPreparationSubmission> {
+  return request(`/research-preparations/${encodeURIComponent(requestId)}/retry`, {
+    method: "POST", body: JSON.stringify({ retry_token: retryToken }),
+  });
 }
 
 export function createDataSourceCredential(payload: Record<string, unknown>): Promise<{ credential: Record<string, unknown> }> {

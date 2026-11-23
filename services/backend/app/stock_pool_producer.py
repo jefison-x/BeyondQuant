@@ -343,7 +343,7 @@ class StockPoolProducerStore(PgStoreMixin):
         owner = _text(trusted_owner, "owner_principal")
         workspace = _text(trusted_workspace, "workspace_id")
         rule = normalize_dynamic_rule(payload.get("rule"))
-        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).strftime("%Y%m%d"))
+        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
         with self._transaction() as connection:
             result = self._evaluate_dynamic_inputs(
                 connection, rule=rule, requested_as_of=requested, owner=owner, workspace=workspace,
@@ -453,7 +453,7 @@ class StockPoolProducerStore(PgStoreMixin):
         description = payload.get("description")
         description = _text(description, "description", 2000) if description not in {None, ""} else None
         rule = normalize_dynamic_rule(payload.get("rule"))
-        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).strftime("%Y%m%d"))
+        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
         activate = payload.get("activate")
         if not isinstance(activate, bool):
             raise ValueError("activate must be boolean")
@@ -580,7 +580,7 @@ class StockPoolProducerStore(PgStoreMixin):
         owner, workspace = _text(trusted_owner, "owner_principal"), _text(trusted_workspace, "workspace_id")
         pool = _text(pool_id, "pool_id", 80)
         key = _text(payload.get("idempotency_key"), "idempotency_key")
-        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).strftime("%Y%m%d"))
+        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
         with self._transaction() as connection:
             definition = fetch_one(connection, """SELECT * FROM stock_pool_producer_definitions
                 WHERE pool_id=:pool AND owner_principal=:owner AND workspace_id=:workspace AND producer_kind='index'""",
@@ -609,7 +609,7 @@ class StockPoolProducerStore(PgStoreMixin):
         owner, workspace = _text(trusted_owner, "owner_principal"), _text(trusted_workspace, "workspace_id")
         pool = _text(pool_id, "pool_id", 80)
         key = _text(payload.get("idempotency_key"), "idempotency_key")
-        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).strftime("%Y%m%d"))
+        requested = _date(payload.get("requested_as_of") or datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
         with self._transaction() as connection:
             definition = fetch_one(connection, """SELECT * FROM stock_pool_producer_definitions
                 WHERE pool_id=:pool AND owner_principal=:owner AND workspace_id=:workspace

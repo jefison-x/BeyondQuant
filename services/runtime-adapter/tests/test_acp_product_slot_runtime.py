@@ -3026,6 +3026,54 @@ def _terminal_payloads(record) -> list[dict]:
             if event["kind"] in {"session.result", "session.failed"}]
 
 
+@pytest.mark.parametrize(("status", "domain_stop", "expected"), [
+    (500, None, "model-service-unavailable"), (503, None, "model-service-unavailable"),
+    (429, None, "model-service-rate-limited"), (401, None, "model-service-auth-failed"),
+    (403, None, "model-service-auth-failed"), (400, None, "model-request-rejected"),
+    (200, None, "model-run-failed"), ("500", None, "model-run-failed"),
+    (500, "domain-correction-stopped", "domain-correction-stopped"),
+])
+def test_provider_http_failure_is_described_without_reopening_or_retry(
+    slot_runtime, monkeypatch, status, domain_stop, expected,
+):
+    runtime, compatibility, _registry_value = slot_runtime
+
+    def arm_gate(gate):
+        with gate._lock:
+            common = {"schema_version": "continuation-request-gate.v1",
+                      "request_id": gate.request_id, "admitted": True,
+                      "call": 1, "attempt": 1}
+            gate._receipts = [dict(common, phase="admitted"),
+                              dict(common, phase="completed", forwarded=True,
+                                   reason="within_request_budget", status=status)]
+            gate._provider_calls = gate._attempts = 1
+
+    captured = _submit_raising_acp_error(
+        runtime, compatibility, monkeypatch, "provider-failure", arm_gate=arm_gate,
+        arm_run=lambda record: setattr(record.active_run, "domain_stop_code", domain_stop))
+    _wait_status(runtime, "provider-failure", SessionStatus.FAILED)
+    record = runtime._get("provider-failure")
+    assert _terminal_payloads(record) == [{
+        "error": "AcpRpcError", "run_id": record.process_root_id,
+        "code": expected, "retryable": False,
+    }]
+    assert compatibility.resumed == []
+    assert len(compatibility.successful_starts) == 1
+    gate = captured["gate"]
+    # Partial, cross-request and undrained evidence must not name a provider cause.
+    with gate._lock:
+        gate._outcome_unknown = True
+    assert gate.provider_failure_code() is None
+    with gate._lock:
+        gate._outcome_unknown = False
+        gate._receipts[-1]["request_id"] = "another-root"
+    assert gate.provider_failure_code() is None
+    with gate._lock:
+        gate._receipts[-1]["request_id"] = gate.request_id
+        gate._gate_closed = False
+    assert gate.provider_failure_code() is None
+
+
 def test_known_budget_exception_path_reopens_conversation(slot_runtime, monkeypatch):
     runtime, compatibility, _registry_value = slot_runtime
     original_run = compatibility.run_prepared_prompt

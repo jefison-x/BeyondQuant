@@ -36,6 +36,9 @@ from .acp_product_slot_client import (
 EXPECTED_SCOPE_SCHEMA = "byq-acp-product-cleanup-scope.v1"
 EXPECTED_MANIFEST_SCHEMA = "byq-acp-historical-audit-manifest.v1"
 HISTORICAL_ROOT_RUN_ID = "753727634c8641a0add1597d6a304bae"
+READONLY_MARKET_ROOT_RUN_ID = "f6dc48f8c4e446c6912eed772a47493f"
+READONLY_MARKET_MANIFEST_SCHEMA = "byq-acp-readonly-market-manifest.v1"
+READONLY_MARKET_MANIFEST_PATH = Path("/run/byq-engineering/readonly-market-manifest.json")
 DEFAULT_PRODUCT_CONTROL_DIRECTORY = Path("/run/byq-acp-product-runner")
 ENGINEERING_MANIFEST_PATH = Path(
     "/run/byq-engineering/historical-audit-manifest.json",
@@ -131,7 +134,7 @@ def _parse_object(raw: bytes) -> dict[str, Any]:
 
 
 def _read_expected_scope(
-    path: Path, expected_sha256: str,
+    path: Path, expected_sha256: str, *, readonly_market_error: bool = False,
 ) -> tuple[dict[str, str], str, str]:
     if _HEX64.fullmatch(expected_sha256) is None:
         raise HistoricalCleanupHold("expected scope file digest is invalid")
@@ -161,7 +164,8 @@ def _read_expected_scope(
             or any(not isinstance(key, str) or not isinstance(value, str)
                    for key, value in backend_scope.items())):
         raise HistoricalCleanupHold("expected Backend scope fields are invalid")
-    if backend_scope.get("root_run_id") != HISTORICAL_ROOT_RUN_ID:
+    expected_root = READONLY_MARKET_ROOT_RUN_ID if readonly_market_error else HISTORICAL_ROOT_RUN_ID
+    if backend_scope.get("root_run_id") != expected_root:
         raise HistoricalCleanupHold("scope is outside this historical Root")
     # Reuse the Product scope validator for every shared field, with a valid
     # placeholder cwd leaf that is discarded. The actual leaf comes only from
@@ -180,8 +184,10 @@ def _read_expected_scope(
     )
 
 
-def _read_trusted_manifest() -> dict[str, str]:
-    directory = ENGINEERING_MANIFEST_PATH.parent
+def _read_trusted_manifest(*, readonly_market_error: bool = False) -> dict[str, str]:
+    manifest_path = READONLY_MARKET_MANIFEST_PATH if readonly_market_error else ENGINEERING_MANIFEST_PATH
+    expected_schema = READONLY_MARKET_MANIFEST_SCHEMA if readonly_market_error else EXPECTED_MANIFEST_SCHEMA
+    directory = manifest_path.parent
     try:
         directory_info = os.lstat(directory)
         resolved_directory = directory.resolve(strict=True)
@@ -192,12 +198,12 @@ def _read_trusted_manifest() -> dict[str, str]:
             or directory_info.st_uid != 0
             or stat.S_IMODE(directory_info.st_mode) & 0o022):
         raise HistoricalCleanupHold("Engineering manifest directory is unsafe")
-    raw, info = _read_regular_file(ENGINEERING_MANIFEST_PATH, _MAX_MANIFEST_BYTES)
+    raw, info = _read_regular_file(manifest_path, _MAX_MANIFEST_BYTES)
     if (info.st_uid == _PRODUCT_UID
             or stat.S_IMODE(info.st_mode) != 0o444):
         raise HistoricalCleanupHold("Engineering manifest file is unsafe")
     try:
-        mount_flags = os.statvfs(ENGINEERING_MANIFEST_PATH).f_flag
+        mount_flags = os.statvfs(manifest_path).f_flag
     except OSError as exc:
         raise HistoricalCleanupHold("Engineering manifest mount state is unavailable") from exc
     if not mount_flags & getattr(os, "ST_RDONLY", 1):
@@ -209,7 +215,7 @@ def _read_trusted_manifest() -> dict[str, str]:
         raise HistoricalCleanupHold("Engineering manifest is invalid") from exc
     if raw != canonical or set(envelope) != _MANIFEST_KEYS:
         raise HistoricalCleanupHold("Engineering manifest schema is invalid")
-    if envelope.get("schema_version") != EXPECTED_MANIFEST_SCHEMA:
+    if envelope.get("schema_version") != expected_schema:
         raise HistoricalCleanupHold("Engineering manifest schema is invalid")
     for key in (
         "expected_scope_file_sha256", "backend_snapshot_sha256",
@@ -395,17 +401,17 @@ def _atomic_replace_binding(
 def supplement_historical_binding(
     *, expected_scope_file: Path, expected_file_sha256: str,
     expected_binding_sha256: str,
-    control_fd: int, session_root: Path,
+    control_fd: int, session_root: Path, readonly_market_error: bool = False,
 ) -> dict[str, object]:
     """Verify exact frozen scope and signed cleanup, then change one binding bit."""
 
-    manifest = _read_trusted_manifest()
+    manifest = _read_trusted_manifest(readonly_market_error=readonly_market_error)
     if manifest["expected_scope_file_sha256"] != expected_file_sha256:
         raise HistoricalCleanupHold("scope file digest differs from Engineering manifest")
     if manifest["expected_binding_sha256"] != expected_binding_sha256:
         raise HistoricalCleanupHold("binding digest differs from Engineering manifest")
     backend_scope, native_root_session_id, backend_snapshot_sha256 = _read_expected_scope(
-        expected_scope_file, expected_file_sha256,
+        expected_scope_file, expected_file_sha256, readonly_market_error=readonly_market_error,
     )
     if (backend_snapshot_sha256 != manifest["backend_snapshot_sha256"]
             or native_root_session_id != manifest["native_root_session_id"]):
@@ -525,6 +531,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-binding-sha256", required=True)
     parser.add_argument("--session-root", required=True, type=Path)
     parser.add_argument("--control-fd", required=True, type=int)
+    parser.add_argument("--readonly-market-error", action="store_true",
+                        help="ADR-0117: verify only the retained f6dc read-only Root")
     args = parser.parse_args(argv)
     try:
         result = supplement_historical_binding(
@@ -533,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_binding_sha256=args.expected_binding_sha256,
             control_fd=args.control_fd,
             session_root=args.session_root,
+            readonly_market_error=args.readonly_market_error,
         )
     except HistoricalCleanupHold as exc:
         print(f"HOLD: {exc}", file=sys.stderr)

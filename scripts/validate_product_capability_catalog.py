@@ -34,7 +34,7 @@ def validate() -> None:
     router = ROUTER.read_text(encoding="utf-8")
     mcp = MCP.read_text(encoding="utf-8")
     identities: set[str] = set()
-    routes: set[str] = set()
+    route_owners: dict[str, tuple[str, str]] = {}
     for item in capabilities:
         if not isinstance(item, dict):
             raise ValueError("capability must be an object")
@@ -47,9 +47,17 @@ def validate() -> None:
         identities.add(capability_id)
         if not isinstance(route, str) or not route.startswith("/") or "?" in route or "#" in route:
             raise ValueError(f"invalid fixed route for {capability_id}")
-        if route in routes:
+        audience = item.get("audience")
+        if audience not in ALLOWED_AUDIENCES:
+            raise ValueError(f"invalid audience for {capability_id}")
+        if "route_parent_capability_id" in item:
+            parent = item["route_parent_capability_id"]
+            if not isinstance(parent, str) or route_owners.get(route) != (parent, audience):
+                raise ValueError(f"invalid parent for route section: {capability_id}")
+        elif route in route_owners:
             raise ValueError(f"duplicate route_id: {route}")
-        routes.add(route)
+        else:
+            route_owners[route] = (capability_id, audience)
         segments = [segment for segment in route.split("/") if segment]
         if segments[:2] == ["settings", "system"]:
             if 'path: "settings/system"' not in router:
@@ -58,8 +66,6 @@ def validate() -> None:
         for segment in segments:
             if f'path: "{segment}"' not in router:
                 raise ValueError(f"route {route} is not represented in the Product router")
-        if item.get("audience") not in ALLOWED_AUDIENCES:
-            raise ValueError(f"invalid audience for {capability_id}")
         support = item.get("support")
         if not isinstance(support, list) or not support or not set(support) <= ALLOWED_LEVELS:
             raise ValueError(f"invalid support levels for {capability_id}")
@@ -75,7 +81,7 @@ def validate() -> None:
             if not isinstance(tool, str) or f'"{tool}"' not in mcp:
                 raise ValueError(f"unknown MCP tool {tool!r} for {capability_id}")
 
-    missing = REQUIRED_ROUTES - routes
+    missing = REQUIRED_ROUTES - route_owners.keys()
     if missing:
         raise ValueError(f"catalogue misses stable Product routes: {sorted(missing)}")
 

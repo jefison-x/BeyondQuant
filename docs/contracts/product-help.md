@@ -7,6 +7,7 @@
 - `byq_product_help_query` 是只读元数据查询，不创建 AgentRun、ResearchTask、Artifact、Approval 或 audit，不授予任何领域权限。
 - 查询最多返回五项 `product-help-result.v1`；结果只含公开能力字段，不暴露 MCP tool、Product API、Backend path、workspace/owner identity 或任意 URL。
 - 导航只能使用目录中的固定 `route_id`。管理员能力默认排除；显式查询管理员说明时仍必须标记 `ADMIN`，且不表示调用者拥有角色。
+- 同页面的独立帮助功能用 `route_parent_capability_id` 引用更早声明的同受众页面主能力。导航仍使用该页面的固定地址，各功能保留自己的权限说明与支持等级。
 - “怎么用/在哪里/有什么区别”必须零 mutation；“帮我创建/训练/运行/取消/修改”只用产品帮助识别能力和前置条件，后续动作仍遵循独立角色、授权、审批和审计合同。
 - 不支持的 Agent 动作必须诚实返回浏览器路径和限制，不得猜测 tool payload 或宣称已经执行。
 

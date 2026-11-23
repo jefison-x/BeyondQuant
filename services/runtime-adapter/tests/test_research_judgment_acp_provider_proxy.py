@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import socket
@@ -464,7 +465,8 @@ def test_proxy_close_kills_blocked_https_worker_and_latches_unknown(tmp_path):
     def send_while_worker_stalls():
         try:
             outcome.append(_post(origin, authorization="Bearer " + proxy.local_credential)[0])
-        except OSError:
+        except (OSError, http.client.IncompleteRead):
+            # Closing the socket can interrupt a 502 after its headers arrive.
             outcome.append("disconnected")
 
     caller = threading.Thread(target=send_while_worker_stalls)
@@ -476,7 +478,8 @@ def test_proxy_close_kills_blocked_https_worker_and_latches_unknown(tmp_path):
     started = time.monotonic()
     proxy.close()
     caller.join(timeout=2)
-    assert not caller.is_alive() and outcome[0] in (502, "disconnected")
+    assert not caller.is_alive()
+    assert outcome in ([502], ["disconnected"])
     assert time.monotonic() - started < 2
     assert journal.snapshot()["provider_attempts"][0]["phase"] == "unknown"
     with pytest.raises(urllib.error.URLError):

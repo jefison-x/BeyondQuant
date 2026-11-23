@@ -40,6 +40,30 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
+    def test_research_preparation_help_preserves_user_admin_boundary(self) -> None:
+        catalog = json.loads(
+            (ROOT / "docs/contracts/product-capability-catalog.v1.json").read_text()
+        )
+        feature = next(item for item in catalog["capabilities"]
+                       if item["capability_id"] == "research-data-preparation")
+        self.assertEqual(feature["route_id"], "/agent")
+        self.assertEqual(feature["audience"], "USER")
+        self.assertEqual(set(feature["support"]), {"EXPLAIN", "NAVIGATE"})
+        self.assertEqual(feature["agent_tools"], ["byq_product_help_query"])
+
+    def test_approval_help_matches_the_read_only_history_page(self) -> None:
+        catalog = json.loads(
+            (ROOT / "docs/contracts/product-capability-catalog.v1.json").read_text()
+        )
+        feature = next(item for item in catalog["capabilities"]
+                       if item["capability_id"] == "research-and-approvals")
+        self.assertEqual(feature["name"], "审批历史")
+        self.assertEqual(feature["route_id"], "/user/research")
+        self.assertEqual(set(feature["support"]), {"EXPLAIN", "NAVIGATE"})
+        self.assertEqual(feature["agent_tools"], [])
+        self.assertIn('aria-label="审批历史"',
+                      (ROOT / "apps/frontend/src/views/ResearchCenterView.vue").read_text())
+
     def test_release_identity_and_single_version_roles(self) -> None:
         identity = json.loads(
             (ROOT / "config/dsh/acp-0.2.0-rc.2.identity.json").read_text(encoding="utf-8")
@@ -113,6 +137,12 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         self.assertIn("includeDefaultRoots: false", skill_filesystem)
         self.assertIn("/opt/dsh/bundles/dsh-byq/skills", skill_filesystem)
         self.assertIn("- web_fetch", market_role)
+        self.assertIn("- pdf_read", market_role)
+        self.assertIn("file:///opt/byq/runtime/byq-pdf-read.js", profile)
+        for dockerfile in ("services/acp_unified/Dockerfile", "services/acp_product_runner/Dockerfile"):
+            content = (ROOT / dockerfile).read_text()
+            self.assertIn("plugins/dsh-byq/runtime/byq-pdf-read.js", content)
+            self.assertIn("plugins/dsh-byq/runtime/byq-pdf-extract.js", content)
         self.assertIn(
             "current search results or explicitly provided by the user", market_role
         )
@@ -171,6 +201,7 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
 
         product_identity = json.loads(PRODUCT_IDENTITY.read_text(encoding="utf-8"))
         self.assertIn("web-fetch-http", product_identity["enabled_plugin_ids"])
+        self.assertIn("pdf-read", product_identity["enabled_plugin_ids"])
         judgment_patch = (
             ROOT / "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml"
         ).read_text(encoding="utf-8")
@@ -181,6 +212,43 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
             .read_text(encoding="utf-8")
         )
         self.assertIn("web-fetch-http", judgment_identity["disabled_plugin_ids"])
+
+    def test_citation_and_negative_claim_rules_reach_both_product_roles(self) -> None:
+        # Parse the mounted composition: wording present in a skill alone does
+        # not establish that the coordinator and native delegate receive it.
+        entries = yaml.load(PRODUCT_PATCH.read_text(), Loader=yaml.BaseLoader)
+        root = next(item for item in entries if item.get("id") == "system-prompt")
+        def walk(value):
+            if isinstance(value, dict):
+                yield value
+                for child in value.values():
+                    yield from walk(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from walk(child)
+        market = next(item for item in walk(entries) if item.get("id") == "delegate-market-research")
+        paths = {
+            "coordinator": root["config"]["personaPrefix"],
+            "market_delegate": market["config"]["persona"],
+            **{name: (ROOT / "plugins/dsh-byq/skills" / name / "SKILL.md").read_text()
+               for name in ("byq-role-contracts", "byq-market-researcher")},
+        }
+        for name, text in paths.items():
+            with self.subTest(path=name):
+                flat = " ".join(text.split())
+                for phrase in (
+                    "hostname, www prefix, path, query and fragment byte-for-byte",
+                    "only if a tool explicitly returned that exact target URL",
+                    "A scoped 本轮未检索到 clause does not justify an unqualified",
+                    "后续进展本轮尚未核实",
+                    "dated primary evidence directly supporting that proposition",
+                    "does not require extra searches merely to reword a gap",
+                    "use neutral section titles",
+                    "this applies to conditional clauses too",
+                ):
+                    self.assertIn(phrase, flat)
+        # Do not reinstate the unqualified search-completion candidate.
+        self.assertNotIn("Do not turn unrequested current-plan", paths["coordinator"])
 
     def test_search_credential_is_separate_and_resolved_per_product_root(self) -> None:
         compose = yaml.safe_load((ROOT / "compose.yml").read_text(encoding="utf-8"))

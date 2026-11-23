@@ -1,8 +1,28 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openUserDestination(page: Page, label: string) {
   await page.getByTitle(/用户设置/).click();
   await page.getByRole("menuitem", { name: label }).click();
+}
+
+async function enterStudyDates(dialog: Locator, dates: string[]) {
+  const fields = dialog.locator(".dates input");
+  await expect(fields).toHaveCount(dates.length);
+  for (const [index, date] of dates.entries()) {
+    const field = fields.nth(index);
+    await field.fill(date);
+    await field.press("Enter");
+    await expect(field).toHaveValue(date);
+  }
+  await expect(dialog.getByTestId("ml-save")).toBeEnabled();
+}
+
+async function openStockPoolForm(page: Page) {
+  await page.locator(".workspace-actions")
+    .getByRole("button", { name: "新建股票池", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  await expect(dialog).toBeVisible();
+  return dialog;
 }
 
 test("R3 legacy feedback bookmarks return to the conversation", legacyFeedbackBookmarkJourney);
@@ -109,19 +129,23 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
 
   await page.goto("/stock-pool");
   await expect(page.getByRole("heading", { name: "股票管理" })).toBeVisible();
-  await page.getByRole("button", { name: "新建股票池" }).click();
-
+  const dialog = await openStockPoolForm(page);
   const poolName = `CI股票池-${Date.now()}`;
-  await page.getByPlaceholder("Pool name").fill(poolName);
-  await page.getByPlaceholder("股票池用途或说明").fill("真实 Product API E2E");
-  await page.getByPlaceholder("000001.SZ,600000.SH").fill("000001.SZ,600000.SH");
+  await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
+  await dialog.getByPlaceholder("股票池用途或说明").fill("真实 Product API E2E");
+  const search = dialog.getByTestId("stock-pool-create-search").getByRole("combobox");
+  for (const symbol of ["000001.SZ", "600000.SH"]) {
+    await search.fill(symbol);
+    await page.getByRole("option").filter({ hasText: `（${symbol}）` }).click();
+    await expect(dialog.getByRole("row").filter({ hasText: symbol })).toBeVisible();
+  }
 
   const createdResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/product/paper/pools") &&
       response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "创建股票池" }).click();
+  await dialog.getByRole("button", { name: "创建股票池", exact: true }).click();
   const response = await createdResponse;
   expect(response.status()).toBe(201);
   const created = await response.json() as { pool: { pool_id: string; current_snapshot_id: string } };
@@ -139,7 +163,7 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   await expect(page.getByRole("row", { name: "数据就绪度 已就绪" })).toBeVisible();
   await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
-  await page.getByRole("tab", { name: "快照历史" }).click();
+  await page.getByRole("tab", { name: "历史版本" }).click();
   await page.getByRole("button", { name: "比较最近两个快照" }).click();
   await expect(page.getByTestId("stock-pool-snapshot-diff")).toContainText("新增");
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
@@ -268,15 +292,26 @@ test("Phase 74 real LightGBM training to frozen-signal backtest journey", async 
   page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
-  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase74-pool-${Date.now()}`, name: `Phase 74 ML 冻结池-${Date.now()}`, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  const poolName = `Phase 74 ML 冻结池-${Date.now()}`;
+  const poolStatus = await page.evaluate(async name => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase74-pool-${Date.now()}`, name, pool_type: "custom", description: "真实浏览器 LightGBM 闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status, poolName);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
-  await page.getByLabel("研究名称", { exact: true }).fill(`LightGBM 收益排序-${Date.now()}`);
+  const dialog = page.getByRole("dialog", { name: "新建模型研究" });
+  const studyName = `LightGBM 收益排序-${Date.now()}`;
+  await dialog.getByLabel("研究名称", { exact: true }).fill(studyName);
+  await dialog.getByTestId("ml-reference-pool").click();
+  await page.getByRole("option", { name: `${poolName} · 2只`, exact: true }).click();
+  await enterStudyDates(dialog, ["2026-01-01", "2026-02-19", "2026-02-20", "2026-03-11", "2026-03-12", "2026-03-30"]);
   const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/product/ml/strategies/versions") && response.request().method() === "POST");
-  await page.getByTestId("ml-save").click(); await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
-  const created = (await (await createdResponse).json()).artifact;
+  await page.getByTestId("ml-save").click();
+  const saved = await createdResponse;
+  expect(saved.status(), await saved.text()).toBe(201);
+  const created = (await saved.json()).artifact;
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".research-detail").getByRole("heading", { name: studyName, exact: true })).toBeVisible();
+  await expect(page.getByTestId("ml-train")).toBeEnabled();
   expect(created.task_id).toMatch(/^task_[0-9a-f]{32}$/);
   expect(created.artifact_id).toMatch(/^artifact_[0-9a-f]{32}$/);
   const requestedResponse = page.waitForResponse(response => response.url().endsWith("/api/product/research/approval-requests") && response.request().method() === "POST");
@@ -330,20 +365,29 @@ test("Phase 86 real HS300 regime experts to routed frozen-signal backtest journe
   page.on("response", response => { if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login"); await page.getByLabel("用户名").fill(username); await page.getByLabel("密码").fill(password); await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
-  const poolStatus = await page.evaluate(async () => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase86-pool-${Date.now()}`, name: `Phase 86 状态专家池-${Date.now()}`, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status);
+  const poolName = `Phase 86 状态专家池-${Date.now()}`;
+  const poolStatus = await page.evaluate(async name => (await fetch("/api/product/paper/pools", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotency_key: `phase86-pool-${Date.now()}`, name, pool_type: "custom", description: "真实浏览器沪深300状态专家闭环", symbols: ["000001.SZ", "600000.SH"] }) })).status, poolName);
   expect(poolStatus).toBe(201);
   await page.goto("/model-research");
   await expect(page.getByRole("heading", { name: "模型研究目录与实验进程" })).toBeVisible();
   await page.getByRole("button", { name: "新建模型研究" }).first().click();
   const dialog = page.getByRole("dialog", { name: "新建模型研究" });
   await dialog.getByText("市场状态专家", { exact: true }).click();
-  await dialog.getByLabel("研究名称").fill(`沪深300市场状态专家模型-${Date.now()}`);
+  const studyName = `沪深300市场状态专家模型-${Date.now()}`;
+  await dialog.getByLabel("研究名称").fill(studyName);
+  await dialog.getByTestId("ml-reference-pool").click();
+  await page.getByRole("option", { name: `${poolName} · 2只`, exact: true }).click();
   await expect(dialog.getByText("沪深300状态专家", { exact: true })).toBeVisible();
   await expect(dialog.getByTestId("ml-expert-risk_on")).toBeVisible();
+  await enterStudyDates(dialog, ["2025-10-01", "2026-02-28", "2026-03-12", "2026-03-30"]);
   const createdResponse = page.waitForResponse(response => response.url().endsWith("/api/product/ml/strategies/versions") && response.request().method() === "POST");
   await page.getByTestId("ml-save").click();
-  await expect(page.getByText("研究定义已冻结，可以进入训练")).toBeVisible();
-  const created = (await (await createdResponse).json()).artifact;
+  const saved = await createdResponse;
+  expect(saved.status(), await saved.text()).toBe(201);
+  const created = (await saved.json()).artifact;
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".research-detail").getByRole("heading", { name: studyName, exact: true })).toBeVisible();
+  await expect(page.getByTestId("ml-train")).toBeEnabled();
   expect(created.task_id).toMatch(/^task_[0-9a-f]{32}$/);
   expect(created.artifact_id).toMatch(/^artifact_[0-9a-f]{32}$/);
   const requestedResponse = page.waitForResponse(response => response.url().endsWith("/api/product/research/approval-requests") && response.request().method() === "POST");
@@ -412,8 +456,7 @@ test("real Product API index pool materializes validated point-in-time weights",
   await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
   await page.goto("/stock-pool");
-  await page.getByRole("button", { name: "新建股票池" }).click();
-  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  const dialog = await openStockPoolForm(page);
   await dialog.getByText("指数型股票池", { exact: true }).click();
   await dialog.locator(".el-select").click();
   await expect(page.getByRole("option")).toHaveCount(6);
@@ -422,7 +465,7 @@ test("real Product API index pool materializes validated point-in-time weights",
   await expect(page.getByRole("option", { name: /中证1000/ })).toBeEnabled();
   await page.getByRole("option", { name: /沪深300/ }).click();
   const poolName = `CI指数池-${Date.now()}`;
-  await dialog.getByPlaceholder("Pool name").fill(poolName);
+  await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
   const createdResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/product/paper/index-pools") && response.request().method() === "POST",
   );
@@ -442,9 +485,9 @@ test("real Product API index pool materializes validated point-in-time weights",
   await page.getByRole("tab", { name: "成员与权重" }).click();
   await expect(page.getByText("000001.SZ", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("600000.SH", { exact: true }).first()).toBeVisible();
-  await page.getByRole("tab", { name: "快照历史" }).click();
+  await page.getByRole("tab", { name: "历史版本" }).click();
   await expect(
-    page.getByRole("tabpanel", { name: "快照历史" }).getByText("succeeded", { exact: true }).first(),
+    page.getByRole("tabpanel", { name: "历史版本" }).getByText("succeeded", { exact: true }).first(),
   ).toBeVisible();
   const evidenceDir = process.env.BYQ_E2E_EVIDENCE_DIR;
   if (evidenceDir) {
@@ -475,18 +518,24 @@ test("real Product API dynamic pool previews and materializes a closed rule", as
   await page.getByRole("button", { name: "进入" }).click();
   await expect(page).toHaveURL(`${origin}/agent`);
   await page.goto("/stock-pool");
-  await page.getByRole("button", { name: "新建股票池" }).click();
-  const dialog = page.getByRole("dialog", { name: "创建版本化股票池" });
+  const dialog = await openStockPoolForm(page);
   await dialog.getByText("动态股票池", { exact: true }).click();
   const poolName = `CI动态池-${Date.now()}`;
-  await dialog.getByPlaceholder("Pool name").fill(poolName);
-  await dialog.getByTestId("dynamic-top-n").locator("input").fill("2");
+  await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
+  const topN = dialog.getByTestId("dynamic-create-top-n").getByRole("spinbutton");
+  await topN.fill("2");
+  await topN.press("Tab");
+  const cutoff = dialog.getByPlaceholder("默认使用当前日期前最新完整交易日");
+  await cutoff.fill("2026-08-28");
+  await cutoff.press("Enter");
   const previewResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/product/paper/dynamic-pools/preview") && response.request().method() === "POST",
   );
   await dialog.getByTestId("dynamic-preview").click();
   expect((await previewResponse).status()).toBe(200);
-  await expect(dialog.getByText(/非权威预览：2 只/)).toBeVisible();
+  const preview = dialog.getByTestId("dynamic-preview-result");
+  await expect(preview).toContainText("符合 2 只");
+  await expect(preview).toContainText("2026-08-28");
   const createResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/product/paper/dynamic-pools") && response.request().method() === "POST",
   );

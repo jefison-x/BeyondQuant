@@ -690,14 +690,24 @@ check_runtime() {
     bad "run-scoped mcp image id was not captured; refusing a mutable tag"
     return
   fi
-  if run_interruptible docker run --rm --pull=never --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
-      -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
-      "$mcp_image" sh -ec 'node --test /opt/byq/runtime/*.test.js'; then
-    ok "runtime helper contracts"; else bad "runtime helper contracts"; fi
   if ! runtime_image="$(ci_image_ref runtime-adapter)"; then
     bad "run-scoped runtime-adapter image id was not captured; refusing a mutable tag"
     return
   fi
+  if run_interruptible docker run --rm --pull=never --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
+      -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
+      "$mcp_image" sh -ec '
+        for spec in /opt/byq/runtime/*.test.js; do
+          case "$spec" in */byq-pdf-*) ;; *) set -- "$@" "$spec";; esac
+        done
+        node --test "$@"
+      '; then
+    ok "runtime helper contracts"; else bad "runtime helper contracts"; fi
+  # The PDF helpers resolve the official DSH SDK and parser from this image.
+  if run_interruptible docker run --rm --pull=never --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
+      -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
+      --entrypoint /bin/sh "$runtime_image" -ec 'node --test /opt/byq/runtime/byq-pdf-*.test.js'; then
+    ok "PDF runtime helper contracts"; else bad "PDF runtime helper contracts"; fi
   RESOURCES_TOUCHED=1
   if run_interruptible docker run --rm --pull=never --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none -e PYTHONDONTWRITEBYTECODE=1 \
       -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \

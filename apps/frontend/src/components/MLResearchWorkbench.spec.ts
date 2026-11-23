@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import MLResearchWorkbench from "./MLResearchWorkbench.vue";
 import { useAuthStore } from "@/stores/auth";
+import { createMLStrategy } from "@/api/mlResearch";
+import { createTask } from "@/api/research";
 
 const getMLCapabilities = vi.fn();
 const getMLOptions = vi.fn();
@@ -45,9 +47,39 @@ vi.mock("@/api/quant", () => ({
   getBacktest: vi.fn(), runBacktest: vi.fn(), submitBacktest: vi.fn(),
 }));
 
+function optionsWithDateRecommendation(poolId: string, snapshotId: string, horizon: number, year: string) {
+  const dates = {
+    train_start: `${year}0102`, train_end: `${year}0216`,
+    validation_start: `${year}0219`, validation_end: `${year}0228`,
+    prediction_start: `${year}0303`, prediction_end: `${year}0314`,
+  };
+  return {
+    schema_version: "ml-options.v1", tasks: [], pools: [{
+      pool_id: poolId, name: poolId, status: "active", member_count: 5, current_snapshot_id: snapshotId,
+    }],
+    selected_pool_data_reference: {
+      pool_id: poolId, stock_pool_snapshot_id: snapshotId, state: "observed_bounds",
+      member_count: 5, members_with_data: 5, minimum_rows_per_member: 60,
+      observed_start_date: dates.train_start, observed_end_date: dates.prediction_end,
+      reference_only: true as const, continuous_history_verified: false as const,
+      training_readiness_verified: false as const,
+      recommendation: {
+        state: "available" as const, reason: null, mode: "compatible" as const,
+        horizon_sessions: horizon, counts: { train: 60, validation: 10, prediction: 5 },
+        window_start: dates.train_start, window_end: dates.prediction_end,
+        continuous_history_verified: true, minimum_samples_verified: true,
+        training_quality_verified: false as const,
+      },
+      recommended_dates: dates,
+    },
+  };
+}
+
 describe("MLResearchWorkbench", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    vi.mocked(createMLStrategy).mockReset();
+    vi.mocked(createTask).mockReset();
     useAuthStore().setUser({ subject: "alice", workspace: { workspace_id: "workspace-alice" } } as any);
     submitProductApprovalRequestOnce.mockReset();
     localStorage.clear(); sessionStorage.clear();
@@ -122,6 +154,236 @@ describe("MLResearchWorkbench", () => {
         status: "completed", signal_artifact_id: "artifact_signal",
       }] }, backtests: { total: 0, backtests: [] },
     });
+  });
+
+  it("loads a selected pool's date reference lazily without inventing study dates", async () => {
+    const pool = { pool_id: "pool_1", name: "One day", status: "active", current_snapshot_id: "snapshot_1" };
+    const reference = { pool_id: "pool_1", stock_pool_snapshot_id: "snapshot_1", state: "observed_bounds",
+      member_count: 1, members_with_data: 1, minimum_rows_per_member: 1,
+      observed_start_date: "20261113", observed_end_date: "20261113", reference_only: true,
+      continuous_history_verified: false, training_readiness_verified: false, recommended_dates: null };
+    getMLOptions.mockImplementation(async (id?: string) => ({
+      schema_version: "ml-options.v1", tasks: [], pools: [pool],
+      ...(id ? { selected_pool_data_reference: reference } : {}),
+    }));
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    expect(getMLOptions).toHaveBeenCalledTimes(1);
+    const vm = wrapper.vm as any;
+    vm.showCreate = true; await flushPromises();
+    expect(getMLOptions).toHaveBeenLastCalledWith("pool_1", 5);
+    expect(vm.poolReferenceMessage).toContain("2026-11-13");
+    expect(vm.poolReferenceMessage).toContain("无法据此推荐");
+    expect(vm.form.train_start).toBe("");
+    Object.assign(vm.form, { train_start: "2025-01-01", train_end: "2025-03-01",
+      validation_start: "2025-03-02", validation_end: "2025-04-01",
+      prediction_start: "2025-04-02", prediction_end: "2025-05-01" });
+    expect(vm.datesOutsideReference).toBe(true);
+    expect(vm.dateWindowError).toBe(""); // Planning is allowed before data preparation.
+    expect(createMLStrategy).not.toHaveBeenCalled(); expect(createTask).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("offers compatible dates as an explicit action and leaves advanced modes manual", async () => {
+    const pool = optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024");
+    getMLOptions.mockImplementation(async (id?: string, horizon?: number) => id
+      ? optionsWithDateRecommendation(id, "snapshot_1", horizon ?? 5, "2024")
+      : { schema_version: "ml-options.v1", tasks: [], pools: pool.pools });
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.showCreate = true;
+    await flushPromises();
+
+    expect(getMLOptions).toHaveBeenLastCalledWith("pool_1", 5);
+    expect(vm.form.train_start).toBe("");
+    expect(vm.form.train_end).toBe("");
+    expect(vm.form.validation_start).toBe("");
+    expect(vm.form.validation_end).toBe("");
+    expect(vm.form.prediction_start).toBe("");
+    expect(vm.form.prediction_end).toBe("");
+    expect(vm.canApplyRecommendedDates).toBe(true);
+    expect(vm.recommendationMessage).toContain("训练 60、验证 10、预测 5");
+    expect(vm.recommendationMessage).toContain("条样本");
+    expect(vm.recommendationMessage).toContain("不代表全部历史连续、训练已就绪或模型质量已验证");
+
+    vm.form.mode = "walk_forward";
+    await flushPromises();
+    expect(vm.canApplyRecommendedDates).toBe(false);
+    expect(vm.recommendationMessage).toContain("只适用于单模型入门模式");
+    expect(wrapper.find('[data-testid="ml-apply-recommended-dates"]').exists()).toBe(false);
+    vm.applyRecommendedDates();
+    expect(vm.form.train_start).toBe("");
+
+    vm.form.mode = "compatible";
+    await flushPromises();
+    expect(vm.canApplyRecommendedDates).toBe(true);
+    await wrapper.get('[data-testid="ml-apply-recommended-dates"]').trigger("click");
+    expect(vm.form.train_start).toBe("2024-01-02");
+    expect(vm.form.train_end).toBe("2024-02-16");
+    expect(vm.form.validation_start).toBe("2024-02-19");
+    expect(vm.form.validation_end).toBe("2024-02-28");
+    expect(vm.form.prediction_start).toBe("2024-03-03");
+    expect(vm.form.prediction_end).toBe("2024-03-14");
+    const verifiedRecommendation = vm.poolRecommendation;
+    for (const unverified of [
+      { continuous_history_verified: false },
+      { minimum_samples_verified: false },
+    ]) {
+      vm.poolRecommendation = { ...verifiedRecommendation, ...unverified };
+      await flushPromises();
+      expect(vm.canApplyRecommendedDates).toBe(false);
+      expect(wrapper.find('[data-testid="ml-apply-recommended-dates"]').exists()).toBe(false);
+    }
+    vm.poolRecommendation = verifiedRecommendation;
+    await flushPromises();
+    vm.poolRecommendation = { ...vm.poolRecommendation, state: "unavailable", reason: "calendar_incomplete" };
+    vm.poolRecommendedDates = null;
+    await flushPromises();
+    expect(vm.canApplyRecommendedDates).toBe(false);
+    expect(wrapper.find('[data-testid="ml-apply-recommended-dates"]').exists()).toBe(false);
+    expect(vm.poolReferenceMessage).toContain("交易日历不完整");
+    vm.poolRecommendation = { ...vm.poolRecommendation, reason: "data_not_ready" };
+    expect(vm.poolReferenceMessage).toContain("准备或更新数据");
+    vm.poolRecommendation = { ...vm.poolRecommendation, reason: "insufficient_samples" };
+    expect(vm.poolReferenceMessage).toContain("不足以安排最小训练、验证和预测样本");
+    expect(createMLStrategy).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
+    expect(createMLTraining).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("discards a date reference after switching pools or snapshot versions", async () => {
+    const pools = [
+      { pool_id: "pool_1", status: "active", current_snapshot_id: "snapshot_1" },
+      { pool_id: "pool_2", status: "active", current_snapshot_id: "snapshot_2" },
+    ];
+    let resolveOld: (value: unknown) => void = () => undefined;
+    getMLOptions.mockImplementation((id?: string, horizon?: number) => {
+      if (id === "pool_1") return new Promise(resolve => { resolveOld = resolve; });
+      if (id === "pool_2") return Promise.resolve({
+        ...optionsWithDateRecommendation("pool_2", "snapshot_2", horizon ?? 5, "2025"), pools,
+      });
+      return Promise.resolve({ schema_version: "ml-options.v1", tasks: [], pools });
+    });
+    const wrapper = shallowMount(MLResearchWorkbench); await flushPromises();
+    const vm = wrapper.vm as any; vm.showCreate = true; await flushPromises();
+    vm.form.pool_id = "pool_2"; await flushPromises();
+    expect(vm.poolDataReference.pool_id).toBe("pool_2");
+    expect(vm.poolRecommendation.horizon_sessions).toBe(5);
+    expect(vm.poolRecommendedDates.train_start).toBe("20250102");
+    resolveOld(optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024"));
+    await flushPromises();
+    expect(vm.poolDataReference.pool_id).toBe("pool_2");
+    expect(vm.poolRecommendedDates.train_start).toBe("20250102");
+    vm.options.pools[1].current_snapshot_id = "snapshot_new"; await flushPromises();
+    expect(vm.poolDataReference).toBeNull(); expect(vm.poolRecommendation).toBeNull(); expect(vm.poolReferenceError).toContain("版本");
+    wrapper.unmount();
+  });
+
+  it("discards an earlier recommendation when the prediction horizon changes", async () => {
+    const initial = optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024");
+    let resolveOld: (value: unknown) => void = () => undefined;
+    getMLOptions.mockImplementation((id?: string, horizon?: number) => {
+      if (!id) return Promise.resolve({ schema_version: "ml-options.v1", tasks: [], pools: initial.pools });
+      if (horizon === 5) return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve(optionsWithDateRecommendation(id, "snapshot_1", horizon ?? 10, "2025"));
+    });
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.showCreate = true;
+    await flushPromises();
+    expect(getMLOptions).toHaveBeenLastCalledWith("pool_1", 5);
+
+    vm.form.horizon = 10;
+    await flushPromises();
+    expect(getMLOptions).toHaveBeenLastCalledWith("pool_1", 10);
+    expect(vm.poolRecommendation.horizon_sessions).toBe(10);
+    expect(vm.poolRecommendedDates.train_start).toBe("20250102");
+
+    resolveOld(optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024"));
+    await flushPromises();
+    expect(vm.poolRecommendation.horizon_sessions).toBe(10);
+    expect(vm.poolRecommendedDates.train_start).toBe("20250102");
+    wrapper.unmount();
+  });
+
+  it("invalidates a pending recommendation when the create dialog closes and reopens", async () => {
+    const initial = optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024");
+    let resolveOld: (value: unknown) => void = () => undefined;
+    let selectedRequests = 0;
+    getMLOptions.mockImplementation((id?: string, horizon?: number) => {
+      if (!id) return Promise.resolve({ schema_version: "ml-options.v1", tasks: [], pools: initial.pools });
+      selectedRequests += 1;
+      if (selectedRequests === 1) return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve(optionsWithDateRecommendation(id, "snapshot_1", horizon ?? 5, "2025"));
+    });
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.showCreate = true;
+    await flushPromises();
+    expect(selectedRequests).toBe(1);
+
+    vm.showCreate = false;
+    vm.showCreate = true;
+    await flushPromises();
+    expect(selectedRequests).toBe(2);
+    expect(vm.poolRecommendation.horizon_sessions).toBe(5);
+    expect(vm.poolRecommendedDates.train_start).toBe("20250102");
+    resolveOld(optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024"));
+    await flushPromises();
+    expect(vm.poolRecommendedDates.train_start).toBe("20250102");
+    expect(vm.canApplyRecommendedDates).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("discards a pending recommendation after the signed-in workspace changes", async () => {
+    const initial = optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024");
+    const pending: Array<(value: unknown) => void> = [];
+    getMLOptions.mockImplementation((id?: string) => {
+      if (!id) return Promise.resolve({ schema_version: "ml-options.v1", tasks: [], pools: initial.pools });
+      return new Promise(resolve => { pending.push(resolve); });
+    });
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.showCreate = true;
+    await flushPromises();
+    expect(pending.length).toBeGreaterThan(0);
+
+    useAuthStore().setUser({ subject: "bob", workspace: { workspace_id: "workspace-bob" } } as any);
+    await flushPromises();
+    pending.forEach(resolve => resolve(optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024")));
+    await flushPromises();
+    expect(vm.poolDataReference).toBeNull();
+    expect(vm.poolRecommendation).toBeNull();
+    expect(vm.poolRecommendedDates).toBeNull();
+    wrapper.unmount();
+  });
+
+  it("requires user-selected date windows before saving a study", async () => {
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    expect(vm.form.train_start).toBe("");
+    expect(vm.form.prediction_start).toBe("");
+    expect(vm.dateWindowError).toContain("请选择训练、验证和预测");
+
+    await vm.saveStrategy();
+    expect(createTask).not.toHaveBeenCalled();
+    expect(createMLStrategy).not.toHaveBeenCalled();
+
+    Object.assign(vm.form, {
+      train_start: "2024-01-01", train_end: "2024-02-01",
+      validation_start: "2024-02-02", validation_end: "2024-03-01",
+      prediction_start: "2024-03-02", prediction_end: "2024-04-01",
+    });
+    expect(vm.dateWindowError).toBe("");
+    vm.form.validation_start = "2024-01-15";
+    expect(vm.dateWindowError).toContain("区间不能重叠");
+    wrapper.unmount();
   });
 
   it("loads detail and paged prediction rows only after explicit selection", async () => {
