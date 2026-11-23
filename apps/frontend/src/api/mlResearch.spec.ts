@@ -29,13 +29,19 @@ describe("ML research Product API client", () => {
     await getMLOptions();
     await getMLOptions(undefined, 5);
     await getMLOptions("pool /1", 5);
+    await getMLOptions("pool_1", 5, {
+      mode: "walk_forward", validation_mode: "rolling", train_sessions: 60,
+      validation_sessions: 10, step_sessions: 10, folds: 2, purge_sessions: 5,
+      embargo_sessions: 0,
+    });
     expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
       "/api/product/ml/options",
       "/api/product/ml/options",
       "/api/product/ml/options?pool_id=pool+%2F1&horizon_sessions=5",
+      "/api/product/ml/options?pool_id=pool_1&horizon_sessions=5&mode=walk_forward&validation_mode=rolling&train_sessions=60&validation_sessions=10&step_sessions=10&folds=2&purge_sessions=5&embargo_sessions=0",
     ]);
     await expect(getMLOptions("pool_1", 21)).rejects.toThrow("1 到 20");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
   it("sends a stable transport idempotency key outside the domain payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ training_run: { training_run_id: "mlrun_1" } }), { status: 202 }));

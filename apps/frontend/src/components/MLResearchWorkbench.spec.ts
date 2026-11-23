@@ -75,6 +75,33 @@ function optionsWithDateRecommendation(poolId: string, snapshotId: string, horiz
   };
 }
 
+function optionsWithWalkForwardRecommendation(poolId: string, snapshotId: string, horizon: number, year: string) {
+  const dates = {
+    development_start: `${year}0102`, development_end: `${year}0930`,
+    prediction_start: `${year}1001`, prediction_end: `${year}1231`,
+  };
+  return {
+    schema_version: "ml-options.v1", tasks: [], pools: [{
+      pool_id: poolId, name: poolId, status: "active", member_count: 5, current_snapshot_id: snapshotId,
+    }],
+    selected_pool_data_reference: {
+      pool_id: poolId, stock_pool_snapshot_id: snapshotId, state: "observed_bounds",
+      member_count: 5, members_with_data: 5, minimum_rows_per_member: 120,
+      observed_start_date: dates.development_start, observed_end_date: dates.prediction_end,
+      reference_only: true as const, continuous_history_verified: false as const,
+      training_readiness_verified: false as const,
+      recommendation: {
+        state: "available" as const, reason: null, mode: "walk_forward" as const,
+        horizon_sessions: horizon, counts: { development: 500, prediction: 100, folds: 2 },
+        window_start: dates.development_start, window_end: dates.prediction_end,
+        continuous_history_verified: true, minimum_samples_verified: true,
+        training_quality_verified: false as const,
+      },
+      recommended_dates: dates,
+    },
+  };
+}
+
 describe("MLResearchWorkbench", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -184,11 +211,13 @@ describe("MLResearchWorkbench", () => {
     wrapper.unmount();
   });
 
-  it("offers compatible dates as an explicit action and leaves advanced modes manual", async () => {
+  it("offers mode-specific dates as an explicit action and leaves unavailable suggestions manual", async () => {
     const pool = optionsWithDateRecommendation("pool_1", "snapshot_1", 5, "2024");
-    getMLOptions.mockImplementation(async (id?: string, horizon?: number) => id
-      ? optionsWithDateRecommendation(id, "snapshot_1", horizon ?? 5, "2024")
-      : { schema_version: "ml-options.v1", tasks: [], pools: pool.pools });
+    getMLOptions.mockImplementation(async (id?: string, horizon?: number, recommendation?: { mode: string }) => !id
+      ? { schema_version: "ml-options.v1", tasks: [], pools: pool.pools }
+      : recommendation?.mode === "walk_forward"
+        ? optionsWithWalkForwardRecommendation(id, "snapshot_1", horizon ?? 5, "2024")
+        : optionsWithDateRecommendation(id, "snapshot_1", horizon ?? 5, "2024"));
     const wrapper = shallowMount(MLResearchWorkbench);
     await flushPromises();
     const vm = wrapper.vm as any;
@@ -209,16 +238,23 @@ describe("MLResearchWorkbench", () => {
 
     vm.form.mode = "walk_forward";
     await flushPromises();
-    expect(vm.canApplyRecommendedDates).toBe(false);
-    expect(vm.recommendationMessage).toContain("只适用于单模型入门模式");
-    expect(wrapper.find('[data-testid="ml-apply-recommended-dates"]').exists()).toBe(false);
+    expect(getMLOptions).toHaveBeenLastCalledWith("pool_1", 5, expect.objectContaining({ mode: "walk_forward" }));
+    expect(vm.form.development_start).toBe("");
+    expect(vm.canApplyRecommendedDates).toBe(true);
+    expect(vm.recommendationMessage).toContain("2 个净化走步折");
+    expect(wrapper.find('[data-testid="ml-apply-recommended-dates"]').exists()).toBe(true);
     vm.applyRecommendedDates();
-    expect(vm.form.train_start).toBe("");
+    expect(vm.form.development_start).toBe("2024-01-02");
+    expect(vm.form.development_end).toBe("2024-09-30");
+    expect(vm.form.prediction_start).toBe("2024-10-01");
+    expect(vm.form.prediction_end).toBe("2024-12-31");
 
     vm.form.mode = "compatible";
     await flushPromises();
     expect(vm.canApplyRecommendedDates).toBe(true);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await wrapper.get('[data-testid="ml-apply-recommended-dates"]').trigger("click");
+    confirm.mockRestore();
     expect(vm.form.train_start).toBe("2024-01-02");
     expect(vm.form.train_end).toBe("2024-02-16");
     expect(vm.form.validation_start).toBe("2024-02-19");
@@ -247,6 +283,15 @@ describe("MLResearchWorkbench", () => {
     expect(vm.poolReferenceMessage).toContain("准备或更新数据");
     vm.poolRecommendation = { ...vm.poolRecommendation, reason: "insufficient_samples" };
     expect(vm.poolReferenceMessage).toContain("不足以安排最小训练、验证和预测样本");
+    const preservedDevelopment = vm.form.development_start;
+    vm.form.mode = "walk_forward";
+    await flushPromises();
+    vm.poolRecommendation = { ...vm.poolRecommendation, state: "unavailable", reason: "insufficient_samples" };
+    vm.poolRecommendedDates = null;
+    await flushPromises();
+    expect(vm.canApplyRecommendedDates).toBe(false);
+    expect(vm.form.development_start).toBe(preservedDevelopment);
+    expect(vm.poolReferenceMessage).toContain("增加验证交易日、缩短预测区间");
     expect(createMLStrategy).not.toHaveBeenCalled();
     expect(createTask).not.toHaveBeenCalled();
     expect(createMLTraining).not.toHaveBeenCalled();

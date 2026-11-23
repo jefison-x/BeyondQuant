@@ -2426,3 +2426,14 @@ def test_ml_options_only_forwards_optional_pool_reference_with_trusted_identity(
     assert client.get(
         "/api/product/ml/options?horizon_sessions=21", headers=headers,
     ).status_code == 422
+    assert client.get(
+        "/api/product/ml/options?pool_id=stock_pool_test&mode=walk_forward&horizon_sessions=10"
+        "&validation_mode=rolling&train_sessions=100&validation_sessions=20&step_sessions=25"
+        "&folds=3&purge_sessions=10&embargo_sessions=2",
+        headers=headers,
+    ).status_code == 200
+    assert calls[-1] == (
+        "/v1/research/ml/options?pool_id=stock_pool_test&horizon_sessions=10&mode=walk_forward"
+        "&validation_mode=rolling&train_sessions=100&validation_sessions=20&step_sessions=25"
+        "&folds=3&purge_sessions=10&embargo_sessions=2"
+    )

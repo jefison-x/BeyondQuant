@@ -25,17 +25,24 @@ export interface MLPoolDataReference {
   recommendation?: MLDateRecommendation;
   recommended_dates: MLRecommendedDates | null;
 }
-export type MLRecommendationReason = "no_common_history" | "calendar_incomplete" | "data_not_ready" | "insufficient_samples" | "inspection_limit";
-export interface MLRecommendationCounts { train: number; validation: number; prediction: number }
-export interface MLRecommendedDates {
+export type MLRecommendationReason = "no_common_history" | "calendar_incomplete" | "data_not_ready" | "insufficient_samples" | "inspection_limit" | "invalid_parameters" | "unsupported_mode";
+export interface MLCompatibleRecommendationCounts { train: number; validation: number; prediction: number }
+export interface MLWalkForwardRecommendationCounts { development: number; prediction: number; folds: number }
+export type MLRecommendationCounts = MLCompatibleRecommendationCounts | MLWalkForwardRecommendationCounts;
+export interface MLCompatibleRecommendedDates {
   train_start: string; train_end: string;
   validation_start: string; validation_end: string;
   prediction_start: string; prediction_end: string;
 }
+export interface MLWalkForwardRecommendedDates {
+  development_start: string; development_end: string;
+  prediction_start: string; prediction_end: string;
+}
+export type MLRecommendedDates = MLCompatibleRecommendedDates | MLWalkForwardRecommendedDates;
 export interface MLDateRecommendation {
   state: "available" | "unavailable";
   reason: MLRecommendationReason | null;
-  mode: "compatible";
+  mode: "compatible" | "walk_forward" | "regime";
   horizon_sessions: number;
   counts: MLRecommendationCounts | null;
   window_start: string | null;
@@ -47,6 +54,12 @@ export interface MLDateRecommendation {
 export interface MLOptions {
   schema_version: string; tasks: Array<Record<string, any>>; pools: Array<Record<string, any>>;
   selected_pool_data_reference?: MLPoolDataReference;
+}
+export interface MLDateRecommendationParameters {
+  mode: "walk_forward" | "regime";
+  validation_mode?: "expanding" | "rolling";
+  train_sessions?: number; validation_sessions?: number; step_sessions?: number;
+  folds?: number; purge_sessions?: number; embargo_sessions?: number;
 }
 export interface MLStudySummary { artifact_id: string; task_id: string; task_title: string; status: string; lifecycle_status?: "active" | "archived"; created_at?: string; schema_version: string; name: string; learner_profile?: string; regime_enabled: boolean; horizon_sessions?: string; training_status?: string; prediction_status?: string; backtest_status?: string; stage: string }
 export interface MLStudyPage { schema_version: string; studies: MLStudySummary[]; total: number; limit: number; offset: number; has_more: boolean }
@@ -65,7 +78,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 const post = <T>(path: string, payload?: Record<string, unknown>) => request<T>(path, { method: "POST", ...(payload ? { body: JSON.stringify(payload) } : {}) });
 export const getMLWorkspace = () => request<MLWorkspace>("/workspace");
 export const getMLCapabilities = () => request<MLCapabilities>("/capabilities");
-export const getMLOptions = (poolId?: string, horizonSessions?: number) => {
+export const getMLOptions = (poolId?: string, horizonSessions?: number, recommendation?: MLDateRecommendationParameters) => {
   if (!poolId) return request<MLOptions>("/options");
   if (horizonSessions !== undefined
     && (!Number.isInteger(horizonSessions) || horizonSessions < 1 || horizonSessions > 20)) {
@@ -73,6 +86,13 @@ export const getMLOptions = (poolId?: string, horizonSessions?: number) => {
   }
   const params = new URLSearchParams({ pool_id: poolId });
   if (horizonSessions !== undefined) params.set("horizon_sessions", String(horizonSessions));
+  if (recommendation) {
+    params.set("mode", recommendation.mode);
+    for (const key of ["validation_mode", "train_sessions", "validation_sessions", "step_sessions", "folds", "purge_sessions", "embargo_sessions"] as const) {
+      const value = recommendation[key];
+      if (value !== undefined) params.set(key, String(value));
+    }
+  }
   return request<MLOptions>(`/options?${params.toString()}`);
 };
 export const getMLStudies = (query = "", status = "all", limit = 20, offset = 0) => {

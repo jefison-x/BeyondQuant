@@ -128,6 +128,17 @@ def validate_workflow_trace_event(event: object) -> WorkflowTraceEvent:
         _validate_answer(payload)
     elif kind == "agent.activity":
         _validate_activity(payload)
+    elif kind == "session.prompt.accepted":
+        fields = {"run_id", "message_id", "content_sha256"}
+        _exact_fields(payload, required=fields, allowed=fields)
+        if (source != "runtime-adapter"
+                or not isinstance(payload["run_id"], str)
+                or re.fullmatch(r"[0-9a-f]{32}", payload["run_id"]) is None
+                or not isinstance(payload["message_id"], str)
+                or re.fullmatch(r"message_[0-9a-f]{32}", payload["message_id"]) is None
+                or not isinstance(payload["content_sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", payload["content_sha256"]) is None):
+            raise ValueError("accepted prompt event requires exact Runtime and Product message identities")
     elif kind == "session.waiting":
         _exact_fields(payload, required={"run_id", "elapsed_seconds", "last_activity_seconds"},
                       allowed={"run_id", "elapsed_seconds", "last_activity_seconds"})

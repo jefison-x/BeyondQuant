@@ -923,6 +923,14 @@ def product_ml_capabilities(request: Request) -> dict[str, object]:
 def product_ml_options(
     request: Request, pool_id: str | None = None,
     horizon_sessions: int | None = Query(default=None, ge=1, le=20),
+    mode: str | None = Query(default=None, pattern="^(compatible|walk_forward|regime)$"),
+    validation_mode: str | None = Query(default=None, pattern="^(expanding|rolling)$"),
+    train_sessions: int | None = Query(default=None, ge=60, le=1500),
+    validation_sessions: int | None = Query(default=None, ge=10, le=250),
+    step_sessions: int | None = Query(default=None, ge=10, le=250),
+    folds: int | None = Query(default=None, ge=2, le=12),
+    purge_sessions: int | None = Query(default=None, ge=1, le=20),
+    embargo_sessions: int | None = Query(default=None, ge=0, le=20),
 ) -> dict[str, object]:
     _product_principal(request)
     path = "/v1/research/ml/options"
@@ -931,6 +939,14 @@ def product_ml_options(
         params["pool_id"] = pool_id
     if horizon_sessions is not None:
         params["horizon_sessions"] = horizon_sessions
+    for name, value in (
+        ("mode", mode), ("validation_mode", validation_mode),
+        ("train_sessions", train_sessions), ("validation_sessions", validation_sessions),
+        ("step_sessions", step_sessions), ("folds", folds),
+        ("purge_sessions", purge_sessions), ("embargo_sessions", embargo_sessions),
+    ):
+        if value is not None:
+            params[name] = value
     if params:
         path += "?" + urlencode(params)
     return _backend_request("GET", path, headers=_trusted_agent_headers(request))

@@ -315,7 +315,20 @@ paths:
   /api/product/ml/capabilities:
     get: {summary: 返回代码管理且已资格验证的动态 ML capability 注册表安全投影。, responses: *okResponses}
   /api/product/ml/options:
-    get: {summary: 返回创建 ML 研究所需的有界任务和冻结股票池选项。, responses: *okResponses}
+    get:
+      summary: 返回创建 ML 研究所需的有界任务、冻结股票池选项和按当前验证方案计算的日期建议。
+      parameters:
+        - {name: pool_id, in: query, required: false, schema: {type: string}}
+        - {name: horizon_sessions, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 20}}
+        - {name: mode, in: query, required: false, schema: {type: string, enum: [compatible, walk_forward, regime]}}
+        - {name: validation_mode, in: query, required: false, schema: {type: string, enum: [expanding, rolling]}}
+        - {name: train_sessions, in: query, required: false, schema: {type: integer, minimum: 60, maximum: 1500}}
+        - {name: validation_sessions, in: query, required: false, schema: {type: integer, minimum: 10, maximum: 250}}
+        - {name: step_sessions, in: query, required: false, schema: {type: integer, minimum: 10, maximum: 250}}
+        - {name: folds, in: query, required: false, schema: {type: integer, minimum: 2, maximum: 12}}
+        - {name: purge_sessions, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 20}}
+        - {name: embargo_sessions, in: query, required: false, schema: {type: integer, minimum: 0, maximum: 20}}
+      responses: *okResponses
   /api/product/ml/studies:
     get: {summary: 服务端筛选并分页返回 owner-scoped ML 研究轻量目录。, responses: *okResponses}
   /api/product/ml/studies/{strategy_artifact_id}:
@@ -717,6 +730,27 @@ paths:
     get:
       summary: 只读查询当前用户会话的公开回答投递状态；不重置重试预算或启动模型。
       responses: *okResponses
+  /v1/agent/sessions/{session_id}/retry-draft:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - name: terminal_sequence
+        in: query
+        required: true
+        schema: {type: integer, minimum: 1}
+    get:
+      summary: 只读准备新会话草稿，要求原消息与已结算、无工具调用的最新失败回合精确对应。
+      responses:
+        "200":
+          description: 原消息草稿，等待用户明确发送。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [terminal_sequence, content]
+                properties:
+                  terminal_sequence: {type: integer}
+                  content: {type: string}
+        "409": {description: 当前会话、结算状态或原消息无法安全确认。}
   /v1/agent/sessions/{session_id}/turns:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     post: {summary: 提交 a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}

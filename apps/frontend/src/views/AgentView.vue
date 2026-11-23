@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } fro
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentSession,
+  AgentRequestError, cancelSession, createAgentSession, deleteAgentSession, getAgentRetryDraft, getAgentSession,
   listAgentSessions, resumeSession, streamWorkflowEvents, submitTurn, updateAgentSession,
 } from "@/api/agent";
 import { continueApproval } from "@/api/research";
@@ -17,6 +17,7 @@ import WorkflowCard from "@/components/agent/WorkflowCard.vue";
 import { useAgentStore, type AgentMessage } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 import { workflowCardDestination } from "@/router/workflowCardNavigation";
+import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -25,6 +26,7 @@ const agent = useAgentStore();
 const prompt = ref("");
 const error = ref("");
 const busy = ref(false);
+const retryDraftBusy = ref(false);
 const loading = ref(false);
 const initialized = ref(false);
 const requestedSessionUnavailable = ref(false);
@@ -606,6 +608,33 @@ async function send(value = prompt.value) {
   finally { busy.value = false; }
 }
 
+async function prepareRetryDraft(terminalSequence: number) {
+  if (retryDraftBusy.value || busy.value || runActive.value || prompt.value.trim()) return;
+  const sessionId = agent.activeSessionId;
+  if (!sessionId) return;
+  const generation = conversationGeneration;
+  const stillCurrent = () => !viewDisposed && generation === conversationGeneration
+    && agent.activeSessionId === sessionId && !runActive.value && !busy.value && !prompt.value.trim()
+    && outcomes.value.at(-1)?.sequence === terminalSequence;
+  retryDraftBusy.value = true;
+  try {
+    const draft = await getAgentRetryDraft(sessionId, terminalSequence, auth.token);
+    if (!stillCurrent() || draft.terminal_sequence !== terminalSequence || !draft.content.trim()) return;
+    const newSession = createRequestId();
+    await router.replace({ path: "/agent", query: { new: newSession } });
+    await nextTick();
+    if (viewDisposed || route.query.new !== newSession || agent.activeSessionId || prompt.value.trim()) return;
+    prompt.value = draft.content;
+    ElMessage.success("已复制问题。请补充需要沿用的上下文，再发送。");
+    await nextTick();
+    composerInput.value?.focus?.();
+  } catch (exc) {
+    if (stillCurrent()) {
+      ElMessage.warning(exc instanceof Error ? exc.message : "无法确认上一轮适合重试。");
+    }
+  } finally { retryDraftBusy.value = false; }
+}
+
 async function prepareResearchFollowup(draft: string) {
   if (sessionContinuationBlocked.value) return;
   if (prompt.value.trim()) {
@@ -792,6 +821,11 @@ onBeforeUnmount(() => {
             <div class="message-body">
               <div>{{ item.outcome.message }}</div>
               <small class="failure-diagnostic">诊断编号：{{ item.outcome.diagnosticId }}</small>
+              <el-button v-if="item.outcome.retryDraftCandidate && !item.outcome.laterTurnStarted
+                  && item.outcome.sequence === outcomes.at(-1)?.sequence"
+                text data-testid="research-retry-draft" :loading="retryDraftBusy"
+                :disabled="busy || runActive || Boolean(prompt.trim())"
+                @click="prepareRetryDraft(item.outcome.sequence)">带到新会话重试</el-button>
               <small><time :datetime="item.outcome.timestamp">{{ new Date(item.outcome.timestamp).toLocaleString() }}</time><span v-if="item.outcome.laterTurnStarted"> · 后续已发起新一轮（不表示原任务已完成）</span></small>
             </div>
           </article>

@@ -228,6 +228,7 @@ from .ml_training import (
     MLTrainingRunStore,
     aggregate_ml_readiness,
     recommend_compatible_training_dates,
+    recommend_walk_forward_training_dates,
 )
 from .task_progress import task_progress
 from .ml_prediction import (
@@ -592,11 +593,13 @@ def conversation_by_runtime(session_id: str, request: Request) -> dict[str, obje
 
 
 @app.get("/v1/product/conversations/{conversation_id}")
-def get_conversation(conversation_id: str, request: Request) -> dict[str, object]:
+def get_conversation(conversation_id: str, request: Request,
+                     latest_message_only: bool = False) -> dict[str, object]:
     owner = _conversation_owner(request)
     return _conversation_call(lambda: {
         "conversation": conversation_store.get(owner, conversation_id),
-        "messages": conversation_store.messages(owner, conversation_id),
+        "messages": (conversation_store.messages(owner, conversation_id, limit=1, newest_first=True)
+                     if latest_message_only else conversation_store.messages(owner, conversation_id)),
     })
 
 
@@ -3867,10 +3870,11 @@ def _ml_workspace_options(context: dict[str, str]) -> dict[str, object]:
 def _unavailable_ml_recommendation(
     *, horizon_sessions: int, reason: str, window_start: str | None = None,
     window_end: str | None = None, continuous_history_verified: bool = False,
+    mode: str = "compatible",
 ) -> dict[str, object]:
     return {
         "recommendation": {
-            "state": "unavailable", "reason": reason, "mode": "compatible",
+            "state": "unavailable", "reason": reason, "mode": mode,
             "horizon_sessions": horizon_sessions, "counts": None,
             "window_start": window_start, "window_end": window_end,
             "continuous_history_verified": continuous_history_verified,
@@ -3882,16 +3886,21 @@ def _unavailable_ml_recommendation(
 
 def _recommend_ml_pool_dates(
     *, pool: dict[str, object], snapshot: dict[str, object], reference: dict[str, object],
-    horizon_sessions: int,
+    horizon_sessions: int, mode: str = "compatible",
+    validation_parameters: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    if mode == "regime":
+        return _unavailable_ml_recommendation(
+            horizon_sessions=horizon_sessions, reason="unsupported_mode", mode=mode,
+        )
     if reference.get("state") != "observed_bounds":
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="no_common_history",
+            horizon_sessions=horizon_sessions, reason="no_common_history", mode=mode,
         )
     members = snapshot.get("members")
     if not isinstance(members, list):
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="no_common_history",
+            horizon_sessions=horizon_sessions, reason="no_common_history", mode=mode,
         )
     symbols = sorted(str(item.get("symbol", "")).strip().upper()
                      for item in members if isinstance(item, dict))
@@ -3901,7 +3910,7 @@ def _recommend_ml_pool_dates(
         or len(symbols) != int(reference.get("member_count") or 0)
     ):
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="no_common_history",
+            horizon_sessions=horizon_sessions, reason="no_common_history", mode=mode,
         )
     max_sessions = MAX_REQUIRED_CELLS // len(symbols)
     minimum_sessions = (
@@ -3910,34 +3919,39 @@ def _recommend_ml_pool_dates(
     )
     if max_sessions < minimum_sessions:
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="inspection_limit",
+            horizon_sessions=horizon_sessions, reason="inspection_limit", mode=mode,
         )
 
     try:
         first_observed = datetime.strptime(str(reference["observed_start_date"]), "%Y%m%d")
         last_observed = datetime.strptime(str(reference["observed_end_date"]), "%Y%m%d")
         if (last_observed - first_observed).days > 400:
-            return _unavailable_ml_recommendation(
-                horizon_sessions=horizon_sessions, reason="inspection_limit",
-                window_start=first_observed.strftime("%Y%m%d"),
-                window_end=last_observed.strftime("%Y%m%d"),
-            )
+            if mode != "walk_forward":
+                return _unavailable_ml_recommendation(
+                    horizon_sessions=horizon_sessions, reason="inspection_limit", mode=mode,
+                    window_start=first_observed.strftime("%Y%m%d"),
+                    window_end=last_observed.strftime("%Y%m%d"),
+                )
+            # Bound rolling recommendation work to the latest 401 calendar
+            # days while retaining the full-history reference above. Readiness
+            # still verifies every open session and member bar in this suffix.
+            first_observed = last_observed - timedelta(days=400)
         available_sessions = market_data_store.list_open_trading_sessions(
             first_observed.strftime("%Y%m%d"), last_observed.strftime("%Y%m%d"),
         )
     except (KeyError, TypeError, ValueError):
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete", mode=mode,
         )
     if not available_sessions:
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete", mode=mode,
         )
     window_start = first_observed.strftime("%Y%m%d")
     window_end = last_observed.strftime("%Y%m%d")
     if len(available_sessions) > max_sessions or len(symbols) * len(available_sessions) > MAX_REQUIRED_CELLS:
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="inspection_limit",
+            horizon_sessions=horizon_sessions, reason="inspection_limit", mode=mode,
             window_start=window_start, window_end=window_end,
         )
 
@@ -3945,7 +3959,7 @@ def _recommend_ml_pool_dates(
     if master is None:
         return _unavailable_ml_recommendation(
             horizon_sessions=horizon_sessions, reason="data_not_ready",
-            window_start=window_start, window_end=window_end,
+            window_start=window_start, window_end=window_end, mode=mode,
         )
     try:
         declared, _membership_mode = _ml_pool_market_scope(pool, snapshot)
@@ -3960,16 +3974,16 @@ def _recommend_ml_pool_dates(
         reason = "inspection_limit" if "50000 symbol-session cells" in str(error) else "data_not_ready"
         return _unavailable_ml_recommendation(
             horizon_sessions=horizon_sessions, reason=reason,
-            window_start=window_start, window_end=window_end,
+            window_start=window_start, window_end=window_end, mode=mode,
         )
     if readiness.get("calendar_complete") is not True:
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="calendar_incomplete",
+            horizon_sessions=horizon_sessions, reason="calendar_incomplete", mode=mode,
             window_start=window_start, window_end=window_end,
         )
     if readiness.get("state") != "ready":
         return _unavailable_ml_recommendation(
-            horizon_sessions=horizon_sessions, reason="data_not_ready",
+            horizon_sessions=horizon_sessions, reason="data_not_ready", mode=mode,
             window_start=window_start, window_end=window_end,
         )
     try:
@@ -3978,7 +3992,13 @@ def _recommend_ml_pool_dates(
         reason = "inspection_limit" if "bounded row limit" in str(error) else "data_not_ready"
         return _unavailable_ml_recommendation(
             horizon_sessions=horizon_sessions, reason=reason,
-            window_start=window_start, window_end=window_end,
+            window_start=window_start, window_end=window_end, mode=mode,
+        )
+    if mode == "walk_forward":
+        return recommend_walk_forward_training_dates(
+            sessions=available_sessions, symbols=symbols, ready_input=ready_input,
+            readiness=readiness, horizon_sessions=horizon_sessions,
+            validation_parameters=validation_parameters or {},
         )
     return recommend_compatible_training_dates(
         sessions=available_sessions, symbols=symbols, ready_input=ready_input,
@@ -3988,6 +4008,7 @@ def _recommend_ml_pool_dates(
 
 def _ml_pool_date_reference(
     pool_id: str, context: dict[str, str], *, horizon_sessions: int = 5,
+    mode: str = "compatible", validation_parameters: dict[str, object] | None = None,
 ) -> dict[str, object]:
     pool = paper_store.get_pool(pool_id, trusted_owner=context["owner_principal"], include_members=False)
     if pool.get("status") == "deleted" or pool.get("workspace_id") != context["workspace_id"]:
@@ -4016,7 +4037,8 @@ def _ml_pool_date_reference(
     }
     recommendation = _recommend_ml_pool_dates(
         pool=pool, snapshot=snapshot, reference=reference,
-        horizon_sessions=horizon_sessions,
+        horizon_sessions=horizon_sessions, mode=mode,
+        validation_parameters=validation_parameters,
     )
     current = paper_store.get_pool(
         pool_id, trusted_owner=context["owner_principal"], include_members=False,
@@ -4035,6 +4057,14 @@ def _ml_pool_date_reference(
 def get_ml_options(
     request: Request, pool_id: str | None = None,
     horizon_sessions: int = Query(default=5, ge=1, le=20),
+    mode: str = Query(default="compatible", pattern="^(compatible|walk_forward|regime)$"),
+    train_sessions: int = Query(default=60, ge=60, le=1500),
+    validation_sessions: int = Query(default=10, ge=10, le=250),
+    step_sessions: int = Query(default=10, ge=10, le=250),
+    folds: int = Query(default=2, ge=2, le=12),
+    validation_mode: str = Query(default="expanding", pattern="^(expanding|rolling)$"),
+    purge_sessions: int = Query(default=5, ge=1, le=20),
+    embargo_sessions: int = Query(default=0, ge=0, le=20),
 ) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     result = {"schema_version": "ml-options.v1", **_ml_workspace_options(context)}
@@ -4042,7 +4072,13 @@ def get_ml_options(
         try:
             result["selected_pool_data_reference"] = _paper_call(
                 lambda: _ml_pool_date_reference(
-                    pool_id, context, horizon_sessions=horizon_sessions,
+                    pool_id, context, horizon_sessions=horizon_sessions, mode=mode,
+                    validation_parameters={
+                        "mode": validation_mode, "train_sessions": train_sessions,
+                        "validation_sessions": validation_sessions, "step_sessions": step_sessions,
+                        "folds": folds, "purge_sessions": purge_sessions,
+                        "embargo_sessions": embargo_sessions,
+                    },
                 )
             )
         except (MarketDataPersistenceError, MarketReadinessPersistenceError,

@@ -37,6 +37,11 @@ def test_catalog_is_owner_scoped_and_replays_messages(alice_workspace: None) -> 
     detail = store.get("alice", conversation["conversation_id"])
     assert detail["title"] == "比较两种动量策略"
     assert store.messages("alice", conversation["conversation_id"])[0]["content"] == "比较两种动量策略"
+    latest = store.append_user_message("alice", conversation["conversation_id"], "补充比较标准")
+    assert [item["message_id"] for item in store.messages(
+        "alice", conversation["conversation_id"], limit=1, newest_first=True,
+    )] == [latest["message_id"]]
+    assert store.messages("alice", conversation["conversation_id"], limit=1)[0]["message_id"] == message["message_id"]
     try:
         store.get("bob", conversation["conversation_id"])
     except ConversationNotFound:

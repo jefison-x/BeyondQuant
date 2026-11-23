@@ -34,9 +34,10 @@ from app.ml_training import (
     MLTrainingRunStore,
     RUNTIME_IDENTITY,
     promote_waiting_training_runs,
+    require_walk_forward_fold_sample_counts,
+    walk_forward_training_partitions,
 )
 from app.ml_prediction import MLPredictionCoordinator, MLPredictionRunStore
-from app.ml_regime import validate_regime_snapshot
 from app.research import ResearchStore
 
 
@@ -62,8 +63,7 @@ class LightGBMTrainer:
         self, train_rows: list[dict[str, object]], validation_rows: list[dict[str, object]],
         strategy: dict[str, object],
     ) -> dict[str, object]:
-        if len(train_rows) < 20 or len(validation_rows) < 5:
-            raise ValueError("insufficient train or validation rows")
+        require_walk_forward_fold_sample_counts(train_rows, validation_rows)
 
         def matrix(selected: list[dict[str, object]]) -> tuple[np.ndarray, np.ndarray]:
             x = np.asarray(
@@ -141,8 +141,7 @@ class RidgeTrainer:
         self, train_rows: list[dict[str, object]], validation_rows: list[dict[str, object]],
         strategy: dict[str, object],
     ) -> dict[str, object]:
-        if len(train_rows) < 20 or len(validation_rows) < 5:
-            raise ValueError("insufficient train or validation rows")
+        require_walk_forward_fold_sample_counts(train_rows, validation_rows)
         parameters = strategy.get("learner", {}).get("parameters", {})
         if not isinstance(parameters, dict):
             raise ValueError("ridge parameters are unavailable")
@@ -221,39 +220,11 @@ class QualifiedTrainer:
         trainer = self._trainers.get(profile)
         if trainer is None:
             raise ValueError("learner profile is not available in the trusted worker")
-        rows = feature_snapshot.get("rows")
-        folds = feature_snapshot.get("folds")
-        if not isinstance(rows, list) or not isinstance(folds, list) or not folds:
-            raise ValueError("walk-forward feature snapshot is incomplete")
-        state_by_session: dict[str, str] = {}
-        if training_regimes is not None:
-            regime_snapshot = validate_regime_snapshot(feature_snapshot.get("regime_snapshot"))
-            state_by_session = {
-                str(row["session"]): str(row["state"])
-                for row in regime_snapshot["rows"]
-            }
-        development_rows = [
-            row for row in rows if isinstance(row, dict) and row.get("split") == "development"
-            and (
-                training_regimes is None
-                or state_by_session.get(str(row.get("session"))) in training_regimes
-            )
-        ]
         trained: list[tuple[dict[str, object], dict[str, object]]] = []
-        for fold in folds:
-            if not isinstance(fold, dict) or not isinstance(fold.get("train"), dict) or not isinstance(fold.get("validation"), dict):
-                raise ValueError("walk-forward fold is invalid")
+        for fold, train_rows, validation_rows in walk_forward_training_partitions(
+            feature_snapshot, training_regimes=training_regimes,
+        ):
             train_window, validation_window = fold["train"], fold["validation"]
-            validation_start = str(validation_window["start"])
-            train_rows = [
-                row for row in development_rows
-                if str(train_window["start"]) <= str(row["session"]) <= str(train_window["end"])
-                and str(row.get("label_end_date", "9999-12-31")) < validation_start
-            ]
-            validation_rows = [
-                row for row in development_rows
-                if str(validation_window["start"]) <= str(row["session"]) <= str(validation_window["end"])
-            ]
             result = trainer.fit_rows(train_rows, validation_rows, strategy)
             payload = self._model_payload(result)
             evidence = {

@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from contextlib import asynccontextmanager, contextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -4507,6 +4507,85 @@ def update_product_session(
         "session_id": conversation["conversation_id"],
         **{key: value for key, value in conversation.items() if key not in {"conversation_id", "runtime_session_id"}},
     }}
+
+
+@app.get("/v1/agent/sessions/{session_id}/retry-draft")
+def get_product_retry_draft(session_id: str, request: Request, terminal_sequence: int = Query(ge=1)) -> JSONResponse:
+    """Return the proven input for a fresh draft without restarting any run."""
+    principal, workspace_id = _trusted_request_identity(request)
+    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id,
+                            params={"latest_message_only": "true"})
+    conversation = body.get("conversation")
+    messages = body.get("messages")
+    if (not isinstance(conversation, dict) or conversation.get("status") != "active"
+            or not isinstance(messages, list) or not messages):
+        raise _retry_draft_unavailable()
+    session = ProductSession(
+        conversation_id=session_id, session_id=conversation["runtime_session_id"],
+        trace_id=conversation["trace_id"], principal=principal, workspace_id=workspace_id,
+    )
+    events = _runtime_events(trace_store.read(session.session_id), session.session_id, session.trace_id)
+    boundary = [event for event in events if event["kind"] in {
+        "session.started", "session.result", "session.failed", "session.cancelled",
+        "session.closed", "session.result.discarded",
+    }]
+    # Closing an idle Runtime after the terminal does not end an active Product conversation.
+    while (boundary and boundary[-1]["kind"] == "session.closed"
+           and boundary[-1]["payload"] in ({"reason": "released"}, {"reason": "adapter-shutdown"})):
+        boundary.pop()
+    if len(boundary) < 2:
+        raise _retry_draft_unavailable()
+    start, failure = boundary[-2:]
+    if (start["kind"] != "session.started" or failure["kind"] != "session.failed"
+            or failure["sequence"] != terminal_sequence
+            or failure["payload"].get("code") not in {
+                "model-service-unavailable", "model-service-rate-limited",
+            }):
+        raise _retry_draft_unavailable()
+    lifecycle = project_lifecycle_event(failure, session.session_id, session.trace_id)
+    if lifecycle is None or lifecycle["root_run_id"] != start["payload"].get("run_id"):
+        raise _retry_draft_unavailable()
+    receipt = lifecycle_receipt(lifecycle)
+    roots = _runtime_root_rows(session)
+    root = next((item for item in roots if item["root_run_id"] == receipt["root_run_id"]), {})
+    if (any(item["authority_status"] != "closed" for item in roots)
+            or root.get("status") != "failed"
+            or root.get("terminal_sequence") != terminal_sequence
+            or root.get("terminal_event_sha256") != receipt["event_sha256"]
+            or root.get("terminal_acp_ingress_sequence") != 0
+            or root.get("terminal_unknown_claim_count") != 0
+            or root.get("operator_process_fence") is not None
+            or root.get("local_validation") is not None):
+        raise _retry_draft_unavailable()
+    message = messages[-1]
+    if (not isinstance(message, dict) or message.get("role") != "user"
+            or type(message.get("sequence")) is not int
+            or message.get("sequence") != conversation.get("message_count")
+            or not isinstance(message.get("message_id"), str)
+            or not isinstance(message.get("content"), str) or not message["content"].strip()):
+        raise _retry_draft_unavailable()
+    content = message["content"]
+    if content.strip().rstrip(_CONTINUATION_PUNCTUATION).casefold() in _SHORT_CONTINUATIONS:
+        raise _retry_draft_unavailable()
+    bindings = [event["payload"] for event in events if event["kind"] == "session.prompt.accepted"
+                and start["sequence"] < event["sequence"] < terminal_sequence]
+    if bindings:
+        expected = {"run_id": receipt["root_run_id"], "message_id": message["message_id"],
+                    "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()}
+        if bindings != [expected]:
+            raise _retry_draft_unavailable()
+    else:
+        # Older runs can use the existing exact receipt while their Runtime is live.
+        prompt = _adapter_prompt_receipt(session.session_id, message["message_id"], content)
+        if prompt is None or prompt["run_id"] != receipt["root_run_id"]:
+            raise _retry_draft_unavailable()
+    return JSONResponse({"terminal_sequence": terminal_sequence, "content": content},
+                        headers={"Cache-Control": "private, no-store"})
+
+
+def _retry_draft_unavailable() -> ProductError:
+    return ProductError(409, "agent_retry_draft_unavailable",
+                        "无法确认上一轮适合重试。请先查看原会话和已提交任务的状态。")
 
 
 @app.post("/v1/agent/sessions/{session_id}/turns", status_code=202,

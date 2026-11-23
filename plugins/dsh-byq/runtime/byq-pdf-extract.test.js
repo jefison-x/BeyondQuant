@@ -46,14 +46,20 @@ test("extracts selected 1-based pages and returns plain text-only metadata", asy
   const result = await extractPdfText(makePdf(["First page", "Second page"]), [2], { runtimeRoot });
 
   assert.equal(result.page_count, 2);
-  assert.deepEqual(result.pages, [{ page: 2, text: "Second page", truncated: false, has_text: true }]);
+  assert.deepEqual(result.pages, [{
+    page: 2, text: "Second page", truncated: false, has_text: true,
+    extraction_method: "native_text",
+  }]);
   assert.equal(result.text_extraction_only, true);
 });
 
 test("reports an empty page explicitly", async () => {
   const result = await extractPdfText(makePdf([null]), [1], { runtimeRoot });
 
-  assert.deepEqual(result.pages, [{ page: 1, text: "", truncated: false, has_text: false }]);
+  assert.deepEqual(result.pages, [{
+    page: 1, text: "", truncated: false, has_text: false,
+    extraction_method: "empty",
+  }]);
 });
 
 test("caps each page at 12000 characters and marks truncation", async () => {
