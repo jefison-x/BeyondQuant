@@ -268,7 +268,9 @@ class DataDemandStore(PgStoreMixin):
         if found is not None:
             raise DataDemandConflict("当前已有一项研究数据准备任务，请等待完成后再申请其他范围。")
 
-    def submit_conversation_preparation(self, *, context, scope, requirement, automation_store, idempotency_key=None):
+    def submit_conversation_preparation(
+        self, *, context, scope, requirement, automation_store, idempotency_key=None, on_submit=None,
+    ):
         """Share the global repair but freeze a private, conversation-bound receipt."""
         public_scope = {"kind": "conversation_research", **scope}
         stable_key = "conversation-prep-" + _hash([context["session_id"], public_scope])
@@ -279,6 +281,11 @@ class DataDemandStore(PgStoreMixin):
         with self._transaction() as connection:
             self._lock_conversation_preparation(connection, context)
             context = self._require_conversation(connection, context)
+            def finish(demand, created):
+                if on_submit is not None:
+                    on_submit(connection, demand["demand_id"])
+                return demand, created
+
             rows = {"owner": context["owner_principal"], "workspace": context["workspace_id"],
                     "session": context["session_id"], "key": payload["idempotency_key"], "scope": public_scope}
             by_key = fetch_one(connection, """SELECT * FROM data_demands
@@ -289,7 +296,7 @@ class DataDemandStore(PgStoreMixin):
                 if (by_key["owner_principal"] != context["owner_principal"]
                         or by_key["session_id"] != context["session_id"] or by_key["scope_json"] != public_scope):
                     raise DataDemandConflict("准备请求标识已用于其他范围。")
-                return self._public(by_key), False
+                return finish(self._public(by_key), False)
             repeat = fetch_one(connection, """SELECT * FROM data_demands
                 WHERE workspace_id=:workspace AND owner_principal=:owner AND session_id=:session
                   AND scope_json=:scope ORDER BY created_at DESC LIMIT 1""", rows)
@@ -300,12 +307,12 @@ class DataDemandStore(PgStoreMixin):
                         raise DataDemandConflict("该范围已有准备记录，请在原会话查看。")
                     execute(connection, "UPDATE data_demands SET conversation_submission_keys=:keys WHERE demand_id=:id",
                             {"keys": [*keys, idempotency_key], "id": repeat["demand_id"]})
-                return self._public(repeat), False
+                return finish(self._public(repeat), False)
             self._require_no_active_preparation(connection, context)
             repair = automation_store.request_data_repair(requirement=requirement,
                 requested_by=CONVERSATION_REPAIR_ACTOR, retry_terminal=False, _connection=connection)
-            return self.create(payload, context=context, scope=public_scope, requirements=[requirement],
-                repair_request_ids=[str(repair["request_id"])], _connection=connection)
+            return finish(*self.create(payload, context=context, scope=public_scope, requirements=[requirement],
+                repair_request_ids=[str(repair["request_id"])], _connection=connection))
 
     def list_conversation_preparations(self, context):
         rows = self._execute("""SELECT * FROM data_demands WHERE owner_principal=:owner

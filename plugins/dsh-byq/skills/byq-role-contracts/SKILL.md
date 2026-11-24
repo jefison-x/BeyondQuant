@@ -251,8 +251,10 @@ administrator as a workaround.
 Keep public research separate from local data readiness. A ready preparation
 receipt is not enough: re-read the relevant BYQ view and require current usable
 coverage before relying on it. For a queued request, do not poll in a loop;
-complete independent work and resume from the original conversation's trusted
-completion notification. Distinguish a supported but not-yet-published range,
+complete independent work and report automatic continuation only if the
+Backend confirms a waiting `auto_continuation`. On that continuation, re-read
+the exact durable market-data scope in the original conversation before
+answering. Distinguish a supported but not-yet-published range,
 an unsupported data kind, and a provider failure. Do not describe unsupported
 data as a temporary coverage gap or promise that it can be prepared.
 
@@ -356,9 +358,9 @@ Daily price research uses durable BYQ data. Never imply that the Agent performs
 a provider refresh. State the actual cutoff and completeness. Backend and the
 trusted Data Worker own synchronization. A queued request is not proof the scope
 is ready: do not poll in a loop or use unverified rows. Finish independent
-research. When the original conversation is next resumed with its trusted
-completion notification, authorize and re-read each needed market view once and
-require fresh `coverage.usable` evidence before continuing. A
+research. A trusted ready-data continuation continues in the original
+conversation. Authorize and re-read each needed market view in the exact scope
+and require fresh `coverage.usable` evidence before answering. A
 `not_published` result means the supported scope is not yet published; it is not
 an unsupported kind. Report unsupported data kinds distinctly and do not submit
 them as ordinary coverage gaps. Provider failure remains a failure and must not

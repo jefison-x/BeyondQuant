@@ -116,6 +116,11 @@ paths:
     get:
       summary: Recheck persisted data coverage and read a conversation's preparation receipt
       responses: *okResponses
+  /api/product/data-center/conversations/{conversation_id}/research-preparations/{request_id}/stop-continuation:
+    parameters: [{$ref: "#/components/parameters/ConversationId"}, {$ref: "#/components/parameters/RequestId"}]
+    post:
+      summary: Stop pending automatic research for the exact preparation in the signed-in user's conversation
+      responses: *okResponses
   /api/product/data-center/conversations/{conversation_id}/research-preparations/{request_id}/retry:
     parameters: [{$ref: "#/components/parameters/ConversationId"}, {$ref: "#/components/parameters/RequestId"}]
     post:

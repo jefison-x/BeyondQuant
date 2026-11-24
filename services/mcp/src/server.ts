@@ -485,7 +485,7 @@ function backtestTaskCreateFetcher(context: CompleteAgentContext): typeof fetch 
   };
 }
 
-function acpAgentAuditFetcher(context: CompleteAgentContext): typeof fetch | undefined {
+function acpBackendProofFetcher(context: CompleteAgentContext): typeof fetch | undefined {
   const auth = context[privateAuth];
   const observationId = context[privateObservationId];
   if (auth?.kind !== "acp-agent" || !BACKEND_PROOF_TOKEN
@@ -527,9 +527,12 @@ async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
 
 async function byqDataDemandCreate(args: DataDemandRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqDataDemandCreate(
-    BACKEND_URL, args, trustedBackendFetcher(context),
-  ) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const fetcher = "scope_kind" in args && args.scope_kind === "conversation_research"
+    && context[privateAuth]?.kind === "acp-agent"
+    ? acpBackendProofFetcher(context)
+    : trustedBackendFetcher(context);
+  return fetcher ? fetchByqDataDemandCreate(BACKEND_URL, args, fetcher) : agentContextUnavailable();
 }
 
 async function byqDataDemandGet(args: DataDemandLookup, extra: unknown) {
@@ -695,7 +698,7 @@ async function byqAgentAudit(args: Record<string, unknown>, extra: unknown) {
   if (!context) return agentContextUnavailable();
   const isAcpAgent = context[privateAuth]?.kind === "acp-agent";
   if (!isAcpAgent) return fetchByqAgentAudit(BACKEND_URL, args, context);
-  const fetcher = acpAgentAuditFetcher(context);
+  const fetcher = acpBackendProofFetcher(context);
   if (!fetcher) return acpBridgeUnavailable("acp_audit_backend_proof_unavailable");
   return fetchByqAgentAudit(BACKEND_URL, args, context, fetcher, true);
 }
@@ -1120,10 +1123,10 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = await (callback as (...args: unknown[]) => unknown)(
                       toolArgs, callContext, ...callArgs.slice(2));
                   }
-                } else if (auth.kind === "acp-agent" && name === "byq_backtest_task_create") {
-                  // The generic ingress receipt is the Backend's exact Job
-                  // admission claim; this action does not use the strategy
-                  // domain-call evidence protocol.
+                } else if (auth.kind === "acp-agent"
+                    && (name === "byq_backtest_task_create" || name === "byq_data_demand_create")) {
+                  // These domain endpoints bind the original tool ingress to
+                  // the durable Job or the exact conversation preparation.
                   const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
                   handlerResult = await (callback as (...args: unknown[]) => unknown)(
                     toolArgs, callContext, ...callArgs.slice(2));

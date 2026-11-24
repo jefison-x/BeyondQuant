@@ -679,3 +679,133 @@ def test_conversation_preparation_distinguishes_unpublished_and_unsupported(monk
     assert "5 个" in too_wide.json()["detail"]
     assert client.get(path, headers=headers).json() == {"preparations": []}
     assert main.market_automation_store.claim_data_repair() is None
+
+
+
+@pytest.mark.parametrize("action", ["stop", "disable_auto_continue", "resume"])
+def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, action):
+    from uuid import uuid4
+
+    from tests.test_acp_domain_call_proof import (
+        _bind, _independent_cursor_digest, _observe_tool, _open_root, _settle_tool,
+    )
+    from tests.workspace_helpers import trusted_product_agent_context
+
+    class ReadyAfterVerifiedRepair(ConversationPreparationReadiness):
+        def assess(self, requirement):
+            result = super().assess(requirement)
+            return {**result, "ready_input_sha256": "d" * 64 if self.state == "ready" else None}
+
+    readiness = ReadyAfterVerifiedRepair()
+    monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority")
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    monkeypatch.setattr(main, "MCP_BACKEND_PROOF_TOKEN", "synthetic-data-preparation-proof")
+    session_id = "session-agent-preparation"
+    context = trusted_product_agent_context(
+        "research-user", actor=f"byq-product-agent-{session_id}", session_id=session_id,
+        trace_id="trace-agent-preparation", dsh_run_id="generation-agent-preparation",
+    )
+    catalog = ConversationCatalogStore()
+    conversation = catalog.create("research-user", session_id, context["x-byq-trace-id"])
+    catalog.append_user_message("research-user", conversation["conversation_id"], "研究招商银行日线")
+    root, identity = _open_root(main.agent_store, context, "research-preparation-run", str(uuid4()))
+    _bind(main.agent_store, context, identity)
+    arguments = {
+        "symbols": ["600036.SH"], "start_date": "2024-11-18", "end_date": "2024-11-18",
+        "purpose": "research", "scope_kind": "conversation_research", "idempotency_key": "research-preparation-acp",
+    }
+    ingress = _observe_tool(main.agent_store, context, identity, "byq_data_demand_create", arguments)
+    headers = {
+        **context, "authorization": "Bearer synthetic-data-preparation-proof", "x-byq-root-run-id": root,
+        "x-byq-acp-origin": "root", "x-byq-acp-observation-id": ingress["mcp_request_id"],
+    }
+    client = TestClient(main.app)
+    changed = client.post("/v1/agent/data-demands", headers=headers,
+                          json={**arguments, "end_date": "2024-11-19"})
+    assert changed.status_code in {403, 404, 409, 422}
+    prepared = client.post("/v1/agent/data-demands", headers=headers, json=arguments)
+    assert prepared.status_code == 202, prepared.json()
+    data = prepared.json()
+    assert data["auto_continuation"]["status"] == "waiting"
+    demand = data["demand"]["demand_id"]
+    path = f"/v1/data-center/conversations/{conversation['conversation_id']}/research-preparations/{demand}"
+    assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "waiting"
+    if action == "stop":
+        stopped = client.post(f"{path}/stop-continuation", headers=context)
+        assert stopped.status_code == 200
+        assert stopped.json()["auto_continuation"]["status"] == "cancelled"
+        return
+
+    boot = context["x-byq-runtime-boot-id"]
+    trusted = {"owner_principal": "research-user", "workspace_id": context["x-byq-workspace-id"],
+               "session_id": session_id, "trace_id": context["x-byq-trace-id"]}
+    private = {"authorization": "Bearer synthetic-runtime-authority"}
+    base = f"/internal/research-data-continuation/{conversation['conversation_id']}"
+    assert client.post(f"{base}/peek", headers=private, json=trusted).json() == {"continuation": None}
+    _settle_tool(main.agent_store, context, identity, ingress)
+    cursor, cursor_sha256, _ = _independent_cursor_digest(main.agent_store, root)
+    main.agent_store._execute(
+        """UPDATE agent_runtime_turns SET status='completed',authority_status='closed',terminal_sequence=8,
+            terminal_event_sha256=:sha,terminal_unknown_claim_count=0,terminal_acp_ingress_sequence=:sequence,
+            terminal_acp_ingress_sha256=:cursor_sha256 WHERE root_run_id=:root""",
+        {"root": root, "sha": "1" * 64, "sequence": cursor, "cursor_sha256": cursor_sha256},
+    )
+    assert client.post(f"{base}/peek", headers=private, json=trusted).json() == {"continuation": None}
+    auto = main.market_automation_store
+    repair = auto.claim_data_repair()
+    assert repair is not None
+    readiness.state = "ready"
+    auto.complete_data_repair(repair["request_id"])
+    main.data_demand_store.settle_conversation_preparations(readiness_store=readiness, automation_store=auto)
+    if action == "disable_auto_continue":
+        from packages.contracts.agent_execution_options import default_agent_execution_options
+
+        user = main.user_store._fetch_one("SELECT user_id FROM users WHERE username='research-user'")
+        main.user_store.update_agent_execution_options(user["user_id"], {
+            "schema_version": "agent-execution-options.v1",
+            "expected_revision": 0,
+            "options": {**default_agent_execution_options(), "auto_continue": False},
+        })
+        assert client.post(f"{base}/peek", headers=private, json=trusted).json() == {"continuation": None}
+        assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "cancelled"
+        return
+
+    ready = client.post(f"{base}/peek", headers=private, json=trusted)
+    assert ready.status_code == 200, ready.json()
+    offer = ready.json()["continuation"]
+    assert offer["ready_input_sha256"] == "d" * 64
+    continuation = offer["continuation_id"]
+    payload = {**trusted, "continuation_id": continuation, "boot_id": boot}
+    claimed = client.post(f"{base}/claim", headers=private, json=payload).json()["continuation"]
+    assert claimed["continuation_id"] == continuation
+    assert client.post(f"{base}/claim", headers=private, json=payload).json() == {"continuation": None}
+
+    new_root = uuid4().hex
+    binding = {**trusted, "root_run_id": new_root, "boot_id": boot,
+               "content_sha256": claimed["content_sha256"]}
+    bind_path = f"/internal/research-data-continuation/{continuation}/bind"
+    bound = client.post(bind_path, headers=private, json=binding)
+    assert bound.status_code == 200, bound.json()
+    assert bound.json() == {"continuation_id": continuation, "root_run_id": new_root}
+    assert main.agent_store._fetch_one("SELECT root_run_id FROM agent_runtime_turns WHERE root_run_id=:root",
+                                      {"root": new_root}) is None
+
+    from app.agent_research import AgentUnauthorized
+    _, new_identity = _open_root(main.agent_store, context, "research-continuation-run", str(uuid4()),
+                                 sequence=10, root_run_id=new_root)
+    _bind(main.agent_store, context, new_identity)
+    with pytest.raises(AgentUnauthorized):
+        _observe_tool(main.agent_store, context, new_identity, "byq_data_demand_create", arguments)
+    read = _observe_tool(main.agent_store, context, new_identity, "byq_market_daily",
+                         {"ts_code": "600036.SH", "trade_date": "20241118"})
+    _settle_tool(main.agent_store, context, new_identity, read)
+    main.agent_store._execute(
+        """UPDATE agent_runtime_turns SET status='completed',authority_status='closed',terminal_sequence=14,
+            terminal_event_sha256=:sha,terminal_unknown_claim_count=0,terminal_acp_ingress_sequence=:sequence
+            WHERE root_run_id=:root""",
+        {"root": new_root, "sha": "2" * 64, "sequence": read["sequence"]},
+    )
+    assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "bound"
+    catalog.append_assistant_message("research-user", conversation["conversation_id"], "已复查行情。", 12)
+    assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "succeeded"

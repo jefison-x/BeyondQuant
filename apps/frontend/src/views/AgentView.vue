@@ -855,6 +855,7 @@ onBeforeUnmount(() => {
       :conversation-id="agent.activeSessionId"
       :owner-key="auth.user?.subject ?? ''"
       :enabled="hasResearchAnswer && !runActive && !requestedSessionUnavailable"
+      :observe="!requestedSessionUnavailable"
       :can-continue="!sessionContinuationBlocked"
       @continue="prepareResearchFollowup"
     />

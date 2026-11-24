@@ -979,6 +979,146 @@ def _validate_v3_backend_settled_receipt(receipt: dict, carrier: dict, reservati
         raise ValueError('Backend settled v3 receipt digest does not match')
 
 
+def _research_data_continuation_request(context, action, **fields):
+    conversation = context["conversation_id"]
+    if not re.fullmatch(r"conversation_[0-9a-f]{32}", conversation):
+        raise ValueError("invalid research continuation conversation")
+    return _backend_runtime_authority_request(
+        "POST", f"/internal/research-data-continuation/{conversation}/{action}",
+        payload={
+            "owner_principal": context["owner"], "workspace_id": context["workspace_id"],
+            "session_id": context["session_id"], "trace_id": context["trace_id"], **fields,
+        },
+    )
+
+
+def _validated_research_data_continuation(value, context):
+    if not isinstance(value, dict):
+        raise ValueError("invalid research data continuation")
+    scope = (
+        value.get("conversation_id"), value.get("owner_principal"), value.get("workspace_id"),
+        value.get("session_id"), value.get("trace_id"),
+    )
+    if scope != (
+        context["conversation_id"], context["owner"], context["workspace_id"],
+        context["session_id"], context["trace_id"],
+    ):
+        raise ValueError("research data continuation identity mismatch")
+    continuation_id = value.get("continuation_id")
+    if not isinstance(continuation_id, str) or not re.fullmatch(r"rdcontinuation_[0-9a-f]{32}", continuation_id):
+        raise ValueError("invalid research continuation ID")
+    if not _valid_prompt_run_id(value.get("source_root_id")):
+        raise ValueError("invalid originating research root")
+    return continuation_id
+
+
+def _has_research_continuation_source(session: ProductSession, candidate: dict) -> bool:
+    events = _runtime_events(trace_store.read(session.session_id), session.session_id, session.trace_id)
+    root = candidate["source_root_id"]
+    source = {
+        "run_id": root, "message_id": candidate.get("source_message_id"),
+        "content_sha256": candidate.get("source_message_sha256"),
+    }
+    bindings = [event["payload"] for event in events
+                if event["kind"] == "session.prompt.accepted" and event["payload"].get("run_id") == root]
+    return bindings == [source]
+
+
+def _consume_research_data_continuation(context):
+    candidate = _research_data_continuation_request(context, "peek").get("continuation")
+    if candidate is None:
+        return
+    continuation_id = _validated_research_data_continuation(candidate, context)
+    principal = Principal(subject=context["owner"])
+    session = _attach_continuation_observer(context)
+    if session is None or session.boot_id != _runtime_authority_snapshot().get("boot_id"):
+        product_sessions.remove_owned(context["conversation_id"], principal)
+        session = _restore_product_session(
+            context["conversation_id"], principal, context["workspace_id"],
+            force_recovery=session is not None, required_recovery_state="settled",
+        )
+    if (session.session_id != context["session_id"] or session.trace_id != context["trace_id"]):
+        raise ValueError("research continuation session identity mismatch")
+    _require_session_runtime_authority(session)
+    if not product_sessions.begin_research_data_dispatch(session):
+        return
+    try:
+        _dispatch_ready_research_continuation(context, session, candidate, continuation_id)
+    finally:
+        product_sessions.end_research_data_dispatch(session)
+        generation = product_sessions.idle_release_generation(session)
+        if generation is not None:
+            _schedule_idle_release(session, generation)
+
+
+def _dispatch_ready_research_continuation(context, session, candidate, continuation_id):
+    readiness = _continuation_adapter_get(
+        f"/internal/runtime/sessions/{session.session_id}/research-data-continuation-readiness",
+        params={"source_root_id": candidate["source_root_id"]},
+    )
+    if readiness != {"ready": True} or not _has_research_continuation_source(session, candidate):
+        return
+    transcript = _runtime_conversation_payload(session)
+    if task_continuation_delivery.pending_cancel(context) is not None:
+        return
+    claim = _research_data_continuation_request(
+        context, "claim", continuation_id=continuation_id, boot_id=session.boot_id,
+    ).get("continuation")
+    if claim is None:
+        return
+    if (_validated_research_data_continuation(claim, context) != continuation_id
+            or any(claim.get(key) != candidate.get(key) for key in (
+                "source_root_id", "source_message_id", "source_message_sha256",
+            ))):
+        raise ValueError("research continuation claim identity mismatch")
+    instruction = claim.get("instruction")
+    if (not isinstance(instruction, str) or not instruction or len(instruction) > 4096
+            or hashlib.sha256(instruction.encode("utf-8")).hexdigest() != claim.get("content_sha256")):
+        raise ValueError("invalid research continuation instruction")
+    try:
+        _require_session_runtime_authority(session)
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload={
+                "content": instruction, "require_model_key": True,
+                "idempotency_key": continuation_id, "research_data_continuation_id": continuation_id,
+                **transcript,
+            },
+            timeout=5.0,
+        )
+        if body.get("accepted") is not True or not _valid_prompt_run_id(body.get("run_id")):
+            raise ValueError("research continuation prompt acceptance unconfirmed")
+    except (HTTPException, RuntimeError, ValueError) as exc:
+        # Only exact Runtime refusals before prompt acceptance may retire an
+        # unbound dispatch. Everything else remains a one-shot liability.
+        conflict = getattr(exc, "adapter_conflict_detail", None)
+        if isinstance(exc, HTTPException) and exc.status_code == 409 and conflict in {
+            "research data continuation requires the acknowledged original root",
+            "workspace Agent execution slot is busy",
+            "previous turn domain cleanup is not yet acknowledged",
+            "previous runtime process cleanup is not complete",
+        }:
+            _research_data_continuation_request(
+                context, "reject", continuation_id=continuation_id, boot_id=session.boot_id,
+            )
+            return
+        identity = json.dumps({"content": instruction, "research_data_continuation_id": continuation_id},
+                              sort_keys=True, separators=(",", ":"))
+        try:
+            original = _continuation_adapter_get(
+                f"/internal/runtime/sessions/{session.session_id}/prompts/reconcile",
+                params={"idempotency_key": continuation_id,
+                        "content_sha256": hashlib.sha256(identity.encode()).hexdigest()},
+            )
+            if (original.get("schema_version") == "prompt-receipt.v1" and original.get("state") == "accepted"
+                    and _valid_prompt_run_id(original.get("run_id"))):
+                return
+        except (httpx.HTTPError, ValueError):
+            pass
+        logger.warning("research data continuation dispatch requires readback: id=%s error=%s",
+                       continuation_id, type(exc).__name__)
+
+
 def _consume_admitted_task_continuation(context, *, allow_legacy=True, allow_dispatch=True):
     principal = Principal(subject=context['owner'])
     conversation = context['conversation_id']
@@ -994,7 +1134,13 @@ def _consume_admitted_task_continuation(context, *, allow_legacy=True, allow_dis
             or _has_v3_continuation_intent(intent)):
         _consume_v3_task_continuation(
             context, intent, backend=backend, allow_dispatch=allow_dispatch)
+        if (allow_dispatch and intent.get("research_data_waiting") is True
+                and isinstance(intent.get("receipt"), dict)
+                and intent["receipt"].get("status") in {"settled", "rejected", "cancelled"}):
+            _consume_research_data_continuation(context)
         return
+    if allow_dispatch and intent.get("research_data_waiting") is True and intent.get("status") == "waiting":
+        _consume_research_data_continuation(context)
     # The default ordinary Product consumer has no authority to enter any
     # historical F6 flow. Keep legacy liabilities reconcilable only through
     # the explicitly enabled legacy consumer above.
@@ -1854,6 +2000,7 @@ class ProductSession:
     continuation_cancel_requested: str | None = None
     continuation_cancel_backend_status: str | None = None
     continuation_cancel_runtime_ack: bool = False
+    dispatching_research_data: bool = False
 
 
 @dataclass(slots=True)
@@ -1932,6 +2079,21 @@ class ProductSessionRegistry:
                 session.release_timer = None
             session.release_generation += 1
             return session.release_generation
+
+    def begin_research_data_dispatch(self, session: ProductSession) -> bool:
+        with self._lock:
+            if session.released or session.continuation_reservation is not None or session.dispatching_research_data:
+                return False
+            session.dispatching_research_data = True
+            session.release_generation += 1
+            if session.release_timer is not None:
+                session.release_timer.cancel()
+                session.release_timer = None
+            return True
+
+    def end_research_data_dispatch(self, session: ProductSession) -> None:
+        with self._lock:
+            session.dispatching_research_data = False
 
     def hold_continuation(self, session: ProductSession, reservation_id: str, expires_at: str) -> bool:
         """Keep the original session through its fixed admitted turn deadline.
@@ -2075,7 +2237,7 @@ class ProductSessionRegistry:
     def claim_idle_release(self, session: ProductSession, generation: int) -> bool:
         with self._lock:
             if (session.released or session.public_streams or session.release_generation != generation
-                    or (session.continuation_reservation is not None
+                    or session.dispatching_research_data or (session.continuation_reservation is not None
                         and (session.continuation_deadline is None
                              or session.continuation_deadline > time.monotonic()))):
                 return False

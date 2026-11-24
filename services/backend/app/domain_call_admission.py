@@ -5,6 +5,7 @@ import math
 import re
 import uuid
 import logging
+from datetime import datetime
 from contextlib import nullcontext
 
 from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence, validate_call_evidence
@@ -20,6 +21,120 @@ _ACP_TOOL_NAME = re.compile(r"^byq_[a-z0-9_]{1,96}$")
 _ACP_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ACP_AUDIT_REFUSAL_SCHEMA = "byq-acp-audit-validation-refusal.v1"
 _ACP_AUDIT_MARKER_SCHEMA = "byq-acp-audit-validation-marker.v1"
+_RESEARCH_CONTINUATION_READ_TOOLS = frozenset({
+    "byq_market_daily", "byq_market_valuation", "byq_market_fundamentals",
+})
+_RESEARCH_CONTINUATION_BOOTSTRAP_TOOLS = frozenset({
+    "byq_health", "byq_agent_roles", "byq_agent_context",
+})
+_RESEARCH_CONTINUATION_SYMBOL = re.compile(r"^\d{6}\.(?:SZ|SH|BJ)$")
+_RESEARCH_CONTINUATION_AGENT_RUN = re.compile(r"^agent_run_[0-9a-f]{32}$")
+
+
+def _research_continuation_date(value: object) -> str | None:
+    if not isinstance(value, str) or re.fullmatch(r"\d{8}", value) is None:
+        return None
+    try:
+        datetime.strptime(value, "%Y%m%d")
+    except ValueError:
+        return None
+    return value
+
+
+def _require_research_continuation_arguments(scope: object, tool_name: str, arguments: object) -> None:
+    """Limit an automatically resumed root to reads inside its sealed demand."""
+    from .agent_research import AgentUnauthorized
+
+    def denied() -> None:
+        raise AgentUnauthorized("automatic research continuation is outside its verified data scope")
+
+    if tool_name in _RESEARCH_CONTINUATION_BOOTSTRAP_TOOLS:
+        if arguments != {}:
+            denied()
+        return
+
+    if tool_name == "byq_agent_authorize":
+        if (not isinstance(arguments, dict)
+                or set(arguments) - {"run_id", "action", "resource_type", "resource_id"}
+                or not isinstance(arguments.get("run_id"), str)
+                or _RESEARCH_CONTINUATION_AGENT_RUN.fullmatch(arguments["run_id"]) is None
+                or arguments.get("action") not in _RESEARCH_CONTINUATION_READ_TOOLS
+                or arguments.get("resource_type") not in {None, "market_data"}):
+            denied()
+        if arguments.get("resource_id") is not None:
+            if (not isinstance(scope, dict) or not isinstance(scope.get("symbols"), list)
+                    or arguments["resource_id"] not in scope["symbols"]):
+                denied()
+        return
+
+    if tool_name == "byq_agent_audit":
+        if (not isinstance(arguments, dict)
+                or set(arguments) - {"run_id", "action", "outcome", "resource_type", "resource_id", "detail"}
+                or not isinstance(arguments.get("run_id"), str)
+                or _RESEARCH_CONTINUATION_AGENT_RUN.fullmatch(arguments["run_id"]) is None
+                or arguments.get("action") not in _RESEARCH_CONTINUATION_READ_TOOLS
+                or not isinstance(arguments.get("outcome"), str)
+                or arguments.get("resource_type") not in {None, "market_data"}):
+            denied()
+        if arguments.get("resource_id") is not None:
+            if (not isinstance(scope, dict) or not isinstance(scope.get("symbols"), list)
+                    or arguments["resource_id"] not in scope["symbols"]):
+                denied()
+        return
+
+    if tool_name not in _RESEARCH_CONTINUATION_READ_TOOLS or not isinstance(scope, dict):
+        denied()
+
+    symbols = scope.get("symbols")
+    start = _research_continuation_date(scope.get("start_date"))
+    end = _research_continuation_date(scope.get("end_date"))
+    declared = scope.get("data_requirements")
+    if (not isinstance(symbols, list) or not symbols or len(symbols) > 20
+            or any(not isinstance(symbol, str) or _RESEARCH_CONTINUATION_SYMBOL.fullmatch(symbol) is None
+                   for symbol in symbols)
+            or len(set(symbols)) != len(symbols)
+            or start is None or end is None or start > end
+            or not isinstance(declared, dict)
+            or set(declared) - {"daily_basic", "fundamentals"}):
+        denied()
+
+    if tool_name == "byq_market_daily":
+        if (not isinstance(arguments, dict)
+                or arguments.get("ts_code") not in symbols
+                or set(arguments) not in ({"ts_code", "trade_date"},
+                                           {"ts_code", "start_date", "end_date"})):
+            denied()
+        if "trade_date" in arguments:
+            exact = _research_continuation_date(arguments.get("trade_date"))
+            if exact is None or not start <= exact <= end:
+                denied()
+        else:
+            first = _research_continuation_date(arguments.get("start_date"))
+            last = _research_continuation_date(arguments.get("end_date"))
+            if first is None or last is None or first > last or first < start or last > end:
+                denied()
+        return
+
+    if (not isinstance(arguments, dict)
+            or set(arguments) != {"symbols", "fields", "trade_date" if tool_name == "byq_market_valuation" else "as_of_date"}):
+        denied()
+    selected_symbols = arguments.get("symbols")
+    fields = arguments.get("fields")
+    date_field = "trade_date" if tool_name == "byq_market_valuation" else "as_of_date"
+    selected_date = _research_continuation_date(arguments.get(date_field))
+    declared_key = "daily_basic" if tool_name == "byq_market_valuation" else "fundamentals"
+    declared_fields = declared.get(declared_key, [])
+    if (not isinstance(selected_symbols, list) or not selected_symbols or len(selected_symbols) > 20
+            or any(not isinstance(symbol, str) or symbol not in symbols for symbol in selected_symbols)
+            or len(set(selected_symbols)) != len(selected_symbols)
+            or not isinstance(fields, list) or not fields or len(fields) > 12
+            or any(not isinstance(field, str) for field in fields)
+            or len(set(fields)) != len(fields)
+            or not isinstance(declared_fields, list)
+            or any(not isinstance(field, str) for field in declared_fields)
+            or not set(fields) <= set(declared_fields)
+            or selected_date is None or not start <= selected_date <= end):
+        denied()
 
 
 def acp_binding_sha256(value: dict) -> str:
@@ -1131,6 +1246,19 @@ class DomainCallEvidenceMixin:
             self._require_judgment_tool_scope(
                 connection, identity, trusted_scope, tool_name, payload["arguments"],
                 new_dispatch=True)
+
+            research_continuation = fetch_one(connection, """SELECT owner_principal,workspace_id,session_id,
+                trace_id,scope_json FROM research_data_continuations WHERE dispatch_root_id=:root FOR SHARE""",
+                {"root": identity["root_run_id"]})
+            if research_continuation is not None:
+                if (identity["origin"] != "root" or identity["depth"] != 0
+                        or (research_continuation["owner_principal"], research_continuation["workspace_id"],
+                            research_continuation["session_id"], research_continuation["trace_id"])
+                        != (scope["owner"], scope["workspace"], scope["session"], scope["trace"])):
+                    raise AgentUnauthorized("automatic research continuation has the wrong Agent identity")
+                _require_research_continuation_arguments(
+                    research_continuation["scope_json"], tool_name, payload["arguments"],
+                )
 
             prior = fetch_one(connection, "SELECT * FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
                               {"id": request_id})

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   createConversationResearchPreparation,
   DataCenterRequestError,
@@ -7,6 +7,7 @@ import {
   listConversationResearchPreparations,
   queryDataReadiness,
   retryConversationResearchPreparation,
+  stopConversationResearchContinuation,
   type ConversationResearchPreparationReceipt,
 } from "@/api/dataCenter";
 import type { DataReadinessResult } from "@/api/types";
@@ -18,7 +19,9 @@ import {
   VALUATION_FIELDS,
 } from "@/researchPreparation";
 
-const props = defineProps<{ conversationId: string; enabled: boolean; canContinue: boolean; ownerKey: string }>();
+const props = withDefaults(defineProps<{
+  conversationId: string; enabled: boolean; canContinue: boolean; ownerKey: string; observe?: boolean;
+}>(), { observe: true });
 const emit = defineEmits<{ continue: [draft: string] }>();
 
 const expanded = ref(false);
@@ -36,10 +39,19 @@ const preparationError = ref("");
 const preparing = ref(false);
 const refreshingPreparation = ref(false);
 const retryingPreparation = ref(false);
+const stoppingContinuation = ref(false);
 const retryConfirmed = ref(false);
 const preparationUncertain = ref(false);
+const automaticStatusRefreshFailed = ref(false);
 let generation = 0;
 let preparationGeneration = 0;
+let automaticStatusTimer: ReturnType<typeof setTimeout> | null = null;
+let componentMounted = false;
+let pollingAutomaticStatus = false;
+
+const AUTO_STATUS_POLL_MS = 30_000;
+const AUTO_CONTINUATION_STATUSES = ["waiting", "dispatching", "bound", "succeeded", "failed", "cancelled"] as const;
+type AutoContinuationStatus = typeof AUTO_CONTINUATION_STATUSES[number];
 
 const storageKey = computed(() => props.conversationId && props.ownerKey
   ? `byq-research-preparation:${props.ownerKey}:${props.conversationId}` : "");
@@ -63,6 +75,16 @@ const scopeUsable = computed(() => currentReadiness.value?.verdict === "usable" 
   && (currentReadiness.value?.summary.required_sessions ?? 0) > 0);
 const preparationMatchesCurrentScope = computed(() => Boolean(preparation.value && checkedScope.value
   && sameScope(preparation.value.scope, checkedScope.value)));
+const autoContinuationStatus = computed(() => preparation.value?.auto_continuation?.status ?? null);
+const automaticContinuationCanStop = computed(() => ["waiting", "dispatching"].includes(autoContinuationStatus.value ?? "")
+  && Boolean(preparation.value?.request_id) && !stoppingContinuation.value);
+const automaticContinuationNeedsObservation = computed(() => ["waiting", "dispatching", "bound"].includes(autoContinuationStatus.value ?? ""));
+const preparationNeedsObservation = computed(() => ["queued", "running"].includes(preparation.value?.status ?? ""));
+const shouldObservePreparation = computed(() => preparationNeedsObservation.value || automaticContinuationNeedsObservation.value);
+const manualFallbackAvailable = computed(() => ["failed", "cancelled"].includes(autoContinuationStatus.value ?? ""));
+const manualPanelAvailable = computed(() => props.enabled || manualFallbackAvailable.value);
+const manualToolsVisible = computed(() => manualPanelAvailable.value
+  && !["waiting", "dispatching", "bound", "succeeded"].includes(autoContinuationStatus.value ?? ""));
 const canPrepare = computed(() => Boolean(currentReadiness.value && checkedScope.value
   && currentReadiness.value.verdict !== "usable" && !emptyTradingScope.value
   && !preparationUncertain.value && !preparing.value
@@ -72,7 +94,26 @@ const statusLabel = computed(() => emptyTradingScope.value ? "日期范围内没
   : currentReadiness.value?.verdict === "usable" ? "所选范围覆盖检查通过"
   : currentReadiness.value?.verdict === "limited" ? "所选范围部分缺失"
     : currentReadiness.value?.verdict === "unavailable" ? "所选范围暂不可用" : "");
-const preparationStatusLabel = computed(() => ({
+const automaticStatusLabel = computed(() => {
+  const status = autoContinuationStatus.value;
+  if (status === "waiting") return ["queued", "running"].includes(preparation.value?.status ?? "")
+    ? "后台正在准备数据；完成后将自动复查并继续原研究。"
+    : "数据准备已结束，正在等待自动复查并继续原研究。";
+  if (status === "dispatching") return "数据已核验，正在原会话自动继续研究。";
+  if (status === "bound") return "小巴已在原会话继续研究；如需停止当前回复，请使用会话下方的“停止本轮”。";
+  if (status === "succeeded") return "小巴已完成自动续研，请查看原会话中的最新回答。";
+  if (status === "failed") return "自动续研未完成。可展开数据准备面板手动检查或准备数据。";
+  if (status === "cancelled") return "自动续研已停止。可展开数据准备面板手动检查或准备数据。";
+  return "";
+});
+const preparationStatusLabel = computed(() => autoContinuationStatus.value ? ({
+  waiting: "等待自动续研",
+  dispatching: "正在自动续研",
+  bound: "小巴正在继续研究",
+  succeeded: "已自动继续研究",
+  failed: "自动续研未完成",
+  cancelled: "已停止自动续研",
+} satisfies Record<AutoContinuationStatus, string>)[autoContinuationStatus.value] : ({
   queued: "补数请求已排队",
   running: "补数正在处理中",
   failed: "补数失败",
@@ -122,13 +163,16 @@ function restoreScope() {
 }
 
 watch(storageKey, restoreScope, { immediate: true });
-watch([storageKey, () => props.enabled], ([key, enabled]) => {
+watch([storageKey, () => props.observe], ([key, observe]) => {
   preparationGeneration++;
   preparation.value = null;
   preparationError.value = "";
   preparationUncertain.value = false;
-  if (enabled && key && props.conversationId) void discoverPreparation(true);
+  if (observe && key && props.conversationId) void discoverPreparation(true);
 }, { immediate: true });
+watch([() => preparation.value?.request_id, () => preparation.value?.status, autoContinuationStatus, () => props.observe], () => {
+  scheduleAutomaticStatusPoll();
+}, { flush: "post" });
 watch([symbols, startDate, endDate, valuationFields, financialFields], () => {
   generation++;
   checking.value = false;
@@ -202,12 +246,18 @@ function parseReceipt(value: unknown): ConversationResearchPreparationReceipt | 
       || !(candidate.request_id === null || (typeof candidate.request_id === "string" && Boolean(candidate.request_id)))
       || !(candidate.retry_token === undefined || candidate.retry_token === null || typeof candidate.retry_token === "string")
       || !(candidate.error === undefined || candidate.error === null || typeof candidate.error === "string")) return null;
+  const autoContinuation = typeof candidate.auto_continuation === "object" && candidate.auto_continuation !== null
+    && !Array.isArray(candidate.auto_continuation)
+    && AUTO_CONTINUATION_STATUSES.includes((candidate.auto_continuation as { status?: unknown }).status as AutoContinuationStatus)
+    ? { status: (candidate.auto_continuation as { status: AutoContinuationStatus }).status }
+    : undefined;
   return {
     request_id: candidate.request_id as string | null,
     status: candidate.status,
     retry_token: candidate.retry_token as string | null | undefined,
     error: candidate.error as string | null | undefined,
     scope,
+    ...(autoContinuation ? { auto_continuation: autoContinuation } : {}),
   };
 }
 
@@ -225,7 +275,7 @@ async function discoverPreparation(hydrateEmptyScope = false) {
   preparationError.value = "";
   try {
     const result = await listConversationResearchPreparations(props.conversationId);
-    if (currentGeneration !== preparationGeneration || !props.enabled) return;
+    if (currentGeneration !== preparationGeneration || !props.observe) return;
     if (!Array.isArray(result.preparations)) throw new Error("服务端未返回会话准备记录列表。");
     const receipts = result.preparations.map(parseReceipt).filter((receipt): receipt is ConversationResearchPreparationReceipt => receipt !== null);
     const selected = (parsedCurrentScope.value
@@ -292,12 +342,103 @@ async function refreshPreparation() {
     }
     preparationUncertain.value = false;
     retryConfirmed.value = false;
+    automaticStatusRefreshFailed.value = false;
   } catch (caught) {
     if (currentGeneration === preparationGeneration) preparationError.value = caught instanceof Error ? caught.message : "暂时无法刷新准备状态。";
   } finally {
     if (currentGeneration === preparationGeneration) refreshingPreparation.value = false;
   }
 }
+
+function clearAutomaticStatusTimer() {
+  if (automaticStatusTimer !== null) clearTimeout(automaticStatusTimer);
+  automaticStatusTimer = null;
+}
+
+function pageIsVisible(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "visible";
+}
+
+function scheduleAutomaticStatusPoll(delay = AUTO_STATUS_POLL_MS) {
+  clearAutomaticStatusTimer();
+  const current = preparation.value;
+  if (!componentMounted || !props.observe || !pageIsVisible() || !shouldObservePreparation.value || !current?.request_id) return;
+  automaticStatusTimer = setTimeout(() => { void pollAutomaticStatus(); }, delay);
+}
+
+async function pollAutomaticStatus() {
+  const current = preparation.value;
+  if (!current?.request_id || !props.observe || !pageIsVisible() || !shouldObservePreparation.value) return;
+  if (refreshingPreparation.value || preparing.value || retryingPreparation.value || stoppingContinuation.value || pollingAutomaticStatus) {
+    scheduleAutomaticStatusPoll();
+    return;
+  }
+  const currentGeneration = preparationGeneration;
+  const requestId = current.request_id;
+  pollingAutomaticStatus = true;
+  try {
+    const result = parseReceipt(await getConversationResearchPreparation(props.conversationId, requestId));
+    if (!result || result.request_id !== requestId || !sameScope(result.scope, current.scope)) {
+      throw new Error("服务端回执与当前请求不一致，未采纳自动状态刷新。");
+    }
+    if (currentGeneration !== preparationGeneration || preparation.value?.request_id !== requestId) return;
+    preparation.value = result;
+    preparationUncertain.value = false;
+    automaticStatusRefreshFailed.value = false;
+  } catch {
+    if (currentGeneration === preparationGeneration && preparation.value?.request_id === requestId) {
+      automaticStatusRefreshFailed.value = true;
+    }
+  } finally {
+    pollingAutomaticStatus = false;
+    scheduleAutomaticStatusPoll();
+  }
+}
+
+async function stopAutomaticContinuation() {
+  const current = preparation.value;
+  if (!automaticContinuationCanStop.value || !current?.request_id || !props.conversationId) return;
+  const currentGeneration = ++preparationGeneration;
+  const requestId = current.request_id;
+  stoppingContinuation.value = true;
+  preparationError.value = "";
+  try {
+    const result = parseReceipt(await stopConversationResearchContinuation(props.conversationId, requestId));
+    if (!result || result.request_id !== requestId || !sameScope(result.scope, current.scope)) {
+      throw new Error("服务端回执与当前续研请求不一致，未采纳停止结果。");
+    }
+    if (currentGeneration !== preparationGeneration) return;
+    preparation.value = result;
+    preparationUncertain.value = false;
+    automaticStatusRefreshFailed.value = false;
+  } catch (caught) {
+    if (currentGeneration !== preparationGeneration) return;
+    preparationUncertain.value = true;
+    preparationError.value = caught instanceof Error ? caught.message : "停止结果未确认，请只读刷新当前会话状态。";
+  } finally {
+    if (currentGeneration === preparationGeneration) stoppingContinuation.value = false;
+    scheduleAutomaticStatusPoll();
+  }
+}
+
+function onVisibilityChange() {
+  if (pageIsVisible()) scheduleAutomaticStatusPoll(0);
+  else clearAutomaticStatusTimer();
+}
+
+onMounted(() => {
+  componentMounted = true;
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  scheduleAutomaticStatusPoll();
+});
+
+onBeforeUnmount(() => {
+  componentMounted = false;
+  generation++;
+  preparationGeneration++;
+  clearAutomaticStatusTimer();
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+});
 
 async function retryPreparation() {
   const current = preparation.value;
@@ -338,13 +479,24 @@ function resumeDraft() {
 </script>
 
 <template>
-  <section v-if="enabled && conversationId" class="research-preparation" aria-label="研究数据准备">
-    <button class="entry-button" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
+  <section v-if="conversationId && (manualPanelAvailable || autoContinuationStatus)" class="research-preparation" aria-label="研究数据准备">
+    <button v-if="manualToolsVisible" class="entry-button" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
       {{ expanded ? "收起数据准备" : "准备研究数据" }}
       <span v-if="preparation" class="entry-status">{{ preparationStatusLabel }}</span>
     </button>
-    <div v-if="expanded" class="preparation-body">
-      <p class="intro">确认标的和日期后，先检查已保存数据；发现缺项时，可明确提交当前会话的有限补数请求。每次最多 20 只股票、180 个自然日；后台还会限制整日补数范围。此操作不会发送会话正文、创建股票池或自动续研。</p>
+    <div v-if="autoContinuationStatus" class="automatic-status" role="status" aria-live="polite">
+      <strong>{{ preparationStatusLabel }}</strong>
+      <p>{{ automaticStatusLabel }}</p>
+      <p v-if="preparation && preparationScopeLabel">研究范围：{{ preparationScopeLabel }}</p>
+      <p v-if="automaticStatusRefreshFailed" class="stale-note">状态暂时无法更新，页面会在稍后重试；自动研究流程不依赖此页面运行。</p>
+      <p v-if="preparationError && !manualToolsVisible" class="error" role="alert">{{ preparationError }}</p>
+      <button v-if="automaticContinuationCanStop" type="button" class="secondary-button" :disabled="stoppingContinuation"
+        @click="stopAutomaticContinuation">
+        {{ stoppingContinuation ? "正在停止自动续研…" : "停止自动续研" }}
+      </button>
+    </div>
+    <div v-if="expanded && manualToolsVisible" class="preparation-body">
+      <p class="intro">助手可根据会话需求自动补齐、复查数据并继续原研究。这里保留主动检查和手动准备入口；手动补数只会准备数据，不会自动续研。每次最多 20 只股票、180 个自然日，后台还会限制整日补数范围。</p>
       <label class="field-label">股票代码 <small>用逗号分隔，最多 20 只；填写规范代码，如 600036.SH</small>
         <textarea v-model="symbols" rows="2" placeholder="600036.SH, 601398.SH" :disabled="checking || preparing" />
       </label>
@@ -380,7 +532,7 @@ function resumeDraft() {
         <p v-if="preparation.request_id">请求编号：<code>{{ preparation.request_id }}</code></p>
         <p v-if="preparation.error">{{ preparation.error }}</p>
         <p v-if="preparation.status === 'not_published'">当前尚无可补齐的已发布行情；日历就绪不代表收盘行情已发布。可稍后重新检查该范围。</p>
-        <p v-if="preparationMatchesCurrentScope && ['completed', 'ready'].includes(preparation.status)">准备回执不代替浏览器重新读取覆盖情况。请复查下面的同一范围，再决定是否把续研草稿带入输入框。</p>
+        <p v-if="!autoContinuationStatus && preparationMatchesCurrentScope && ['completed', 'ready'].includes(preparation.status)">准备回执不代替浏览器重新读取覆盖情况。请复查下面的同一范围，再决定是否把续研草稿带入输入框。</p>
         <p v-if="!preparationMatchesCurrentScope">这是当前会话此前提交的其他范围；不会用于当前选中范围的续研或重试。</p>
         <button type="button" class="secondary-button" :disabled="refreshingPreparation || preparing || retryingPreparation" @click="refreshPreparation">
           {{ refreshingPreparation ? "正在刷新…" : "只读刷新准备状态" }}
@@ -392,7 +544,7 @@ function resumeDraft() {
             {{ retryingPreparation ? "正在重试…" : "确认重试此补数请求" }}
           </button>
         </div>
-        <p v-if="preparationUncertain" class="stale-note">提交或重试结果暂未确认。请先只读刷新原会话记录，再决定是否继续。</p>
+        <p v-if="preparationUncertain" class="stale-note">提交、重试或停止结果暂未确认。请先只读刷新原会话记录，再决定是否继续。</p>
       </div>
 
       <div v-if="currentReadiness" class="readiness-result" role="status">
@@ -446,6 +598,8 @@ function resumeDraft() {
 .primary-button { color: white; background: var(--el-color-primary); border-color: var(--el-color-primary); }
 button:disabled { opacity: .6; cursor: wait; }
 .preparation-body { margin-top: .65rem; padding: 1rem; border: 1px solid var(--byq-border); border-radius: 12px; background: var(--byq-surface); display: grid; gap: .8rem; }
+.automatic-status { width: min(900px, 100%); box-sizing: border-box; margin-top: .45rem; padding: .75rem 1rem; border: 1px solid var(--byq-border); border-radius: 9px; background: var(--byq-surface); display: grid; gap: .45rem; }
+.automatic-status p { margin: 0; color: var(--byq-text-muted); line-height: 1.5; }
 .intro, fieldset p, .readiness-result p, small { color: var(--byq-text-muted); line-height: 1.55; }
 .intro, fieldset p, .readiness-result p { margin: 0; }
 .field-label { display: grid; gap: .35rem; font-weight: 600; }

@@ -497,6 +497,18 @@ class WorkspaceResetStore(PgStoreMixin):
         if unresolved_product_approval is not None:
             raise WorkspaceResetBlocked("unresolved Product approval request prevents workspace reset")
 
+        unresolved_research_continuation = WorkspaceResetStore._first_row(connection, """
+            SELECT c.continuation_id FROM research_data_continuations c
+              LEFT JOIN agent_runtime_turns t ON t.root_run_id=c.dispatch_root_id
+             WHERE c.owner_principal=:owner AND c.workspace_id=:workspace
+               AND (c.status='dispatching' OR (c.status='bound'
+                    AND (t.authority_status IS DISTINCT FROM 'closed'
+                         OR t.terminal_unknown_claim_count IS DISTINCT FROM 0)))
+             ORDER BY c.continuation_id LIMIT 1
+        """, params)
+        if unresolved_research_continuation is not None:
+            raise WorkspaceResetBlocked("unsettled research data continuation prevents workspace reset")
+
         for table, (identity_column, terminal) in _JOB_TERMINAL_STATES.items():
             placeholders = ", ".join(f":terminal_{index}" for index in range(len(terminal)))
             job_params = params | {f"terminal_{index}": state for index, state in enumerate(terminal)}

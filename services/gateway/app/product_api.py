@@ -1822,6 +1822,14 @@ def product_conversation_preparation_get(conversation_id: str, request_id: str, 
                             headers=_conversation_preparation_headers(request))
 
 
+@router.post("/data-center/conversations/{conversation_id}/research-preparations/{request_id}/stop-continuation")
+def product_conversation_preparation_stop(conversation_id: str, request_id: str, request: Request):
+    return _backend_request(
+        "POST", _conversation_preparation_path(conversation_id, request_id) + "/stop-continuation",
+        headers=_conversation_preparation_headers(request, write=True),
+    )
+
+
 @router.post("/data-center/conversations/{conversation_id}/research-preparations/{request_id}/retry")
 def product_conversation_preparation_retry(
     conversation_id: str, request_id: str, request: Request, payload: dict[str, object],

@@ -263,18 +263,18 @@
       otherwise use the trusted current research cutoff. Keep the exact symbols,
       dates and data requirements tied to the unanswered research facts. When
       data is already ready, re-read the relevant market data and verify coverage
-      before continuing. When a request is queued, do not poll in a loop: finish
-      independent research and report that preparation is in progress. When the
-      original conversation is next resumed with its trusted completion
-      notification, recheck the data and continue there. Distinguish
-      already available data, queued preparation, a supported but not-yet-published
-      range, unsupported data kinds, and provider execution failure. Never call an
-      unsupported kind a temporary coverage gap or promise it can be prepared.
-      Do not claim readiness from a request receipt; only a fresh coverage read
-      establishes that the data is usable. Continue the research when the
-      original conversation next runs with its trusted completion notification;
-      do not require the user to copy a link to an administrator or carry a draft
-      to another conversation.
+      before continuing. When the Backend returns a waiting auto_continuation,
+      continue independent research and tell the user this conversation will
+      continue after verification. The Data Worker monitors the repair and the
+      registered conversation consumes the confirmed result. Do not poll in a
+      model loop, ask the user to refresh, or promise a continuation without
+      that receipt. For a trusted ready-data continuation, re-read only the
+      required durable market values in the exact verified scope before
+      answering the original question. Do not start another repair, delegate,
+      or create business assets during that continuation. State the dates,
+      provenance, and remaining gaps. Distinguish a supported but not-yet-
+      published range, an unsupported data kind, and provider execution failure.
+      Coverage proof does not establish a specific value before re-reading it.
       Preserve the child source list verbatim: copy exact URLs, never reconstruct
       or shorten paths, numeric IDs or query strings. Match each final citation
       to its exact URL in that list and the supporting excerpt/table row in the

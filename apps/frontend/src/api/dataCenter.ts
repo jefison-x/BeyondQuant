@@ -48,6 +48,9 @@ export interface ResearchPreparationSubmission {
 
 export interface ConversationResearchPreparationReceipt extends ResearchPreparationSubmission {
   scope: ResearchPreparationScope;
+  auto_continuation?: {
+    status: "waiting" | "dispatching" | "bound" | "succeeded" | "failed" | "cancelled";
+  };
 }
 
 export function createResearchPreparation(payload: {
@@ -99,6 +102,15 @@ export function retryConversationResearchPreparation(
 ): Promise<ConversationResearchPreparationReceipt> {
   return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations/${encodeURIComponent(requestId)}/retry`, {
     method: "POST", body: JSON.stringify({ retry_token: retryToken }),
+  });
+}
+
+export function stopConversationResearchContinuation(
+  conversationId: string,
+  requestId: string,
+): Promise<ConversationResearchPreparationReceipt> {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations/${encodeURIComponent(requestId)}/stop-continuation`, {
+    method: "POST",
   });
 }
 

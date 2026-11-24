@@ -7,7 +7,9 @@ import {
   listConversationResearchPreparations,
   queryDataReadiness,
   retryConversationResearchPreparation,
+  stopConversationResearchContinuation,
 } from "@/api/dataCenter";
+import type { ConversationResearchPreparationReceipt } from "@/api/dataCenter";
 
 vi.mock("@/api/dataCenter", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/api/dataCenter")>(),
@@ -16,6 +18,7 @@ vi.mock("@/api/dataCenter", async (importOriginal) => ({
   listConversationResearchPreparations: vi.fn(),
   queryDataReadiness: vi.fn(),
   retryConversationResearchPreparation: vi.fn(),
+  stopConversationResearchContinuation: vi.fn(),
 }));
 
 const scope = {
@@ -38,12 +41,22 @@ const readiness = (verdict: "limited" | "usable", checkedScope = scope) => ({
   issues: [], issues_truncated: false, checked_against: "persisted_byq" as const,
 });
 
-const receipt = (status: string, requestId: string | null = "datademand_1", receiptScope = scope) => ({
+const receipt = (
+  status: string,
+  requestId: string | null = "datademand_1",
+  receiptScope = scope,
+  autoStatus?: NonNullable<ConversationResearchPreparationReceipt["auto_continuation"]>["status"],
+): ConversationResearchPreparationReceipt => ({
   request_id: requestId, status, scope: receiptScope,
+  ...(autoStatus ? { auto_continuation: { status: autoStatus } } : {}),
 });
 
-const wrapperFor = () => mount(Panel, { props: {
-  conversationId: "conversation-private", ownerKey: "owner-private", enabled: true, canContinue: true,
+const setPageVisibility = (visibilityState: DocumentVisibilityState) => {
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: visibilityState });
+};
+
+const wrapperFor = (enabled = true) => mount(Panel, { props: {
+  conversationId: "conversation-private", ownerKey: "owner-private", enabled, canContinue: true,
 } });
 
 describe("research data preparation panel", () => {
@@ -52,12 +65,78 @@ describe("research data preparation panel", () => {
     vi.mocked(createConversationResearchPreparation).mockReset();
     vi.mocked(getConversationResearchPreparation).mockReset();
     vi.mocked(retryConversationResearchPreparation).mockReset();
+    vi.mocked(stopConversationResearchContinuation).mockReset();
     vi.mocked(listConversationResearchPreparations).mockReset().mockResolvedValue({ preparations: [] });
+    setPageVisibility("visible");
   });
 
   afterEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    vi.useRealTimers();
+  });
+
+  it("shows and monitors automatic preparation, and stops only the pending exact continuation", async () => {
+    vi.useFakeTimers();
+    vi.mocked(listConversationResearchPreparations).mockResolvedValueOnce({
+      preparations: [receipt("running", "datademand_auto", scope, "waiting")],
+    });
+    vi.mocked(getConversationResearchPreparation).mockResolvedValueOnce(
+      receipt("completed", "datademand_auto", scope, "dispatching"),
+    );
+    vi.mocked(stopConversationResearchContinuation).mockResolvedValueOnce(
+      receipt("completed", "datademand_auto", scope, "cancelled"),
+    );
+    const wrapper = wrapperFor(false);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("后台正在准备数据；完成后将自动复查并继续原研究。");
+    expect(wrapper.text()).not.toContain("仍需重新检查同一范围的数据覆盖");
+    expect(wrapper.findAll("button").some((button) => button.text() === "停止自动续研")).toBe(true);
+    expect(queryDataReadiness).not.toHaveBeenCalled();
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
+    expect(wrapper.emitted("continue")).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await flushPromises();
+    expect(getConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", "datademand_auto");
+    expect(wrapper.text()).toContain("正在原会话自动继续研究");
+
+    await wrapper.findAll("button").find((button) => button.text() === "停止自动续研")!.trigger("click");
+    await flushPromises();
+    expect(stopConversationResearchContinuation).toHaveBeenCalledWith("conversation-private", "datademand_auto");
+    expect(wrapper.text()).toContain("自动续研已停止");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("准备研究数据"))).toBe(true);
+    expect(queryDataReadiness).not.toHaveBeenCalled();
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("pauses receipt polling while hidden and leaves bound root cancellation to the chat Stop action", async () => {
+    vi.useFakeTimers();
+    setPageVisibility("hidden");
+    vi.mocked(listConversationResearchPreparations).mockResolvedValueOnce({
+      preparations: [receipt("completed", "datademand_bound", scope, "bound")],
+    });
+    vi.mocked(getConversationResearchPreparation).mockResolvedValueOnce(
+      receipt("completed", "datademand_bound", scope, "succeeded"),
+    );
+    const wrapper = wrapperFor();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("请使用会话下方的“停止本轮”");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("停止自动续研"))).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getConversationResearchPreparation).not.toHaveBeenCalled();
+
+    setPageVisibility("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    await flushPromises();
+    expect(getConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", "datademand_bound");
+    expect(wrapper.text()).toContain("已完成自动续研");
+    expect(stopConversationResearchContinuation).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("submits only the freshly checked scope after the user explicitly asks for preparation", async () => {
@@ -76,7 +155,7 @@ describe("research data preparation panel", () => {
     expect(queryDataReadiness).toHaveBeenCalledWith(scope);
     expect(createConversationResearchPreparation).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("所选范围部分缺失");
-    expect(wrapper.text()).toContain("当前会话的有限补数请求");
+    expect(wrapper.text()).toContain("手动准备入口");
     expect(wrapper.text()).not.toContain("管理员审核链接");
 
     await wrapper.findAll("button.primary-button").find((button) => button.text().includes("为当前会话准备缺失数据"))!.trigger("click");
