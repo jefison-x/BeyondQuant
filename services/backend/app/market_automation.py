@@ -103,6 +103,37 @@ def data_repair_terminal_revision(record: dict[str, object]) -> str | None:
     })
 
 
+CONVERSATION_REPAIR_ACTOR = "conversation-research"
+CONVERSATION_REPAIR_MAX_BULK_DATES = 5
+_CONVERSATION_REPAIR_RETRY_COOLDOWN = timedelta(minutes=5)
+
+
+def conversation_repair_retry_revision(record: dict[str, object]) -> str | None:
+    if (record.get("status") not in {"completed", "failed"} or record.get("self_service_retry_evidence")
+            or record.get("error_message") == "self_service_scope_exceeds_bulk_dates"):
+        return None
+    completed_at = record.get("completed_at")
+    if not completed_at:
+        return None
+    age = datetime.now(timezone.utc) - datetime.fromisoformat(str(completed_at))
+    if age < _CONVERSATION_REPAIR_RETRY_COOLDOWN:
+        return None
+    return data_repair_terminal_revision(record)
+
+
+def conversation_repair_bulk_dates(requirement, assessment, readiness_store) -> set[str]:
+    """Count every date needing a market-wide fetch, including declared valuation."""
+    plan = assessment.get("repair_plan") or {}
+    dates = set(plan.get("full_sessions") or ()) | set(plan.get("session_supplements") or ())
+    if (requirement.get("declared") or {}).get("daily_basic"):
+        rows = readiness_store._execute("""SELECT s.trade_date FROM market_trading_sessions s
+            LEFT JOIN market_daily_basic_completeness b ON b.trade_date=s.trade_date
+            WHERE s.is_open=TRUE AND s.trade_date BETWEEN :start AND :end AND b.trade_date IS NULL""",
+            {"start": requirement["start_date"], "end": requirement["end_date"]})
+        dates.update(row["trade_date"] for row in rows)
+    return dates
+
+
 class MarketAutomationStore(PgStoreMixin):
     SCHEMA_DDL: list[str] = [
         """
@@ -186,6 +217,9 @@ class MarketAutomationStore(PgStoreMixin):
         )
         """,
         """
+        ALTER TABLE market_session_sync_jobs ADD COLUMN IF NOT EXISTS self_service_requeue_evidence JSONB
+        """,
+        """
         CREATE INDEX IF NOT EXISTS market_session_sync_jobs_claim_idx
             ON market_session_sync_jobs(status, next_attempt_at, trade_date)
         """,
@@ -243,6 +277,9 @@ class MarketAutomationStore(PgStoreMixin):
             completed_at TIMESTAMPTZ,
             error_message TEXT
         )
+        """,
+        """
+        ALTER TABLE market_data_repair_requests ADD COLUMN IF NOT EXISTS self_service_retry_evidence JSONB
         """,
         """
         CREATE TABLE IF NOT EXISTS market_index_catalog_sync_runs (
@@ -399,6 +436,40 @@ class MarketAutomationStore(PgStoreMixin):
             "open_count": sum(item.is_open for item in result.sessions),
             "request_fingerprint": result.provenance.request_fingerprint,
         }
+
+    def refresh_current_calendar_if_missing(
+        self,
+        provider_factory: Callable[[], TushareProvider],
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Persist today's verified SSE calendar before the close-time scheduler.
+
+        Calendar availability is independent of the configured full-market
+        import time. The existing automation switch still controls this worker
+        refresh, and an already-persisted open or closed date is sufficient.
+        """
+
+        if not self.get_config()["enabled"]:
+            return False
+        local_date = _local_now(now).strftime("%Y%m%d")
+        if self._fetch_one(
+            "SELECT trade_date FROM market_trading_sessions WHERE trade_date=:date",
+            {"date": local_date},
+        ) is not None:
+            return False
+        self.refresh_calendar(
+            provider_factory(), start_date=local_date, end_date=local_date,
+        )
+        persisted = self._fetch_one(
+            "SELECT trade_date FROM market_trading_sessions WHERE trade_date=:date",
+            {"date": local_date},
+        )
+        if persisted is None:
+            raise ProviderProtocolError(
+                "provider response omitted the requested current trading-calendar date",
+            )
+        return True
 
     def import_verified_logical_calendar(
         self,
@@ -758,11 +829,26 @@ class MarketAutomationStore(PgStoreMixin):
                             {"date": trade_date}) is None
                     )
                 ):
+                    evidence = existing.get("self_service_requeue_evidence")
+                    if scheduled_by == CONVERSATION_REPAIR_ACTOR:
+                        if evidence:
+                            continue
+                        completed_at = existing.get("completed_at")
+                        if (existing["status"] == "failed" and completed_at
+                                and datetime.now(timezone.utc) - datetime.fromisoformat(completed_at)
+                                < _CONVERSATION_REPAIR_RETRY_COOLDOWN):
+                            continue
+                        evidence = {
+                            "status": existing["status"], "completed_at": completed_at,
+                            "error_code": existing.get("error_code"), "attempts": existing["attempts"],
+                            "requeued_at": _now(),
+                        }
                     job_id, now = str(existing["job_id"]), _now()
                     execute(connection, """UPDATE market_session_sync_jobs SET status='queued',attempts=0,
                         next_attempt_at=NULL,lease_until=NULL,error_code=NULL,error_message=NULL,
-                        completed_at=NULL,updated_at=:now WHERE job_id=:job_id""",
-                        {"job_id": job_id, "now": now})
+                        completed_at=NULL,updated_at=:now,self_service_requeue_evidence=:evidence
+                        WHERE job_id=:job_id""",
+                        {"job_id": job_id, "now": now, "evidence": evidence})
                 else:
                     continue
             created.append(self.get_job(job_id))
@@ -846,11 +932,11 @@ class MarketAutomationStore(PgStoreMixin):
         return dict(rows[0])
 
     def retry_data_repair_if_terminal(
-        self, request_id: object, *, terminal_revision: str,
+        self, request_id: object, *, terminal_revision: str, conversation_retry: bool = False, _connection=None,
     ) -> dict[str, object]:
         """Requeue one exact terminal receipt revision, rejecting stale/double retries."""
 
-        with self._transaction() as connection:
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
             record = fetch_one(connection, """SELECT * FROM market_data_repair_requests
                 WHERE request_id=:id FOR UPDATE""", {"id": str(request_id)})
             if record is None:
@@ -858,14 +944,24 @@ class MarketAutomationStore(PgStoreMixin):
             current_revision = data_repair_terminal_revision(record)
             if current_revision is None or not secrets.compare_digest(current_revision, terminal_revision):
                 raise MarketAutomationConflict("data repair terminal receipt is stale or not retryable")
+            if conversation_retry and conversation_repair_retry_revision(record) is None:
+                raise MarketAutomationConflict("该范围的自助重试尚未开放或已用完。")
+            evidence = record.get("self_service_retry_evidence")
+            if conversation_retry:
+                evidence = {
+                    "revision": current_revision, "completed_at": record["completed_at"],
+                    "error": record.get("error_message"), "retried_at": _now(),
+                }
             updated = fetch_one(connection, """UPDATE market_data_repair_requests
-                SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL
+                SET status='queued',claimed_at=NULL,completed_at=NULL,error_message=NULL,
+                    requested_by=:actor,self_service_retry_evidence=:retry_evidence
                 WHERE request_id=:id AND requirement_sha256=:sha AND status=:status
                   AND completed_at=:completed_at AND error_message IS NOT DISTINCT FROM :error
                 RETURNING *""", {
                     "id": record["request_id"], "sha": record["requirement_sha256"],
                     "status": record["status"], "completed_at": record["completed_at"],
-                    "error": record.get("error_message"),
+                    "error": record.get("error_message"), "retry_evidence": evidence,
+                    "actor": CONVERSATION_REPAIR_ACTOR if conversation_retry else record["requested_by"],
                 })
             if updated is None:
                 raise MarketAutomationConflict("data repair terminal receipt is stale or not retryable")

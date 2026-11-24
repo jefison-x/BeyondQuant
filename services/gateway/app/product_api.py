@@ -1788,6 +1788,48 @@ def product_data_readiness(request: Request, payload: dict[str, object]) -> dict
     )
 
 
+def _conversation_preparation_headers(request: Request, *, write: bool = False) -> dict[str, str]:
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_human_identity_required", "durable user login required")
+    if write and request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ProductError(403, "product_cross_site_write_rejected", "cross-site data requests are rejected")
+    try:
+        return _trusted_agent_headers(request)
+    except ProductAuthError as exc:
+        raise ProductError(exc.status_code, exc.code, exc.message) from exc
+
+
+def _conversation_preparation_path(conversation_id: str, request_id: str | None = None) -> str:
+    path = f"/v1/data-center/conversations/{quote(conversation_id, safe='')}/research-preparations"
+    return path if request_id is None else f"{path}/{quote(request_id, safe='')}"
+
+
+@router.post("/data-center/conversations/{conversation_id}/research-preparations")
+def product_conversation_preparation_create(conversation_id: str, request: Request, payload: dict[str, object]):
+    return _backend_request("POST", _conversation_preparation_path(conversation_id), payload,
+                            headers=_conversation_preparation_headers(request, write=True))
+
+
+@router.get("/data-center/conversations/{conversation_id}/research-preparations")
+def product_conversation_preparation_list(conversation_id: str, request: Request):
+    return _backend_request("GET", _conversation_preparation_path(conversation_id),
+                            headers=_conversation_preparation_headers(request))
+
+
+@router.get("/data-center/conversations/{conversation_id}/research-preparations/{request_id}")
+def product_conversation_preparation_get(conversation_id: str, request_id: str, request: Request):
+    return _backend_request("GET", _conversation_preparation_path(conversation_id, request_id),
+                            headers=_conversation_preparation_headers(request))
+
+
+@router.post("/data-center/conversations/{conversation_id}/research-preparations/{request_id}/retry")
+def product_conversation_preparation_retry(
+    conversation_id: str, request_id: str, request: Request, payload: dict[str, object],
+):
+    return _backend_request("POST", _conversation_preparation_path(conversation_id, request_id) + "/retry",
+                            payload, headers=_conversation_preparation_headers(request, write=True))
+
+
 @router.post("/data-center/research-preparations")
 def product_research_preparation_create(
     request: Request, payload: dict[str, object],

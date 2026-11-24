@@ -12,7 +12,10 @@ from app.credentials import CredentialStore
 from app.data_demand import DataDemandStore
 from app.data_sync import DataSyncLeaseLost, DataSyncStore
 from app.market_automation import (
+    CONVERSATION_REPAIR_ACTOR,
+    CONVERSATION_REPAIR_MAX_BULK_DATES,
     MarketAutomationStore,
+    conversation_repair_bulk_dates,
     run_scheduler_cycle,
     sync_declared_inputs,
     sync_session_supplements,
@@ -65,12 +68,24 @@ def main() -> int:
     next_scheduler_at = 0.0
     next_pool_scheduler_at = 0.0
     next_repair_reconcile_at = 0.0
+    next_calendar_check_at = 0.0
 
     try:
         while running:
+            if time.monotonic() >= next_calendar_check_at:
+                try:
+                    if automation.refresh_current_calendar_if_missing(provider_factory):
+                        automation.heartbeat(worker_id, calendar_refreshed=True)
+                    next_calendar_check_at = time.monotonic() + 60
+                except Exception as error:
+                    automation.heartbeat(worker_id, last_error=type(error).__name__)
+                    next_calendar_check_at = time.monotonic() + 300
             if time.monotonic() >= next_repair_reconcile_at:
                 try:
                     automation.reconcile_data_repairs(readiness)
+                    data_demands.settle_conversation_preparations(
+                        readiness_store=readiness, automation_store=automation,
+                    )
                 except Exception as error:
                     automation.heartbeat(worker_id, last_error=type(error).__name__)
                 finally:
@@ -96,27 +111,45 @@ def main() -> int:
             repair = automation.claim_data_repair()
             if repair is not None:
                 try:
+                    requirement = dict(repair["requirement_json"])
+                    scoped = repair["requested_by"] == CONVERSATION_REPAIR_ACTOR
+                    before = readiness.assess(requirement)
                     # A verified frozen demand needs neither credentials nor another fetch.
-                    if readiness.assess(dict(repair["requirement_json"])).get("state") == "ready":
+                    if before.get("state") == "ready":
                         automation.complete_data_repair(str(repair["request_id"]))
                         continue
                     provider = provider_factory()
                     cursor = datetime.strptime(str(repair["start_date"]), "%Y%m%d")
                     end = datetime.strptime(str(repair["end_date"]), "%Y%m%d")
-                    while cursor <= end and repair["requirement_json"].get("kind") != "index_snapshot":
+                    refresh_calendar = requirement.get("kind") != "index_snapshot" and (
+                        not scoped or not before.get("calendar_complete")
+                    )
+                    while refresh_calendar and cursor <= end:
                         chunk_end = min(end, cursor + timedelta(days=400))
                         automation.refresh_calendar(
                             provider, start_date=cursor.strftime("%Y%m%d"),
                             end_date=chunk_end.strftime("%Y%m%d"),
                         )
                         cursor = chunk_end + timedelta(days=1)
-                    sync_declared_inputs(
-                        dict(repair["requirement_json"]), provider=provider,
-                        readiness_store=readiness,
-                    )
-                    assessment = readiness.assess(dict(repair["requirement_json"]))
+                    bulk_dates = set()
+                    if scoped:
+                        bulk_dates = conversation_repair_bulk_dates(requirement, readiness.assess(requirement), readiness)
+                        if len(bulk_dates) > CONVERSATION_REPAIR_MAX_BULK_DATES:
+                            automation.complete_data_repair(
+                                str(repair["request_id"]), error="self_service_scope_exceeds_bulk_dates",
+                            )
+                            continue
+                    sync_declared_inputs(requirement, provider=provider, readiness_store=readiness)
+                    assessment = readiness.assess(requirement)
                     plan = dict(assessment.get("repair_plan") or {})
                     supplement_dates = list(plan.get("session_supplements") or [])
+                    if scoped:
+                        bulk_dates.update(supplement_dates)
+                        if len(bulk_dates.union(plan.get("full_sessions") or ())) > CONVERSATION_REPAIR_MAX_BULK_DATES:
+                            automation.complete_data_repair(
+                                str(repair["request_id"]), error="self_service_scope_exceeds_bulk_dates",
+                            )
+                            continue
                     if supplement_dates:
                         sync_session_supplements(
                             supplement_dates, provider=provider, readiness_store=readiness,
@@ -124,6 +157,11 @@ def main() -> int:
                         assessment = readiness.assess(dict(repair["requirement_json"]))
                         plan = dict(assessment.get("repair_plan") or {})
                     full_session_dates = list(plan.get("full_sessions") or [])
+                    if scoped and len(bulk_dates.union(full_session_dates)) > CONVERSATION_REPAIR_MAX_BULK_DATES:
+                        automation.complete_data_repair(
+                            str(repair["request_id"]), error="self_service_scope_exceeds_bulk_dates",
+                        )
+                        continue
                     if full_session_dates:
                         automation.enqueue_dates(
                             full_session_dates,

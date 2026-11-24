@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.conversation_catalog import ConversationCatalogStore
 from app.data_demand import DataDemandConflict, DataDemandNotFound, DataDemandStore
 from app.market_plan import partition_market_requirements
 from app.paper_trading import PaperTradingStore
@@ -79,10 +80,10 @@ class FakeSecurityMaster:
         return {"snapshot_id": "security_snapshot_test"}
 
 
-def _context() -> dict[str, str]:
+def _context(role="admin") -> dict[str, str]:
     users = UserAuthStore()
     user = users.create_user({
-        "username": "alice", "password": "password-123", "display_name": "Alice", "role": "admin",
+        "username": "alice", "password": "password-123", "display_name": "Alice", "role": role,
     }, actor_role="admin")
     tenancy = WorkspaceTenancyStore()
     workspace = tenancy.public_workspace(str(user["user_id"]))
@@ -570,3 +571,111 @@ def test_data_import_worker_completion_wins_over_concurrent_cancel() -> None:
     demands.close()
     paper.close()
     research.close()
+
+
+class ConversationPreparationReadiness:
+    state = "missing"
+    bulk_dates = ["20241118"]
+
+    def requirement(self, **values):
+        return {
+            **values, "requirement_sha256": f"{values['start_date']}-{values['end_date']}",
+            "declared": {},
+        }
+
+    def assess(self, _requirement):
+        return {
+            "state": self.state, "calendar_complete": True,
+            "required_session_count": 1, "required_cell_count": 1,
+            "missing_count": int(self.state != "ready"),
+            "repair_plan": {"full_sessions": self.bulk_dates},
+        }
+
+
+def test_conversation_preparation_shares_repair_and_recovers_in_original_session(monkeypatch):
+    readiness = ConversationPreparationReadiness()
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    context = _context("user")
+    catalog = ConversationCatalogStore()
+    first = catalog.create("alice", context["session_id"], context["trace_id"])
+    second = catalog.create("alice", "session-demand-2", "trace-demand-2")
+    headers = {f"x-byq-{key.replace('_', '-')}": value for key, value in context.items()}
+    path = f"/v1/data-center/conversations/{first['conversation_id']}/research-preparations"
+    other = f"/v1/data-center/conversations/{second['conversation_id']}/research-preparations"
+    payload = {"symbols": ["600036.SH"], "start_date": "20241118", "end_date": "20241118"}
+    client = TestClient(main.app)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: client.post(path, json=payload, headers=headers), range(2)))
+    assert all(response.status_code == 200 for response in responses)
+    receipt = responses[0].json()
+    assert receipt == responses[1].json()
+    assert receipt["status"] == "queued"
+    demand_id = receipt["request_id"]
+    assert client.get(path, headers=headers).json()["preparations"] == [receipt]
+    assert client.get(f"{other}/{demand_id}", headers=headers).status_code == 404
+    assert client.get(f"{other}/{demand_id}", headers={**headers, "x-byq-owner-principal": "bob"}).status_code == 401
+    assert client.post(other, json={**payload, "start_date": "20241117"}, headers=headers).status_code == 409
+
+    agent_path = "/v1/agent/data-demands"
+    agent_command = {**payload, "start_date": "2024-11-18", "end_date": "2024-11-18", "scope_kind": "conversation_research", "purpose": "research",
+                     "idempotency_key": "known-agent-command"}
+    agent = client.post(agent_path, json=agent_command, headers=headers)
+    assert agent.status_code == 202
+    assert agent.json()["demand"]["demand_id"] == demand_id
+    reconcile_path = f"{agent_path}/by-key/known-agent-command"
+    assert client.get(reconcile_path, headers=headers).json()["state"] == "confirmed"
+    other_headers = {**headers, "x-byq-session-id": "session-demand-2"}
+    assert client.get(reconcile_path, headers=other_headers).json()["state"] == "not_found"
+    assert client.get(f"{agent_path}/{demand_id}", headers=other_headers).status_code == 404
+
+    automation = main.market_automation_store
+    job = automation.claim_data_repair()
+    automation.complete_data_repair(job["request_id"], error="ProviderUnavailable")
+    failed = client.get(f"{path}/{demand_id}", headers=headers).json()
+    assert failed["status"] == "failed"
+    assert "retry_token" not in failed
+    automation._execute("""UPDATE market_data_repair_requests SET completed_at=now()-interval '6 minutes'
+        WHERE request_id=:id""", {"id": job["request_id"]})
+    failed = client.get(f"{path}/{demand_id}", headers=headers).json()
+    assert "数据源暂时不可用" in failed["error"]
+    retry_path = f"{path}/{demand_id}/retry"
+    retry = {"retry_token": failed["retry_token"]}
+    assert client.post(retry_path, json=retry, headers=headers).json()["status"] == "queued"
+    assert client.post(retry_path, json=retry, headers=headers).status_code == 409
+    record = automation.get_data_repair(job["request_id"])
+    assert record["self_service_retry_evidence"]["error"] == "ProviderUnavailable"
+    readiness.state = "ready"
+    automation.complete_data_repair(job["request_id"])
+    main.data_demand_store.settle_conversation_preparations(
+        readiness_store=readiness, automation_store=automation,
+    )
+    assert main.data_demand_store.get(
+        demand_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        trusted_session=context["session_id"],
+    )["status"] == "ready"
+    assert client.get(f"{path}/{demand_id}", headers=headers).json()["status"] == "completed"
+
+
+def test_conversation_preparation_distinguishes_unpublished_and_unsupported(monkeypatch):
+    readiness = ConversationPreparationReadiness()
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    context = _context("user")
+    conversation = ConversationCatalogStore().create("alice", context["session_id"], context["trace_id"])
+    headers = {f"x-byq-{key.replace('_', '-')}": value for key, value in context.items()}
+    path = f"/v1/data-center/conversations/{conversation['conversation_id']}/research-preparations"
+    payload = {"symbols": ["600036.SH"], "start_date": "20991118", "end_date": "20991118"}
+    client = TestClient(main.app)
+
+    pending = client.post(path, json=payload, headers=headers)
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "not_published"
+    assert pending.json()["request_id"] is None
+    assert client.post(path, json={**payload, "symbols": ["AAPL"]}, headers=headers).status_code == 422
+    readiness.bulk_dates = [f"202411{value:02d}" for value in range(16, 22)]
+    too_wide = client.post(path, json={**payload, "start_date": "20241116", "end_date": "20241121"}, headers=headers)
+    assert too_wide.status_code == 422
+    assert "5 个" in too_wide.json()["detail"]
+    assert client.get(path, headers=headers).json() == {"preparations": []}
+    assert main.market_automation_store.claim_data_repair() is None

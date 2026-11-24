@@ -1463,7 +1463,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_data_demand_create",
     {
-      description: "Ask the trusted BYQ Data Center to prepare a bounded frozen scope. Supplying task_id binds it to a durable DATA_IMPORT Job and validated data-readiness Artifact; provider access stays in the trusted Data Worker.",
+      description: "Ask the trusted BYQ Data Center to prepare a bounded frozen scope. Ordinary users may submit only their active conversation's supported research gap (up to 20 symbols, 180 calendar days and 5 missing trading days); workspace and conversation ownership are enforced by Backend. Existing task-bound and administrator data requests retain their own rules. Provider access stays in the trusted Data Worker.",
       inputSchema: z.union([
         z.object({
         purpose: z.enum(["research", "backtest", "machine_learning"]),
@@ -1479,6 +1479,19 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         }).strict().optional(),
         idempotency_key: z.string().min(1).max(128),
       }).strict(),
+        z.object({
+          purpose: z.literal("research"),
+          scope_kind: z.literal("conversation_research"),
+          symbols: z.array(z.string().regex(/^\d{6}\.(?:SH|SZ|BJ)$/)).min(1).max(20)
+            .refine((symbols) => new Set(symbols).size === symbols.length),
+          start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          data_requirements: z.object({
+            daily_basic: z.array(z.string()).max(12).optional(),
+            fundamentals: z.array(z.string()).max(12).optional(),
+          }).strict().optional(),
+          idempotency_key: z.string().min(1).max(128),
+        }).strict(),
         z.object({ purpose: z.enum(["research", "backtest", "machine_learning"]),
           task_id: z.string().regex(/^task_[0-9a-f]{32}$/).optional(),
           scope_kind: z.literal("index_snapshot"), index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000852.SH", "000905.SH", "399006.SZ"]),

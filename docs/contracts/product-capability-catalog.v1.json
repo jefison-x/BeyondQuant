@@ -1,6 +1,6 @@
 {
   "schema_version": "product-capability-catalog.v1",
-  "catalog_version": "2026.11.15",
+  "catalog_version": "2026.11.24",
   "support_levels": ["EXPLAIN", "NAVIGATE", "READ", "PROPOSE", "EXECUTE", "UNAVAILABLE"],
   "capabilities": [
     {
@@ -21,7 +21,7 @@
       "route_id": "/agent",
       "route_parent_capability_id": "xiaoba-research-conversation",
       "audience": "USER",
-      "purpose": "在原研究会话检查本地日线、估值或财务指标覆盖；缺少适用数据时分享范围给管理员准备，复查后带入续研草稿。",
+      "purpose": "在当前个人研究会话检查本地日线、估值或财务指标覆盖；发现已支持的数据缺口时，可在有界范围内申请准备并复查后继续研究。",
       "keywords": [
         "准备研究数据",
         "研究数据准备",
@@ -32,21 +32,27 @@
         "缺数据"
       ],
       "prerequisites": [
-        "已登录并有研究回复，当前会话空闲",
-        "规范证券代码1至20只，单次不超过180个自然日"
+        "已登录，且申请范围属于本人当前活动的个人会话",
+        "规范A股代码1至20只、最多180个自然日，最多涉及5个缺失交易日"
       ],
       "support": [
         "EXPLAIN",
-        "NAVIGATE"
+        "NAVIGATE",
+        "READ",
+        "EXECUTE"
       ],
       "agent_tools": [
-        "byq_product_help_query"
+        "byq_market_daily",
+        "byq_market_valuation",
+        "byq_market_fundamentals",
+        "byq_data_demand_create",
+        "byq_data_demand_get"
       ],
       "limitations": [
-        "普通用户在会话界面检查覆盖并分享范围；同步由管理员在数据中心确认",
-        "准备回执不代表指标有值，需在原会话复查并核实具体数据",
-        "只准备受支持的本地日线、估值和财务指标，不补公告、PDF表格或核实分红金额",
-        "带入续研草稿后由用户确认发送，不会自动发送"
+        "只处理当前个人会话中已支持的数据种类；数据源凭据、全量同步和数据中心设置仍由管理员负责，补数由系统后台执行",
+        "最多一个个人工作区请求同时运行；相同范围会合并，失败后有限重试",
+        "准备回执不代表指标已有值；实际可用前，助手必须在原会话复查具体覆盖",
+        "不支持的数据种类、尚未发布的适用范围和供应商失败分别说明，不将其混为普通缺数"
       ]
     },
     {
@@ -227,7 +233,7 @@
       "prerequisites": ["管理员角色"],
       "support": ["EXPLAIN", "NAVIGATE", "PROPOSE", "EXECUTE", "READ"],
       "agent_tools": ["byq_data_demand_create", "byq_data_demand_get"],
-      "limitations": ["仅管理员工作区可提交有界按需数据请求；Product Agent 不调用 Provider，只有可信 Data Worker 执行同步"]
+      "limitations": ["管理员管理数据源凭据、全量同步和数据中心配置；小巴不直接调用数据源，补数由系统后台执行"]
     },
     {
       "capability_id": "feedback-moderation",

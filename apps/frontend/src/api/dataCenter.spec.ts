@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDataSourceCredential, createDataSyncJob, createResearchPreparation, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, queryDataReadiness, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
+import { createConversationResearchPreparation, createDataSourceCredential, createDataSyncJob, createResearchPreparation, getConversationResearchPreparation, listConversationResearchPreparations, retryConversationResearchPreparation, createSecurityMasterSyncJob, getDataCenterStatus, listSecurities, queryDataReadiness, runMarketSyncNow, testDataSource, updateMarketSyncAutomation } from "./dataCenter";
 
 describe("data center api client", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -100,6 +100,37 @@ describe("data center api client", () => {
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual(scope);
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual(scope);
+    expect(fetchMock.mock.calls.every((call) => call[1]?.credentials === "include")).toBe(true);
+  });
+
+  it("uses conversation-scoped Product routes for preparation receipts and retries", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      request_id: "datademand-1", status: "queued", scope: {
+        symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research", data_requirements: {},
+      },
+    }), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const scope = {
+      symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research" as const,
+      data_requirements: {},
+    };
+
+    await createConversationResearchPreparation("conversation/1", scope);
+    await listConversationResearchPreparations("conversation/1");
+    await getConversationResearchPreparation("conversation/1", "datademand-1");
+    await retryConversationResearchPreparation("conversation/1", "datademand-1", "retry-secret");
+
+    const base = "/api/product/data-center/conversations/conversation%2F1/research-preparations";
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      base,
+      base,
+      `${base}/datademand-1`,
+      `${base}/datademand-1/retry`,
+    ]);
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual(scope);
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBeUndefined();
+    expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(JSON.stringify({ retry_token: "retry-secret" }));
     expect(fetchMock.mock.calls.every((call) => call[1]?.credentials === "include")).toBe(true);
   });
 });

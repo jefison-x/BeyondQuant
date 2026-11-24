@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .business_job import project_business_job
 from .db import PgStoreMixin, execute, fetch_one
+from .market_automation import CONVERSATION_REPAIR_ACTOR
 from .research import InvalidTransition, ResearchNotFound
 from .task_progress import progress_percent
 
@@ -110,6 +111,7 @@ class DataDemandStore(PgStoreMixin):
         "ALTER TABLE data_demands ADD COLUMN IF NOT EXISTS error_code TEXT",
         "ALTER TABLE data_demands ADD COLUMN IF NOT EXISTS error_message TEXT",
         "ALTER TABLE data_demands ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ",
+        "ALTER TABLE data_demands ADD COLUMN IF NOT EXISTS conversation_submission_keys JSONB NOT NULL DEFAULT '[]'::jsonb",
         "CREATE INDEX IF NOT EXISTS data_demands_task_status ON data_demands(task_id,status,created_at) WHERE task_id IS NOT NULL",
     ])
 
@@ -184,7 +186,8 @@ class DataDemandStore(PgStoreMixin):
                     "id": demand_id, "owner": context["owner_principal"],
                     "workspace": context["workspace_id"], "actor": context["actor_principal"],
                     "trace": context["trace_id"], "session": context["session_id"],
-                    "purpose": purpose, "snapshot": None if payload.get("scope_kind") == "index_snapshot" else str(payload.get("stock_pool_snapshot_id")),
+                    "purpose": purpose, "snapshot": (None if scope.get("kind") in {"index_snapshot", "conversation_research"}
+                                                     else str(payload.get("stock_pool_snapshot_id"))),
                     "scope": scope, "requirements": requirements, "repairs": repair_request_ids,
                     "task": task_id,
                     "progress": {"partition_count": len(requirements), "ready_partitions": 0,
@@ -229,13 +232,133 @@ class DataDemandStore(PgStoreMixin):
             return self.create(payload, context=context, scope=scope, requirements=requirements,
                 repair_request_ids=[str(item["request_id"]) for item in repairs], _connection=connection)
 
-    def reconcile_submission(self, key, *, trusted_owner, trusted_workspace):
+    @staticmethod
+    def _require_conversation(connection, context, conversation_id=None):
+        statement = """SELECT conversation_id,runtime_session_id,trace_id
+            FROM product_conversations WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND status='active' AND """
+        selector = "runtime_session_id=:session" if conversation_id is None else "conversation_id=:conversation"
+        row = fetch_one(connection, statement + selector + " FOR SHARE", {
+            "owner": context["owner_principal"], "workspace": context["workspace_id"],
+            "session": context["session_id"], "conversation": conversation_id,
+        })
+        if row is None:
+            raise DataDemandNotFound("研究会话不存在或已归档。")
+        return {**context, "session_id": row["runtime_session_id"], "trace_id": row["trace_id"]}
+
+    def conversation_context(self, context, conversation_id=None):
+        with self._transaction() as connection:
+            return self._require_conversation(connection, context, conversation_id)
+
+    @staticmethod
+    def _lock_conversation_preparation(connection, context):
+        execute(connection, "SET LOCAL lock_timeout = '2s'")
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))",
+                {"scope": "conversation-research|" + context["workspace_id"]})
+
+    @staticmethod
+    def _require_no_active_preparation(connection, context):
+        found = fetch_one(connection, """SELECT d.demand_id FROM data_demands d
+            JOIN market_data_repair_requests r ON r.request_id=d.repair_request_ids_json->>0
+            WHERE d.workspace_id=:workspace AND d.owner_principal=:owner
+              AND d.scope_json->>'kind'='conversation_research'
+              AND r.status IN ('queued','running','waiting_for_sessions') LIMIT 1""", {
+                "workspace": context["workspace_id"], "owner": context["owner_principal"],
+            })
+        if found is not None:
+            raise DataDemandConflict("当前已有一项研究数据准备任务，请等待完成后再申请其他范围。")
+
+    def submit_conversation_preparation(self, *, context, scope, requirement, automation_store, idempotency_key=None):
+        """Share the global repair but freeze a private, conversation-bound receipt."""
+        public_scope = {"kind": "conversation_research", **scope}
+        stable_key = "conversation-prep-" + _hash([context["session_id"], public_scope])
+        if idempotency_key is not None and (not isinstance(idempotency_key, str)
+                                           or _IDEMPOTENCY.fullmatch(idempotency_key) is None):
+            raise ValueError("idempotency_key is invalid")
+        payload = {"purpose": "research", "idempotency_key": idempotency_key or stable_key}
+        with self._transaction() as connection:
+            self._lock_conversation_preparation(connection, context)
+            context = self._require_conversation(connection, context)
+            rows = {"owner": context["owner_principal"], "workspace": context["workspace_id"],
+                    "session": context["session_id"], "key": payload["idempotency_key"], "scope": public_scope}
+            by_key = fetch_one(connection, """SELECT * FROM data_demands
+                WHERE workspace_id=:workspace AND (idempotency_key=:key
+                    OR jsonb_exists(conversation_submission_keys,:key))
+                ORDER BY (idempotency_key=:key) DESC LIMIT 1""", rows)
+            if by_key is not None:
+                if (by_key["owner_principal"] != context["owner_principal"]
+                        or by_key["session_id"] != context["session_id"] or by_key["scope_json"] != public_scope):
+                    raise DataDemandConflict("准备请求标识已用于其他范围。")
+                return self._public(by_key), False
+            repeat = fetch_one(connection, """SELECT * FROM data_demands
+                WHERE workspace_id=:workspace AND owner_principal=:owner AND session_id=:session
+                  AND scope_json=:scope ORDER BY created_at DESC LIMIT 1""", rows)
+            if repeat is not None:
+                keys = list(repeat["conversation_submission_keys"])
+                if idempotency_key is not None:
+                    if len(keys) >= 8:
+                        raise DataDemandConflict("该范围已有准备记录，请在原会话查看。")
+                    execute(connection, "UPDATE data_demands SET conversation_submission_keys=:keys WHERE demand_id=:id",
+                            {"keys": [*keys, idempotency_key], "id": repeat["demand_id"]})
+                return self._public(repeat), False
+            self._require_no_active_preparation(connection, context)
+            repair = automation_store.request_data_repair(requirement=requirement,
+                requested_by=CONVERSATION_REPAIR_ACTOR, retry_terminal=False, _connection=connection)
+            return self.create(payload, context=context, scope=public_scope, requirements=[requirement],
+                repair_request_ids=[str(repair["request_id"])], _connection=connection)
+
+    def list_conversation_preparations(self, context):
+        rows = self._execute("""SELECT * FROM data_demands WHERE owner_principal=:owner
+            AND workspace_id=:workspace AND session_id=:session AND scope_json->>'kind'='conversation_research'
+            ORDER BY created_at DESC,demand_id DESC LIMIT 8""", {
+            "owner": context["owner_principal"], "workspace": context["workspace_id"], "session": context["session_id"],
+        })
+        return [self._public(row) for row in rows]
+
+    def preparation_repair(self, demand_id, context):
+        return self._preparation_repair(self._fetch_one, demand_id, context)
+
+    @staticmethod
+    def _preparation_repair(read, demand_id, context):
+        row = read("""SELECT repair_request_ids_json FROM data_demands WHERE demand_id=:id
+            AND owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+            AND scope_json->>'kind'='conversation_research'""", {
+                "id": demand_id, "owner": context["owner_principal"], "workspace": context["workspace_id"],
+                "session": context["session_id"],
+            })
+        if row is None:
+            raise DataDemandNotFound("未找到该会话的准备记录。")
+        return str(row["repair_request_ids_json"][0])
+
+    def retry_conversation_preparation(self, demand_id, *, context, terminal_revision, automation_store):
+        with self._transaction() as connection:
+            self._lock_conversation_preparation(connection, context)
+            context = self._require_conversation(connection, context)
+            repair_id = self._preparation_repair(lambda query, params: fetch_one(connection, query, params),
+                                                demand_id, context)
+            self._require_no_active_preparation(connection, context)
+            automation_store.retry_data_repair_if_terminal(repair_id, terminal_revision=terminal_revision,
+                                                            conversation_retry=True, _connection=connection)
+
+    @staticmethod
+    def _matches_context(row, owner, workspace, session):
+        if row is None or row["owner_principal"] != owner:
+            return False
+        if row["scope_json"].get("kind") == "conversation_research":
+            return row["workspace_id"] == workspace and row["session_id"] == session
+        return row.get("task_id") is None or row["workspace_id"] == workspace
+
+    def reconcile_submission(self, key, *, trusted_owner, trusted_workspace, trusted_session=None):
         if not isinstance(key, str) or _IDEMPOTENCY.fullmatch(key) is None:
             raise ValueError("idempotency_key is invalid")
         row = self._fetch_one("""SELECT * FROM data_demands WHERE workspace_id=:workspace
-            AND owner_principal=:owner AND idempotency_key=:key""",
-            {"workspace": trusted_workspace, "owner": trusted_owner, "key": key})
-        return {"state": "confirmed", "demand": self._public(row)} if row else {"state": "not_found"}
+            AND owner_principal=:owner AND (idempotency_key=:key
+                OR (session_id=:session AND jsonb_exists(conversation_submission_keys,:key)))
+            ORDER BY (idempotency_key=:key) DESC LIMIT 1""",
+            {"workspace": trusted_workspace, "owner": trusted_owner, "session": trusted_session, "key": key})
+        return ({"state": "confirmed", "demand": self._public(row)}
+                if self._matches_context(row, trusted_owner, trusted_workspace, trusted_session)
+                else {"state": "not_found"})
 
     def find_idempotent(
         self, payload: object, *, context: dict[str, str], scope: dict[str, object],
@@ -289,10 +412,10 @@ class DataDemandStore(PgStoreMixin):
 
     def get(
         self, demand_id: object, *, trusted_owner: str, trusted_workspace: str | None = None,
+        trusted_session: str | None = None,
     ) -> dict[str, object]:
         row = self._fetch_one("SELECT * FROM data_demands WHERE demand_id=:id", {"id": str(demand_id)})
-        if (row is None or row["owner_principal"] != trusted_owner
-                or row.get("task_id") is not None and row.get("workspace_id") != trusted_workspace):
+        if not self._matches_context(row, trusted_owner, trusted_workspace, trusted_session):
             raise DataDemandNotFound("data demand not found")
         return self._public(row)
 
@@ -319,11 +442,10 @@ class DataDemandStore(PgStoreMixin):
 
     def refresh(
         self, demand_id: object, *, trusted_owner: str, readiness_store: Any,
-        automation_store: Any, trusted_workspace: str | None = None,
+        automation_store: Any, trusted_workspace: str | None = None, trusted_session: str | None = None,
     ) -> dict[str, object]:
         row = self._fetch_one("SELECT * FROM data_demands WHERE demand_id=:id", {"id": str(demand_id)})
-        if (row is None or row["owner_principal"] != trusted_owner
-                or row.get("task_id") is not None and row.get("workspace_id") != trusted_workspace):
+        if not self._matches_context(row, trusted_owner, trusted_workspace, trusted_session):
             raise DataDemandNotFound("data demand not found")
         # Task-bound DataImportJobs are advanced by the trusted Data Worker.
         # Agent reads only observe this persisted projection.
@@ -350,7 +472,10 @@ class DataDemandStore(PgStoreMixin):
             for date in list(assessment.get("missing_trade_dates", []))
         })
         session_jobs = automation_store.session_job_counts(missing_dates)
-        ready_count = sum(item.get("state") == "ready" for item in assessments)
+        conversation_preparation = row["scope_json"].get("kind") == "conversation_research"
+        ready_count = sum(item.get("state") == "ready" and (not conversation_preparation or (
+            item.get("required_session_count", 0) > 0 and item.get("required_cell_count", 0) > 0
+        )) for item in assessments)
         any_ready_cells = any(int(item.get("required_cell_count") or 0) > int(item.get("missing_count") or 0) for item in assessments)
         repair_failed = any(item.get("status") == "failed" for item in repairs)
         active = (
@@ -359,9 +484,11 @@ class DataDemandStore(PgStoreMixin):
         )
         if ready_count == len(assessments):
             status = "ready"
-        elif repair_failed or (repairs and all(item.get("status") == "completed" for item in repairs) and not active and session_jobs["failed"]):
+        elif repair_failed or (repairs and all(item.get("status") == "completed" for item in repairs)
+                               and not active and (session_jobs["failed"] or conversation_preparation)):
             status = "partial" if any_ready_cells else "failed"
-        elif repairs and all(item.get("status") == "queued" for item in repairs) and not any(session_jobs.values()):
+        elif (repairs and all(item.get("status") == "queued" for item in repairs)
+              and (conversation_preparation or not any(session_jobs.values()))):
             status = "queued"
         else:
             status = "syncing"
@@ -528,9 +655,25 @@ class DataDemandStore(PgStoreMixin):
             {"limit": limit},
         )]
 
+    def settle_conversation_preparations(self, *, readiness_store, automation_store) -> None:
+        rows = self._execute("""SELECT d.demand_id,d.owner_principal,d.workspace_id,d.session_id
+            FROM data_demands d JOIN market_data_repair_requests r ON r.request_id=d.repair_request_ids_json->>0
+            WHERE d.scope_json->>'kind'='conversation_research' AND d.status IN ('queued','syncing')
+              AND r.status IN ('completed','failed')
+            ORDER BY d.updated_at,d.demand_id LIMIT 8""")
+        for row in rows:
+            try:
+                self.refresh(row["demand_id"], trusted_owner=row["owner_principal"],
+                    trusted_workspace=row["workspace_id"], trusted_session=row["session_id"],
+                    readiness_store=readiness_store, automation_store=automation_store)
+            except DataDemandNotFound:
+                # An owner reset can remove a terminal receipt during reconciliation.
+                continue
+
     def refresh_recent(self, *, readiness_store: Any, automation_store: Any, limit: int = 50) -> list[dict[str, object]]:
         rows = self._execute(
-            "SELECT * FROM data_demands ORDER BY created_at DESC,demand_id DESC LIMIT :limit",
+            """SELECT * FROM data_demands WHERE scope_json->>'kind' IS DISTINCT FROM 'conversation_research'
+               ORDER BY created_at DESC,demand_id DESC LIMIT :limit""",
             {"limit": limit},
         )
         return [

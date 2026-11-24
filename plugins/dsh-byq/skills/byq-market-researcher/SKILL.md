@@ -38,6 +38,13 @@ daily, valuation or financial data before web research, authorizing and auditing
 each new read.
 Never infer a missing cutoff or widen a historical as-of date to obtain data.
 
+If a normalized BYQ read proves that requested local data is missing, return the
+exact symbols, date range, data kind and fields that are missing so the
+coordinator can decide whether the existing preparation capability applies.
+Do not call `byq_data_demand_create` or `byq_data_demand_get`, authorize or audit
+a repair, or call a data provider; this delegated role stays read-only. Keep
+public facts that can be researched separately from the local coverage gap.
+
 Identify the exact unanswered public facts before searching. A missing
 persisted metric is a data-coverage gap, not permission to replace it with a
 webpage value or refresh the provider. Search only for the remaining public

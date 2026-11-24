@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { queryDataReadiness } from "@/api/dataCenter";
+import {
+  createConversationResearchPreparation,
+  DataCenterRequestError,
+  getConversationResearchPreparation,
+  listConversationResearchPreparations,
+  queryDataReadiness,
+  retryConversationResearchPreparation,
+  type ConversationResearchPreparationReceipt,
+} from "@/api/dataCenter";
 import type { DataReadinessResult } from "@/api/types";
 import {
-  buildResearchPreparationHandoffUrl,
   FINANCIAL_FIELDS,
   formatResearchPreparationDate,
   normalizeResearchPreparationScope,
@@ -24,8 +31,15 @@ const checking = ref(false);
 const error = ref("");
 const checkedScope = ref<ResearchPreparationScope | null>(null);
 const readiness = ref<DataReadinessResult | null>(null);
-const copyMessage = ref("");
+const preparation = ref<ConversationResearchPreparationReceipt | null>(null);
+const preparationError = ref("");
+const preparing = ref(false);
+const refreshingPreparation = ref(false);
+const retryingPreparation = ref(false);
+const retryConfirmed = ref(false);
+const preparationUncertain = ref(false);
 let generation = 0;
+let preparationGeneration = 0;
 
 const storageKey = computed(() => props.conversationId && props.ownerKey
   ? `byq-research-preparation:${props.ownerKey}:${props.conversationId}` : "");
@@ -47,12 +61,32 @@ const emptyTradingScope = computed(() => currentReadiness.value?.summary.calenda
     || (currentReadiness.value.verdict === "usable" && currentReadiness.value.summary.ready_items === 0)));
 const scopeUsable = computed(() => currentReadiness.value?.verdict === "usable" && !emptyTradingScope.value
   && (currentReadiness.value?.summary.required_sessions ?? 0) > 0);
-const handoffUrl = computed(() => currentReadiness.value && currentReadiness.value.verdict !== "usable" && !emptyTradingScope.value
-  && checkedScope.value ? buildResearchPreparationHandoffUrl(checkedScope.value) : "");
+const preparationMatchesCurrentScope = computed(() => Boolean(preparation.value && checkedScope.value
+  && sameScope(preparation.value.scope, checkedScope.value)));
+const canPrepare = computed(() => Boolean(currentReadiness.value && checkedScope.value
+  && currentReadiness.value.verdict !== "usable" && !emptyTradingScope.value
+  && !preparationUncertain.value && !preparing.value
+  && !(preparationMatchesCurrentScope.value && ["queued", "running"].includes(preparation.value?.status ?? ""))
+  && !(preparationMatchesCurrentScope.value && ["failed", "completed", "ready"].includes(preparation.value?.status ?? ""))));
 const statusLabel = computed(() => emptyTradingScope.value ? "日期范围内没有可检查的交易日或有效数据"
   : currentReadiness.value?.verdict === "usable" ? "所选范围覆盖检查通过"
   : currentReadiness.value?.verdict === "limited" ? "所选范围部分缺失"
     : currentReadiness.value?.verdict === "unavailable" ? "所选范围暂不可用" : "");
+const preparationStatusLabel = computed(() => ({
+  queued: "补数请求已排队",
+  running: "补数正在处理中",
+  failed: "补数失败",
+  completed: "补数任务已结束，请复查数据覆盖",
+  ready: "该范围当前已就绪，请复查数据覆盖",
+  not_published: "所需行情尚未发布，暂未创建补数任务",
+}[preparation.value?.status ?? ""] ?? (preparation.value ? "数据准备状态待核对" : "")));
+const preparationScopeLabel = computed(() => preparation.value
+  ? `${preparation.value.scope.symbols.join("、")} · ${formatResearchPreparationDate(preparation.value.scope.start_date)} 至 ${formatResearchPreparationDate(preparation.value.scope.end_date)}`
+  : "");
+const retryEligible = computed(() => Boolean(preparationMatchesCurrentScope.value && preparation.value?.request_id
+  && preparation.value.retry_token && preparation.value.status === "failed"
+  && !retryingPreparation.value && !refreshingPreparation.value && !preparationUncertain.value));
+const canRetryPreparation = computed(() => retryEligible.value && retryConfirmed.value);
 
 function saveScope(scope: ResearchPreparationScope) {
   if (!storageKey.value) return;
@@ -70,7 +104,9 @@ function restoreScope() {
   checkedScope.value = null;
   readiness.value = null;
   error.value = "";
-  copyMessage.value = "";
+  preparation.value = null;
+  preparationError.value = "";
+  preparationUncertain.value = false;
   if (!storageKey.value) return;
   try {
     const raw = sessionStorage.getItem(storageKey.value);
@@ -86,13 +122,20 @@ function restoreScope() {
 }
 
 watch(storageKey, restoreScope, { immediate: true });
+watch([storageKey, () => props.enabled], ([key, enabled]) => {
+  preparationGeneration++;
+  preparation.value = null;
+  preparationError.value = "";
+  preparationUncertain.value = false;
+  if (enabled && key && props.conversationId) void discoverPreparation(true);
+}, { immediate: true });
 watch([symbols, startDate, endDate, valuationFields, financialFields], () => {
   generation++;
   checking.value = false;
   checkedScope.value = null;
   readiness.value = null;
   error.value = "";
-  copyMessage.value = "";
+  retryConfirmed.value = false;
   const scope = parsedCurrentScope.value;
   if (scope) saveScope(scope);
   else if (storageKey.value) {
@@ -111,7 +154,6 @@ async function checkReadiness() {
   const currentGeneration = ++generation;
   checking.value = true;
   error.value = "";
-  copyMessage.value = "";
   readiness.value = null;
   checkedScope.value = null;
   try {
@@ -141,13 +183,145 @@ async function checkReadiness() {
   }
 }
 
-async function copyHandoff() {
-  if (!handoffUrl.value) return;
+function sameScope(left: ResearchPreparationScope, right: ResearchPreparationScope): boolean {
+  const sameSet = (leftValues: string[], rightValues: string[]) => leftValues.length === rightValues.length
+    && leftValues.every((value) => rightValues.includes(value));
+  return sameSet(left.symbols, right.symbols)
+    && left.start_date === right.start_date
+    && left.end_date === right.end_date
+    && left.use_case === right.use_case
+    && sameSet(left.data_requirements.daily_basic ?? [], right.data_requirements.daily_basic ?? [])
+    && sameSet(left.data_requirements.fundamentals ?? [], right.data_requirements.fundamentals ?? []);
+}
+
+function parseReceipt(value: unknown): ConversationResearchPreparationReceipt | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const scope = normalizeResearchPreparationScope(candidate.scope);
+  if (!scope || typeof candidate.status !== "string"
+      || !(candidate.request_id === null || (typeof candidate.request_id === "string" && Boolean(candidate.request_id)))
+      || !(candidate.retry_token === undefined || candidate.retry_token === null || typeof candidate.retry_token === "string")
+      || !(candidate.error === undefined || candidate.error === null || typeof candidate.error === "string")) return null;
+  return {
+    request_id: candidate.request_id as string | null,
+    status: candidate.status,
+    retry_token: candidate.retry_token as string | null | undefined,
+    error: candidate.error as string | null | undefined,
+    scope,
+  };
+}
+
+function fillScope(scope: ResearchPreparationScope) {
+  symbols.value = scope.symbols.join(", ");
+  startDate.value = formatResearchPreparationDate(scope.start_date);
+  endDate.value = formatResearchPreparationDate(scope.end_date);
+  valuationFields.value = scope.data_requirements.daily_basic ?? [];
+  financialFields.value = scope.data_requirements.fundamentals ?? [];
+}
+
+async function discoverPreparation(hydrateEmptyScope = false) {
+  const currentGeneration = ++preparationGeneration;
+  if (hydrateEmptyScope) refreshingPreparation.value = true;
+  preparationError.value = "";
   try {
-    await navigator.clipboard.writeText(handoffUrl.value);
-    copyMessage.value = "管理员审核链接已复制；链接只包含标的、日期和数据字段。";
-  } catch {
-    copyMessage.value = "无法自动复制，请手动复制下方链接；链接只包含标的、日期和数据字段。";
+    const result = await listConversationResearchPreparations(props.conversationId);
+    if (currentGeneration !== preparationGeneration || !props.enabled) return;
+    if (!Array.isArray(result.preparations)) throw new Error("服务端未返回会话准备记录列表。");
+    const receipts = result.preparations.map(parseReceipt).filter((receipt): receipt is ConversationResearchPreparationReceipt => receipt !== null);
+    const selected = (parsedCurrentScope.value
+      ? receipts.find((receipt) => sameScope(receipt.scope, parsedCurrentScope.value!))
+      : null) ?? receipts[0] ?? null;
+    preparation.value = selected;
+    preparationUncertain.value = false;
+    if (hydrateEmptyScope && selected && !symbols.value.trim() && !startDate.value && !endDate.value) fillScope(selected.scope);
+  } catch (caught) {
+    if (currentGeneration === preparationGeneration) preparationError.value = caught instanceof Error ? caught.message : "无法读取当前会话的数据准备记录。";
+  } finally {
+    if (hydrateEmptyScope && currentGeneration === preparationGeneration) refreshingPreparation.value = false;
+  }
+}
+
+async function submitPreparation() {
+  const scope = checkedScope.value;
+  if (!scope || !canPrepare.value || !currentReadiness.value || !props.conversationId) return;
+  const currentGeneration = ++preparationGeneration;
+  preparing.value = true;
+  preparationError.value = "";
+  retryConfirmed.value = false;
+  try {
+    const result = parseReceipt(await createConversationResearchPreparation(props.conversationId, scope));
+    if (!result || !sameScope(result.scope, scope)) throw new Error("服务端回执与刚才检查的范围不一致，未采纳该回执。");
+    if (currentGeneration !== preparationGeneration) return;
+    if (!parsedCurrentScope.value || !checkedScope.value || !currentReadiness.value
+        || !sameScope(scope, parsedCurrentScope.value) || !sameScope(scope, checkedScope.value)) {
+      preparationUncertain.value = true;
+      preparationError.value = "请求可能已提交，但表单范围已变化。请先只读刷新当前会话准备记录。";
+      return;
+    }
+    preparation.value = result;
+    preparationUncertain.value = false;
+  } catch (caught) {
+    if (currentGeneration !== preparationGeneration) return;
+    preparationUncertain.value = !(caught instanceof DataCenterRequestError) || caught.status >= 500;
+    preparationError.value = caught instanceof Error ? caught.message : "准备请求未确认，请刷新当前会话记录。";
+  } finally {
+    if (currentGeneration === preparationGeneration) preparing.value = false;
+  }
+}
+
+async function refreshPreparation() {
+  const current = preparation.value;
+  if (refreshingPreparation.value || preparing.value || !props.conversationId) return;
+  const currentGeneration = ++preparationGeneration;
+  refreshingPreparation.value = true;
+  preparationError.value = "";
+  try {
+    if (current?.request_id) {
+      const result = parseReceipt(await getConversationResearchPreparation(props.conversationId, current.request_id));
+      if (!result || result.request_id !== current.request_id || !sameScope(result.scope, current.scope)) {
+        throw new Error("服务端回执与当前请求不一致，未采纳刷新结果。");
+      }
+      if (currentGeneration !== preparationGeneration) return;
+      preparation.value = result;
+    } else {
+      const result = await listConversationResearchPreparations(props.conversationId);
+      if (!Array.isArray(result.preparations)) throw new Error("服务端未返回会话准备记录列表。");
+      if (currentGeneration !== preparationGeneration) return;
+      const receipts = result.preparations.map(parseReceipt).filter((receipt): receipt is ConversationResearchPreparationReceipt => receipt !== null);
+      preparation.value = (current?.scope && receipts.find((receipt) => sameScope(receipt.scope, current.scope))) ?? receipts[0] ?? null;
+    }
+    preparationUncertain.value = false;
+    retryConfirmed.value = false;
+  } catch (caught) {
+    if (currentGeneration === preparationGeneration) preparationError.value = caught instanceof Error ? caught.message : "暂时无法刷新准备状态。";
+  } finally {
+    if (currentGeneration === preparationGeneration) refreshingPreparation.value = false;
+  }
+}
+
+async function retryPreparation() {
+  const current = preparation.value;
+  if (!canRetryPreparation.value || !current?.request_id || !current.retry_token || !props.conversationId) return;
+  const currentGeneration = ++preparationGeneration;
+  const requestId = current.request_id;
+  retryingPreparation.value = true;
+  preparationError.value = "";
+  try {
+    const result = parseReceipt(await retryConversationResearchPreparation(props.conversationId, requestId, current.retry_token));
+    if (!result || result.request_id !== requestId || !sameScope(result.scope, current.scope)) {
+      throw new Error("服务端重试回执与原范围不一致，未采纳该回执。");
+    }
+    if (currentGeneration !== preparationGeneration) return;
+    preparation.value = result;
+    retryConfirmed.value = false;
+    preparationUncertain.value = false;
+  } catch (caught) {
+    if (currentGeneration !== preparationGeneration) return;
+    preparationUncertain.value = true;
+    retryConfirmed.value = false;
+    preparationError.value = caught instanceof Error ? caught.message : "重试结果未确认，请先只读刷新原请求状态。";
+  } finally {
+    if (currentGeneration === preparationGeneration) retryingPreparation.value = false;
   }
 }
 
@@ -167,15 +341,16 @@ function resumeDraft() {
   <section v-if="enabled && conversationId" class="research-preparation" aria-label="研究数据准备">
     <button class="entry-button" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
       {{ expanded ? "收起数据准备" : "准备研究数据" }}
+      <span v-if="preparation" class="entry-status">{{ preparationStatusLabel }}</span>
     </button>
     <div v-if="expanded" class="preparation-body">
-      <p class="intro">在当前会话确认需要的标的和日期，再检查已保存数据。这里不会创建股票池或直接同步数据。</p>
+      <p class="intro">确认标的和日期后，先检查已保存数据；发现缺项时，可明确提交当前会话的有限补数请求。每次最多 20 只股票、180 个自然日；后台还会限制整日补数范围。此操作不会发送会话正文、创建股票池或自动续研。</p>
       <label class="field-label">股票代码 <small>用逗号分隔，最多 20 只；填写规范代码，如 600036.SH</small>
-        <textarea v-model="symbols" rows="2" placeholder="600036.SH, 601398.SH" :disabled="checking" />
+        <textarea v-model="symbols" rows="2" placeholder="600036.SH, 601398.SH" :disabled="checking || preparing" />
       </label>
       <div class="date-fields">
-        <label class="field-label">开始日期<input v-model="startDate" type="date" :disabled="checking" /></label>
-        <label class="field-label">结束日期<input v-model="endDate" type="date" :disabled="checking" /></label>
+        <label class="field-label">开始日期<input v-model="startDate" type="date" :disabled="checking || preparing" /></label>
+        <label class="field-label">结束日期<input v-model="endDate" type="date" :disabled="checking || preparing" /></label>
       </div>
       <fieldset>
         <legend>数据范围</legend>
@@ -183,20 +358,42 @@ function resumeDraft() {
         <details>
           <summary>可选估值字段</summary>
           <label v-for="field in VALUATION_FIELDS" :key="field.value" class="option">
-            <input v-model="valuationFields" type="checkbox" :value="field.value" :disabled="checking" /> {{ field.label }}
+            <input v-model="valuationFields" type="checkbox" :value="field.value" :disabled="checking || preparing" /> {{ field.label }}
           </label>
         </details>
         <details>
           <summary>可选财务字段</summary>
           <label v-for="field in FINANCIAL_FIELDS" :key="field.value" class="option">
-            <input v-model="financialFields" type="checkbox" :value="field.value" :disabled="checking" /> {{ field.label }}
+            <input v-model="financialFields" type="checkbox" :value="field.value" :disabled="checking || preparing" /> {{ field.label }}
           </label>
         </details>
       </fieldset>
-      <button type="button" class="primary-button" :disabled="checking" @click="checkReadiness">
+      <button type="button" class="primary-button" :disabled="checking || preparing" @click="checkReadiness">
         {{ checking ? "正在检查…" : checkedScope && !hasUnsavedScopeChanges ? "复查数据" : "确认范围并检查数据" }}
       </button>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="preparationError" class="error" role="alert">{{ preparationError }}</p>
+
+      <div v-if="preparation" class="preparation-receipt" role="status">
+        <strong>{{ preparationStatusLabel }}</strong>
+        <p>准备范围：{{ preparationScopeLabel }}</p>
+        <p v-if="preparation.request_id">请求编号：<code>{{ preparation.request_id }}</code></p>
+        <p v-if="preparation.error">{{ preparation.error }}</p>
+        <p v-if="preparation.status === 'not_published'">当前尚无可补齐的已发布行情；日历就绪不代表收盘行情已发布。可稍后重新检查该范围。</p>
+        <p v-if="preparationMatchesCurrentScope && ['completed', 'ready'].includes(preparation.status)">准备回执不代替浏览器重新读取覆盖情况。请复查下面的同一范围，再决定是否把续研草稿带入输入框。</p>
+        <p v-if="!preparationMatchesCurrentScope">这是当前会话此前提交的其他范围；不会用于当前选中范围的续研或重试。</p>
+        <button type="button" class="secondary-button" :disabled="refreshingPreparation || preparing || retryingPreparation" @click="refreshPreparation">
+          {{ refreshingPreparation ? "正在刷新…" : "只读刷新准备状态" }}
+        </button>
+        <div v-if="retryEligible" class="retry-box">
+          <p>该请求已失败。只有在读取到安全重试凭证后才可重试；重试仍使用原会话和完全相同的范围。</p>
+          <label class="confirm-line"><input v-model="retryConfirmed" type="checkbox" :disabled="retryingPreparation || refreshingPreparation" /> 我已核对失败范围，并确认重试</label>
+          <button type="button" class="secondary-button" :disabled="!canRetryPreparation" @click="retryPreparation">
+            {{ retryingPreparation ? "正在重试…" : "确认重试此补数请求" }}
+          </button>
+        </div>
+        <p v-if="preparationUncertain" class="stale-note">提交或重试结果暂未确认。请先只读刷新原会话记录，再决定是否继续。</p>
+      </div>
 
       <div v-if="currentReadiness" class="readiness-result" role="status">
         <strong>{{ statusLabel }}</strong>
@@ -222,22 +419,30 @@ function resumeDraft() {
           <small>草稿会回到当前会话输入框，不会自动发送。</small>
           </template>
         </div>
-        <div v-else-if="handoffUrl" class="handoff">
-          <p>需要补齐数据时，可把范围交给管理员审核。管理员只会看到下面列出的范围，不会看到本会话内容。</p>
-          <a :href="handoffUrl" target="_blank" rel="noopener noreferrer">打开管理员数据准备审核页</a>
-          <button type="button" @click="copyHandoff">复制管理员审核链接</button>
-          <input readonly :value="handoffUrl" aria-label="管理员审核链接" @focus="($event.target as HTMLInputElement).select()" />
-          <small v-if="copyMessage" role="status">{{ copyMessage }}</small>
+        <div v-else-if="canPrepare" class="next-step">
+          <p>当前范围有缺失项。点击后只提交上方已检查的标的、日期和数据字段；后台会再次核对范围和现有数据。</p>
+          <button type="button" class="primary-button" :disabled="preparing || checking" @click="submitPreparation">
+            {{ preparing ? "正在提交补数请求…" : preparationMatchesCurrentScope && preparation?.status === "not_published" ? "稍后重新检查行情是否已发布" : "为当前会话准备缺失数据" }}
+          </button>
+          <small>收到就绪或任务结束回执后，仍需重新检查同一范围的数据覆盖；通过后才会出现续研草稿入口。</small>
+        </div>
+        <div v-else-if="preparationMatchesCurrentScope && preparation?.status === 'completed'" class="next-step">
+          <p>任务已结束。请再次检查当前范围；如果仍有缺失，回执会显示失败或需要管理员处理，不会自动继续研究。</p>
+        </div>
+        <div v-else-if="preparationMatchesCurrentScope && preparation?.status === 'failed'" class="next-step">
+          <p>准备请求已失败。请查看上方原因；仅当回执提供安全重试凭证时，才可在上方明确确认重试。</p>
         </div>
       </div>
-      <p v-else-if="checkedScope && hasUnsavedScopeChanges" class="stale-note">范围已修改，请重新检查后再交接或继续研究。</p>
+      <p v-else-if="checkedScope && hasUnsavedScopeChanges" class="stale-note">范围已修改，请重新检查后再准备数据或续研。</p>
     </div>
   </section>
 </template>
 
 <style scoped>
 .research-preparation { width: min(900px, 100%); margin: 0 auto 1rem; padding: 0 .75rem; color: var(--byq-text); }
-.entry-button, .primary-button, .handoff button { border: 1px solid var(--byq-border); border-radius: 7px; padding: .55rem .8rem; color: var(--byq-text); background: var(--byq-surface); cursor: pointer; }
+.entry-button, .primary-button { border: 1px solid var(--byq-border); border-radius: 7px; padding: .55rem .8rem; color: var(--byq-text); background: var(--byq-surface); cursor: pointer; }
+.entry-button { display: inline-flex; align-items: center; gap: .55rem; }
+.entry-status { color: var(--el-color-primary); font-size: .85em; }
 .primary-button { color: white; background: var(--el-color-primary); border-color: var(--el-color-primary); }
 button:disabled { opacity: .6; cursor: wait; }
 .preparation-body { margin-top: .65rem; padding: 1rem; border: 1px solid var(--byq-border); border-radius: 12px; background: var(--byq-surface); display: grid; gap: .8rem; }
@@ -251,10 +456,14 @@ legend { font-weight: 700; padding: 0 .3rem; }
 details { border-top: 1px solid var(--byq-border); padding-top: .5rem; }
 summary { cursor: pointer; font-weight: 600; }
 .option { display: inline-flex; align-items: center; gap: .35rem; margin: .55rem .9rem 0 0; }
-.readiness-result, .handoff, .next-step { display: grid; gap: .5rem; }
+.readiness-result, .next-step { display: grid; gap: .5rem; }
 .readiness-result { border-top: 1px solid var(--byq-border); padding-top: .8rem; }
 .readiness-result ul { margin: 0; padding-left: 1.25rem; }
-.handoff a { overflow-wrap: anywhere; }
+.preparation-receipt, .retry-box { display: grid; gap: .5rem; padding: .75rem; border: 1px solid var(--byq-border); border-radius: 8px; }
+.preparation-receipt p, .retry-box p { margin: 0; color: var(--byq-text-muted); line-height: 1.55; }
+.secondary-button { width: fit-content; border: 1px solid var(--byq-border); border-radius: 7px; padding: .5rem .7rem; color: var(--byq-text); background: var(--byq-surface); cursor: pointer; }
+.confirm-line { display: flex; gap: .45rem; align-items: flex-start; }
+.confirm-line input { margin-top: .25rem; }
 .error { color: var(--el-color-danger); margin: 0; }
 .stale-note { margin: 0; color: var(--el-color-warning); }
 @media (max-width: 640px) { .date-fields { grid-template-columns: 1fr; } }

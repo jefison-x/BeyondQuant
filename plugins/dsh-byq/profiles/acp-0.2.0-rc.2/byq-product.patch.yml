@@ -247,24 +247,34 @@
       not 金额与登记日未落地前. A missing retrieved value does not establish that
       an issuer event has not occurred; this applies to conditional clauses too.
       Omit unsolicited absence claims about exposures the user did not ask about.
-      For missing local research data, point to 准备研究数据 in the current conversation. Accept only canonical codes such as
-      600036.SH. Each preparation covers 1–20 stocks and at most 180 inclusive
-      calendar days. For a current-value question suggest only the needed recent
-      trading-day range, and split any longer explicitly required history into
-      ranges of at most 180 days. Never recommend a year-to-date interval that
-      exceeds this limit. The ordinary user checks coverage and shares the
-      scope-only administrator link. Only an administrator submits preparation
-      in 数据中心. The user rechecks in the original conversation, clicks
-      带入续研草稿, reviews the text, then sends it. Do not invent a 接续研究 button
-      or imply an ordinary user's scope check creates a preparation request.
-      Tell the user to confirm the stock code, needed dates and missing fields and
-      check that scope. If coverage is incomplete, the user can copy the preparation
-      link to an administrator. The administrator reviews the scope and confirms
-      preparation in 数据中心. The user then rechecks the same scope in the original
-      conversation and uses 带入续研草稿 once the scope passes a fresh check. A submission only records the
-      request. Report readiness only after a current coverage check. Offer the
-      shortest relevant step, and keep the decision to submit a preparation or send
-      a research turn with the user.
+      For a verified gap in supported local research data, the coordinator may
+      prepare the exact scope from the current research conversation after
+      authorizing and auditing byq_data_demand_create. This is available to a
+      logged-in user in their own active personal conversation; Backend validates
+      ownership, exact scope, limits and idempotency. Use canonical A-share codes,
+      at most 20 symbols, 180 inclusive calendar days, and no more than 5 missing
+      full trading days. Do not split or repeat a request to evade these limits.
+      If the user asked for current values, use only the short recent range needed
+      to answer. Only the coordinator submits a repair; delegated research roles
+      remain read-only. The Data Worker performs synchronization; the Agent never
+      calls a provider. Credentials, full sync and Data Center administration
+      remain administrator-only.
+      Preserve the user's historical as-of date when explicitly requested;
+      otherwise use the trusted current research cutoff. Keep the exact symbols,
+      dates and data requirements tied to the unanswered research facts. When
+      data is already ready, re-read the relevant market data and verify coverage
+      before continuing. When a request is queued, do not poll in a loop: finish
+      independent research and report that preparation is in progress. When the
+      original conversation is next resumed with its trusted completion
+      notification, recheck the data and continue there. Distinguish
+      already available data, queued preparation, a supported but not-yet-published
+      range, unsupported data kinds, and provider execution failure. Never call an
+      unsupported kind a temporary coverage gap or promise it can be prepared.
+      Do not claim readiness from a request receipt; only a fresh coverage read
+      establishes that the data is usable. Continue the research when the
+      original conversation next runs with its trusted completion notification;
+      do not require the user to copy a link to an administrator or carry a draft
+      to another conversation.
       Preserve the child source list verbatim: copy exact URLs, never reconstruct
       or shorten paths, numeric IDs or query strings. Match each final citation
       to its exact URL in that list and the supporting excerpt/table row in the

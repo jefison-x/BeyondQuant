@@ -28,6 +28,7 @@ from app.data_provider import (
 )
 from app.data_sync import DataSyncConflict, DataSyncLeaseLost, DataSyncStore
 from app.market_automation import (
+    CONVERSATION_REPAIR_ACTOR,
     MarketAutomationConflict,
     MarketAutomationStore,
     run_scheduler_cycle,
@@ -577,15 +578,20 @@ class FakeAutomationProvider:
     def fetch_trading_calendar(self, request):
         normalized = request.normalized()
         self.calendar_requests.append(normalized)
-        return TradingCalendarResult(
-            sessions=(
+        sessions = tuple(
+            session for session in (
                 TradingSession("20260823", False, "20260821"),
                 TradingSession("20260824", True, "20260821"),
                 TradingSession("20260825", True, "20260824"),
-            ),
+            )
+            if normalized.start_date <= session.trade_date <= normalized.end_date
+        )
+        return TradingCalendarResult(
+            sessions=sessions,
             provenance=Provenance(
                 provider="tushare", endpoint="trade_cal", request_fingerprint="calendar-fixture",
-                retrieved_at="2026-08-25T10:31:00+00:00", cache_hit=False, row_count=3,
+                retrieved_at="2026-08-25T10:31:00+00:00", cache_hit=False,
+                row_count=len(sessions),
             ),
         )
 
@@ -767,6 +773,52 @@ def test_daily_automation_uses_open_sessions_and_full_market_snapshots() -> None
     market.close()
 
 
+def test_current_calendar_refresh_runs_before_schedule_and_deduplicates_verified_dates() -> None:
+    automation = MarketAutomationStore()
+    provider = FakeAutomationProvider()
+    config = automation.get_config()
+    automation.update_config({
+        "enabled": True,
+        "schedule_time": "18:30",
+        "catchup_days": 3,
+        "security_master_enabled": True,
+        "expected_version": config["version"],
+        "idempotency_key": "automation-current-calendar-refresh",
+    }, actor="admin")
+    before_schedule = datetime(2026, 8, 25, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    assert automation.refresh_current_calendar_if_missing(
+        lambda: provider, now=before_schedule,
+    ) is True
+    assert [(item.start_date, item.end_date) for item in provider.calendar_requests] == [
+        ("20260825", "20260825"),
+    ]
+    context = automation.market_session_context(now=before_schedule)
+    assert context["current_session"]["state"] == "open"
+    assert context["current_session"]["calendar_verified"] is True
+    assert automation.claim_next_job(worker_id="test-worker", now=before_schedule) is None
+
+    assert automation.refresh_current_calendar_if_missing(
+        lambda: provider, now=before_schedule,
+    ) is False
+    assert run_scheduler_cycle(
+        automation, provider_factory=lambda: provider, worker_id="test-worker",
+        now=before_schedule,
+    ) == []
+    assert len(provider.calendar_requests) == 1
+    automation.close()
+
+
+def test_current_calendar_refresh_obeys_existing_automation_switch() -> None:
+    automation = MarketAutomationStore()
+    provider = FakeAutomationProvider()
+    now = datetime(2026, 8, 25, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    assert automation.refresh_current_calendar_if_missing(lambda: provider, now=now) is False
+    assert provider.calendar_requests == []
+    automation.close()
+
+
 def test_repair_enqueue_returns_jobs_only_after_transaction_commit() -> None:
     automation = MarketAutomationStore()
     provider = FakeAutomationProvider()
@@ -796,6 +848,24 @@ def test_repair_enqueue_returns_jobs_only_after_transaction_commit() -> None:
         ("20260824", "queued"),
     ]
     automation.close()
+
+
+def test_conversation_preparation_cannot_requeue_same_date_repeatedly() -> None:
+    automation = MarketAutomationStore()
+    automation.refresh_calendar(FakeAutomationProvider(), start_date="20260824", end_date="20260824")
+    dates = ["20260824"]
+    original = automation.enqueue_dates(dates, scheduled_by="scheduler")[0]
+    mark_failed = """UPDATE market_session_sync_jobs SET status='failed', attempts=4,
+        completed_at=:completed_at,error_code='provider_unavailable' WHERE job_id=:id"""
+    automation._execute(mark_failed, {"completed_at": "2026-08-24T15:00:00+00:00", "id": original["job_id"]})
+    accepted = automation.enqueue_dates(dates, scheduled_by=CONVERSATION_REPAIR_ACTOR)
+    assert [job["job_id"] for job in accepted] == [original["job_id"]]
+    automation._execute(mark_failed, {"completed_at": "2026-08-24T15:10:00+00:00", "id": original["job_id"]})
+    assert automation.enqueue_dates(dates, scheduled_by=CONVERSATION_REPAIR_ACTOR) == []
+    record = automation._fetch_one("SELECT * FROM market_session_sync_jobs WHERE job_id=:id", {"id": original["job_id"]})
+    assert record["status"] == "failed"
+    assert record["self_service_requeue_evidence"]["error_code"] == "provider_unavailable"
+    assert automation.enqueue_dates(dates, scheduled_by="administrator")[0]["status"] == "queued"
 
 
 class FakeSupplementProvider:

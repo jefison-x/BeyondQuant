@@ -1,21 +1,45 @@
-import { createPinia, setActivePinia } from "pinia";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import Panel from "./ResearchDataPreparationPanel.vue";
-import { queryDataReadiness } from "@/api/dataCenter";
+import {
+  createConversationResearchPreparation,
+  getConversationResearchPreparation,
+  listConversationResearchPreparations,
+  queryDataReadiness,
+  retryConversationResearchPreparation,
+} from "@/api/dataCenter";
 
 vi.mock("@/api/dataCenter", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/api/dataCenter")>(),
+  createConversationResearchPreparation: vi.fn(),
+  getConversationResearchPreparation: vi.fn(),
+  listConversationResearchPreparations: vi.fn(),
   queryDataReadiness: vi.fn(),
+  retryConversationResearchPreparation: vi.fn(),
 }));
 
-const readiness = (verdict: "limited" | "usable") => ({
+const scope = {
+  symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research" as const,
+  data_requirements: {},
+};
+
+const readiness = (verdict: "limited" | "usable", checkedScope = scope) => ({
   schema_version: "data-readiness-product.v1" as const,
   verdict,
-  scope: { symbol_count: 1, symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research" as const },
+  scope: {
+    symbol_count: checkedScope.symbols.length,
+    symbols: [...checkedScope.symbols],
+    start_date: checkedScope.start_date,
+    end_date: checkedScope.end_date,
+    use_case: "research" as const,
+  },
   summary: { required_sessions: 60, ready_items: verdict === "usable" ? 60 : 50, missing_items: verdict === "usable" ? 0 : 10, calendar_complete: true },
   datasets: verdict === "usable" ? [] : [{ label: "估值数据", state: "missing" as const, missing_count: 10 }],
   issues: [], issues_truncated: false, checked_against: "persisted_byq" as const,
+});
+
+const receipt = (status: string, requestId: string | null = "datademand_1", receiptScope = scope) => ({
+  request_id: requestId, status, scope: receiptScope,
 });
 
 const wrapperFor = () => mount(Panel, { props: {
@@ -23,71 +47,148 @@ const wrapperFor = () => mount(Panel, { props: {
 } });
 
 describe("research data preparation panel", () => {
+  beforeEach(() => {
+    vi.mocked(queryDataReadiness).mockReset();
+    vi.mocked(createConversationResearchPreparation).mockReset();
+    vi.mocked(getConversationResearchPreparation).mockReset();
+    vi.mocked(retryConversationResearchPreparation).mockReset();
+    vi.mocked(listConversationResearchPreparations).mockReset().mockResolvedValue({ preparations: [] });
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    vi.restoreAllMocks();
   });
 
-  it("lets a user confirm an explicit scope, inspect readiness and copy a scope-only handoff", async () => {
-    setActivePinia(createPinia());
+  it("submits only the freshly checked scope after the user explicitly asks for preparation", async () => {
     vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("limited"));
-    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: clipboardWrite } });
+    vi.mocked(createConversationResearchPreparation).mockResolvedValueOnce(receipt("queued"));
     const wrapper = wrapperFor();
+    await flushPromises();
     await wrapper.get(".entry-button").trigger("click");
     await wrapper.get("textarea").setValue("600036.SH");
     const dates = wrapper.findAll('input[type="date"]');
     await dates[0]!.setValue("2026-01-01");
     await dates[1]!.setValue("2026-03-31");
-    await wrapper.get("button.primary-button").trigger("click");
+    await wrapper.findAll("button.primary-button")[0]!.trigger("click");
     await flushPromises();
 
-    expect(queryDataReadiness).toHaveBeenCalledWith({
-      symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research", data_requirements: {},
-    });
+    expect(queryDataReadiness).toHaveBeenCalledWith(scope);
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("所选范围部分缺失");
-    expect(wrapper.text()).toContain("按交易日获取");
-    expect(wrapper.text()).toContain("管理员只会看到下面列出的范围");
-    const handoff = wrapper.get('input[aria-label="管理员审核链接"]');
-    const url = new URL((handoff.element as HTMLInputElement).value);
-    const serialized = url.searchParams.get("researchPreparation")!;
-    expect(url.pathname).toBe("/settings/system/data");
-    expect(url.searchParams.has("session")).toBe(false);
-    expect(url.searchParams.has("conversation_id")).toBe(false);
-    expect(serialized).not.toContain("conversation-private");
-    expect(serialized).not.toContain("owner-private");
-    expect(JSON.parse(serialized)).toEqual({
-      symbols: ["600036.SH"], start_date: "20260101", end_date: "20260331", use_case: "research", data_requirements: {},
-    });
-    expect(sessionStorage.getItem("byq-research-preparation:owner-private:conversation-private")).not.toContain("owner-private");
+    expect(wrapper.text()).toContain("当前会话的有限补数请求");
+    expect(wrapper.text()).not.toContain("管理员审核链接");
 
-    await wrapper.get(".handoff button").trigger("click");
-    expect(clipboardWrite).toHaveBeenCalledWith((handoff.element as HTMLInputElement).value);
+    await wrapper.findAll("button.primary-button").find((button) => button.text().includes("为当前会话准备缺失数据"))!.trigger("click");
+    await flushPromises();
+    expect(createConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", scope);
+    expect(wrapper.text()).toContain("补数请求已排队");
+    expect(wrapper.text()).toContain("datademand_1");
+    expect(wrapper.emitted("continue")).toBeUndefined();
     wrapper.unmount();
   });
 
-  it("only fills a continuation draft after a fresh usable readiness result", async () => {
-    setActivePinia(createPinia());
-    vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("usable"));
+  it("accepts a sorted backend receipt for an unsorted user symbol selection without reordering submission", async () => {
+    const userScope = { ...scope, symbols: ["601398.SH", "600036.SH"] };
+    const sortedBackendScope = { ...userScope, symbols: ["600036.SH", "601398.SH"] };
+    expect(sortedBackendScope.symbols).not.toEqual(userScope.symbols);
+    vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("limited", userScope));
+    vi.mocked(createConversationResearchPreparation).mockResolvedValueOnce(receipt("queued", "datademand_2", sortedBackendScope));
     const wrapper = wrapperFor();
+    await flushPromises();
     await wrapper.get(".entry-button").trigger("click");
-    await wrapper.get("textarea").setValue("600036.SH");
+    await wrapper.get("textarea").setValue("601398.SH, 600036.SH");
     const dates = wrapper.findAll('input[type="date"]');
     await dates[0]!.setValue("2026-01-01");
     await dates[1]!.setValue("2026-03-31");
-    await wrapper.get("button.primary-button").trigger("click");
+    await wrapper.findAll("button.primary-button")[0]!.trigger("click");
     await flushPromises();
-    expect(wrapper.text()).toContain("所选范围覆盖检查通过");
-    await wrapper.get(".next-step button").trigger("click");
+
+    expect(queryDataReadiness).toHaveBeenCalledWith(userScope);
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
+    await wrapper.findAll("button.primary-button").find((button) => button.text().includes("为当前会话准备缺失数据"))!.trigger("click");
+    await flushPromises();
+
+    expect(createConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", userScope);
+    expect(wrapper.text()).toContain("补数请求已排队");
+    expect(wrapper.text()).not.toContain("回执与刚才检查的范围不一致");
+    wrapper.unmount();
+  });
+
+  it("hydrates a prior receipt but requires a fresh coverage readback before offering a draft", async () => {
+    vi.mocked(listConversationResearchPreparations).mockResolvedValueOnce({ preparations: [receipt("completed")] });
+    vi.mocked(getConversationResearchPreparation).mockResolvedValueOnce(receipt("completed"));
+    vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("usable"));
+    const wrapper = wrapperFor();
+    await flushPromises();
+    expect(listConversationResearchPreparations).toHaveBeenCalledWith("conversation-private");
+    await wrapper.get(".entry-button").trigger("click");
+    expect(wrapper.get("textarea").element).toHaveProperty("value", "600036.SH");
+    expect(wrapper.text()).toContain("补数任务已结束，请复查数据覆盖");
+    expect(wrapper.text()).not.toContain("带入续研草稿");
+    expect(queryDataReadiness).not.toHaveBeenCalled();
+
+    await wrapper.findAll("button").find((button) => button.text() === "只读刷新准备状态")!.trigger("click");
+    await flushPromises();
+    expect(getConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", "datademand_1");
+
+    await wrapper.findAll("button").find((button) => button.text() === "确认范围并检查数据")!.trigger("click");
+    await flushPromises();
+    expect(queryDataReadiness).toHaveBeenCalledWith(scope);
+    expect(wrapper.text()).toContain("带入续研草稿");
+    expect(wrapper.emitted("continue")).toBeUndefined();
+    await wrapper.findAll("button").find((button) => button.text() === "带入续研草稿")!.trigger("click");
     expect(wrapper.emitted("continue")?.[0]?.[0]).toContain("600036.SH");
     expect(wrapper.emitted("continue")?.[0]?.[0]).toContain("不创建股票池");
     wrapper.unmount();
   });
 
-  it("rejects a range above the 180-day preparation limit before calling Product API", async () => {
-    setActivePinia(createPinia());
+  it("requires renewed explicit confirmation before retrying a failed exact-scope request", async () => {
+    const failed = { ...receipt("failed"), retry_token: "retry-once", error: "供应商暂不可用" };
+    vi.mocked(listConversationResearchPreparations).mockResolvedValueOnce({ preparations: [failed] });
+    vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("limited"));
+    vi.mocked(retryConversationResearchPreparation).mockResolvedValueOnce(receipt("queued"));
     const wrapper = wrapperFor();
+    await flushPromises();
+    await wrapper.get(".entry-button").trigger("click");
+    await wrapper.get("button.primary-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("补数失败");
+    expect(wrapper.text()).toContain("供应商暂不可用");
+    const retryButton = wrapper.findAll("button").find((button) => button.text().includes("确认重试此补数请求"))!;
+    expect((retryButton.element as HTMLButtonElement).disabled).toBe(true);
+    await wrapper.get('.retry-box input[type="checkbox"]').setValue(true);
+    await retryButton.trigger("click");
+    await flushPromises();
+    expect(retryConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", "datademand_1", "retry-once");
+    expect(wrapper.text()).toContain("补数请求已排队");
+    wrapper.unmount();
+  });
+
+  it("shows an unpublished-data receipt without treating it as a queued job", async () => {
+    vi.mocked(listConversationResearchPreparations).mockResolvedValueOnce({ preparations: [
+      { ...receipt("not_published", null), error: "当日收盘行情尚未发布" },
+    ] });
+    vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("limited"));
+    const wrapper = wrapperFor();
+    await flushPromises();
+    await wrapper.get(".entry-button").trigger("click");
+    expect(wrapper.text()).toContain("所需行情尚未发布，暂未创建补数任务");
+    expect(wrapper.text()).toContain("日历就绪不代表收盘行情已发布");
+    expect(wrapper.text()).not.toContain("请求编号");
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
+
+    await wrapper.findAll("button.primary-button")[0]!.trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll("button.primary-button").some((button) => button.text().includes("稍后重新检查行情是否已发布"))).toBe(true);
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("rejects a range above the 180-day preparation limit before calling Product API", async () => {
+    const wrapper = wrapperFor();
+    await flushPromises();
     await wrapper.get(".entry-button").trigger("click");
     await wrapper.get("textarea").setValue("600036.SH");
     const dates = wrapper.findAll('input[type="date"]');
@@ -96,6 +197,7 @@ describe("research data preparation panel", () => {
     await wrapper.get("button.primary-button").trigger("click");
     expect(wrapper.text()).toContain("最多覆盖 180 个自然日");
     expect(queryDataReadiness).not.toHaveBeenCalled();
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });
