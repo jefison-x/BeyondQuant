@@ -59,7 +59,7 @@ def _require_research_continuation_arguments(scope: object, tool_name: str, argu
                 or not isinstance(arguments.get("run_id"), str)
                 or _RESEARCH_CONTINUATION_AGENT_RUN.fullmatch(arguments["run_id"]) is None
                 or arguments.get("action") not in _RESEARCH_CONTINUATION_READ_TOOLS
-                or arguments.get("resource_type") not in {None, "market_data"}):
+                or arguments.get("resource_type") not in {None, "market_data", arguments["action"].removeprefix("byq_")}):
             denied()
         if arguments.get("resource_id") is not None:
             if (not isinstance(scope, dict) or not isinstance(scope.get("symbols"), list)
@@ -74,7 +74,7 @@ def _require_research_continuation_arguments(scope: object, tool_name: str, argu
                 or _RESEARCH_CONTINUATION_AGENT_RUN.fullmatch(arguments["run_id"]) is None
                 or arguments.get("action") not in _RESEARCH_CONTINUATION_READ_TOOLS
                 or not isinstance(arguments.get("outcome"), str)
-                or arguments.get("resource_type") not in {None, "market_data"}):
+                or arguments.get("resource_type") not in {None, "market_data", arguments["action"].removeprefix("byq_")}):
             denied()
         if arguments.get("resource_id") is not None:
             if (not isinstance(scope, dict) or not isinstance(scope.get("symbols"), list)

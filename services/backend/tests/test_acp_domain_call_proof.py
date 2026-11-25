@@ -2016,12 +2016,18 @@ def test_research_data_continuation_limits_tools_to_the_verified_scope():
     check(scope, "byq_market_fundamentals", {
         "symbols": ["600036.SH"], "as_of_date": "20261120", "fields": ["roe"],
     })
+    daily_authorization = {"run_id": "agent_run_" + "a" * 32, "action": "byq_market_daily",
+                           "resource_type": "market_daily", "resource_id": "600036.SH"}
+    check(scope, "byq_agent_authorize", daily_authorization)
+    check(scope, "byq_agent_audit", {**daily_authorization, "outcome": "succeeded"})
     for tool, args in (
         ("byq_market_daily", {"ts_code": "600036.SH", "trade_date": "20261121"}),
         ("byq_market_daily", {"ts_code": "000001.SZ", "trade_date": "20261119"}),
         ("byq_market_valuation", {"symbols": ["600036.SH"], "trade_date": "20261119", "fields": ["pb"]}),
         ("byq_data_demand_create", {}),
         ("byq_agent_authorize", {"run_id": "agent_run_" + "a" * 32, "action": "byq_backtest_task_create"}),
+        ("byq_agent_authorize", {**daily_authorization, "resource_type": "market_valuation"}),
+        ("byq_agent_audit", {**daily_authorization, "resource_id": "000001.SZ", "outcome": "succeeded"}),
     ):
         with pytest.raises(AgentUnauthorized):
             check(scope, tool, args)
