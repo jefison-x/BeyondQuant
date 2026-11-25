@@ -59,6 +59,11 @@ const wrapperFor = (enabled = true) => mount(Panel, { props: {
   conversationId: "conversation-private", ownerKey: "owner-private", enabled, canContinue: true,
 } });
 
+async function openManualTools(wrapper: ReturnType<typeof wrapperFor>) {
+  expect(wrapper.vm.openManualTools()).toBe(true);
+  await wrapper.vm.$nextTick();
+}
+
 describe("research data preparation panel", () => {
   beforeEach(() => {
     vi.mocked(queryDataReadiness).mockReset();
@@ -91,6 +96,8 @@ describe("research data preparation panel", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("后台正在准备数据；完成后将自动复查并继续原研究。");
+    expect(wrapper.vm.openManualTools()).toBe(false);
+    expect(wrapper.find(".entry-button").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("仍需重新检查同一范围的数据覆盖");
     expect(wrapper.findAll("button").some((button) => button.text() === "停止自动续研")).toBe(true);
     expect(queryDataReadiness).not.toHaveBeenCalled();
@@ -106,7 +113,7 @@ describe("research data preparation panel", () => {
     await flushPromises();
     expect(stopConversationResearchContinuation).toHaveBeenCalledWith("conversation-private", "datademand_auto");
     expect(wrapper.text()).toContain("自动续研已停止");
-    expect(wrapper.findAll("button").some((button) => button.text().includes("准备研究数据"))).toBe(true);
+    expect(wrapper.findAll("button").some((button) => button.text().includes("查看补数详情"))).toBe(true);
     expect(queryDataReadiness).not.toHaveBeenCalled();
     expect(createConversationResearchPreparation).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -134,8 +141,54 @@ describe("research data preparation panel", () => {
     await vi.advanceTimersByTimeAsync(0);
     await flushPromises();
     expect(getConversationResearchPreparation).toHaveBeenCalledWith("conversation-private", "datademand_bound");
-    expect(wrapper.text()).toContain("已完成自动续研");
+    expect(wrapper.get('[role="status"]').text()).toBe("已自动继续研究");
     expect(stopConversationResearchContinuation).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("dismisses only the completed notice and remembers it after reopening the conversation", async () => {
+    const completed = receipt("completed", "datademand_bound", scope, "succeeded");
+    vi.mocked(listConversationResearchPreparations)
+      .mockResolvedValueOnce({ preparations: [completed] })
+      .mockResolvedValueOnce({ preparations: [completed] })
+      .mockResolvedValueOnce({ preparations: [
+        receipt("completed", "datademand_next", { ...scope, start_date: "20260105" }, "succeeded"),
+        completed,
+      ] });
+
+    const wrapper = wrapperFor();
+    await flushPromises();
+    expect(wrapper.get('[role="status"]').text()).toBe("已自动继续研究");
+    expect(wrapper.find(".automatic-status").exists()).toBe(false);
+    await wrapper.get('button[aria-label="关闭自动续研提示"]').trigger("click");
+    expect(wrapper.find('[aria-label="研究数据准备"]').exists()).toBe(false);
+    expect(stopConversationResearchContinuation).not.toHaveBeenCalled();
+    wrapper.unmount();
+
+    const reopened = wrapperFor();
+    await flushPromises();
+    expect(reopened.find('[aria-label="研究数据准备"]').exists()).toBe(false);
+    reopened.unmount();
+
+    const newReceipt = wrapperFor();
+    await flushPromises();
+    expect(newReceipt.get('[role="status"]').text()).toBe("已自动继续研究");
+    newReceipt.unmount();
+  });
+
+  it("hides manual preparation in an idle conversation until opened explicitly", async () => {
+    const wrapper = wrapperFor();
+    await flushPromises();
+
+    expect(wrapper.vm.manualToolsAvailable).toBe(true);
+    expect(wrapper.find('[aria-label="研究数据准备"]').exists()).toBe(false);
+    await openManualTools(wrapper);
+    expect(wrapper.find("textarea").exists()).toBe(true);
+
+    await wrapper.get(".entry-button").trigger("click");
+    expect(wrapper.find('[aria-label="研究数据准备"]').exists()).toBe(false);
+    expect(queryDataReadiness).not.toHaveBeenCalled();
+    expect(createConversationResearchPreparation).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -144,7 +197,7 @@ describe("research data preparation panel", () => {
     vi.mocked(createConversationResearchPreparation).mockResolvedValueOnce(receipt("queued"));
     const wrapper = wrapperFor();
     await flushPromises();
-    await wrapper.get(".entry-button").trigger("click");
+    await openManualTools(wrapper);
     await wrapper.get("textarea").setValue("600036.SH");
     const dates = wrapper.findAll('input[type="date"]');
     await dates[0]!.setValue("2026-01-01");
@@ -155,7 +208,7 @@ describe("research data preparation panel", () => {
     expect(queryDataReadiness).toHaveBeenCalledWith(scope);
     expect(createConversationResearchPreparation).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("所选范围部分缺失");
-    expect(wrapper.text()).toContain("手动准备入口");
+    expect(wrapper.text()).toContain("手动补齐后，可在这里复查并继续研究。");
     expect(wrapper.text()).not.toContain("管理员审核链接");
 
     await wrapper.findAll("button.primary-button").find((button) => button.text().includes("为当前会话准备缺失数据"))!.trigger("click");
@@ -175,7 +228,7 @@ describe("research data preparation panel", () => {
     vi.mocked(createConversationResearchPreparation).mockResolvedValueOnce(receipt("queued", "datademand_2", sortedBackendScope));
     const wrapper = wrapperFor();
     await flushPromises();
-    await wrapper.get(".entry-button").trigger("click");
+    await openManualTools(wrapper);
     await wrapper.get("textarea").setValue("601398.SH, 600036.SH");
     const dates = wrapper.findAll('input[type="date"]');
     await dates[0]!.setValue("2026-01-01");
@@ -201,7 +254,7 @@ describe("research data preparation panel", () => {
     const wrapper = wrapperFor();
     await flushPromises();
     expect(listConversationResearchPreparations).toHaveBeenCalledWith("conversation-private");
-    await wrapper.get(".entry-button").trigger("click");
+    await openManualTools(wrapper);
     expect(wrapper.get("textarea").element).toHaveProperty("value", "600036.SH");
     expect(wrapper.text()).toContain("补数任务已结束，请复查数据覆盖");
     expect(wrapper.text()).not.toContain("带入续研草稿");
@@ -229,7 +282,7 @@ describe("research data preparation panel", () => {
     vi.mocked(retryConversationResearchPreparation).mockResolvedValueOnce(receipt("queued"));
     const wrapper = wrapperFor();
     await flushPromises();
-    await wrapper.get(".entry-button").trigger("click");
+    await openManualTools(wrapper);
     await wrapper.get("button.primary-button").trigger("click");
     await flushPromises();
 
@@ -252,7 +305,7 @@ describe("research data preparation panel", () => {
     vi.mocked(queryDataReadiness).mockResolvedValueOnce(readiness("limited"));
     const wrapper = wrapperFor();
     await flushPromises();
-    await wrapper.get(".entry-button").trigger("click");
+    await openManualTools(wrapper);
     expect(wrapper.text()).toContain("所需行情尚未发布，暂未创建补数任务");
     expect(wrapper.text()).toContain("日历就绪不代表收盘行情已发布");
     expect(wrapper.text()).not.toContain("请求编号");
@@ -268,7 +321,7 @@ describe("research data preparation panel", () => {
   it("rejects a range above the 180-day preparation limit before calling Product API", async () => {
     const wrapper = wrapperFor();
     await flushPromises();
-    await wrapper.get(".entry-button").trigger("click");
+    await openManualTools(wrapper);
     await wrapper.get("textarea").setValue("600036.SH");
     const dates = wrapper.findAll('input[type="date"]');
     await dates[0]!.setValue("2026-01-01");
