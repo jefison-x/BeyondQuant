@@ -1085,6 +1085,63 @@ def test_passive_receipt_checks_survive_restart_without_admitted_intent(tmp_path
     assert reads == [context, context] and prompts == []
 
 
+def test_idle_conversations_back_off_without_delaying_active_work_or_new_messages(tmp_path):
+    idle = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+                session_id='session-idle', trace_id='trace-a')
+    active = {**idle, 'session_id': 'session-active'}
+    write_context(tmp_path, idle)
+    write_context(tmp_path, active)
+    clock = [1000.0]
+    calls = []
+
+    def consume(context):
+        calls.append(context['session_id'])
+        return context == active
+
+    delivery = TaskContinuationDelivery(tmp_path, consume, reconcile=lambda _: False, now=lambda: clock[0])
+    delivery.tick()
+    clock[0] += 5
+    delivery.tick()
+    assert calls == ['session-active', 'session-idle', 'session-active']
+    delivery.wake(idle['session_id'])
+    clock[0] += 5
+    delivery.tick()
+    assert calls[-1] == 'session-idle'
+    clock[0] += 45
+    delivery.tick()
+    assert calls[-2:] == ['session-active', 'session-idle']
+
+
+def test_idle_backoff_does_not_delay_persisted_cancel_or_pending_receipt(tmp_path):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+                   session_id='session-a', trace_id='trace-a')
+    write_context(tmp_path, context)
+    clock = [1000.0]
+    pending_receipt = [True]
+    cancels = []
+    checks = []
+
+    def check_receipt(_):
+        checks.append(clock[0])
+        return pending_receipt[0]
+
+    delivery = TaskContinuationDelivery(
+        tmp_path, lambda _: False, reconcile=check_receipt,
+        cancel_pending=lambda _, reservation, mode: (cancels.append((reservation, mode)) or True),
+        now=lambda: clock[0],
+    )
+    delivery.tick()
+    pending_receipt[0] = False
+    clock[0] += 5
+    delivery.tick()
+    reservation = 'continuation_' + 'a' * 32
+    delivery.request_cancel(context, reservation, 'soft')
+    clock[0] += 5
+    delivery.tick()
+    assert cancels == [(reservation, 'soft')]
+    assert checks == [1000.0, 1005.0, 1010.0]
+
+
 def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')

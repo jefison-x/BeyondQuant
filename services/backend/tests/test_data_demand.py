@@ -710,6 +710,13 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
     conversation = catalog.create("research-user", session_id, context["x-byq-trace-id"])
     catalog.append_user_message("research-user", conversation["conversation_id"], "研究招商银行日线")
     root, identity = _open_root(main.agent_store, context, "research-preparation-run", str(uuid4()))
+    delivery_headers = {"x-byq-owner-principal": "research-user", "x-byq-actor-principal": "research-user",
+                        "x-byq-workspace-id": context["x-byq-workspace-id"]}
+    delivery_path = f"/internal/task-continuation/{conversation['conversation_id']}/peek"
+    client = TestClient(main.app)
+    assert client.post(delivery_path, headers=delivery_headers).json() == {
+        "status": "waiting", "background_pending": True,
+    }
     _bind(main.agent_store, context, identity)
     arguments = {
         "symbols": ["600036.SH"], "start_date": "2024-11-18", "end_date": "2024-11-18",
@@ -720,7 +727,6 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
         **context, "authorization": "Bearer synthetic-data-preparation-proof", "x-byq-root-run-id": root,
         "x-byq-acp-origin": "root", "x-byq-acp-observation-id": ingress["mcp_request_id"],
     }
-    client = TestClient(main.app)
     changed = client.post("/v1/agent/data-demands", headers=headers,
                           json={**arguments, "end_date": "2024-11-19"})
     assert changed.status_code in {403, 404, 409, 422}
@@ -735,6 +741,11 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
         stopped = client.post(f"{path}/stop-continuation", headers=context)
         assert stopped.status_code == 200
         assert stopped.json()["auto_continuation"]["status"] == "cancelled"
+        main.agent_store._execute("""UPDATE agent_runtime_turns SET authority_status='authority_revoked_unconfirmed'
+            WHERE root_run_id=:root""", {"root": root})
+        assert client.post(delivery_path, headers=delivery_headers).json() == {
+            "status": "waiting", "background_pending": False,
+        }
         return
 
     boot = context["x-byq-runtime-boot-id"]

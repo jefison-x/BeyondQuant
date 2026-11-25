@@ -160,6 +160,15 @@ class ResearchReceiptMixin:
             row['entity_type']!='research_task' or receipt['conversation_id']==row['conversation_id'])
         return ('confirmed','receipt_confirmed',receipt['entity_id']) if matches else ('conflict','identity_conflict',None)
 
+    def has_pending_submission_watches(self, conversation_id, *, trusted_context) -> bool:
+        return self._fetch_one("""SELECT 1 AS pending FROM research_receipt_watches
+            WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace
+              AND session_id=:session AND trace_id=:trace AND state='awaiting_receipt' LIMIT 1""", {
+            "conversation": conversation_id, "owner": trusted_context["owner_principal"],
+            "workspace": trusted_context["workspace_id"], "session": trusted_context["session_id"],
+            "trace": trusted_context["trace_id"],
+        }) is not None
+
     def consume_submission_watches(self, conversation_id, *, trusted_context):
         # Charge and commit before the lookup: crashes/query failures cannot
         # roll back the finite budget. Attempt-number fencing rejects late ACKs.

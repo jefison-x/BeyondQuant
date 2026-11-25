@@ -606,9 +606,9 @@ def _consume_task_continuation(context):
     try:
         require_runtime_authority()
     except HTTPException:
-        return
+        return True
     with chat_admission():
-        _consume_admitted_task_continuation(context, allow_legacy=True)
+        return _consume_admitted_task_continuation(context, allow_legacy=True)
 
 
 def _consume_default_task_continuation(context, *, allow_dispatch=True):
@@ -1138,9 +1138,11 @@ def _consume_admitted_task_continuation(context, *, allow_legacy=True, allow_dis
                 and isinstance(intent.get("receipt"), dict)
                 and intent["receipt"].get("status") in {"settled", "rejected", "cancelled"}):
             _consume_research_data_continuation(context)
-        return
-    if allow_dispatch and intent.get("research_data_waiting") is True and intent.get("status") == "waiting":
-        _consume_research_data_continuation(context)
+        return intent.get("background_pending") is not False
+    if intent.get("status") == "waiting":
+        if allow_dispatch and intent.get("research_data_waiting") is True:
+            _consume_research_data_continuation(context)
+        return intent.get("background_pending") is not False
     # The default ordinary Product consumer has no authority to enter any
     # historical F6 flow. Keep legacy liabilities reconcilable only through
     # the explicitly enabled legacy consumer above.
@@ -1868,9 +1870,10 @@ def _retry_v3_continuation_cancel(context: dict, reservation_id: str, mode: str)
 
 
 def _reconcile_research_receipts(context):
-    return _catalog_request('POST', f"/internal/research-receipts/{context['conversation_id']}/reconcile",
+    result = _catalog_request('POST', f"/internal/research-receipts/{context['conversation_id']}/reconcile",
         Principal(subject=context['owner']), context['workspace_id'],
         payload={'session_id':context['session_id'],'trace_id':context['trace_id']})
+    return result.get('pending') is not False
 
 
 task_continuation_delivery = TaskContinuationDelivery(
@@ -2658,6 +2661,7 @@ def _collect_trace_events(session: ProductSession, lifecycle_context: dict[str, 
                                 _send_agent_lifecycle(
                                     lifecycle_context, lifecycle, expected_boot_id=session.boot_id,
                                 )
+                                task_continuation_delivery.wake(session.session_id)
                                 sent = True
                                 last_sent_lifecycle_sequence = sequence
                                 break
@@ -4810,6 +4814,7 @@ def submit_product_turn(
             raise ProductError(502, "prompt_outcome_unknown",
                                "本次消息的接收结果尚未确认；请先核对原会话，勿重复发送。") from exc
         body = receipt
+    task_continuation_delivery.wake(session.session_id)
     return {
         "accepted": True,
         "session_id": session.conversation_id,

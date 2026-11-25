@@ -1459,6 +1459,26 @@ class ResearchContinuationMixin:
                 WHERE task_id=:task''', {'budget': [*ledger, entry], 'task': task['task_id']})
             return entry
 
+    def has_inflight_continuation_work(self, conversation_id: str, *, trusted_context: dict) -> bool:
+        return self._fetch_one("""SELECT 1 AS pending FROM product_conversations c
+            WHERE c.conversation_id=:conversation AND c.owner_principal=:owner
+              AND c.workspace_id=:workspace AND c.status='active'
+              AND (EXISTS (
+                SELECT 1 FROM agent_runtime_turns r JOIN agent_runtime_authority_current a
+                  ON a.authority_key='current' AND a.boot_id=r.authority_boot_id
+                WHERE r.owner_principal=c.owner_principal AND r.workspace_id=c.workspace_id
+                  AND r.session_id=c.runtime_session_id AND r.trace_id=c.trace_id
+                  AND r.status='active' AND r.authority_status='active'
+              ) OR EXISTS (
+                SELECT 1 FROM research_tasks t JOIN signal_producer_jobs j ON j.task_id=t.task_id
+                  AND j.owner_principal=t.owner_principal AND j.workspace_id=t.workspace_id
+                WHERE t.conversation_id=c.conversation_id AND t.owner_principal=c.owner_principal
+                  AND t.workspace_id=c.workspace_id AND j.status IN ('waiting_for_data','queued','running')
+              ))""", {
+            "conversation": conversation_id, "owner": trusted_context["owner_principal"],
+            "workspace": trusted_context["workspace_id"],
+        }) is not None
+
     def peek_default_continuation_v3(self, conversation_id: str, *, trusted_context: dict) -> dict | None:
         """Read-only candidate projection for the ordinary default consumer."""
         from .research import IdempotencyConflict

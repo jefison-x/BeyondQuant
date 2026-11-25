@@ -13,6 +13,7 @@ COPY services/backend/pyproject.toml ./
 COPY services/backend/app ./app
 COPY packages/contracts ./packages/contracts
 COPY workers/ml/worker.py ./worker.py
+COPY workers/ml/healthcheck.py ./healthcheck.py
 
 RUN pip install --no-cache-dir . \
     && pip install --no-cache-dir "numpy==2.3.3" "lightgbm==4.7.0" \
@@ -25,7 +26,7 @@ RUN pip install --no-cache-dir . \
 
 USER byq
 
-HEALTHCHECK --interval=15s --timeout=5s --retries=4 \
-  CMD ["python", "worker.py", "--healthcheck"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=4 \
+  CMD ["python", "healthcheck.py"]
 
 CMD ["python", "worker.py"]

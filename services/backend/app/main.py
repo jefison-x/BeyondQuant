@@ -527,7 +527,15 @@ def healthz() -> dict[str, str]:
 
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
-    return _health_payload()
+    try:
+        with agent_store.engine.begin() as connection:
+            connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
+            ready = connection.exec_driver_sql("SELECT 1").scalar()
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="backend database is unavailable") from exc
+    if ready != 1:
+        raise HTTPException(status_code=503, detail="backend database is unavailable")
+    return {**_health_payload(), "database": "ready"}
 
 
 def _conversation_owner(request: Request) -> str:
@@ -866,13 +874,16 @@ def peek_task_continuation(conversation_id: str, request: Request) -> dict:
     # blocked v3 candidate must never fall back to a legacy eligible intent.
     result = candidate if candidate is not None else {'status': 'waiting'}
     receipt = result.get("receipt")
-    if ((candidate is None or isinstance(receipt, dict)
-             and receipt.get("status") in {"settled", "rejected", "cancelled"})
-            and research_data_continuation_store.has_waiting(
-                conversation_id, owner=context["owner_principal"], workspace=context["workspace_id"],
-            )):
+    terminal = isinstance(receipt, dict) and receipt.get("status") in {"settled", "rejected", "cancelled"}
+    data_waiting = research_data_continuation_store.has_waiting(
+        conversation_id, owner=context["owner_principal"], workspace=context["workspace_id"],
+    )
+    if data_waiting and (candidate is None or terminal):
         result = {**result, "research_data_waiting": True}
-    return result
+    pending = (data_waiting or result.get("status") == "eligible"
+               or (isinstance(receipt, dict) and not terminal)
+               or research_store.has_inflight_continuation_work(conversation_id, trusted_context=context))
+    return {**result, "background_pending": pending}
 
 
 @app.get('/internal/task-continuation/{conversation_id}/reservations/{reservation_id}')
@@ -3203,8 +3214,14 @@ def consume_research_submission_watches(conversation_id: str, payload: dict[str,
     context = _continuation_consumer_context(request)
     if set(payload) != {'session_id','trace_id'} or any(not isinstance(v,str) or not v for v in payload.values()):
         raise HTTPException(status_code=422, detail='exact receipt conversation identity required')
-    return _research_call(lambda: {'checked':research_store.consume_submission_watches(
-        conversation_id, trusted_context={**context,**payload})})
+    scoped = {**context, **payload}
+
+    def reconcile():
+        checked = research_store.consume_submission_watches(conversation_id, trusted_context=scoped)
+        pending = research_store.has_pending_submission_watches(conversation_id, trusted_context=scoped)
+        return {'checked': checked, 'pending': pending}
+
+    return _research_call(reconcile)
 
 
 @app.post("/v1/research/tasks", status_code=201)

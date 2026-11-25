@@ -101,7 +101,7 @@ def test_private_consumer_uses_catalog_identity_before_any_model_root(monkeypatc
         client = TestClient(main.app)
         path = f'/internal/task-continuation/{conversation}/peek'
         reply = client.post(path, headers=headers)
-        assert reply.status_code == 200 and reply.json() == {'status': 'waiting'}
+        assert reply.status_code == 200 and reply.json() == {'status': 'waiting', 'background_pending': False}
         assert client.post(path, headers={**headers, 'x-byq-actor-principal': 'product-agent'}).status_code == 403
         assert client.post(path, headers={**headers, 'x-byq-workspace-id': 'another-workspace'}).status_code == 401
         # This consumer identity cannot be reused as an Agent tool admission.
