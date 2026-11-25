@@ -384,6 +384,21 @@ const backend = createServer(async (req, res) => {
     send(200, { artifact: { artifact_id: "artifact_" + "e".repeat(32), status: "validated" } });
     return;
   }
+  if (req.url === "/v1/agent/data-demands" && req.method === "POST") {
+    assert.equal(entry.headers.get("authorization"), `Bearer ${backendProof}`);
+    assert.equal(entry.headers.get("x-byq-acp-origin"), "root");
+    assert.equal(entry.headers.get("x-byq-root-run-id"), claims.root_run_id);
+    assert.equal(entry.headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+    const observed = observedIngress.get(String(entry.headers.get("x-byq-acp-observation-id")));
+    assert.ok(observed);
+    assert.equal(observed.receipt.tool_name, "byq_data_demand_create");
+    assert.deepEqual(body, observed.arguments);
+    send(202, {
+      demand: { schema_version: "data-demand.v1", demand_id: "datademand_" + "e".repeat(32), status: "queued" },
+      auto_continuation: { status: "waiting" },
+    });
+    return;
+  }
   if (req.url === "/v1/research/backtest-tasks" && req.method === "POST") {
     const authorization = entry.headers.get("authorization");
     if (authorization === `Bearer ${backendProof}`) {
@@ -586,6 +601,18 @@ try {
   assert.ok(readOnlyIngress);
   assert.equal(settlements.find(entry => entry.mcp_request_id === readOnlyIngress.body?.mcp_request_id)?.outcome,
     "settled", "only the explicit read-only allowlist settles a completed read error");
+
+  const beforePreparation = requests.length;
+  const preparation = await acp.value.callTool({ name: "byq_data_demand_create", arguments: {
+    purpose: "research", scope_kind: "conversation_research", symbols: ["600036.SH"],
+    start_date: "2026-03-30", end_date: "2026-03-30", idempotency_key: "conversation-prep-wire",
+  } });
+  assert.equal(preparation.isError, false);
+  assert.deepEqual(requests.slice(beforePreparation).map(request => request.path), [
+    "/internal/acp/tool-ingress-observe", "/v1/agent/data-demands", "/internal/acp/tool-ingress-settle",
+  ]);
+  assert.equal(requests.at(-1)?.body?.outcome, "settled");
+  assert.equal(requests.at(-1)?.body?.mcp_request_id, requests[beforePreparation].body?.mcp_request_id);
 
   const backtestArgs = {
     task_id: "task-wire",

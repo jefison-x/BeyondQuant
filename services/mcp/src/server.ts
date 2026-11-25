@@ -1503,7 +1503,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         }).strict(),
       ]),
     },
-    (args) => byqDataDemandCreate(args, trustedContext),
+    (args, extra) => byqDataDemandCreate(args, auth?.kind === "acp-agent" ? extra : trustedContext),
   );
   registerTool(
     "byq_data_demand_get",
