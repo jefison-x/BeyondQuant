@@ -133,9 +133,23 @@ test("real Product API login and Stock Pool create flow", async ({ page, baseURL
   const poolName = `CI股票池-${Date.now()}`;
   await dialog.getByPlaceholder("例如：银行观察池").fill(poolName);
   await dialog.getByPlaceholder("股票池用途或说明").fill("真实 Product API E2E");
-  const search = dialog.getByTestId("stock-pool-create-search").getByRole("combobox");
+  const stockSelect = dialog.getByTestId("stock-pool-create-search");
+  const search = stockSelect.getByRole("combobox");
+  await stockSelect.click();
+  await expect(search).toBeFocused();
   for (const symbol of ["000001.SZ", "600000.SH"]) {
-    await search.fill(symbol);
+    const [response] = await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "GET" &&
+          url.pathname === "/api/product/data-center/securities" &&
+          url.searchParams.get("query") === symbol;
+      }, { timeout: 10_000 }),
+      search.fill(symbol),
+    ]);
+    expect(response.status(), `Product stock search for ${symbol}`).toBe(200);
+    const catalogue = await response.json() as { securities: Array<{ symbol: string }> };
+    expect(catalogue.securities.some((item) => item.symbol === symbol), `Catalogue contains ${symbol}`).toBe(true);
     await page.getByRole("option").filter({ hasText: `（${symbol}）` }).click();
     await expect(dialog.getByRole("row").filter({ hasText: symbol })).toBeVisible();
   }
