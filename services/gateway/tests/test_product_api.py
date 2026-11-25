@@ -2131,6 +2131,32 @@ def test_product_research_preparation_is_admin_only_and_uses_backend_boundary(mo
     assert captured[0]["json"] == payload
 
 
+def test_product_conversation_preparation_requires_login_and_trusted_context(monkeypatch):
+    captured = []
+
+    def fake_backend(method, path, payload=None, *, headers):
+        captured.append((method, path, payload, headers))
+        return {"status": "queued", "request_id": "datademand_1"}
+
+    monkeypatch.setattr(product_api, "_backend_request", fake_backend)
+    monkeypatch.setattr(product_api, "resolve_user", lambda _request: {
+        "username": "alice", "role": "user", "_workspace": {"workspace_id": "workspace_alice"},
+    })
+    client = TestClient(main.app)
+    path = "/api/product/data-center/conversations/conversation_1/research-preparations"
+    assert client.post(path, json={}).status_code == 401
+    client.cookies.set(product_api.SESSION_COOKIE, "session_alice")
+    assert client.post(path, json={}, headers={"sec-fetch-site": "cross-site"}).status_code == 403
+    assert captured == []
+    assert client.post(path, json={}, headers={"x-byq-owner-principal": "bob"}).status_code == 200
+    assert client.get(f"{path}/datademand_1").status_code == 200
+    assert client.post(f"{path}/datademand_1/retry", json={"retry_token": "revision"}).status_code == 200
+    assert captured[0][1] == "/v1/data-center/conversations/conversation_1/research-preparations"
+    assert captured[0][3]["x-byq-owner-principal"] == "alice"
+    assert captured[0][3]["x-byq-workspace-id"] == "workspace_alice"
+    assert captured[-1][2] == {"retry_token": "revision"}
+
+
 def test_product_data_center_writes_are_admin_only_and_use_backend_boundary(monkeypatch) -> None:
     captured: list[dict[str, object]] = []
 

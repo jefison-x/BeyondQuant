@@ -1415,8 +1415,25 @@ class RuntimeAdapter:
         idempotency_key: str | None = None,
         conversation_context: object = None,
         continuation_budget: object = None,
+        research_data_continuation_id: str | None = None,
     ) -> str:
         record = self._get(session_id)
+        if research_data_continuation_id is not None:
+            if re.fullmatch(r"rdcontinuation_[0-9a-f]{32}", research_data_continuation_id) is None:
+                raise ValueError("research data continuation identity is invalid")
+            if idempotency_key != research_data_continuation_id:
+                raise ValueError("research data continuation requires its exact idempotency key")
+            if continuation_budget is not None:
+                raise ValueError("research data continuation cannot use a continuation budget")
+            if not (self._acp and self._root_scoped and self._acp_product_slots
+                    and isinstance(record.workspace_id, str) and record.workspace_id
+                    and isinstance(record.owner_principal, str) and record.owner_principal
+                    and isinstance(record.trace_id, str) and record.trace_id
+                    and record.boot_id == self.boot_id):
+                raise ValueError("research data continuation requires a registered ACP Product scope")
+        elif (isinstance(idempotency_key, str)
+              and idempotency_key.startswith("rdcontinuation_")):
+            raise ValueError("research data continuation idempotency key requires its typed identity")
         with record.lock:
             if (record.recovery_boundary is not None
                     and record.recovery_boundary.get("state") != "acknowledged"):
@@ -1457,8 +1474,15 @@ class RuntimeAdapter:
                     )
         first_lazy_prestart_binding = False
         with record.lock:
-            identity_content = content if continuation_budget is None else json.dumps(
-                {'content': content, 'reservation': continuation_budget}, sort_keys=True, separators=(',', ':'))
+            if research_data_continuation_id is not None:
+                identity_content = json.dumps(
+                    {'content': content,
+                     'research_data_continuation_id': research_data_continuation_id},
+                    sort_keys=True, separators=(',', ':'))
+            else:
+                identity_content = content if continuation_budget is None else json.dumps(
+                    {'content': content, 'reservation': continuation_budget},
+                    sort_keys=True, separators=(',', ':'))
             if idempotency_key is not None:
                 if not 8 <= len(idempotency_key) <= 128:
                     raise ValueError("prompt idempotency key has invalid length")
@@ -1468,6 +1492,9 @@ class RuntimeAdapter:
                     if existing_content != identity_content:
                         raise SessionConflict("prompt idempotency key was reused with different content")
                     return existing_run_id
+            if (research_data_continuation_id is not None
+                    and not self._research_data_continuation_ready(record, record.process_root_id)):
+                raise SessionConflict("research data continuation requires the acknowledged original root")
             # An accepted original receipt remains authoritative even if model
             # credentials are subsequently absent. Reject only a new admission.
             if require_model_key and not record.model_resolution.get("api_key"):
@@ -1822,6 +1849,8 @@ class RuntimeAdapter:
                 private_session = f"root-{uuid.uuid4().hex}"
                 generation = f"generation-{uuid.uuid4().hex}"
                 root_id = uuid.uuid4().hex
+                if research_data_continuation_id is not None:
+                    self._bind_research_data_continuation(record, research_data_continuation_id, root_id, content)
                 storage_root = (self._compatibility.session_storage_root(
                     self._session_root, record.workspace_id)
                     if self._acp_product_slots else self._session_root)
@@ -7093,6 +7122,53 @@ class RuntimeAdapter:
                     record.model_resolution, self._provider, self._model)):
             return False
         return self._compatibility.family == ACP_COMPATIBILITY_FAMILY
+
+    def research_data_continuation_readiness(self, session_id: str, source_root_id: str) -> dict[str, bool]:
+        try:
+            record = self._get(session_id)
+        except KeyError:
+            return {"ready": False}
+        with record.lock:
+            return {"ready": self._research_data_continuation_ready(record, source_root_id)}
+
+    def _research_data_continuation_ready(self, record: RuntimeSession, source_root_id: str) -> bool:
+        generation = record.current_generation
+        settlement = record.settlement_receipt
+        return (
+            self.task_ready_qualified(record) and record.boot_id == self.boot_id
+            and record.status == SessionStatus.IDLE and record.active_run is None
+            and record.process_closed and not record.process_closing and not record.cleanup_unconfirmed
+            and record.continuation_proxy_closed and not record.pending_terminal_receipts
+            and record.domain_call_sequence == record.domain_call_drained_sequence
+            and (record.recovery_boundary is None or record.recovery_boundary.get("state") == "acknowledged")
+            and generation is not None and generation.process_root_id == source_root_id
+            and generation.process_exit_confirmed and generation.native_session_close_confirmed
+            and isinstance(settlement, dict) and settlement.get("root_run_id") == source_root_id
+            and settlement == record.terminal_receipts.get(source_root_id)
+        )
+
+    def _bind_research_data_continuation(
+        self, record: RuntimeSession, continuation_id: str, root_id: str, content: str,
+    ) -> None:
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token or not self.task_ready_qualified(record):
+            raise RuntimeAuthorityUnavailable("research data continuation authority is unavailable")
+        try:
+            response = httpx.post(
+                f"{self._backend_url.rstrip('/')}/internal/research-data-continuation/{continuation_id}/bind",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "root_run_id": root_id, "session_id": record.session_id, "trace_id": record.trace_id,
+                    "workspace_id": record.workspace_id, "owner_principal": record.owner_principal,
+                    "boot_id": self.boot_id, "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                },
+                timeout=4.0,
+            )
+            response.raise_for_status()
+            if response.json() != {"continuation_id": continuation_id, "root_run_id": root_id}:
+                raise ValueError("research continuation binding receipt does not match")
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeAuthorityUnavailable("research data continuation binding is unconfirmed") from exc
 
     @staticmethod
     def _read_continuation_tool_guard(

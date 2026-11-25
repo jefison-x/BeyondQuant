@@ -202,20 +202,15 @@ services:
         - python
         - -c
         - |-
-          import os, sys, urllib.request
-          from sqlalchemy import create_engine, text
+          import sys, urllib.request
           try:
-              with urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=1) as response:
-                  assert response.status == 200
-              engine = create_engine(os.environ['BYQ_DATABASE_URL'], connect_args={'connect_timeout': 2, 'options': '-c statement_timeout=1000'})
-              with engine.connect() as connection:
-                  assert connection.execute(text('SELECT 1')).scalar() == 1
-              engine.dispose()
+              response = urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)
+              assert response.status == 200
           except Exception:
               sys.exit(1)
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 12
+      retries: 3
       start_period: 5s
 
   data-worker:

@@ -61,6 +61,9 @@ class PromptRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
     conversation_context: list[ConversationContextMessage] | None = None
     continuation_budget: dict[str, object] | None = None
+    research_data_continuation_id: str | None = Field(
+        default=None, strict=True, pattern=r"^rdcontinuation_[0-9a-f]{32}$",
+    )
 
 
 guard_candidate_adapter_process()
@@ -169,6 +172,7 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             idempotency_key=request.idempotency_key,
             conversation_context=request.conversation_context,
             continuation_budget=request.continuation_budget,
+            research_data_continuation_id=request.research_data_continuation_id,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -279,6 +283,17 @@ def acknowledge_terminal(
         raise HTTPException(status_code=409, detail="terminal evidence is unconfirmed") from exc
     except OSError as exc:
         raise HTTPException(status_code=503, detail="terminal acknowledgement failed") from exc
+
+
+@app.get(
+    "/internal/runtime/sessions/{session_id}/research-data-continuation-readiness",
+    dependencies=[Depends(require_chat_admission)],
+)
+def research_data_continuation_readiness(
+    session_id: str,
+    source_root_id: str = Query(..., min_length=32, max_length=32, pattern=r"^[0-9a-f]{32}$"),
+) -> dict[str, bool]:
+    return adapter.research_data_continuation_readiness(session_id, source_root_id)
 
 
 @app.get("/internal/runtime/sessions/{session_id}/terminal-evidence")

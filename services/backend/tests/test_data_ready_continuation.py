@@ -1250,7 +1250,7 @@ def test_default_peek_does_not_fall_back_to_f6_legacy_claim(monkeypatch, tmp_pat
         response = default_backend_peek(fixture, monkeypatch)
 
         assert response.status_code == 200, response.text
-        assert response.json() == {'status': 'waiting'}
+        assert response.json() == {'status': 'waiting', 'background_pending': False}
         assert legacy_claims == []
         assert continuation_budget(store, task) == before
     finally:
@@ -1308,7 +1308,7 @@ def test_v3_old_pending_and_unknown_receipts_block_without_mutation(monkeypatch,
                 or original_claim(*args, **kwargs))
         response = default_backend_peek(fixture, monkeypatch)
         assert response.status_code == 200, response.text
-        assert response.json() == {'status': 'waiting'}
+        assert response.json() == {'status': 'waiting', 'background_pending': False}
         assert legacy_claims == []
         assert continuation_budget(store, task) == before_reserved
         monkeypatch.setattr(store, 'claim_conversation_continuation', original_claim)

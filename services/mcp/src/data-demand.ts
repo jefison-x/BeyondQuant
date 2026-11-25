@@ -19,6 +19,79 @@ function errorStatus(status: number): string {
   return "data_demand_unavailable";
 }
 
+type ConversationResearchScope = {
+  purpose: "research";
+  scope_kind: "conversation_research";
+  symbols: string[];
+  start_date: string;
+  end_date: string;
+  data_requirements?: Record<string, unknown>;
+};
+
+function conversationResearchRequest(init: RequestInit): ConversationResearchScope | undefined {
+  if (init.method?.toUpperCase() !== "POST" || typeof init.body !== "string") return undefined;
+  try {
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    if (body.purpose !== "research" || body.scope_kind !== "conversation_research"
+        || !Array.isArray(body.symbols) || !body.symbols.every((symbol) => typeof symbol === "string")
+        || typeof body.start_date !== "string" || typeof body.end_date !== "string") return undefined;
+    return body as ConversationResearchScope;
+  } catch { return undefined; }
+}
+
+function validResearchRequirements(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const requirements = value as Record<string, unknown>;
+  if (Object.keys(requirements).some((key) => !["daily_basic", "fundamentals"].includes(key))) return false;
+  return ["daily_basic", "fundamentals"].every((key) => requirements[key] === undefined
+    || Array.isArray(requirements[key]) && (requirements[key] as unknown[]).length <= 12
+      && (requirements[key] as unknown[]).every((item) => typeof item === "string"));
+}
+
+function canonicalResearchRequirements(value: Record<string, unknown>): string {
+  return JSON.stringify(Object.keys(value).sort().map((key) => {
+    const item = value[key];
+    return [key, Array.isArray(item) ? (item as string[]).slice().sort() : item];
+  }));
+}
+
+function canonicalDate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.replaceAll("-", "");
+  if (/^\d{8}$/.test(value)) return value;
+  return undefined;
+}
+
+function validNoJobPreparation(payload: Record<string, unknown>, request: ConversationResearchScope): boolean {
+  if (Object.keys(payload).join(",") !== "preparation") return false;
+  const preparation = payload.preparation;
+  if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) return false;
+  const result = preparation as Record<string, unknown>;
+  const keys = Object.keys(result).sort();
+  if (!(keys.join(",") === "request_id,scope,status"
+      || keys.join(",") === "error,request_id,scope,status")) return false;
+  if (result.request_id !== null || !["ready", "not_published"].includes(result.status as string)) return false;
+  if (result.error !== undefined && (typeof result.error !== "string" || result.error.length > 240
+      || /[\u0000-\u001f\u007f]/.test(result.error))) return false;
+  const scope = result.scope;
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) return false;
+  const scopeValue = scope as Record<string, unknown>;
+  if (Object.keys(scopeValue).sort().join(",") !== "data_requirements,end_date,start_date,symbols,use_case"
+      || scopeValue.use_case !== "research"
+      || canonicalDate(scopeValue.start_date) !== canonicalDate(request.start_date)
+      || canonicalDate(scopeValue.end_date) !== canonicalDate(request.end_date)
+      || !Array.isArray(scopeValue.symbols)
+      || !scopeValue.symbols.every((symbol) => typeof symbol === "string" && /^\d{6}\.(?:SH|SZ|BJ)$/.test(symbol))
+      || !validResearchRequirements(scopeValue.data_requirements)) return false;
+  if (request.data_requirements !== undefined && (!validResearchRequirements(request.data_requirements)
+      || canonicalResearchRequirements(scopeValue.data_requirements as Record<string, unknown>)
+        !== canonicalResearchRequirements(request.data_requirements))) return false;
+  const requestedSymbols = [...request.symbols].sort();
+  const returnedSymbols = (scopeValue.symbols as string[]).slice().sort();
+  return returnedSymbols.length === requestedSymbols.length
+    && returnedSymbols.every((symbol, index) => symbol === requestedSymbols[index]);
+}
+
 function unknownDemand(init: RequestInit, path: string) {
   const response = unknownWriteResult(init);
   const body = JSON.parse(response.content[0].text);
@@ -57,6 +130,10 @@ async function requestDataDemand(
     const value = payload as Record<string, any>;
     if (!path.endsWith("/data-demand-notifications")) {
       const byKey = path.includes("/by-key/");
+      const researchRequest = path === "/v1/agent/data-demands" ? conversationResearchRequest(init) : undefined;
+      if (researchRequest && validNoJobPreparation(value, researchRequest)) {
+        return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
+      }
       const demand = value.demand;
       const valid = demand?.schema_version === "data-demand.v1"
         && typeof demand.demand_id === "string" && /^datademand_[0-9a-f]{32}$/.test(demand.demand_id);

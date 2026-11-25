@@ -31,8 +31,9 @@ def _context(label: str) -> dict[str, str]:
 
 
 def _open_root(store: AgentResearchStore, ctx: dict[str, str], key: str,
-               native_root_session_id: str, *, sequence: int = 1) -> tuple[str, dict[str, object]]:
-    root = uuid4().hex
+               native_root_session_id: str, *, sequence: int = 1,
+               root_run_id: str | None = None) -> tuple[str, dict[str, object]]:
+    root = root_run_id or uuid4().hex
     fingerprint = registration_fingerprint(*[
         ctx[f"x-byq-{field}"] for field in (
             "owner-principal", "workspace-id", "actor-principal", "trace-id", "session-id", "dsh-run-id",
@@ -1996,3 +1997,37 @@ def test_acp_abort_commit_first_rejects_late_observe_and_exact_retry_survives_cl
         assert _abort_tool(store, ctx, identity, tool_name, arguments, request_id) == aborted
     finally:
         store.close()
+
+
+
+def test_research_data_continuation_limits_tools_to_the_verified_scope():
+    from app.agent_research import AgentUnauthorized
+    from app.domain_call_admission import _require_research_continuation_arguments
+
+    scope = {
+        "symbols": ["600036.SH"], "start_date": "20261118", "end_date": "20261120",
+        "data_requirements": {"daily_basic": ["pe_ttm"], "fundamentals": ["roe"]},
+    }
+    check = _require_research_continuation_arguments
+    check(scope, "byq_market_daily", {"ts_code": "600036.SH", "trade_date": "20261119"})
+    check(scope, "byq_market_valuation", {
+        "symbols": ["600036.SH"], "trade_date": "20261119", "fields": ["pe_ttm"],
+    })
+    check(scope, "byq_market_fundamentals", {
+        "symbols": ["600036.SH"], "as_of_date": "20261120", "fields": ["roe"],
+    })
+    daily_authorization = {"run_id": "agent_run_" + "a" * 32, "action": "byq_market_daily",
+                           "resource_type": "market_daily", "resource_id": "600036.SH"}
+    check(scope, "byq_agent_authorize", daily_authorization)
+    check(scope, "byq_agent_audit", {**daily_authorization, "outcome": "succeeded"})
+    for tool, args in (
+        ("byq_market_daily", {"ts_code": "600036.SH", "trade_date": "20261121"}),
+        ("byq_market_daily", {"ts_code": "000001.SZ", "trade_date": "20261119"}),
+        ("byq_market_valuation", {"symbols": ["600036.SH"], "trade_date": "20261119", "fields": ["pb"]}),
+        ("byq_data_demand_create", {}),
+        ("byq_agent_authorize", {"run_id": "agent_run_" + "a" * 32, "action": "byq_backtest_task_create"}),
+        ("byq_agent_authorize", {**daily_authorization, "resource_type": "market_valuation"}),
+        ("byq_agent_audit", {**daily_authorization, "resource_id": "000001.SZ", "outcome": "succeeded"}),
+    ):
+        with pytest.raises(AgentUnauthorized):
+            check(scope, tool, args)

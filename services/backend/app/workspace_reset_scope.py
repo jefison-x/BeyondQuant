@@ -20,6 +20,7 @@ RESET_SCOPE = (
     ("product_feedback_audit", WORKSPACE),
     ("product_feedback_commands", "r.scope_key=:workspace"),
     ("product_feedback", OWNED),
+    ("research_data_continuations", OWNED),
     ("agent_acp_tool_ingress_observations", OWNED),
     ("agent_acp_domain_call_observations", OWNED),
     ("agent_domain_call_claims", child("agent_runtime_turns", "root_run_id")),

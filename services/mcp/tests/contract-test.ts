@@ -50,6 +50,10 @@ try {
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_valuation"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_market_fundamentals"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_data_demand_create"));
+  const dataDemandCreate = listed.tools.find((tool) => tool.name === "byq_data_demand_create");
+  assert.ok(dataDemandCreate);
+  assert.match(JSON.stringify(dataDemandCreate.inputSchema), /conversation_research/);
+  assert.match(JSON.stringify(dataDemandCreate.inputSchema), /symbols/);
   assert.ok(listed.tools.some((tool) => tool.name === "byq_data_demand_get"));
   for (const name of ["byq_feedback_options", "byq_feedback_list", "byq_feedback_get", "byq_feedback_create_draft", "byq_feedback_update_draft", "byq_feedback_preview", "byq_feedback_submit"]) {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);

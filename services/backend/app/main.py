@@ -13,7 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from collections.abc import Callable
 from typing import Any
-from .domain_call_admission import DomainValidationRejected
+from zoneinfo import ZoneInfo
+from .domain_call_admission import DomainValidationRejected, _canonical_acp_arguments
+from .research_data_continuation import ResearchDataContinuationStore
 from .business_job import project_business_job
 from .artifact_contract import project_artifact
 
@@ -40,6 +42,9 @@ from .data_demand import (
     DataDemandStore,
 )
 from .market_automation import (
+    CONVERSATION_REPAIR_MAX_BULK_DATES,
+    conversation_repair_bulk_dates,
+    conversation_repair_retry_revision,
     MarketAutomationConflict,
     MarketAutomationNotFound,
     MarketAutomationPersistenceError,
@@ -424,6 +429,7 @@ data_demand_store = DataDemandStore.from_env()
 market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
+research_data_continuation_store = ResearchDataContinuationStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 factor_job_store = FactorJobStore.from_env()
 optimization_job_store = OptimizationJobStore.from_env()
@@ -521,7 +527,15 @@ def healthz() -> dict[str, str]:
 
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
-    return _health_payload()
+    try:
+        with agent_store.engine.begin() as connection:
+            connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
+            ready = connection.exec_driver_sql("SELECT 1").scalar()
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="backend database is unavailable") from exc
+    if ready != 1:
+        raise HTTPException(status_code=503, detail="backend database is unavailable")
+    return {**_health_payload(), "database": "ready"}
 
 
 def _conversation_owner(request: Request) -> str:
@@ -858,7 +872,18 @@ def peek_task_continuation(conversation_id: str, request: Request) -> dict:
     # The default consumer is v3-only. Historical v1/v2 liabilities remain
     # available through the explicitly gated claim path, but a missing or
     # blocked v3 candidate must never fall back to a legacy eligible intent.
-    return candidate if candidate is not None else {'status': 'waiting'}
+    result = candidate if candidate is not None else {'status': 'waiting'}
+    receipt = result.get("receipt")
+    terminal = isinstance(receipt, dict) and receipt.get("status") in {"settled", "rejected", "cancelled"}
+    data_waiting = research_data_continuation_store.has_waiting(
+        conversation_id, owner=context["owner_principal"], workspace=context["workspace_id"],
+    )
+    if data_waiting and (candidate is None or terminal):
+        result = {**result, "research_data_waiting": True}
+    pending = (data_waiting or result.get("status") == "eligible"
+               or (isinstance(receipt, dict) and not terminal)
+               or research_store.has_inflight_continuation_work(conversation_id, trusted_context=context))
+    return {**result, "background_pending": pending}
 
 
 @app.get('/internal/task-continuation/{conversation_id}/reservations/{reservation_id}')
@@ -1640,7 +1665,7 @@ def _data_demand_call(operation: Callable[[], dict[str, object]]) -> dict[str, o
         raise HTTPException(status_code=404, detail=str(error)) from error
     except DataDemandConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    except DataDemandPersistenceError as error:
+    except (DataDemandPersistenceError, SQLAlchemyError) as error:
         raise HTTPException(status_code=503, detail="data demand is unavailable") from error
 
 
@@ -2085,6 +2110,43 @@ def _data_demand_response(demand: dict[str, object]) -> dict[str, object]:
 @app.post("/v1/agent/data-demands", status_code=202)
 def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
+    if payload.get("scope_kind") == "conversation_research":
+        if (payload.get("purpose") != "research" or set(payload) - {
+                "scope_kind", "purpose", "idempotency_key", "symbols", "start_date", "end_date", "data_requirements"
+        } or not isinstance(payload.get("idempotency_key"), str)):
+            raise HTTPException(status_code=422, detail="会话补数仅支持明确的 A 股研究范围。")
+        scope_payload = {key: value for key, value in payload.items()
+                         if key in {"symbols", "start_date", "end_date", "data_requirements"}}
+        def conversation_operation():
+            scoped = data_demand_store.conversation_context(context)
+            continuation = None
+            on_submit = None
+            if request.headers.get("x-byq-root-run-id"):
+                source = _acp_private_scope(request)
+                observation_id = request.headers.get("x-byq-acp-observation-id")
+                if (request.headers.get("x-byq-acp-origin") != "root"
+                        or not isinstance(observation_id, str)
+                        or re.fullmatch(r"[0-9a-f]{32}", observation_id) is None):
+                    raise HTTPException(status_code=403, detail="root Agent data preparation proof required")
+                arguments_sha256, _ = _canonical_acp_arguments(payload)
+
+                def on_submit(connection, demand_id):
+                    nonlocal continuation
+                    continuation = research_data_continuation_store.watch(
+                        connection, demand_id, source, observation_id, arguments_sha256,
+                    )
+
+            result, created = _submit_conversation_research_preparation(
+                scope_payload, scoped, idempotency_key=payload["idempotency_key"], on_submit=on_submit,
+            )
+            if "demand_id" not in result:
+                return {"preparation": result}
+            response = {**_data_demand_response(result), "created": created}
+            if continuation is not None:
+                response["auto_continuation"] = continuation
+            return response
+
+        return _data_demand_call(conversation_operation)
     _require_data_demand_admin(context)
 
     def operation() -> dict[str, object]:
@@ -2105,7 +2167,8 @@ def reconcile_agent_data_demand(idempotency_key: str, request: Request):
     context = _required_agent_context(request, include_workspace=True)
     def operation():
         result = data_demand_store.reconcile_submission(idempotency_key,
-            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+            trusted_session=context["session_id"])
         demand = result.get("demand")
         if isinstance(demand, dict) and isinstance(demand.get("job"), dict):
             result["business_job"] = demand["job"]
@@ -2119,7 +2182,7 @@ def get_agent_data_demand(demand_id: str, request: Request) -> dict[str, object]
     return _data_demand_call(lambda: _data_demand_response(data_demand_store.refresh(
         demand_id, trusted_owner=context["owner_principal"],
         readiness_store=market_readiness_store, automation_store=market_automation_store,
-        trusted_workspace=context["workspace_id"],
+        trusted_workspace=context["workspace_id"], trusted_session=context["session_id"],
     )))
 
 
@@ -2145,7 +2208,7 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
         refreshed = [data_demand_store.refresh(
             item["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
-            trusted_workspace=context["workspace_id"],
+            trusted_workspace=context["workspace_id"], trusted_session=context["session_id"],
         ) for item in demands]
         data_notifications = [
             {**item, "kind": "data_demand_progress"}
@@ -2285,12 +2348,14 @@ def _normalized_data_readiness_scope(
 def _assess_data_readiness(
     payload: dict[str, Any], *, max_calendar_days: int | None = None,
     research_preparation: bool = False,
+    sort_symbols: bool = False,
 ) -> dict[str, object]:
     scope = _normalized_data_readiness_scope(
         payload, max_calendar_days=max_calendar_days,
         research_preparation=research_preparation,
     )
-    symbols = list(scope["symbols"])
+    symbols = sorted(scope["symbols"]) if sort_symbols else list(scope["symbols"])
+    scope["symbols"] = symbols
     latest = security_master_store.latest_snapshot()
     if latest is None:
         raise ValueError("security master must be synchronized before checking readiness")
@@ -2349,6 +2414,195 @@ def _research_preparation_ready(assessment: dict[str, object]) -> bool:
     if not assessment.get("required_session_count") or not assessment.get("required_cell_count"):
         raise HTTPException(status_code=422, detail="该范围没有可研究的交易日或证券记录，请调整标的或日期。")
     return True
+
+
+def _refresh_conversation_research_demand(demand_id: object, context: dict[str, str]) -> dict[str, object]:
+    return data_demand_store.refresh(
+        demand_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        trusted_session=context["session_id"], readiness_store=market_readiness_store,
+        automation_store=market_automation_store,
+    )
+
+
+def _conversation_research_preparation_receipt(
+    demand_id: str, context: dict[str, str],
+) -> dict[str, object]:
+    repair_id = data_demand_store.preparation_repair(demand_id, context)
+    demand = _refresh_conversation_research_demand(demand_id, context)
+    record = _market_automation_call(lambda: market_automation_store.get_data_repair(repair_id))
+    scope = dict(demand["scope"])
+    scope.pop("kind")
+    status = {
+        "ready": "completed", "queued": "queued", "syncing": "running",
+        "partial": "failed", "failed": "failed",
+    }.get(demand["status"], "failed")
+    receipt: dict[str, object] = {"request_id": demand_id, "status": status, "scope": scope}
+    continuation = research_data_continuation_store.status_for_demand(demand_id, context)
+    if continuation is not None:
+        receipt["auto_continuation"] = {"status": continuation["status"]}
+    if status == "failed":
+        failure = str(record.get("error_message") or "")
+        messages = {
+            "self_service_scope_exceeds_bulk_dates": "该范围超过 5 个需整日补数的交易日。请缩短日期范围。",
+            "session_repair_failed": "目标交易日同步失败。可重试时将显示重试入口。",
+            "ProviderCredentialsMissing": "当前没有可用的数据源配置，请联系管理员检查数据中心。",
+            "ProviderUnavailable": "数据源暂时不可用。可重试时将显示重试入口。",
+            "ProviderRateLimited": "数据源暂时限流。可重试时将显示重试入口。",
+            "ProviderAuthorizationError": "数据源拒绝了请求，请联系管理员检查数据源权限。",
+        }
+        receipt["error"] = messages.get(failure, "这次准备后仍有缺项，请复查原范围。")
+        revision = conversation_repair_retry_revision(record)
+        if revision is not None:
+            receipt["retry_token"] = revision
+    return receipt
+
+
+def _submit_conversation_research_preparation(
+    payload: dict[str, Any], context: dict[str, str], *, idempotency_key: str | None = None, on_submit=None,
+) -> tuple[dict[str, object], bool]:
+    payload = dict(payload)
+    for field in ("start_date", "end_date"):
+        value = payload.get(field)
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+            payload[field] = value.replace("-", "")
+    evidence = _market_research_read(lambda: _assess_data_readiness(
+        payload, max_calendar_days=MAX_PARTITION_CHUNK_DAYS, research_preparation=True,
+        sort_symbols=True,
+    ))
+    scope, requirement, assessment = evidence["scope"], evidence["requirement"], evidence["assessment"]
+    if _research_preparation_ready(assessment):
+        return {"request_id": None, "status": "ready", "scope": scope}, False
+
+    local = datetime.now(ZoneInfo("Asia/Shanghai"))
+    today = local.strftime("%Y%m%d")
+    if scope["end_date"] >= today:
+        config = _market_automation_call(market_automation_store.get_config)
+        if scope["end_date"] > today or local.strftime("%H:%M") < max("18:30", config["schedule_time"]):
+            return {
+                "request_id": None, "status": "not_published", "scope": scope,
+                "error": "指定范围仍含未到发布窗口的日期。可先研究已收盘且发布的数据。",
+            }, False
+
+    if assessment.get("missing_by_dataset", {}).get("security_lifecycle"):
+        raise HTTPException(status_code=409, detail="所选证券缺少上市状态，请联系管理员同步证券目录。")
+    if len(conversation_repair_bulk_dates(requirement, assessment, market_readiness_store)) > CONVERSATION_REPAIR_MAX_BULK_DATES:
+        raise HTTPException(status_code=422, detail="该范围超过 5 个需整日补数的交易日。请缩短日期范围。")
+    demand, created = data_demand_store.submit_conversation_preparation(
+        context=context, scope=scope, requirement=requirement,
+        automation_store=market_automation_store, idempotency_key=idempotency_key, on_submit=on_submit,
+    )
+    return demand, created
+
+
+def _research_data_continuation_context(request: Request, payload: dict[str, Any], extra=()) -> dict[str, str]:
+    _require_runtime_authority_bearer(request)
+    fields = {"owner_principal", "workspace_id", "session_id", "trace_id"}
+    if set(payload) != fields | set(extra) or any(
+        not isinstance(value, str) or not value or len(value) > 256 for value in payload.values()
+    ):
+        raise HTTPException(status_code=422, detail="exact research data continuation scope required")
+    return {key: payload[key] for key in fields}
+
+
+@app.post("/internal/research-data-continuation/{conversation_id}/peek")
+def peek_research_data_continuation(conversation_id: str, payload: dict[str, Any], request: Request):
+    context = _research_data_continuation_context(request, payload)
+    return _data_demand_call(lambda: {"continuation": research_data_continuation_store.peek(
+        conversation_id, context, market_readiness_store,
+    )})
+
+
+@app.post("/internal/research-data-continuation/{conversation_id}/claim")
+def claim_research_data_continuation(conversation_id: str, payload: dict[str, Any], request: Request):
+    context = _research_data_continuation_context(request, payload, ("continuation_id", "boot_id"))
+    return _data_demand_call(lambda: {"continuation": research_data_continuation_store.claim(
+        conversation_id, payload["continuation_id"], context, market_readiness_store,
+        boot_id=payload["boot_id"],
+    )})
+
+
+@app.post("/internal/research-data-continuation/{conversation_id}/reject")
+def reject_unbound_research_data_continuation(conversation_id: str, payload: dict[str, Any], request: Request):
+    context = _research_data_continuation_context(request, payload, ("continuation_id", "boot_id"))
+    return _data_demand_call(lambda: {"rejected": research_data_continuation_store.reject_unbound(
+        conversation_id, payload["continuation_id"], context, boot_id=payload["boot_id"],
+    )})
+
+
+@app.post("/internal/research-data-continuation/{continuation_id}/bind")
+def bind_research_data_continuation(continuation_id: str, payload: dict[str, Any], request: Request):
+    _research_data_continuation_context(request, payload, ("root_run_id", "boot_id", "content_sha256"))
+    return _data_demand_call(lambda: research_data_continuation_store.bind(continuation_id, payload))
+
+
+@app.post("/v1/data-center/conversations/{conversation_id}/research-preparations")
+def create_conversation_research_preparation(conversation_id: str, payload: dict[str, Any], request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    def operation():
+        scoped = data_demand_store.conversation_context(context, conversation_id)
+        result, _created = _submit_conversation_research_preparation(payload, scoped)
+        if "demand_id" not in result:
+            return result
+        return _conversation_research_preparation_receipt(str(result["demand_id"]), scoped)
+
+    return _data_demand_call(operation)
+
+
+@app.get("/v1/data-center/conversations/{conversation_id}/research-preparations")
+def list_conversation_research_preparations(conversation_id: str, request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation():
+        scoped = data_demand_store.conversation_context(context, conversation_id)
+        return {"preparations": [
+            _conversation_research_preparation_receipt(str(item["demand_id"]), scoped)
+            for item in data_demand_store.list_conversation_preparations(scoped)
+        ]}
+
+    return _data_demand_call(operation)
+
+
+@app.get("/v1/data-center/conversations/{conversation_id}/research-preparations/{request_id}")
+def get_conversation_research_preparation(conversation_id: str, request_id: str, request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+    return _data_demand_call(lambda: _conversation_research_preparation_receipt(
+        request_id, data_demand_store.conversation_context(context, conversation_id),
+    ))
+
+
+@app.post("/v1/data-center/conversations/{conversation_id}/research-preparations/{request_id}/stop-continuation")
+def stop_conversation_research_continuation(conversation_id: str, request_id: str, request: Request):
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation():
+        scoped = data_demand_store.conversation_context(context, conversation_id)
+        data_demand_store.preparation_repair(request_id, scoped)
+        research_data_continuation_store.cancel(conversation_id, scoped, demand_id=request_id)
+        return _conversation_research_preparation_receipt(request_id, scoped)
+
+    return _data_demand_call(operation)
+
+
+@app.post("/v1/data-center/conversations/{conversation_id}/research-preparations/{request_id}/retry")
+def retry_conversation_research_preparation(
+    conversation_id: str, request_id: str, payload: dict[str, Any], request: Request,
+):
+    context = _required_agent_context(request, include_workspace=True)
+    token = payload.get("retry_token")
+    if set(payload) != {"retry_token"} or not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{64}", token) is None:
+        raise HTTPException(status_code=422, detail="需要原准备记录的重试凭证。")
+
+    def operation():
+        scoped = data_demand_store.conversation_context(context, conversation_id)
+        receipt = _conversation_research_preparation_receipt(request_id, scoped)
+        if receipt["status"] == "completed":
+            return receipt
+        _market_automation_call(lambda: data_demand_store.retry_conversation_preparation(
+            request_id, context=scoped, terminal_revision=token, automation_store=market_automation_store,
+        ))
+        return _conversation_research_preparation_receipt(request_id, scoped)
+
+    return _data_demand_call(operation)
 
 
 @app.post("/v1/data-center/research-preparations")
@@ -2960,8 +3214,14 @@ def consume_research_submission_watches(conversation_id: str, payload: dict[str,
     context = _continuation_consumer_context(request)
     if set(payload) != {'session_id','trace_id'} or any(not isinstance(v,str) or not v for v in payload.values()):
         raise HTTPException(status_code=422, detail='exact receipt conversation identity required')
-    return _research_call(lambda: {'checked':research_store.consume_submission_watches(
-        conversation_id, trusted_context={**context,**payload})})
+    scoped = {**context, **payload}
+
+    def reconcile():
+        checked = research_store.consume_submission_watches(conversation_id, trusted_context=scoped)
+        pending = research_store.has_pending_submission_watches(conversation_id, trusted_context=scoped)
+        return {'checked': checked, 'pending': pending}
+
+    return _research_call(reconcile)
 
 
 @app.post("/v1/research/tasks", status_code=201)

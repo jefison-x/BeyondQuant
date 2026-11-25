@@ -61,6 +61,54 @@ const taskCreate = await fetchByqDataDemandCreate("http://backend", {
 }, taskFetcher);
 assert.equal(taskCreate.isError, false);
 assert.match(taskCreate.content[0].text, /"type":"DATA_IMPORT"/);
+
+const conversationResearchRequest = {
+  purpose: "research", scope_kind: "conversation_research",
+  symbols: ["600036.SH", "000001.SZ"], start_date: "2026-11-18", end_date: "2026-11-18",
+  data_requirements: { daily_basic: ["pe_ttm"] }, idempotency_key: "conversation-research-1",
+};
+const readyScope = {
+  symbols: conversationResearchRequest.symbols, start_date: "20261118",
+  end_date: "20261118", use_case: "research",
+  data_requirements: conversationResearchRequest.data_requirements,
+};
+const readyWithoutJob = await fetchByqDataDemandCreate("http://backend", conversationResearchRequest,
+  async (url, init) => {
+    assert.equal(url, "http://backend/v1/agent/data-demands");
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(init?.body)), conversationResearchRequest);
+    return Response.json({ preparation: { request_id: null, status: "ready", scope: readyScope } });
+  });
+assert.equal(readyWithoutJob.isError, false);
+assert.equal(JSON.parse(readyWithoutJob.content[0].text).preparation.status, "ready");
+
+const notPublished = await fetchByqDataDemandCreate("http://backend", conversationResearchRequest,
+  async () => Response.json({ preparation: {
+    request_id: null, status: "not_published", error: "coverage_not_published", scope: readyScope,
+  } }));
+assert.equal(notPublished.isError, false);
+assert.equal(JSON.parse(notPublished.content[0].text).preparation.status, "not_published");
+
+const mismatchedNoJobScope = await fetchByqDataDemandCreate("http://backend", conversationResearchRequest,
+  async () => Response.json({ preparation: {
+    request_id: null, status: "ready", scope: { ...readyScope, symbols: ["000002.SZ"] },
+  } }));
+assert.equal(JSON.parse(mismatchedNoJobScope.content[0].text).status, "outcome_unknown");
+
+const unexpectedNoJobRequirement = await fetchByqDataDemandCreate("http://backend", conversationResearchRequest,
+  async () => Response.json({ preparation: {
+    request_id: null, status: "ready",
+    scope: { ...readyScope, data_requirements: { ...readyScope.data_requirements, provider_token: "secret" } },
+  } }));
+assert.equal(JSON.parse(unexpectedNoJobRequirement.content[0].text).status, "outcome_unknown");
+assert.doesNotMatch(unexpectedNoJobRequirement.content[0].text, /secret|provider_token/);
+
+const legacyPreparationShape = await fetchByqDataDemandCreate("http://backend", {
+  purpose: "research", stock_pool_snapshot_id: "stock_pool_snapshot_1",
+  start_date: "2026-11-18", end_date: "2026-11-18", idempotency_key: "legacy-scope-1",
+}, async () => Response.json({ preparation: { request_id: null, status: "ready", scope: readyScope } }));
+assert.equal(JSON.parse(legacyPreparationShape.content[0].text).status, "outcome_unknown");
+
 const taskRead = await fetchByqDataDemandGet("http://backend", { job_id: demandId }, taskFetcher);
 assert.equal(taskRead.isError, false);
 assert.match(taskRead.content[0].text, /"business_job"/);

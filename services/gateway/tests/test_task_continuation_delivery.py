@@ -1085,6 +1085,63 @@ def test_passive_receipt_checks_survive_restart_without_admitted_intent(tmp_path
     assert reads == [context, context] and prompts == []
 
 
+def test_idle_conversations_back_off_without_delaying_active_work_or_new_messages(tmp_path):
+    idle = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+                session_id='session-idle', trace_id='trace-a')
+    active = {**idle, 'session_id': 'session-active'}
+    write_context(tmp_path, idle)
+    write_context(tmp_path, active)
+    clock = [1000.0]
+    calls = []
+
+    def consume(context):
+        calls.append(context['session_id'])
+        return context == active
+
+    delivery = TaskContinuationDelivery(tmp_path, consume, reconcile=lambda _: False, now=lambda: clock[0])
+    delivery.tick()
+    clock[0] += 5
+    delivery.tick()
+    assert calls == ['session-active', 'session-idle', 'session-active']
+    delivery.wake(idle['session_id'])
+    clock[0] += 5
+    delivery.tick()
+    assert calls[-1] == 'session-idle'
+    clock[0] += 45
+    delivery.tick()
+    assert calls[-2:] == ['session-active', 'session-idle']
+
+
+def test_idle_backoff_does_not_delay_persisted_cancel_or_pending_receipt(tmp_path):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+                   session_id='session-a', trace_id='trace-a')
+    write_context(tmp_path, context)
+    clock = [1000.0]
+    pending_receipt = [True]
+    cancels = []
+    checks = []
+
+    def check_receipt(_):
+        checks.append(clock[0])
+        return pending_receipt[0]
+
+    delivery = TaskContinuationDelivery(
+        tmp_path, lambda _: False, reconcile=check_receipt,
+        cancel_pending=lambda _, reservation, mode: (cancels.append((reservation, mode)) or True),
+        now=lambda: clock[0],
+    )
+    delivery.tick()
+    pending_receipt[0] = False
+    clock[0] += 5
+    delivery.tick()
+    reservation = 'continuation_' + 'a' * 32
+    delivery.request_cancel(context, reservation, 'soft')
+    clock[0] += 5
+    delivery.tick()
+    assert cancels == [(reservation, 'soft')]
+    assert checks == [1000.0, 1005.0, 1010.0]
+
+
 def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
@@ -1794,3 +1851,69 @@ def test_known_preaccept_conflict_is_terminal_and_unknown_identity_conflict_stay
     main._consume_admitted_task_continuation(context)
     assert len(prompts) == 1
     if definite:assert writes[-1][1]['status'] == 'rejected'
+
+
+
+@pytest.mark.parametrize("runtime_ready, source_bound, lost_response", [
+    (False, True, False), (True, False, False), (True, True, False), (True, True, True),
+])
+def test_research_data_continuation_claims_exact_result_once(monkeypatch, runtime_ready, source_bound, lost_response):
+    context = {
+        "owner": "alice", "workspace_id": "workspace-alice",
+        "conversation_id": "conversation_" + "a" * 32, "session_id": "session-one", "trace_id": "trace-one",
+    }
+    instruction = "Re-read only the verified market data."
+    candidate = {
+        "continuation_id": "rdcontinuation_" + "b" * 32,
+        "conversation_id": context["conversation_id"], "session_id": context["session_id"],
+        "trace_id": context["trace_id"], "workspace_id": context["workspace_id"], "owner_principal": "alice",
+        "source_root_id": "c" * 32, "source_message_id": "message_" + "e" * 32,
+        "source_message_sha256": "f" * 64, "instruction": instruction,
+        "content_sha256": hashlib.sha256(instruction.encode()).hexdigest(),
+    }
+    boot = "d" * 32
+    session = main.ProductSession(
+        conversation_id=context["conversation_id"], session_id=context["session_id"], trace_id=context["trace_id"],
+        principal=main.Principal(subject=context["owner"]), workspace_id=context["workspace_id"], boot_id=boot,
+    )
+    events = []
+    claimed = False
+
+    def backend(scope, action, **fields):
+        nonlocal claimed
+        assert scope == context
+        if action == "peek":
+            return {"continuation": None if claimed else candidate}
+        assert action == "claim"
+        assert fields == {"continuation_id": candidate["continuation_id"], "boot_id": boot}
+        claimed = True
+        events.append("claim")
+        return {"continuation": candidate}
+
+    def post(path, *, payload, timeout):
+        assert path.endswith("/sessions/session-one/prompt")
+        assert payload["research_data_continuation_id"] == payload["idempotency_key"] == candidate["continuation_id"]
+        assert payload["content"] == instruction
+        assert payload["conversation_context"] == [{"role": "user", "content": "original research"}]
+        events.append("prompt")
+        if lost_response:
+            raise HTTPException(status_code=503, detail="ambiguous timeout")
+        return {"accepted": True, "run_id": "e" * 32}
+
+    monkeypatch.setattr(main, "_research_data_continuation_request", backend)
+    monkeypatch.setattr(main, "_attach_continuation_observer", lambda _context: session)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"boot_id": boot})
+    monkeypatch.setattr(main, "_require_session_runtime_authority", lambda _session: None)
+    monkeypatch.setattr(main, "_continuation_adapter_get", lambda path, params:
+                        {"ready": runtime_ready and params == {"source_root_id": candidate["source_root_id"]}})
+    monkeypatch.setattr(main, "_has_research_continuation_source", lambda *_args: source_bound)
+    monkeypatch.setattr(main, "_runtime_conversation_payload", lambda _session: {"conversation_context": [
+        {"role": "user", "content": "original research"},
+    ]})
+    monkeypatch.setattr(main.task_continuation_delivery, "pending_cancel", lambda _context: None)
+    monkeypatch.setattr(main, "_adapter_post", post)
+    monkeypatch.setattr(main, "_schedule_idle_release", lambda _session, _generation: None)
+
+    main._consume_research_data_continuation(context)
+    main._consume_research_data_continuation(context)
+    assert events == (["claim", "prompt"] if runtime_ready and source_bound else [])

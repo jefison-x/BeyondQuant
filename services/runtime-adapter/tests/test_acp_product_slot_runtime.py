@@ -3238,3 +3238,56 @@ def test_private_predicate_rejects_non_ordinary_and_fenced_scopes(slot_runtime):
     assert runtime._known_ordinary_budget_block(
         SimpleNamespace(current_generation=generation, continuation_request_gate=None,
                         continuation_budget=None), "gen-a", run) is False
+
+
+
+def test_research_data_continuation_requires_closed_original_runtime(monkeypatch):
+    adapter = RuntimeAdapter.__new__(RuntimeAdapter)
+    adapter.boot_id = "b" * 32
+    root = "c" * 32
+    settlement = {"root_run_id": root}
+    record = SimpleNamespace(
+        boot_id=adapter.boot_id, lock=threading.Lock(), status=SessionStatus.IDLE, active_run=None,
+        process_closed=True, process_closing=False, cleanup_unconfirmed=False,
+        continuation_proxy_closed=True, pending_terminal_receipts=set(),
+        domain_call_sequence=4, domain_call_drained_sequence=4, recovery_boundary=None,
+        current_generation=SimpleNamespace(
+            process_root_id=root, process_exit_confirmed=True, native_session_close_confirmed=True,
+        ),
+        settlement_receipt=settlement, terminal_receipts={root: settlement},
+    )
+    monkeypatch.setattr(adapter, "_get", lambda session_id: record)
+    monkeypatch.setattr(adapter, "task_ready_qualified", lambda _record: True)
+
+    assert adapter.research_data_continuation_readiness("session-a", root) == {"ready": True}
+    assert adapter.research_data_continuation_readiness("session-a", "d" * 32) == {"ready": False}
+    record.pending_terminal_receipts.add(root)
+    assert adapter.research_data_continuation_readiness("session-a", root) == {"ready": False}
+
+
+def test_research_data_continuation_bind_requires_exact_backend_receipt(monkeypatch):
+    adapter = RuntimeAdapter.__new__(RuntimeAdapter)
+    adapter._backend_url = "http://backend:8000"
+    adapter.boot_id = "b" * 32
+    continuation_id, root_id = "rdcontinuation_" + "c" * 32, "d" * 32
+    record = SimpleNamespace(session_id="session-a", trace_id="trace-a",
+                             owner_principal="alice", workspace_id="workspace-a")
+    monkeypatch.setattr(adapter, "task_ready_qualified", lambda _record: True)
+    monkeypatch.setenv("BYQ_RUNTIME_AUTHORITY_TOKEN", "test-authority")
+    reply = {"continuation_id": continuation_id, "root_run_id": root_id}
+
+    def post(url, *, headers, json, timeout):
+        assert url.endswith(f"/{continuation_id}/bind")
+        assert headers == {"Authorization": "Bearer test-authority"}
+        assert json == {
+            "root_run_id": root_id, "session_id": "session-a", "trace_id": "trace-a",
+            "owner_principal": "alice", "workspace_id": "workspace-a", "boot_id": adapter.boot_id,
+            "content_sha256": hashlib.sha256(b"trusted input").hexdigest(),
+        }
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: reply)
+
+    monkeypatch.setattr("app.runtime.httpx.post", post)
+    adapter._bind_research_data_continuation(record, continuation_id, root_id, "trusted input")
+    reply["root_run_id"] = "e" * 32
+    with pytest.raises(RuntimeAuthorityUnavailable):
+        adapter._bind_research_data_continuation(record, continuation_id, root_id, "trusted input")

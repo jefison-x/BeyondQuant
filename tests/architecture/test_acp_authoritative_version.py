@@ -40,7 +40,7 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
-    def test_research_preparation_help_preserves_user_admin_boundary(self) -> None:
+    def test_research_preparation_exposes_bounded_conversation_repair(self) -> None:
         catalog = json.loads(
             (ROOT / "docs/contracts/product-capability-catalog.v1.json").read_text()
         )
@@ -48,8 +48,26 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
                        if item["capability_id"] == "research-data-preparation")
         self.assertEqual(feature["route_id"], "/agent")
         self.assertEqual(feature["audience"], "USER")
-        self.assertEqual(set(feature["support"]), {"EXPLAIN", "NAVIGATE"})
-        self.assertEqual(feature["agent_tools"], ["byq_product_help_query"])
+        self.assertIn("EXECUTE", feature["support"])
+        self.assertIn("byq_data_demand_create", feature["agent_tools"])
+        self.assertIn("byq_data_demand_get", feature["agent_tools"])
+        self.assertIn("最多涉及5个缺失交易日", feature["prerequisites"][-1])
+        self.assertTrue(any("数据源凭据、全量同步和数据中心设置仍由管理员负责" in item
+                            for item in feature["limitations"]))
+
+        profile = (ROOT / "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml").read_text()
+        research_delegate = profile[
+            profile.index("id: delegate-market-research"):profile.index("id: delegate-factor-research")
+        ]
+        self.assertNotIn("mcp__byq__byq_data_demand_create", research_delegate)
+        self.assertNotIn("mcp__byq__byq_data_demand_get", research_delegate)
+        self.assertIn("may\n      prepare the exact scope", profile)
+        roles = (ROOT / "plugins/dsh-byq/skills/byq-role-contracts/SKILL.md").read_text()
+        guide = (ROOT / "plugins/dsh-byq/skills/byq-product-guide/references/research.md").read_text()
+        self.assertIn("5 missing full trading days", roles)
+        self.assertIn("自动提交有界准备请求", guide)
+        self.assertNotIn("scope-only administrator link", roles)
+        self.assertNotIn("带入续研草稿", guide)
 
     def test_approval_help_matches_the_read_only_history_page(self) -> None:
         catalog = json.loads(

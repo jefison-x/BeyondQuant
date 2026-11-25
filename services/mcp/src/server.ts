@@ -485,7 +485,7 @@ function backtestTaskCreateFetcher(context: CompleteAgentContext): typeof fetch 
   };
 }
 
-function acpAgentAuditFetcher(context: CompleteAgentContext): typeof fetch | undefined {
+function acpBackendProofFetcher(context: CompleteAgentContext): typeof fetch | undefined {
   const auth = context[privateAuth];
   const observationId = context[privateObservationId];
   if (auth?.kind !== "acp-agent" || !BACKEND_PROOF_TOKEN
@@ -527,9 +527,12 @@ async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
 
 async function byqDataDemandCreate(args: DataDemandRequest, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqDataDemandCreate(
-    BACKEND_URL, args, trustedBackendFetcher(context),
-  ) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const fetcher = "scope_kind" in args && args.scope_kind === "conversation_research"
+    && context[privateAuth]?.kind === "acp-agent"
+    ? acpBackendProofFetcher(context)
+    : trustedBackendFetcher(context);
+  return fetcher ? fetchByqDataDemandCreate(BACKEND_URL, args, fetcher) : agentContextUnavailable();
 }
 
 async function byqDataDemandGet(args: DataDemandLookup, extra: unknown) {
@@ -695,7 +698,7 @@ async function byqAgentAudit(args: Record<string, unknown>, extra: unknown) {
   if (!context) return agentContextUnavailable();
   const isAcpAgent = context[privateAuth]?.kind === "acp-agent";
   if (!isAcpAgent) return fetchByqAgentAudit(BACKEND_URL, args, context);
-  const fetcher = acpAgentAuditFetcher(context);
+  const fetcher = acpBackendProofFetcher(context);
   if (!fetcher) return acpBridgeUnavailable("acp_audit_backend_proof_unavailable");
   return fetchByqAgentAudit(BACKEND_URL, args, context, fetcher, true);
 }
@@ -1120,10 +1123,10 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = await (callback as (...args: unknown[]) => unknown)(
                       toolArgs, callContext, ...callArgs.slice(2));
                   }
-                } else if (auth.kind === "acp-agent" && name === "byq_backtest_task_create") {
-                  // The generic ingress receipt is the Backend's exact Job
-                  // admission claim; this action does not use the strategy
-                  // domain-call evidence protocol.
+                } else if (auth.kind === "acp-agent"
+                    && (name === "byq_backtest_task_create" || name === "byq_data_demand_create")) {
+                  // These domain endpoints bind the original tool ingress to
+                  // the durable Job or the exact conversation preparation.
                   const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
                   handlerResult = await (callback as (...args: unknown[]) => unknown)(
                     toolArgs, callContext, ...callArgs.slice(2));
@@ -1463,7 +1466,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_data_demand_create",
     {
-      description: "Ask the trusted BYQ Data Center to prepare a bounded frozen scope. Supplying task_id binds it to a durable DATA_IMPORT Job and validated data-readiness Artifact; provider access stays in the trusted Data Worker.",
+      description: "Ask the trusted BYQ Data Center to prepare a bounded frozen scope. Ordinary users may submit only their active conversation's supported research gap (up to 20 symbols, 180 calendar days and 5 missing trading days); workspace and conversation ownership are enforced by Backend. Existing task-bound and administrator data requests retain their own rules. Provider access stays in the trusted Data Worker.",
       inputSchema: z.union([
         z.object({
         purpose: z.enum(["research", "backtest", "machine_learning"]),
@@ -1479,6 +1482,19 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         }).strict().optional(),
         idempotency_key: z.string().min(1).max(128),
       }).strict(),
+        z.object({
+          purpose: z.literal("research"),
+          scope_kind: z.literal("conversation_research"),
+          symbols: z.array(z.string().regex(/^\d{6}\.(?:SH|SZ|BJ)$/)).min(1).max(20)
+            .refine((symbols) => new Set(symbols).size === symbols.length),
+          start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          data_requirements: z.object({
+            daily_basic: z.array(z.string()).max(12).optional(),
+            fundamentals: z.array(z.string()).max(12).optional(),
+          }).strict().optional(),
+          idempotency_key: z.string().min(1).max(128),
+        }).strict(),
         z.object({ purpose: z.enum(["research", "backtest", "machine_learning"]),
           task_id: z.string().regex(/^task_[0-9a-f]{32}$/).optional(),
           scope_kind: z.literal("index_snapshot"), index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000852.SH", "000905.SH", "399006.SZ"]),
@@ -1487,7 +1503,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         }).strict(),
       ]),
     },
-    (args) => byqDataDemandCreate(args, trustedContext),
+    (args, extra) => byqDataDemandCreate(args, auth?.kind === "acp-agent" ? extra : trustedContext),
   );
   registerTool(
     "byq_data_demand_get",

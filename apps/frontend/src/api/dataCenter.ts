@@ -1,4 +1,5 @@
 import type { DataCenterStatus, DataReadinessResult, DataSyncJob, MarketSyncAutomationConfig, SecurityCataloguePage, SecurityMasterSyncJob } from "./types";
+import type { ResearchPreparationScope } from "@/researchPreparation";
 
 const ROOT = "/api/product/data-center";
 
@@ -42,6 +43,14 @@ export interface ResearchPreparationSubmission {
   retry_token?: string | null;
   failure_reason?: string | null;
   failure_message?: string | null;
+  error?: string | null;
+}
+
+export interface ConversationResearchPreparationReceipt extends ResearchPreparationSubmission {
+  scope: ResearchPreparationScope;
+  auto_continuation?: {
+    status: "waiting" | "dispatching" | "bound" | "succeeded" | "failed" | "cancelled";
+  };
 }
 
 export function createResearchPreparation(payload: {
@@ -61,6 +70,47 @@ export function retryResearchPreparation(
 ): Promise<ResearchPreparationSubmission> {
   return request(`/research-preparations/${encodeURIComponent(requestId)}/retry`, {
     method: "POST", body: JSON.stringify({ retry_token: retryToken }),
+  });
+}
+
+export function createConversationResearchPreparation(
+  conversationId: string,
+  scope: ResearchPreparationScope,
+): Promise<ConversationResearchPreparationReceipt> {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations`, {
+    method: "POST", body: JSON.stringify(scope),
+  });
+}
+
+export function listConversationResearchPreparations(
+  conversationId: string,
+): Promise<{ preparations: ConversationResearchPreparationReceipt[] }> {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations`);
+}
+
+export function getConversationResearchPreparation(
+  conversationId: string,
+  requestId: string,
+): Promise<ConversationResearchPreparationReceipt> {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations/${encodeURIComponent(requestId)}`);
+}
+
+export function retryConversationResearchPreparation(
+  conversationId: string,
+  requestId: string,
+  retryToken: string,
+): Promise<ConversationResearchPreparationReceipt> {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations/${encodeURIComponent(requestId)}/retry`, {
+    method: "POST", body: JSON.stringify({ retry_token: retryToken }),
+  });
+}
+
+export function stopConversationResearchContinuation(
+  conversationId: string,
+  requestId: string,
+): Promise<ConversationResearchPreparationReceipt> {
+  return request(`/conversations/${encodeURIComponent(conversationId)}/research-preparations/${encodeURIComponent(requestId)}/stop-continuation`, {
+    method: "POST",
   });
 }
 

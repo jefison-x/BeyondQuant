@@ -15,6 +15,7 @@ from pathlib import Path
 CONTEXT_SCHEMA = 'task-continuation-context.v1'
 CANCEL_SCHEMA = 'task-continuation-cancel.v2'
 MAX_CONTEXT_BYTES = 4096
+IDLE_CHECK_SECONDS = 45
 _CONTEXT_FIELDS = {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}
 logger = logging.getLogger('uvicorn.error')
 
@@ -33,6 +34,8 @@ class TaskContinuationDelivery:
         self.stop = threading.Event()
         self.thread = None
         self.cursor = ''
+        self._idle_until: dict[Path, float] = {}
+        self._schedule_lock = threading.Lock()
         self._reported_failures: set[tuple[str, str, str]] = set()
 
     @staticmethod
@@ -191,16 +194,30 @@ class TaskContinuationDelivery:
                 os.close(directory)
             return True
 
+    def wake(self, session_id: str) -> None:
+        """Give new work in a known conversation the normal polling cadence."""
+        with self._schedule_lock:
+            self._idle_until[self.root / f'{session_id}.continuation.json'] = self.now()
+
     def tick(self):
         paths = sorted(self.root.glob('*.continuation.json'))
-        candidates = [p for p in paths if p.name > self.cursor]
+        with self._schedule_lock:
+            now = self.now()
+            paths_set = set(paths)
+            for path in self._idle_until.keys() - paths_set:
+                del self._idle_until[path]
+            due = [path for path in paths if self._idle_until.get(path, 0) <= now
+                   or path.with_name(path.name.replace('.continuation.json', '.continuation-cancel.json')).exists()]
+        candidates = [p for p in due if p.name > self.cursor]
         if not candidates:
             self.cursor = ''
-            candidates = paths
+            candidates = due
         for path in candidates[:8]:
             if self.stop.is_set():
                 break
             self.cursor = path.name
+            with self._schedule_lock:
+                previous_deadline = self._idle_until.get(path)
             stage = 'context'
             try:
                 context = self._read_context(path)
@@ -217,13 +234,18 @@ class TaskContinuationDelivery:
                         continue
                     if not self.clear_cancel(context, reservation_id, mode):
                         continue
+                receipt_pending = False
                 if self.reconcile is not None:
                     stage = 'reconcile'
-                    self._reconcile_with_backoff(path, context)
+                    receipt_pending = self._reconcile_with_backoff(path, context)
                 if cancellation_processed:
                     continue
                 stage = 'consume'
-                self.consume(context)
+                continuation_pending = self.consume(context)
+                if receipt_pending is False and continuation_pending is False:
+                    with self._schedule_lock:
+                        if self._idle_until.get(path) == previous_deadline:
+                            self._idle_until[path] = self.now() + IDLE_CHECK_SECONDS
             except Exception as exc:
                 # The Backend owns every intent/uncertain liability. A transport
                 # failure never fabricates a receipt or retries a model write.
@@ -246,11 +268,11 @@ class TaskContinuationDelivery:
                     attempts = max(0, min(7, int(state['attempts'])))
                     retry_at = float(state['retry_at'])
                     if math.isfinite(retry_at) and now < retry_at <= now + 300:
-                        return
+                        return True
         except (OSError, ValueError, TypeError, KeyError):
             pass
         try:
-            self.reconcile(context)
+            pending = self.reconcile(context)
         except Exception:
             attempts = min(7, attempts + 1)
             state = dict(context=context, attempts=attempts,
@@ -261,11 +283,13 @@ class TaskContinuationDelivery:
                 os.replace(temporary, state_path)
             except OSError:
                 pass
+            return True
         else:
             try:
                 state_path.unlink(missing_ok=True)
             except OSError:
                 pass
+            return pending
 
     def start(self):
         if self.thread is not None:

@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.conversation_catalog import ConversationCatalogStore
 from app.data_demand import DataDemandConflict, DataDemandNotFound, DataDemandStore
 from app.market_plan import partition_market_requirements
 from app.paper_trading import PaperTradingStore
@@ -79,10 +80,10 @@ class FakeSecurityMaster:
         return {"snapshot_id": "security_snapshot_test"}
 
 
-def _context() -> dict[str, str]:
+def _context(role="admin") -> dict[str, str]:
     users = UserAuthStore()
     user = users.create_user({
-        "username": "alice", "password": "password-123", "display_name": "Alice", "role": "admin",
+        "username": "alice", "password": "password-123", "display_name": "Alice", "role": role,
     }, actor_role="admin")
     tenancy = WorkspaceTenancyStore()
     workspace = tenancy.public_workspace(str(user["user_id"]))
@@ -570,3 +571,252 @@ def test_data_import_worker_completion_wins_over_concurrent_cancel() -> None:
     demands.close()
     paper.close()
     research.close()
+
+
+class ConversationPreparationReadiness:
+    state = "missing"
+    bulk_dates = ["20241118"]
+
+    def requirement(self, **values):
+        return {
+            **values, "requirement_sha256": f"{values['start_date']}-{values['end_date']}",
+            "declared": {},
+        }
+
+    def assess(self, _requirement):
+        return {
+            "state": self.state, "calendar_complete": True,
+            "required_session_count": 1, "required_cell_count": 1,
+            "missing_count": int(self.state != "ready"),
+            "repair_plan": {"full_sessions": self.bulk_dates},
+        }
+
+
+def test_conversation_preparation_shares_repair_and_recovers_in_original_session(monkeypatch):
+    readiness = ConversationPreparationReadiness()
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    context = _context("user")
+    catalog = ConversationCatalogStore()
+    first = catalog.create("alice", context["session_id"], context["trace_id"])
+    second = catalog.create("alice", "session-demand-2", "trace-demand-2")
+    headers = {f"x-byq-{key.replace('_', '-')}": value for key, value in context.items()}
+    path = f"/v1/data-center/conversations/{first['conversation_id']}/research-preparations"
+    other = f"/v1/data-center/conversations/{second['conversation_id']}/research-preparations"
+    payload = {"symbols": ["600036.SH"], "start_date": "20241118", "end_date": "20241118"}
+    client = TestClient(main.app)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: client.post(path, json=payload, headers=headers), range(2)))
+    assert all(response.status_code == 200 for response in responses)
+    receipt = responses[0].json()
+    assert receipt == responses[1].json()
+    assert receipt["status"] == "queued"
+    demand_id = receipt["request_id"]
+    assert client.get(path, headers=headers).json()["preparations"] == [receipt]
+    assert client.get(f"{other}/{demand_id}", headers=headers).status_code == 404
+    assert client.get(f"{other}/{demand_id}", headers={**headers, "x-byq-owner-principal": "bob"}).status_code == 401
+    assert client.post(other, json={**payload, "start_date": "20241117"}, headers=headers).status_code == 409
+
+    agent_path = "/v1/agent/data-demands"
+    agent_command = {**payload, "start_date": "2024-11-18", "end_date": "2024-11-18", "scope_kind": "conversation_research", "purpose": "research",
+                     "idempotency_key": "known-agent-command"}
+    agent = client.post(agent_path, json=agent_command, headers=headers)
+    assert agent.status_code == 202
+    assert agent.json()["demand"]["demand_id"] == demand_id
+    reconcile_path = f"{agent_path}/by-key/known-agent-command"
+    assert client.get(reconcile_path, headers=headers).json()["state"] == "confirmed"
+    other_headers = {**headers, "x-byq-session-id": "session-demand-2"}
+    assert client.get(reconcile_path, headers=other_headers).json()["state"] == "not_found"
+    assert client.get(f"{agent_path}/{demand_id}", headers=other_headers).status_code == 404
+
+    automation = main.market_automation_store
+    job = automation.claim_data_repair()
+    automation.complete_data_repair(job["request_id"], error="ProviderUnavailable")
+    failed = client.get(f"{path}/{demand_id}", headers=headers).json()
+    assert failed["status"] == "failed"
+    assert "retry_token" not in failed
+    automation._execute("""UPDATE market_data_repair_requests SET completed_at=now()-interval '6 minutes'
+        WHERE request_id=:id""", {"id": job["request_id"]})
+    failed = client.get(f"{path}/{demand_id}", headers=headers).json()
+    assert "数据源暂时不可用" in failed["error"]
+    retry_path = f"{path}/{demand_id}/retry"
+    retry = {"retry_token": failed["retry_token"]}
+    assert client.post(retry_path, json=retry, headers=headers).json()["status"] == "queued"
+    assert client.post(retry_path, json=retry, headers=headers).status_code == 409
+    record = automation.get_data_repair(job["request_id"])
+    assert record["self_service_retry_evidence"]["error"] == "ProviderUnavailable"
+    readiness.state = "ready"
+    automation.complete_data_repair(job["request_id"])
+    main.data_demand_store.settle_conversation_preparations(
+        readiness_store=readiness, automation_store=automation,
+    )
+    assert main.data_demand_store.get(
+        demand_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        trusted_session=context["session_id"],
+    )["status"] == "ready"
+    assert client.get(f"{path}/{demand_id}", headers=headers).json()["status"] == "completed"
+
+
+def test_conversation_preparation_distinguishes_unpublished_and_unsupported(monkeypatch):
+    readiness = ConversationPreparationReadiness()
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    context = _context("user")
+    conversation = ConversationCatalogStore().create("alice", context["session_id"], context["trace_id"])
+    headers = {f"x-byq-{key.replace('_', '-')}": value for key, value in context.items()}
+    path = f"/v1/data-center/conversations/{conversation['conversation_id']}/research-preparations"
+    payload = {"symbols": ["600036.SH"], "start_date": "20991118", "end_date": "20991118"}
+    client = TestClient(main.app)
+
+    pending = client.post(path, json=payload, headers=headers)
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "not_published"
+    assert pending.json()["request_id"] is None
+    assert client.post(path, json={**payload, "symbols": ["AAPL"]}, headers=headers).status_code == 422
+    readiness.bulk_dates = [f"202411{value:02d}" for value in range(16, 22)]
+    too_wide = client.post(path, json={**payload, "start_date": "20241116", "end_date": "20241121"}, headers=headers)
+    assert too_wide.status_code == 422
+    assert "5 个" in too_wide.json()["detail"]
+    assert client.get(path, headers=headers).json() == {"preparations": []}
+    assert main.market_automation_store.claim_data_repair() is None
+
+
+
+@pytest.mark.parametrize("action", ["stop", "disable_auto_continue", "resume"])
+def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, action):
+    from uuid import uuid4
+
+    from tests.test_acp_domain_call_proof import (
+        _bind, _independent_cursor_digest, _observe_tool, _open_root, _settle_tool,
+    )
+    from tests.workspace_helpers import trusted_product_agent_context
+
+    class ReadyAfterVerifiedRepair(ConversationPreparationReadiness):
+        def assess(self, requirement):
+            result = super().assess(requirement)
+            return {**result, "ready_input_sha256": "d" * 64 if self.state == "ready" else None}
+
+    readiness = ReadyAfterVerifiedRepair()
+    monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority")
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    monkeypatch.setattr(main, "MCP_BACKEND_PROOF_TOKEN", "synthetic-data-preparation-proof")
+    session_id = "session-agent-preparation"
+    context = trusted_product_agent_context(
+        "research-user", actor=f"byq-product-agent-{session_id}", session_id=session_id,
+        trace_id="trace-agent-preparation", dsh_run_id="generation-agent-preparation",
+    )
+    catalog = ConversationCatalogStore()
+    conversation = catalog.create("research-user", session_id, context["x-byq-trace-id"])
+    catalog.append_user_message("research-user", conversation["conversation_id"], "研究招商银行日线")
+    root, identity = _open_root(main.agent_store, context, "research-preparation-run", str(uuid4()))
+    delivery_headers = {"x-byq-owner-principal": "research-user", "x-byq-actor-principal": "research-user",
+                        "x-byq-workspace-id": context["x-byq-workspace-id"]}
+    delivery_path = f"/internal/task-continuation/{conversation['conversation_id']}/peek"
+    client = TestClient(main.app)
+    assert client.post(delivery_path, headers=delivery_headers).json() == {
+        "status": "waiting", "background_pending": True,
+    }
+    _bind(main.agent_store, context, identity)
+    arguments = {
+        "symbols": ["600036.SH"], "start_date": "2024-11-18", "end_date": "2024-11-18",
+        "purpose": "research", "scope_kind": "conversation_research", "idempotency_key": "research-preparation-acp",
+    }
+    ingress = _observe_tool(main.agent_store, context, identity, "byq_data_demand_create", arguments)
+    headers = {
+        **context, "authorization": "Bearer synthetic-data-preparation-proof", "x-byq-root-run-id": root,
+        "x-byq-acp-origin": "root", "x-byq-acp-observation-id": ingress["mcp_request_id"],
+    }
+    changed = client.post("/v1/agent/data-demands", headers=headers,
+                          json={**arguments, "end_date": "2024-11-19"})
+    assert changed.status_code in {403, 404, 409, 422}
+    prepared = client.post("/v1/agent/data-demands", headers=headers, json=arguments)
+    assert prepared.status_code == 202, prepared.json()
+    data = prepared.json()
+    assert data["auto_continuation"]["status"] == "waiting"
+    demand = data["demand"]["demand_id"]
+    path = f"/v1/data-center/conversations/{conversation['conversation_id']}/research-preparations/{demand}"
+    assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "waiting"
+    if action == "stop":
+        stopped = client.post(f"{path}/stop-continuation", headers=context)
+        assert stopped.status_code == 200
+        assert stopped.json()["auto_continuation"]["status"] == "cancelled"
+        main.agent_store._execute("""UPDATE agent_runtime_turns SET authority_status='authority_revoked_unconfirmed'
+            WHERE root_run_id=:root""", {"root": root})
+        assert client.post(delivery_path, headers=delivery_headers).json() == {
+            "status": "waiting", "background_pending": False,
+        }
+        return
+
+    boot = context["x-byq-runtime-boot-id"]
+    trusted = {"owner_principal": "research-user", "workspace_id": context["x-byq-workspace-id"],
+               "session_id": session_id, "trace_id": context["x-byq-trace-id"]}
+    private = {"authorization": "Bearer synthetic-runtime-authority"}
+    base = f"/internal/research-data-continuation/{conversation['conversation_id']}"
+    assert client.post(f"{base}/peek", headers=private, json=trusted).json() == {"continuation": None}
+    _settle_tool(main.agent_store, context, identity, ingress)
+    cursor, cursor_sha256, _ = _independent_cursor_digest(main.agent_store, root)
+    main.agent_store._execute(
+        """UPDATE agent_runtime_turns SET status='completed',authority_status='closed',terminal_sequence=8,
+            terminal_event_sha256=:sha,terminal_unknown_claim_count=0,terminal_acp_ingress_sequence=:sequence,
+            terminal_acp_ingress_sha256=:cursor_sha256 WHERE root_run_id=:root""",
+        {"root": root, "sha": "1" * 64, "sequence": cursor, "cursor_sha256": cursor_sha256},
+    )
+    assert client.post(f"{base}/peek", headers=private, json=trusted).json() == {"continuation": None}
+    auto = main.market_automation_store
+    repair = auto.claim_data_repair()
+    assert repair is not None
+    readiness.state = "ready"
+    auto.complete_data_repair(repair["request_id"])
+    main.data_demand_store.settle_conversation_preparations(readiness_store=readiness, automation_store=auto)
+    if action == "disable_auto_continue":
+        from packages.contracts.agent_execution_options import default_agent_execution_options
+
+        user = main.user_store._fetch_one("SELECT user_id FROM users WHERE username='research-user'")
+        main.user_store.update_agent_execution_options(user["user_id"], {
+            "schema_version": "agent-execution-options.v1",
+            "expected_revision": 0,
+            "options": {**default_agent_execution_options(), "auto_continue": False},
+        })
+        assert client.post(f"{base}/peek", headers=private, json=trusted).json() == {"continuation": None}
+        assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "cancelled"
+        return
+
+    ready = client.post(f"{base}/peek", headers=private, json=trusted)
+    assert ready.status_code == 200, ready.json()
+    offer = ready.json()["continuation"]
+    assert offer["ready_input_sha256"] == "d" * 64
+    continuation = offer["continuation_id"]
+    payload = {**trusted, "continuation_id": continuation, "boot_id": boot}
+    claimed = client.post(f"{base}/claim", headers=private, json=payload).json()["continuation"]
+    assert claimed["continuation_id"] == continuation
+    assert client.post(f"{base}/claim", headers=private, json=payload).json() == {"continuation": None}
+
+    new_root = uuid4().hex
+    binding = {**trusted, "root_run_id": new_root, "boot_id": boot,
+               "content_sha256": claimed["content_sha256"]}
+    bind_path = f"/internal/research-data-continuation/{continuation}/bind"
+    bound = client.post(bind_path, headers=private, json=binding)
+    assert bound.status_code == 200, bound.json()
+    assert bound.json() == {"continuation_id": continuation, "root_run_id": new_root}
+    assert main.agent_store._fetch_one("SELECT root_run_id FROM agent_runtime_turns WHERE root_run_id=:root",
+                                      {"root": new_root}) is None
+
+    from app.agent_research import AgentUnauthorized
+    _, new_identity = _open_root(main.agent_store, context, "research-continuation-run", str(uuid4()),
+                                 sequence=10, root_run_id=new_root)
+    _bind(main.agent_store, context, new_identity)
+    with pytest.raises(AgentUnauthorized):
+        _observe_tool(main.agent_store, context, new_identity, "byq_data_demand_create", arguments)
+    read = _observe_tool(main.agent_store, context, new_identity, "byq_market_daily",
+                         {"ts_code": "600036.SH", "trade_date": "20241118"})
+    _settle_tool(main.agent_store, context, new_identity, read)
+    main.agent_store._execute(
+        """UPDATE agent_runtime_turns SET status='completed',authority_status='closed',terminal_sequence=14,
+            terminal_event_sha256=:sha,terminal_unknown_claim_count=0,terminal_acp_ingress_sequence=:sequence
+            WHERE root_run_id=:root""",
+        {"root": new_root, "sha": "2" * 64, "sequence": read["sequence"]},
+    )
+    assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "bound"
+    catalog.append_assistant_message("research-user", conversation["conversation_id"], "已复查行情。", 12)
+    assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "succeeded"
