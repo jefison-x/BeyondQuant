@@ -99,10 +99,12 @@ import {
 } from "./strategy.js";
 import {
   fetchByqMarketDaily,
+  fetchByqMarketIndexDaily,
   fetchByqMarketFundamentals,
   fetchByqMarketSessionContext,
   fetchByqMarketValuation,
   type MarketDailyRequest,
+  type MarketIndexDailyRequest,
   type MarketFundamentalsRequest,
   type MarketValuationRequest,
 } from "./market-data.js";
@@ -200,11 +202,18 @@ const ACP_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "byq_health",
   "byq_agent_roles",
   "byq_market_daily",
+  "byq_market_index_daily",
   "byq_market_session_context",
   "byq_market_valuation",
   "byq_market_fundamentals",
 ]);
 const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
+const indexHistoryScope = {
+  symbols: z.array(z.enum(["000300.SH", "000905.SH"])).min(1).max(2)
+    .refine((symbols) => new Set(symbols).size === symbols.length),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+};
 const ACP_JUDGMENT_SUBSET = process.env.BYQ_MCP_ACP_JUDGMENT_SUBSET === "1";
 const ACP_JUDGMENT_ADMISSION_ENABLED = process.env.BYQ_MCP_ACP_JUDGMENT_ADMISSION_ENABLED === "1";
 const PORT = ACP_JUDGMENT_SUBSET
@@ -528,8 +537,9 @@ async function byqAgentContext(_args: Record<string, never>, extra: unknown) {
 async function byqDataDemandCreate(args: DataDemandRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   if (!context) return agentContextUnavailable();
-  const fetcher = "scope_kind" in args && args.scope_kind === "conversation_research"
-    && context[privateAuth]?.kind === "acp-agent"
+  const needsProof = args.scope_kind === "conversation_index_history" ||
+    (args.scope_kind === "conversation_research" && context[privateAuth]?.kind === "acp-agent");
+  const fetcher = needsProof
     ? acpBackendProofFetcher(context)
     : trustedBackendFetcher(context);
   return fetcher ? fetchByqDataDemandCreate(BACKEND_URL, args, fetcher) : agentContextUnavailable();
@@ -632,6 +642,19 @@ function acpBridgeUnavailable(status: string): AgentResult {
       backend: { status } }) }],
     isError: true,
   };
+}
+
+function indexDataVersionReceived(value: unknown, requested: unknown): string | undefined {
+  const reply = value as Partial<AgentResult> | null;
+  if (reply?.isError !== false || !Array.isArray(reply.content)) return undefined;
+  try {
+    const data = JSON.parse(reply.content[0]?.text ?? "null");
+    const version = data?.data_version;
+    if (data?.state === "ready" && Array.isArray(data.rows) && data.rows.length > 0
+        && typeof version === "string" && /^[0-9a-f]{64}$/.test(version)
+        && (requested === undefined || requested === version)) return version;
+  } catch { /* Invalid or unavailable data adds no verification evidence. */ }
+  return undefined;
 }
 
 function classifyAcpToolCompletion(toolName: string, value: unknown): AcpToolIngressOutcome {
@@ -923,6 +946,12 @@ async function byqMarketDaily(args: MarketDailyRequest, extra: unknown) {
   return context ? fetchByqMarketDaily(BACKEND_URL, args ?? {}, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
+async function byqMarketIndexDaily(args: MarketIndexDailyRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  const fetcher = context && acpBackendProofFetcher(context);
+  return fetcher ? fetchByqMarketIndexDaily(BACKEND_URL, args, fetcher) : agentContextUnavailable();
+}
+
 async function byqMarketSessionContext(_args: Record<string, never>, extra: unknown) {
   const context = completeAgentContext(extra);
   return context
@@ -1123,10 +1152,9 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = await (callback as (...args: unknown[]) => unknown)(
                       toolArgs, callContext, ...callArgs.slice(2));
                   }
-                } else if (auth.kind === "acp-agent"
-                    && (name === "byq_backtest_task_create" || name === "byq_data_demand_create")) {
-                  // These domain endpoints bind the original tool ingress to
-                  // the durable Job or the exact conversation preparation.
+                } else if (auth.kind === "acp-agent" && (name === "byq_backtest_task_create"
+                    || name === "byq_data_demand_create" || name === "byq_market_index_daily")) {
+                  // These callbacks bind the Backend operation to its exact tool ingress.
                   const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
                   handlerResult = await (callback as (...args: unknown[]) => unknown)(
                     toolArgs, callContext, ...callArgs.slice(2));
@@ -1162,8 +1190,10 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
               }
               const outcome: AcpToolIngressOutcome = refusalReceipt
                 ? "denied" : classifyAcpToolCompletion(name, handlerResult);
+              const indexDataVersion = name === "byq_market_index_daily" && outcome === "settled"
+                ? indexDataVersionReceived(handlerResult, ingressArgs.data_version) : undefined;
               const settlement = await settleAcpToolIngress(
-                BACKEND_URL, ingressProof, auth.claims, ingress, outcome, fetch, refusalReceipt);
+                BACKEND_URL, ingressProof, auth.claims, ingress, outcome, fetch, refusalReceipt, indexDataVersion);
               if (!settlement) return acpBridgeUnavailable("acp_ingress_settlement_unknown");
               return handlerResult;
             }
@@ -1466,7 +1496,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_data_demand_create",
     {
-      description: "Ask the trusted BYQ Data Center to prepare a bounded frozen scope. Ordinary users may submit only their active conversation's supported research gap (up to 20 symbols, 180 calendar days and 5 missing trading days); workspace and conversation ownership are enforced by Backend. Existing task-bound and administrator data requests retain their own rules. Provider access stays in the trusted Data Worker.",
+      description: "Ask BYQ Data Center to prepare a frozen scope. In an active personal conversation use conversation_research for stock gaps (20 stocks, 180 calendar days and 5 missing full sessions) or conversation_index_history for 000300.SH and 000905.SH index daily bars and calendar (up to ten calendar years). Backend checks ownership. The Data Worker accesses the provider.",
       inputSchema: z.union([
         z.object({
         purpose: z.enum(["research", "backtest", "machine_learning"]),
@@ -1493,6 +1523,12 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
             daily_basic: z.array(z.string()).max(12).optional(),
             fundamentals: z.array(z.string()).max(12).optional(),
           }).strict().optional(),
+          idempotency_key: z.string().min(1).max(128),
+        }).strict(),
+        z.object({
+          purpose: z.literal("research"),
+          scope_kind: z.literal("conversation_index_history"),
+          ...indexHistoryScope,
           idempotency_key: z.string().min(1).max(128),
         }).strict(),
         z.object({ purpose: z.enum(["research", "backtest", "machine_learning"]),
@@ -1537,6 +1573,19 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     (args) => byqMarketDaily(args, trustedContext),
+  );
+  registerTool(
+    "byq_market_index_daily",
+    {
+      description: "Read BYQ-verified daily index history for CSI 300 (000300.SH) or CSI 500 (000905.SH) over an inclusive range of up to ten years. Returns coverage and, when ready, date and close summaries, data version and paged bars. Use the exact same symbols, dates and data_version for subsequent pages or when instructed by automatic research continuation. Never contacts a live provider.",
+      inputSchema: z.object({
+        ...indexHistoryScope,
+        data_version: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+        offset: z.number().int().nonnegative().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      }).strict(),
+    },
+    (args, extra) => byqMarketIndexDaily(args, extra),
   );
   registerTool(
     "byq_market_valuation",

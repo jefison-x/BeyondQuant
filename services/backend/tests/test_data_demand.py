@@ -682,8 +682,12 @@ def test_conversation_preparation_distinguishes_unpublished_and_unsupported(monk
 
 
 
-@pytest.mark.parametrize("action", ["stop", "disable_auto_continue", "resume"])
+@pytest.mark.parametrize("action", [
+    "stop", "disable_auto_continue", "resume", "resume_index", "resume_index_stale", "resume_index_delivery_lost",
+])
 def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, action):
+    import json
+    import re
     from uuid import uuid4
 
     from tests.test_acp_domain_call_proof import (
@@ -691,10 +695,21 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
     )
     from tests.workspace_helpers import trusted_product_agent_context
 
+    index_history = action.startswith("resume_index")
+
     class ReadyAfterVerifiedRepair(ConversationPreparationReadiness):
         def assess(self, requirement):
             result = super().assess(requirement)
             return {**result, "ready_input_sha256": "d" * 64 if self.state == "ready" else None}
+
+        def index_history_query(self, requirement, *, offset, limit, data_version):
+            assert requirement["kind"] == "index_history"
+            assert requirement["symbols"] == ["000300.SH", "000905.SH"]
+            assert (requirement["start_date"], requirement["end_date"]) == ("20141118", "20241117")
+            assert data_version == "d" * 64 and offset == 0 and 1 <= limit <= 200
+            if action == "resume_index_stale":
+                return {"state": "version_changed", "data_version": None, "rows": []}
+            return {"state": "ready", "data_version": data_version, "rows": [{"symbol": "000300.SH"}]}
 
     readiness = ReadyAfterVerifiedRepair()
     monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority")
@@ -722,6 +737,9 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
         "symbols": ["600036.SH"], "start_date": "2024-11-18", "end_date": "2024-11-18",
         "purpose": "research", "scope_kind": "conversation_research", "idempotency_key": "research-preparation-acp",
     }
+    if index_history:
+        arguments.update(symbols=["000300.SH", "000905.SH"], start_date="2014-11-18",
+                         end_date="2024-11-17", scope_kind="conversation_index_history")
     ingress = _observe_tool(main.agent_store, context, identity, "byq_data_demand_create", arguments)
     headers = {
         **context, "authorization": "Bearer synthetic-data-preparation-proof", "x-byq-root-run-id": root,
@@ -808,15 +826,31 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
     _bind(main.agent_store, context, new_identity)
     with pytest.raises(AgentUnauthorized):
         _observe_tool(main.agent_store, context, new_identity, "byq_data_demand_create", arguments)
-    read = _observe_tool(main.agent_store, context, new_identity, "byq_market_daily",
-                         {"ts_code": "600036.SH", "trade_date": "20241118"})
-    _settle_tool(main.agent_store, context, new_identity, read)
+    if index_history:
+        read_args = json.loads(re.search(r"\{[^{}]+\}", claimed["instruction"]).group())
+        read = _observe_tool(main.agent_store, context, new_identity, "byq_market_index_daily", read_args)
+        read_headers = {**headers, "x-byq-root-run-id": new_root, "x-byq-acp-observation-id": read["mcp_request_id"]}
+        mismatched = client.post("/v1/data/research/index-daily", headers=read_headers,
+                                 json={**read_args, "data_version": "a" * 64})
+        assert mismatched.status_code == 409
+        response = client.post("/v1/data/research/index-daily", headers=read_headers, json=read_args)
+        assert response.status_code == 200, response.json()
+        assert response.json()["state"] == ("version_changed" if action == "resume_index_stale" else "ready")
+    else:
+        read = _observe_tool(main.agent_store, context, new_identity, "byq_market_daily",
+                             {"ts_code": "600036.SH", "trade_date": "20241118"})
+    version_read = "d" * 64 if action == "resume_index" else None
+    _settle_tool(main.agent_store, context, new_identity, read, index_data_version=version_read)
     main.agent_store._execute(
         """UPDATE agent_runtime_turns SET status='completed',authority_status='closed',terminal_sequence=14,
             terminal_event_sha256=:sha,terminal_unknown_claim_count=0,terminal_acp_ingress_sequence=:sequence
             WHERE root_run_id=:root""",
         {"root": new_root, "sha": "2" * 64, "sequence": read["sequence"]},
     )
+    if action in {"resume_index_stale", "resume_index_delivery_lost"}:
+        catalog.append_assistant_message("research-user", conversation["conversation_id"], "指数数据待复核。", 12)
+        assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "failed"
+        return
     assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "bound"
     catalog.append_assistant_message("research-user", conversation["conversation_id"], "已复查行情。", 12)
     assert client.get(path, headers=context).json()["auto_continuation"]["status"] == "succeeded"

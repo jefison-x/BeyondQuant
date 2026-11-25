@@ -233,7 +233,8 @@ const backend = createServer(async (req, res) => {
       send(200, { ...commonReceipt, refusal_receipt_sha256: refusalReceiptSha,
         settlement_sha256: sha256(settlementFields) });
     } else {
-      send(200, { ...commonReceipt, settlement_sha256: "9".repeat(64) });
+      send(200, { ...commonReceipt, settlement_sha256: "9".repeat(64),
+        ...(body?.index_data_version ? { index_data_version: body.index_data_version } : {}) });
     }
     return;
   }
@@ -397,6 +398,17 @@ const backend = createServer(async (req, res) => {
       demand: { schema_version: "data-demand.v1", demand_id: "datademand_" + "e".repeat(32), status: "queued" },
       auto_continuation: { status: "waiting" },
     });
+    return;
+  }
+  if (req.url === "/v1/data/research/index-daily" && req.method === "POST") {
+    assert.equal(entry.headers.get("authorization"), `Bearer ${backendProof}`);
+    assert.equal(entry.headers.get("x-byq-root-run-id"), claims.root_run_id);
+    assert.equal(entry.headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+    const observed = observedIngress.get(String(entry.headers.get("x-byq-acp-observation-id")));
+    assert.ok(observed);
+    assert.equal(observed.receipt.tool_name, "byq_market_index_daily");
+    assert.deepEqual(body, observed.arguments);
+    send(200, { state: "ready", data_version: body?.data_version, rows: [{ symbol: "000300.SH" }] });
     return;
   }
   if (req.url === "/v1/research/backtest-tasks" && req.method === "POST") {
@@ -613,6 +625,18 @@ try {
   ]);
   assert.equal(requests.at(-1)?.body?.outcome, "settled");
   assert.equal(requests.at(-1)?.body?.mcp_request_id, requests[beforePreparation].body?.mcp_request_id);
+
+  const beforeIndexRead = requests.length;
+  const indexRead = await acp.value.callTool({ name: "byq_market_index_daily", arguments: {
+    symbols: ["000300.SH"], start_date: "2016-11-25", end_date: "2026-11-24", data_version: "f".repeat(64),
+  } });
+  assert.equal(indexRead.isError, false);
+  assert.deepEqual(requests.slice(beforeIndexRead).map(request => request.path), [
+    "/internal/acp/tool-ingress-observe", "/v1/data/research/index-daily", "/internal/acp/tool-ingress-settle",
+  ]);
+  assert.equal(requests.at(-1)?.body?.outcome, "settled");
+  assert.equal(requests.at(-1)?.body?.mcp_request_id, requests[beforeIndexRead].body?.mcp_request_id);
+  assert.equal(requests.at(-1)?.body?.index_data_version, "f".repeat(64));
 
   const backtestArgs = {
     task_id: "task-wire",

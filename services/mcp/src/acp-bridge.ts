@@ -82,6 +82,7 @@ export type AcpToolIngressSettlementReceipt = {
   outcome: AcpToolIngressOutcome;
   settlement_sha256: string;
   refusal_receipt_sha256?: string;
+  index_data_version?: string;
 };
 
 export type AcpAuthorizationDenialReceipt = {
@@ -604,8 +605,11 @@ export async function settleAcpToolIngress(
   outcome: AcpToolIngressOutcome,
   fetcher: Fetcher = fetch,
   refusalReceipt?: AcpToolIngressDenialReceipt,
+  indexDataVersion?: string,
 ): Promise<AcpToolIngressSettlementReceipt | undefined> {
   if ((outcome === "denied") !== Boolean(refusalReceipt)) return undefined;
+  if (indexDataVersion !== undefined && (outcome !== "settled" || ingress.tool_name !== "byq_market_index_daily"
+      || !SHA256.test(indexDataVersion))) return undefined;
   if (refusalReceipt) {
     if (claims.aud !== "byq-product-mcp") return undefined;
     const matches = refusalReceipt.schema_version === "byq-acp-authorization-denial-receipt.v1"
@@ -631,6 +635,7 @@ export async function settleAcpToolIngress(
     event_sha256: ingress.event_sha256,
     outcome,
     ...(refusalReceipt ? { refusal_receipt: refusalReceipt } : {}),
+    ...(indexDataVersion ? { index_data_version: indexDataVersion } : {}),
   };
   try {
     const response = await fetcher(`${backendUrl}${ingressPath(claims, "settle")}`, {
@@ -639,7 +644,8 @@ export async function settleAcpToolIngress(
     const payload = await jsonObject(response);
     const expectedReceiptFields = ["schema_version", "mcp_request_id", "root_run_id",
       "runtime_boot_id", "native_agent_session_id", "tool_name", "sequence", "event_sha256",
-      "outcome", "settlement_sha256", ...(refusalReceipt ? ["refusal_receipt_sha256"] : [])];
+      "outcome", "settlement_sha256", ...(refusalReceipt ? ["refusal_receipt_sha256"] : []),
+      ...(indexDataVersion ? ["index_data_version"] : [])];
     if (!payload || !hasExactKeys(payload, expectedReceiptFields)) return undefined;
     const receipt = payload as unknown as AcpToolIngressSettlementReceipt;
     const valid = receipt.schema_version === "byq-acp-tool-ingress-settle-receipt.v1"
@@ -651,6 +657,7 @@ export async function settleAcpToolIngress(
       && receipt.sequence === ingress.sequence
       && receipt.event_sha256 === ingress.event_sha256
       && receipt.outcome === outcome
+      && receipt.index_data_version === indexDataVersion
       && (refusalReceipt
         ? receipt.refusal_receipt_sha256 === refusalReceipt.receipt_sha256
           && receipt.settlement_sha256 === canonicalAcpSha256({

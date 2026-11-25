@@ -122,7 +122,7 @@ def _observe_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict
 
 def _settle_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[str, object],
                  receipt: dict[str, object], outcome: str = "settled",
-                 refusal_receipt: dict[str, object] | None = None) -> dict:
+                 refusal_receipt: dict[str, object] | None = None, *, index_data_version: str | None = None) -> dict:
     body = {"schema_version": "byq-acp-tool-ingress-settle.v1",
         "mcp_request_id": receipt["mcp_request_id"], "root_run_id": receipt["root_run_id"],
         "runtime_boot_id": receipt["runtime_boot_id"],
@@ -132,6 +132,8 @@ def _settle_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[
         "event_sha256": receipt["event_sha256"], "outcome": outcome}
     if outcome == "denied":
         body["refusal_receipt"] = refusal_receipt
+    if index_data_version is not None:
+        body["index_data_version"] = index_data_version
     return store.settle_acp_tool_ingress(body, trusted_scope=_scope(ctx, identity["root_run_id"]))
 
 
@@ -2031,3 +2033,32 @@ def test_research_data_continuation_limits_tools_to_the_verified_scope():
     ):
         with pytest.raises(AgentUnauthorized):
             check(scope, tool, args)
+
+
+def test_index_continuation_allows_only_its_verified_scope_version_and_pages():
+    from app.agent_research import AgentUnauthorized
+    from app.domain_call_admission import _require_research_continuation_arguments as check
+    from app.research_data_continuation import ResearchDataContinuationStore
+
+    scope = {
+        "asset_type": "index", "symbols": ["000300.SH", "000905.SH"],
+        "start_date": "20161125", "end_date": "20261124", "data_requirements": {},
+    }
+    version = "a" * 64
+    arguments = {
+        "symbols": scope["symbols"], "start_date": "2016-11-25", "end_date": "2026-11-24",
+        "data_version": version, "offset": 200, "limit": 100,
+    }
+    tool = "byq_market_index_daily"
+    check(scope, tool, arguments, data_version=version)
+    check(scope, "byq_agent_authorize", {"run_id": "agent_run_" + "b" * 32, "action": tool})
+    instruction = ResearchDataContinuationStore._instruction(scope, version)
+    assert tool in instruction and version in instruction and arguments["start_date"] in instruction
+    for changes in ({"symbols": ["000300.SH"]}, {"start_date": "2016-11-26"}, {"data_version": "b" * 64}):
+        with pytest.raises(AgentUnauthorized):
+            check(scope, tool, {**arguments, **changes}, data_version=version)
+    for other_tool in ("byq_market_daily", "byq_data_demand_create"):
+        with pytest.raises(AgentUnauthorized):
+            check(scope, other_tool, {}, data_version=version)
+    with pytest.raises(AgentUnauthorized):
+        check({**scope, "asset_type": None}, tool, arguments, data_version=version)

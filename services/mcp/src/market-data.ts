@@ -9,6 +9,15 @@ export type MarketDailyRequest = {
   end_date?: string;
 };
 
+export type MarketIndexDailyRequest = {
+  symbols: string[];
+  start_date: string;
+  end_date: string;
+  data_version?: string;
+  offset?: number;
+  limit?: number;
+};
+
 export type MarketValuationRequest = {
   symbols: string[];
   trade_date: string;
@@ -128,7 +137,7 @@ export async function fetchByqMarketSessionContext(
 async function fetchPersistedResearch(
   backendUrl: string,
   path: string,
-  request: MarketValuationRequest | MarketFundamentalsRequest,
+  request: MarketValuationRequest | MarketFundamentalsRequest | MarketIndexDailyRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqMarketDailyResult> {
   try {
@@ -163,6 +172,14 @@ export async function fetchByqMarketValuation(
   fetcher: Fetcher = fetch,
 ): Promise<ByqMarketDailyResult> {
   return fetchPersistedResearch(backendUrl, "/v1/data/research/valuation", request, fetcher);
+}
+
+export function fetchByqMarketIndexDaily(
+  backendUrl: string,
+  request: MarketIndexDailyRequest,
+  fetcher: Fetcher = fetch,
+): Promise<ByqMarketDailyResult> {
+  return fetchPersistedResearch(backendUrl, "/v1/data/research/index-daily", request, fetcher);
 }
 
 export async function fetchByqMarketFundamentals(

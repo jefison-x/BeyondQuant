@@ -2,10 +2,22 @@ import assert from "node:assert/strict";
 
 import {
   fetchByqMarketDaily,
+  fetchByqMarketIndexDaily,
   fetchByqMarketFundamentals,
   fetchByqMarketSessionContext,
   fetchByqMarketValuation,
 } from "../src/market-data.js";
+
+const indexScope = { symbols: ["000300.SH"], start_date: "2016-11-25", end_date: "2026-11-24",
+  data_version: "a".repeat(64), offset: 50, limit: 25 };
+const indexHistory = await fetchByqMarketIndexDaily("http://backend:8000", indexScope, async (url, init) => {
+  assert.equal(url, "http://backend:8000/v1/data/research/index-daily");
+  assert.equal(init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(init?.body)), indexScope);
+  return Response.json({ state: "ready", rows: [{ ts_code: "000300.SH" }], data_version: indexScope.data_version });
+});
+assert.equal(indexHistory.isError, false);
+assert.equal(JSON.parse(indexHistory.content[0].text).data_version, indexScope.data_version);
 
 const sessionContext = await fetchByqMarketSessionContext(
   "http://backend:8000",

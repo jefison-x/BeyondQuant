@@ -118,21 +118,43 @@ def main() -> int:
                     if before.get("state") == "ready":
                         automation.complete_data_repair(str(repair["request_id"]))
                         continue
+                    if before.get("state") == "no_sessions":
+                        automation.complete_data_repair(str(repair["request_id"]), error="index_history_no_sessions")
+                        continue
                     provider = provider_factory()
                     cursor = datetime.strptime(str(repair["start_date"]), "%Y%m%d")
                     end = datetime.strptime(str(repair["end_date"]), "%Y%m%d")
+                    is_index_history = requirement.get("kind") == "index_history"
                     refresh_calendar = requirement.get("kind") != "index_snapshot" and (
                         not scoped or not before.get("calendar_complete")
                     )
-                    while refresh_calendar and cursor <= end:
-                        chunk_end = min(end, cursor + timedelta(days=400))
-                        automation.refresh_calendar(
-                            provider, start_date=cursor.strftime("%Y%m%d"),
-                            end_date=chunk_end.strftime("%Y%m%d"),
-                        )
-                        cursor = chunk_end + timedelta(days=1)
+                    if refresh_calendar and is_index_history:
+                        for gap in readiness.calendar_missing_ranges(
+                            str(repair["start_date"]), str(repair["end_date"]), max_days=401,
+                        ):
+                            automation.refresh_calendar(
+                                provider, start_date=gap["start_date"], end_date=gap["end_date"],
+                                only_missing=True,
+                            )
+                        before = readiness.assess(requirement)
+                        if not before.get("calendar_complete"):
+                            automation.complete_data_repair(
+                                str(repair["request_id"]), error="index_history_calendar_incomplete",
+                            )
+                            continue
+                        if before.get("state") == "no_sessions":
+                            automation.complete_data_repair(str(repair["request_id"]), error="index_history_no_sessions")
+                            continue
+                    else:
+                        while refresh_calendar and cursor <= end:
+                            chunk_end = min(end, cursor + timedelta(days=400))
+                            automation.refresh_calendar(
+                                provider, start_date=cursor.strftime("%Y%m%d"),
+                                end_date=chunk_end.strftime("%Y%m%d"),
+                            )
+                            cursor = chunk_end + timedelta(days=1)
                     bulk_dates = set()
-                    if scoped:
+                    if scoped and not is_index_history:
                         bulk_dates = conversation_repair_bulk_dates(requirement, readiness.assess(requirement), readiness)
                         if len(bulk_dates) > CONVERSATION_REPAIR_MAX_BULK_DATES:
                             automation.complete_data_repair(
@@ -141,6 +163,17 @@ def main() -> int:
                             continue
                     sync_declared_inputs(requirement, provider=provider, readiness_store=readiness)
                     assessment = readiness.assess(requirement)
+                    if is_index_history:
+                        if assessment.get("state") == "ready":
+                            automation.complete_data_repair(str(repair["request_id"]))
+                        else:
+                            error = (
+                                "index_history_not_published"
+                                if assessment.get("state") == "not_published"
+                                else "index_history_not_ready"
+                            )
+                            automation.complete_data_repair(str(repair["request_id"]), error=error)
+                        continue
                     plan = dict(assessment.get("repair_plan") or {})
                     supplement_dates = list(plan.get("session_supplements") or [])
                     if scoped:

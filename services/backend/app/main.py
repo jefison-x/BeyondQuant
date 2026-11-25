@@ -16,6 +16,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 from .domain_call_admission import DomainValidationRejected, _canonical_acp_arguments
 from .research_data_continuation import ResearchDataContinuationStore
+from .index_history import build_index_history_requirement
 from .business_job import project_business_job
 from .artifact_contract import project_artifact
 
@@ -1621,6 +1622,31 @@ def research_market_session_context() -> dict[str, object]:
     return _market_research_read(market_automation_store.market_session_context)
 
 
+@app.post("/v1/data/research/index-daily")
+def research_index_daily(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Read an authorized page of durable index history and its coverage evidence."""
+    scope = _acp_private_scope(request)
+    observation = request.headers.get("x-byq-acp-observation-id", "")
+    if re.fullmatch(r"[0-9a-f]{32}", observation) is None:
+        raise HTTPException(status_code=403, detail="exact index history tool observation required")
+    _closed_market_research_payload(payload, {"symbols", "start_date", "end_date", "offset", "limit", "data_version"})
+
+    def operation():
+        requirement = build_index_history_requirement(
+            payload.get("symbols"), payload.get("start_date"), payload.get("end_date"),
+        )
+        return research_data_continuation_store.read_index_history(scope, observation, payload,
+            lambda: _market_research_read(lambda: market_readiness_store.index_history_query(
+                requirement, offset=payload.get("offset", 0), limit=payload.get("limit", 20),
+                data_version=payload.get("data_version"),
+            )))
+
+    try:
+        return _data_demand_call(operation)
+    except AgentUnauthorized as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+
 @app.post("/v1/data/research/fundamentals")
 def research_fundamentals(payload: dict[str, Any]) -> dict[str, object]:
     """Read announcement-visible fundamentals already persisted by the Data Plane."""
@@ -2110,18 +2136,23 @@ def _data_demand_response(demand: dict[str, object]) -> dict[str, object]:
 @app.post("/v1/agent/data-demands", status_code=202)
 def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    if payload.get("scope_kind") == "conversation_research":
+    scope_kind = payload.get("scope_kind")
+    if scope_kind in ("conversation_research", "conversation_index_history"):
+        index_history = scope_kind == "conversation_index_history"
+        scope_fields = {"symbols", "start_date", "end_date"}
+        if not index_history:
+            scope_fields.add("data_requirements")
         if (payload.get("purpose") != "research" or set(payload) - {
-                "scope_kind", "purpose", "idempotency_key", "symbols", "start_date", "end_date", "data_requirements"
+                "scope_kind", "purpose", "idempotency_key", *scope_fields,
         } or not isinstance(payload.get("idempotency_key"), str)):
-            raise HTTPException(status_code=422, detail="会话补数仅支持明确的 A 股研究范围。")
-        scope_payload = {key: value for key, value in payload.items()
-                         if key in {"symbols", "start_date", "end_date", "data_requirements"}}
+            raise HTTPException(status_code=422, detail="会话补数需要明确的标的和日期范围。")
+        scope_payload = {key: value for key, value in payload.items() if key in scope_fields}
+
         def conversation_operation():
             scoped = data_demand_store.conversation_context(context)
             continuation = None
             on_submit = None
-            if request.headers.get("x-byq-root-run-id"):
+            if index_history or request.headers.get("x-byq-root-run-id"):
                 source = _acp_private_scope(request)
                 observation_id = request.headers.get("x-byq-acp-observation-id")
                 if (request.headers.get("x-byq-acp-origin") != "root"
@@ -2136,7 +2167,8 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
                         connection, demand_id, source, observation_id, arguments_sha256,
                     )
 
-            result, created = _submit_conversation_research_preparation(
+            submit = _submit_conversation_index_preparation if index_history else _submit_conversation_research_preparation
+            result, created = submit(
                 scope_payload, scoped, idempotency_key=payload["idempotency_key"], on_submit=on_submit,
             )
             if "demand_id" not in result:
@@ -2449,12 +2481,46 @@ def _conversation_research_preparation_receipt(
             "ProviderUnavailable": "数据源暂时不可用。可重试时将显示重试入口。",
             "ProviderRateLimited": "数据源暂时限流。可重试时将显示重试入口。",
             "ProviderAuthorizationError": "数据源拒绝了请求，请联系管理员检查数据源权限。",
+            "index_history_calendar_incomplete": "上交所日历未能覆盖所选日期，暂时无法核验指数行情。",
+            "index_history_no_sessions": "所选日期范围没有开市日。",
+            "index_history_not_published": "所选范围仍有指数行情尚未发布。",
+            "index_history_not_ready": "数据源已返回结果，但所选指数或日期的行情仍有缺口。",
         }
         receipt["error"] = messages.get(failure, "这次准备后仍有缺项，请复查原范围。")
-        revision = conversation_repair_retry_revision(record)
+        revision = None if scope.get("asset_type") == "index" else conversation_repair_retry_revision(record)
         if revision is not None:
             receipt["retry_token"] = revision
     return receipt
+
+
+def _submit_conversation_index_preparation(
+    payload: dict[str, Any], context: dict[str, str], *, idempotency_key: str, on_submit,
+) -> tuple[dict[str, object], bool]:
+    requirement = build_index_history_requirement(payload.get("symbols"), payload.get("start_date"), payload.get("end_date"))
+    scope = {key: requirement[key] for key in ("symbols", "start_date", "end_date")}
+    scope.update(asset_type="index", use_case="research", data_requirements={})
+    assessment = _market_research_read(lambda: market_readiness_store.assess(requirement))
+    if _research_preparation_ready(assessment):
+        return {"request_id": None, "status": "ready", "scope": scope}, False
+    if assessment.get("state") == "no_sessions":
+        return {"request_id": None, "status": "no_sessions", "scope": scope,
+                "error": "所选日期范围没有开市日。"}, False
+    local = datetime.now(ZoneInfo("Asia/Shanghai"))
+    today = local.strftime("%Y%m%d")
+    end_date = scope["end_date"]
+    window = "18:30"
+    if end_date == today:
+        config = _market_automation_call(market_automation_store.get_config)
+        window = max(window, config["schedule_time"])
+    if end_date > today or (end_date == today and local.strftime("%H:%M") < window):
+        return {
+            "request_id": None, "status": "not_published", "scope": scope,
+            "error": "指定范围仍含未到发布窗口的日期。可先研究已发布的指数行情。",
+        }, False
+    return data_demand_store.submit_conversation_preparation(
+        context=context, scope=scope, requirement=requirement, automation_store=market_automation_store,
+        idempotency_key=idempotency_key, on_submit=on_submit,
+    )
 
 
 def _submit_conversation_research_preparation(
@@ -2597,6 +2663,8 @@ def retry_conversation_research_preparation(
         receipt = _conversation_research_preparation_receipt(request_id, scoped)
         if receipt["status"] == "completed":
             return receipt
+        if receipt["scope"].get("asset_type") == "index":
+            raise DataDemandConflict("该指数范围的补数由后台任务管理。")
         _market_automation_call(lambda: data_demand_store.retry_conversation_preparation(
             request_id, context=scoped, terminal_revision=token, automation_store=market_automation_store,
         ))

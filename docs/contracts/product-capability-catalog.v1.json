@@ -21,7 +21,7 @@
       "route_id": "/agent",
       "route_parent_capability_id": "xiaoba-research-conversation",
       "audience": "USER",
-      "purpose": "在当前个人研究会话检查本地日线、估值或财务指标覆盖。助手可为已支持的数据缺口自动发起有界补数，并在原会话复查和续研。",
+      "purpose": "在当前个人研究会话检查股票日线、估值、财务或宽基指数日线覆盖。助手可自动准备已支持的数据缺口，并在原会话复查和续研。",
       "keywords": [
         "准备研究数据",
         "研究数据准备",
@@ -29,11 +29,15 @@
         "数据缺口",
         "继续研究",
         "续研",
-        "缺数据"
+        "缺数据",
+        "指数历史",
+        "沪深300",
+        "中证500"
       ],
       "prerequisites": [
         "已登录，且申请范围属于本人当前活动的个人会话",
-        "规范A股代码1至20只、最多180个自然日，最多涉及5个缺失交易日"
+        "股票补数支持1至20只规范A股代码、最多180个自然日和5个需整日补数的交易日",
+        "指数补数支持沪深300和中证500最长十年的日线和所需上交所日历"
       ],
       "support": [
         "EXPLAIN",
@@ -43,6 +47,7 @@
       ],
       "agent_tools": [
         "byq_market_daily",
+        "byq_market_index_daily",
         "byq_market_valuation",
         "byq_market_fundamentals",
         "byq_data_demand_create",

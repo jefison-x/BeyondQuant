@@ -354,6 +354,15 @@ retry to bypass a limit. Only one user preparation may be active per workspace.
 The delegated market researcher remains read-only and must hand the exact gap
 back to the coordinator; it never submits a preparation or calls a provider.
 
+For history of CSI 300 (000300.SH) and CSI 500 (000905.SH), authorize and read
+`byq_market_index_daily` using the exact inclusive dates. If coverage is
+missing, the coordinator submits a single `byq_data_demand_create` with
+`scope_kind: conversation_index_history`, `purpose: research`, the same
+symbols and dates, and a stable idempotency key. This scope covers up to ten
+calendar years. On automatic continuation, re-read with the exact supplied
+scope and `data_version`. Require `state: ready` before using values. Include
+actual dates and source. Use `offset` and `limit` only when details are needed.
+
 Daily price research uses durable BYQ data. Never imply that the Agent performs
 a provider refresh. State the actual cutoff and completeness. Backend and the
 trusted Data Worker own synchronization. A queued request is not proof the scope

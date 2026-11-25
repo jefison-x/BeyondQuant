@@ -24,6 +24,7 @@ _ACP_AUDIT_MARKER_SCHEMA = "byq-acp-audit-validation-marker.v1"
 _RESEARCH_CONTINUATION_READ_TOOLS = frozenset({
     "byq_market_daily", "byq_market_valuation", "byq_market_fundamentals",
 })
+_INDEX_HISTORY_TOOL = "byq_market_index_daily"
 _RESEARCH_CONTINUATION_BOOTSTRAP_TOOLS = frozenset({
     "byq_health", "byq_agent_roles", "byq_agent_context",
 })
@@ -41,12 +42,17 @@ def _research_continuation_date(value: object) -> str | None:
     return value
 
 
-def _require_research_continuation_arguments(scope: object, tool_name: str, arguments: object) -> None:
+def _require_research_continuation_arguments(
+    scope: object, tool_name: str, arguments: object, *, data_version: str | None = None,
+) -> None:
     """Limit an automatically resumed root to reads inside its sealed demand."""
     from .agent_research import AgentUnauthorized
 
     def denied() -> None:
         raise AgentUnauthorized("automatic research continuation is outside its verified data scope")
+
+    index_history = isinstance(scope, dict) and scope.get("asset_type") == "index"
+    read_tools = {_INDEX_HISTORY_TOOL} if index_history else _RESEARCH_CONTINUATION_READ_TOOLS
 
     if tool_name in _RESEARCH_CONTINUATION_BOOTSTRAP_TOOLS:
         if arguments != {}:
@@ -58,7 +64,7 @@ def _require_research_continuation_arguments(scope: object, tool_name: str, argu
                 or set(arguments) - {"run_id", "action", "resource_type", "resource_id"}
                 or not isinstance(arguments.get("run_id"), str)
                 or _RESEARCH_CONTINUATION_AGENT_RUN.fullmatch(arguments["run_id"]) is None
-                or arguments.get("action") not in _RESEARCH_CONTINUATION_READ_TOOLS
+                or arguments.get("action") not in read_tools
                 or arguments.get("resource_type") not in {None, "market_data", arguments["action"].removeprefix("byq_")}):
             denied()
         if arguments.get("resource_id") is not None:
@@ -72,7 +78,7 @@ def _require_research_continuation_arguments(scope: object, tool_name: str, argu
                 or set(arguments) - {"run_id", "action", "outcome", "resource_type", "resource_id", "detail"}
                 or not isinstance(arguments.get("run_id"), str)
                 or _RESEARCH_CONTINUATION_AGENT_RUN.fullmatch(arguments["run_id"]) is None
-                or arguments.get("action") not in _RESEARCH_CONTINUATION_READ_TOOLS
+                or arguments.get("action") not in read_tools
                 or not isinstance(arguments.get("outcome"), str)
                 or arguments.get("resource_type") not in {None, "market_data", arguments["action"].removeprefix("byq_")}):
             denied()
@@ -82,8 +88,24 @@ def _require_research_continuation_arguments(scope: object, tool_name: str, argu
                 denied()
         return
 
-    if tool_name not in _RESEARCH_CONTINUATION_READ_TOOLS or not isinstance(scope, dict):
+    if tool_name not in read_tools or not isinstance(scope, dict):
         denied()
+
+    if index_history:
+        if (not isinstance(arguments, dict)
+                or set(arguments) - {"symbols", "start_date", "end_date", "data_version", "offset", "limit"}
+                or not isinstance(arguments.get("symbols"), list)
+                or any(not isinstance(symbol, str) for symbol in arguments["symbols"])
+                or sorted(arguments["symbols"]) != scope.get("symbols")
+                or type(arguments.get("offset", 0)) is not int or arguments.get("offset", 0) < 0
+                or type(arguments.get("limit", 20)) is not int or not 1 <= arguments.get("limit", 20) <= 200
+                or not isinstance(data_version, str) or _ACP_SHA256.fullmatch(data_version) is None
+                or arguments.get("data_version") != data_version
+                or any(not isinstance(arguments.get(field), str)
+                       or arguments[field].replace("-", "") != scope.get(field)
+                       for field in ("start_date", "end_date"))):
+            denied()
+        return
 
     symbols = scope.get("symbols")
     start = _research_continuation_date(scope.get("start_date"))
@@ -1248,7 +1270,8 @@ class DomainCallEvidenceMixin:
                 new_dispatch=True)
 
             research_continuation = fetch_one(connection, """SELECT owner_principal,workspace_id,session_id,
-                trace_id,scope_json FROM research_data_continuations WHERE dispatch_root_id=:root FOR SHARE""",
+                trace_id,scope_json,ready_input_sha256 FROM research_data_continuations
+                WHERE dispatch_root_id=:root FOR SHARE""",
                 {"root": identity["root_run_id"]})
             if research_continuation is not None:
                 if (identity["origin"] != "root" or identity["depth"] != 0
@@ -1258,6 +1281,7 @@ class DomainCallEvidenceMixin:
                     raise AgentUnauthorized("automatic research continuation has the wrong Agent identity")
                 _require_research_continuation_arguments(
                     research_continuation["scope_json"], tool_name, payload["arguments"],
+                    data_version=research_continuation["ready_input_sha256"],
                 )
 
             prior = fetch_one(connection, "SELECT * FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
@@ -1641,6 +1665,12 @@ class DomainCallEvidenceMixin:
             raise ValueError("exact ACP tool ingress settlement required")
         outcome = payload.get("outcome")
         expected_fields = fields | ({"refusal_receipt"} if outcome == "denied" else set())
+        index_version = payload.get("index_data_version")
+        if "index_data_version" in payload:
+            if (payload.get("tool_name") != _INDEX_HISTORY_TOOL or outcome != "settled"
+                    or not isinstance(index_version, str) or _ACP_SHA256.fullmatch(index_version) is None):
+                raise ValueError("index data version requires a settled index history read")
+            expected_fields.add("index_data_version")
         if set(payload) != expected_fields:
             raise ValueError("exact ACP tool ingress settlement required")
         request_id = payload["mcp_request_id"]
@@ -1714,6 +1744,7 @@ class DomainCallEvidenceMixin:
                 if (row["status"] != ("settled" if outcome == "denied" else outcome)
                         or row["settlement_json"] is None
                         or row["settlement_json"].get("outcome") != outcome
+                        or row["settlement_json"].get("index_data_version") != index_version
                         or (outcome == "denied" and row["settlement_json"].get("refusal_receipt_sha256")
                             != denial_receipt["receipt_sha256"])):
                     raise AgentConflict("ACP tool ingress settlement outcome is already fixed")
@@ -1729,6 +1760,8 @@ class DomainCallEvidenceMixin:
                 "sequence": sequence, "event_sha256": event_sha256, "outcome": outcome}
             if denial_receipt is not None:
                 settlement_payload["refusal_receipt_sha256"] = denial_receipt["receipt_sha256"]
+            if index_version is not None:
+                settlement_payload["index_data_version"] = index_version
             settlement_sha256 = acp_binding_sha256(settlement_payload)
             receipt = {"schema_version": "byq-acp-tool-ingress-settle-receipt.v1",
                 "mcp_request_id": request_id, "root_run_id": identity["root_run_id"],
@@ -1738,6 +1771,8 @@ class DomainCallEvidenceMixin:
                 "outcome": outcome, "settlement_sha256": settlement_sha256}
             if denial_receipt is not None:
                 receipt["refusal_receipt_sha256"] = denial_receipt["receipt_sha256"]
+            if index_version is not None:
+                receipt["index_data_version"] = index_version
             stored_status = "settled" if outcome == "denied" else outcome
             stored_receipt = ({**receipt, "audit_validation_refusal_marker": audit_marker}
                               if audit_marker is not None else receipt)

@@ -27,6 +27,7 @@ export type ResearchDataRequirements = {
 };
 
 export interface ResearchPreparationScope {
+  asset_type?: "index";
   symbols: string[];
   start_date: string;
   end_date: string;
@@ -34,29 +35,33 @@ export interface ResearchPreparationScope {
   data_requirements: ResearchDataRequirements;
 }
 
-export function normalizeResearchPreparationScope(value: unknown): ResearchPreparationScope | null {
+export function normalizeResearchPreparationScope(value: unknown, { allowIndexHistory = false } = {}): ResearchPreparationScope | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
+  const indexHistory = allowIndexHistory && item.asset_type === "index";
+  if (item.asset_type !== undefined && !indexHistory) return null;
   if (!Array.isArray(item.symbols) || item.symbols.length < 1
       || item.symbols.length > MAX_RESEARCH_PREPARATION_SYMBOLS
       || item.use_case !== "research") return null;
   const symbols = [...new Set(item.symbols.map((symbol) =>
     typeof symbol === "string" ? symbol.trim().toUpperCase() : ""))];
-  if (symbols.length !== item.symbols.length
-      || symbols.some((symbol) => !/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))) return null;
+  const symbolPattern = indexHistory ? /^(000300|000905)\.SH$/ : /^\d{6}\.(SH|SZ|BJ)$/;
+  if (symbols.length !== item.symbols.length || symbols.some((symbol) => !symbolPattern.test(symbol))) return null;
   const startDate = normalizeDate(item.start_date);
   const endDate = normalizeDate(item.end_date);
   if (!startDate || !endDate || dayDifference(startDate, endDate) < 0
-      || dayDifference(startDate, endDate) + 1 > MAX_RESEARCH_PREPARATION_DAYS) return null;
+      || (!indexHistory && dayDifference(startDate, endDate) + 1 > MAX_RESEARCH_PREPARATION_DAYS)) return null;
 
   const rawRequirements = item.data_requirements ?? {};
   if (typeof rawRequirements !== "object" || rawRequirements === null || Array.isArray(rawRequirements)) return null;
   const requirements = rawRequirements as Record<string, unknown>;
+  if (indexHistory && Object.keys(requirements).length) return null;
   if (Object.keys(requirements).some((key) => !["daily_basic", "fundamentals"].includes(key))) return null;
   const dailyBasic = normalizeFieldList(requirements.daily_basic, VALUATION_FIELDS.map((field) => field.value));
   const fundamentals = normalizeFieldList(requirements.fundamentals, FINANCIAL_FIELDS.map((field) => field.value));
   if (dailyBasic === null || fundamentals === null) return null;
   return {
+    ...(indexHistory ? { asset_type: "index" as const } : {}),
     symbols,
     start_date: startDate,
     end_date: endDate,

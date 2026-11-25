@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .data_demand import DataDemandConflict, DataDemandNotFound, DataDemandPersistenceError
 from .db import PgStoreMixin, execute, fetch_one
+from .domain_call_admission import _INDEX_HISTORY_TOOL, _canonical_acp_arguments, _require_research_continuation_arguments
 
 
 _ROOT = re.compile(r"^[0-9a-f]{32}$")
@@ -136,7 +137,21 @@ class ResearchDataContinuationStore(PgStoreMixin):
         return newer is not None
 
     @staticmethod
-    def _instruction(scope: dict[str, object]) -> str:
+    def _instruction(scope: dict[str, object], data_version: str | None = None) -> str:
+        if scope.get("asset_type") == "index":
+            arguments = {field: scope[field] for field in ("symbols", "start_date", "end_date")}
+            for field in ("start_date", "end_date"):
+                day = scope[field]
+                arguments[field] = f"{day[:4]}-{day[4:6]}-{day[6:]}"
+            arguments["data_version"] = data_version
+            serialized = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            return (
+                "继续回答本会话中原用户问题。使用本轮 AgentRun 授权 byq_market_index_daily，"
+                f"然后使用该只读工具重新读取已核验数据，参数为 {serialized}。"
+                "按工具返回的范围、来源和数据版本说明结论。需要明细时用 offset 和 limit 翻页，"
+                "其他参数保持一致。如版本变化、读取失败或仍缺数据，说明对结论的影响。"
+                "不得扩大范围、再次补数或修改业务资产。"
+            )
         public_scope = {key: scope[key] for key in (
             "symbols", "start_date", "end_date", "data_requirements",
         ) if key in scope}
@@ -160,6 +175,9 @@ class ResearchDataContinuationStore(PgStoreMixin):
         if (not isinstance(scope, dict) or scope.get("kind") != "conversation_research"
                 or not isinstance(requirements, list) or not 1 <= len(requirements) <= 16):
             return None
+        index_history = scope.get("asset_type") == "index"
+        if index_history and len(requirements) != 1:
+            return None
         if (not isinstance(scope.get("symbols"), list) or not scope["symbols"]
                 or not isinstance(scope.get("start_date"), str)
                 or not isinstance(scope.get("end_date"), str)
@@ -168,6 +186,8 @@ class ResearchDataContinuationStore(PgStoreMixin):
         identities: list[dict[str, str]] = []
         for requirement in requirements:
             if not isinstance(requirement, dict):
+                return None
+            if (requirement.get("kind") == "index_history") != index_history:
                 return None
             if (requirement.get("symbols") != scope["symbols"]
                     or requirement.get("start_date") != scope["start_date"].replace("-", "")
@@ -229,9 +249,38 @@ class ResearchDataContinuationStore(PgStoreMixin):
         }
         if instruction:
             result["instruction"] = ResearchDataContinuationStore._instruction(
-                dict(row.get("scope_json") or {}),
+                dict(row.get("scope_json") or {}), row.get("ready_input_sha256"),
             )
         return result
+
+    def read_index_history(self, scope, observation_id, arguments, read):
+        """Read only through the exact ingress and its sealed scope, if any."""
+        digest, _ = _canonical_acp_arguments(arguments)
+        params = {**scope, "observation": observation_id, "arguments": digest, "tool": _INDEX_HISTORY_TOOL}
+        with self._transaction() as connection:
+            ingress = fetch_one(connection, """SELECT i.origin,i.depth FROM agent_acp_tool_ingress_observations i
+                JOIN agent_runtime_turns t ON t.root_run_id=i.root_run_id
+                WHERE i.mcp_request_id=:observation AND i.root_run_id=:root AND i.runtime_boot_id=:boot_id
+                  AND i.owner_principal=:owner AND i.workspace_id=:workspace AND i.session_id=:session
+                  AND i.actor_principal=:actor AND i.trace_id=:trace AND i.dsh_run_id=:generation
+                  AND i.tool_name=:tool AND i.arguments_sha256=:arguments AND i.status='pending'
+                  AND t.status='active' AND t.authority_status='active' AND t.authority_boot_id=:boot_id
+                  AND EXISTS (SELECT 1 FROM agent_runtime_authority_current a
+                    WHERE a.authority_key='current' AND a.boot_id=:boot_id)""", params)
+            if ingress is None:
+                raise DataDemandConflict("指数行情读取没有匹配的当前会话授权。")
+            continuation = fetch_one(connection, """SELECT * FROM research_data_continuations
+                WHERE dispatch_root_id=:root FOR SHARE""", params)
+            if continuation is None:
+                return read()
+            if (continuation["status"] != "bound" or ingress != {"origin": "root", "depth": 0}
+                    or continuation["scope_json"].get("asset_type") != "index"):
+                raise DataDemandConflict("该续研授权未绑定指数历史范围。")
+            version = continuation["ready_input_sha256"]
+            _require_research_continuation_arguments(
+                continuation["scope_json"], _INDEX_HISTORY_TOOL, arguments, data_version=version,
+            )
+            return read()
 
     def watch(self, connection, demand_id: str, acp_scope: dict[str, str],
               observation_id: str, arguments_sha256: str) -> dict[str, object]:
@@ -437,7 +486,7 @@ class ResearchDataContinuationStore(PgStoreMixin):
             ready_input_sha256 = self._assess_ready(row, readiness_store)
             if ready_input_sha256 is None:
                 return None
-            instruction = self._instruction(dict(row["scope_json"]))
+            instruction = self._instruction(dict(row["scope_json"]), ready_input_sha256)
             content_sha256 = _message_sha256(instruction)
             updated = fetch_one(connection, """UPDATE research_data_continuations SET status='dispatching',
                 reason='dispatch_claimed',ready_input_sha256=:ready,dispatch_boot_id=:boot,
@@ -556,11 +605,16 @@ class ResearchDataContinuationStore(PgStoreMixin):
                                 "runtime_" + outcome)
         if outcome != "completed":
             return row
+        index_history = row["scope_json"].get("asset_type") == "index"
         read = fetch_one(connection, """SELECT 1 AS present FROM agent_acp_tool_ingress_observations
             WHERE root_run_id=:root AND origin='root' AND status='settled'
               AND settlement_json->>'outcome'='settled'
-              AND tool_name IN ('byq_market_daily','byq_market_valuation','byq_market_fundamentals') LIMIT 1""",
-            {"root": row["dispatch_root_id"]})
+              AND ((:index_history AND tool_name=:index_tool
+                    AND settlement_json->>'index_data_version'=:version)
+                   OR (NOT :index_history AND tool_name IN
+                       ('byq_market_daily','byq_market_valuation','byq_market_fundamentals'))) LIMIT 1""",
+            {"root": row["dispatch_root_id"], "index_history": index_history,
+             "index_tool": _INDEX_HISTORY_TOOL, "version": row.get("ready_input_sha256")})
         if read is None:
             return self._finish(connection, row, "failed", "no_verified_market_read")
         answer = fetch_one(connection, """SELECT 1 AS present FROM product_conversation_messages m

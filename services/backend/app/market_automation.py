@@ -14,7 +14,7 @@ import secrets
 import uuid
 from calendar import monthrange
 from contextlib import nullcontext
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -31,7 +31,7 @@ from .data_sync import DataSyncStore, _safe_provider_error
 from .db import PgStoreMixin, execute, fetch_one
 from .market_data import MarketDataStore
 from .index_catalog import INDEX_WEIGHT_LOOKBACK_DAYS, SUPPORTED_INDEXES
-from .market_readiness import MarketReadinessStore
+from .market_readiness import MarketReadinessStore, _verified_calendar_document
 from .pg_import import KEEP_NEW
 
 
@@ -387,54 +387,134 @@ class MarketAutomationStore(PgStoreMixin):
             )
         return result
 
+    def _persist_calendar_result(
+        self, connection, result, *, now: str, only_if_unverified: bool,
+    ) -> tuple[int, int]:
+        persisted = 0
+        open_count = 0
+        for session in result.sessions:
+            if only_if_unverified:
+                current = fetch_one(connection, """SELECT trade_date,exchange,is_open,previous_open_date,
+                        data_source,request_fingerprint,retrieved_at,content_sha256
+                    FROM market_trading_sessions WHERE trade_date=:date FOR UPDATE""",
+                    {"date": session.trade_date})
+                if current is not None and _verified_calendar_document(current) is not None:
+                    continue
+            content = session.as_dict()
+            execute(
+                connection,
+                """INSERT INTO market_trading_sessions
+                   (trade_date, exchange, is_open, previous_open_date, data_source,
+                    request_fingerprint, retrieved_at, content_sha256, updated_at)
+                   VALUES (:trade_date, :exchange, :is_open, :previous_open_date,
+                           'tushare', :request_fingerprint, :retrieved_at, :sha, :now)
+                   ON CONFLICT (trade_date) DO UPDATE SET
+                     exchange = excluded.exchange, is_open = excluded.is_open,
+                     previous_open_date = excluded.previous_open_date,
+                     data_source = excluded.data_source,
+                     request_fingerprint = excluded.request_fingerprint,
+                     retrieved_at = excluded.retrieved_at,
+                     content_sha256 = excluded.content_sha256,
+                     updated_at = excluded.updated_at""",
+                {
+                    **content,
+                    "request_fingerprint": result.provenance.request_fingerprint,
+                    "retrieved_at": result.provenance.retrieved_at,
+                    "sha": _hash(content),
+                    "now": now,
+                },
+            )
+            persisted += 1
+            open_count += int(bool(session.is_open))
+        if persisted:
+            imported_dates = [str(item.trade_date) for item in result.sessions]
+            execute(connection, """DELETE FROM market_trading_calendar_import_proofs
+                WHERE start_date <= :end_date AND end_date >= :start_date""",
+                {"start_date": min(imported_dates), "end_date": max(imported_dates)})
+        return persisted, open_count
+
     def refresh_calendar(
         self,
         provider: TushareProvider,
         *,
         start_date: str,
         end_date: str,
+        only_missing: bool = False,
     ) -> dict[str, object]:
-        result = provider.fetch_trading_calendar(TradingCalendarRequest(start_date, end_date))
-        if not result.sessions:
-            raise ProviderProtocolError("provider returned an empty trading calendar")
-        now = _now()
+        request = TradingCalendarRequest(start_date, end_date).normalized()
+        if not only_missing:
+            result = provider.fetch_trading_calendar(request)
+            if not result.sessions:
+                raise ProviderProtocolError("provider returned an empty trading calendar")
+            now = _now()
+            with self._transaction() as connection:
+                self._persist_calendar_result(connection, result, now=now, only_if_unverified=False)
+            return {
+                "start_date": request.start_date,
+                "end_date": request.end_date,
+                "row_count": len(result.sessions),
+                "open_count": sum(item.is_open for item in result.sessions),
+                "request_fingerprint": result.provenance.request_fingerprint,
+            }
+
+        first = datetime.strptime(request.start_date, "%Y%m%d").date()
+        last = datetime.strptime(request.end_date, "%Y%m%d").date()
+        imported_count = 0
+        imported_open_count = 0
+        request_fingerprint = None
         with self._transaction() as connection:
-            for session in result.sessions:
-                content = session.as_dict()
-                execute(
-                    connection,
-                    """INSERT INTO market_trading_sessions
-                       (trade_date, exchange, is_open, previous_open_date, data_source,
-                        request_fingerprint, retrieved_at, content_sha256, updated_at)
-                       VALUES (:trade_date, :exchange, :is_open, :previous_open_date,
-                               'tushare', :request_fingerprint, :retrieved_at, :sha, :now)
-                       ON CONFLICT (trade_date) DO UPDATE SET
-                         exchange = excluded.exchange, is_open = excluded.is_open,
-                         previous_open_date = excluded.previous_open_date,
-                         data_source = excluded.data_source,
-                         request_fingerprint = excluded.request_fingerprint,
-                         retrieved_at = excluded.retrieved_at,
-                         content_sha256 = excluded.content_sha256,
-                         updated_at = excluded.updated_at""",
-                    {
-                        **content,
-                        "request_fingerprint": result.provenance.request_fingerprint,
-                        "retrieved_at": result.provenance.retrieved_at,
-                        "sha": _hash(content),
-                        "now": now,
-                    },
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
+                    {"key": "market-trading-calendar.v1"})
+            existing_rows = execute(connection, """SELECT trade_date,exchange,is_open,previous_open_date,
+                    data_source,request_fingerprint,retrieved_at,content_sha256
+                FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+                {"start": request.start_date, "end": request.end_date})
+            verified_dates = {
+                str(row["trade_date"]) for row in existing_rows
+                if _verified_calendar_document(row) is not None
+            }
+            gaps: list[tuple[date, date]] = []
+            gap_start: date | None = None
+            gap_end: date | None = None
+            for offset in range((last - first).days + 1):
+                current = first + timedelta(days=offset)
+                compact = current.strftime("%Y%m%d")
+                if compact in verified_dates:
+                    if gap_start is not None and gap_end is not None:
+                        gaps.append((gap_start, gap_end))
+                    gap_start = gap_end = None
+                    continue
+                if gap_start is None:
+                    gap_start = gap_end = current
+                else:
+                    gap_end = current
+            if gap_start is not None and gap_end is not None:
+                gaps.append((gap_start, gap_end))
+            now = _now()
+            for gap_start, gap_end in gaps:
+                gap_first = gap_start.strftime("%Y%m%d")
+                gap_last = gap_end.strftime("%Y%m%d")
+                result = provider.fetch_trading_calendar(TradingCalendarRequest(gap_first, gap_last))
+                expected_dates = {
+                    (gap_start + timedelta(days=offset)).strftime("%Y%m%d")
+                    for offset in range((gap_end - gap_start).days + 1)
+                }
+                fetched_dates = [str(item.trade_date) for item in result.sessions]
+                if not result.sessions or set(fetched_dates) != expected_dates or len(fetched_dates) != len(set(fetched_dates)):
+                    raise ProviderProtocolError("provider returned incomplete trading calendar coverage")
+                request_fingerprint = result.provenance.request_fingerprint
+                persisted, opened = self._persist_calendar_result(
+                    connection, result, now=now, only_if_unverified=True,
                 )
-            imported_dates = [str(item.trade_date) for item in result.sessions]
-            if imported_dates:
-                execute(connection, """DELETE FROM market_trading_calendar_import_proofs
-                    WHERE start_date <= :end_date AND end_date >= :start_date""",
-                    {"start_date": min(imported_dates), "end_date": max(imported_dates)})
+                imported_count += persisted
+                imported_open_count += opened
         return {
-            "start_date": start_date,
-            "end_date": end_date,
-            "row_count": len(result.sessions),
-            "open_count": sum(item.is_open for item in result.sessions),
-            "request_fingerprint": result.provenance.request_fingerprint,
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "row_count": imported_count,
+            "open_count": imported_open_count,
+            "reused_count": max(0, (last - first).days + 1 - imported_count),
+            "request_fingerprint": request_fingerprint,
         }
 
     def refresh_current_calendar_if_missing(
@@ -1477,23 +1557,43 @@ def sync_declared_inputs(
     readiness_store: MarketReadinessStore,
 ) -> dict[str, int]:
     """Fill only the bounded optional inputs frozen by a strategy version."""
+    def sync_index_daily(index_symbol: str, first: str, last: str) -> int:
+        imported = 0
+        # A per-symbol advisory transaction lock makes overlapping repair and
+        # backtest requests re-check the shared cache before calling Tushare.
+        with readiness_store._transaction() as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
+                    {"key": f"market-index-daily-sync.v1:{index_symbol}"})
+            missing_ranges = readiness_store.index_daily_missing_ranges(
+                index_symbol, first, last, max_days=401, _connection=connection,
+            )
+            for missing_range in missing_ranges:
+                result = provider.fetch_index_daily(
+                    index_symbol, missing_range["start_date"], missing_range["end_date"],
+                )
+                imported += readiness_store.import_index_daily(
+                    index_symbol, list(result.bars), result.provenance.as_dict(),
+                    _connection=connection, preserve_existing=True,
+                )
+        return imported
+
+    if requirement.get("kind") == "index_history":
+        from .index_history import validate_index_history_requirement
+        frozen = validate_index_history_requirement(requirement)
+        count = sum(
+            sync_index_daily(str(symbol), str(frozen["start_date"]), str(frozen["end_date"]))
+            for symbol in frozen["symbols"]
+        )
+        return {"index_history": count}
     declared = requirement.get("declared", {})
     if not isinstance(declared, dict):
         raise ValueError("declared data requirement is invalid")
     counts = {"benchmark": 0, "index_weights": 0, "daily_basic": 0, "financial": 0}
     benchmark_symbol = declared.get("benchmark")
     if benchmark_symbol:
-        cursor = datetime.strptime(str(requirement["start_date"]), "%Y%m%d")
-        end = datetime.strptime(str(requirement["end_date"]), "%Y%m%d")
-        while cursor <= end:
-            chunk_end = min(end, cursor + timedelta(days=400))
-            result = provider.fetch_index_daily(
-                str(benchmark_symbol), cursor.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d"),
-            )
-            counts["benchmark"] += readiness_store.import_index_daily(
-                str(benchmark_symbol), list(result.bars), result.provenance.as_dict(),
-            )
-            cursor = chunk_end + timedelta(days=1)
+        counts["benchmark"] += sync_index_daily(
+            str(benchmark_symbol), str(requirement["start_date"]), str(requirement["end_date"]),
+        )
     index_universe = declared.get("index_universe")
     if index_universe:
         for period in list(requirement.get("index_weight_periods", [])):

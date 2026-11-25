@@ -478,7 +478,9 @@ class DataDemandStore(PgStoreMixin):
             str(date) for assessment in assessments
             for date in list(assessment.get("missing_trade_dates", []))
         })
-        session_jobs = automation_store.session_job_counts(missing_dates)
+        session_jobs = ({"queued": 0, "running": 0, "failed": 0, "completed": 0}
+                        if row["scope_json"].get("asset_type") == "index"
+                        else automation_store.session_job_counts(missing_dates))
         conversation_preparation = row["scope_json"].get("kind") == "conversation_research"
         ready_count = sum(item.get("state") == "ready" and (not conversation_preparation or (
             item.get("required_session_count", 0) > 0 and item.get("required_cell_count", 0) > 0

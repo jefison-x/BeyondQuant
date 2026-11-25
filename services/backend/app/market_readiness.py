@@ -7,9 +7,10 @@ import json
 import math
 import re
 from contextlib import nullcontext
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -33,6 +34,7 @@ MAX_REQUIRED_CELLS = 50_000
 MAX_AGENT_RESEARCH_SYMBOLS = 20
 _CANONICAL_A_SHARE = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$")
 _CANONICAL_INDEX_MEMBER = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH|[48]\d{5}\.BJ)$")
+_CANONICAL_INDEX_SYMBOL = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SCOPED_ACTION_COLUMNS = (
     "symbol", "end_date", "ex_date", "announcement_date", "implementation_announcement_date",
@@ -124,6 +126,71 @@ def _source_provenance(value: object, *, endpoint: str) -> dict[str, object]:
         "retrieved_at": _source_timestamp(value.get("retrieved_at"), "provider retrieved_at"),
         "cache_hit": cache_hit, "row_count": row_count,
     }
+
+
+def _verified_calendar_document(row: dict[str, object]) -> dict[str, object] | None:
+    """Return a calendar row's canonical payload only when its source proof is intact."""
+    document = {
+        "trade_date": str(row.get("trade_date", "")),
+        "is_open": row.get("is_open"),
+        "previous_open_date": row.get("previous_open_date"),
+        "exchange": str(row.get("exchange", "")),
+    }
+    if (
+        len(document["trade_date"]) != 8
+        or document["exchange"] != "SSE"
+        or not isinstance(document["is_open"], bool)
+        or row.get("data_source") != "tushare"
+        or not isinstance(row.get("request_fingerprint"), str)
+        or not _SHA256.fullmatch(str(row.get("request_fingerprint", "")))
+    ):
+        return None
+    try:
+        _source_timestamp(row.get("retrieved_at"), "calendar retrieved_at")
+        datetime.strptime(document["trade_date"], "%Y%m%d")
+        if document["previous_open_date"] is not None:
+            previous = str(document["previous_open_date"])
+            if len(previous) != 8 or datetime.strptime(previous, "%Y%m%d").strftime("%Y%m%d") != previous:
+                return None
+        if _hash(document) != str(row.get("content_sha256", "")):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return document
+
+
+def _verified_index_daily_document(row: dict[str, object]) -> dict[str, object] | None:
+    """Return a Tushare index bar only when provenance and its persisted digest agree."""
+    try:
+        provenance = _source_provenance(row.get("provenance_json"), endpoint="index_daily")
+        document = {
+            "index_symbol": str(row["index_symbol"]),
+            "trade_date": str(row["trade_date"]),
+            "open": float(row["open"]), "high": float(row["high"]),
+            "low": float(row["low"]), "close": float(row["close"]),
+            "pre_close": None if row.get("pre_close") is None else float(row["pre_close"]),
+            "volume": None if row.get("volume") is None else float(row["volume"]),
+            "amount": None if row.get("amount") is None else float(row["amount"]),
+            "data_source": str(row["data_source"]),
+            "provenance": provenance,
+        }
+        if not _CANONICAL_INDEX_SYMBOL.fullmatch(document["index_symbol"]):
+            return None
+        if len(document["trade_date"]) != 8 or datetime.strptime(document["trade_date"], "%Y%m%d").strftime("%Y%m%d") != document["trade_date"]:
+            return None
+        if document["data_source"] != "tushare":
+            return None
+        if any(not math.isfinite(value) for key, value in document.items() if key in {"open", "high", "low", "close"}):
+            return None
+        if min(document["open"], document["high"], document["low"], document["close"]) <= 0:
+            return None
+        if document["low"] > min(document["open"], document["close"]) or document["high"] < max(document["open"], document["close"]):
+            return None
+        if _hash(document) != str(row.get("content_sha256", "")):
+            return None
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    return document
 
 
 def _normalized_source_completeness(value: object, *, trade_date: str) -> dict[str, object]:
@@ -928,18 +995,54 @@ class MarketReadinessStore(PgStoreMixin):
             "source_bundle_sha256": source_bundle_sha256,
         }
 
-    def import_index_daily(self, index_symbol: str, bars: list[object], provenance: dict[str, object]) -> int:
-        with self._transaction() as connection:
-            for item in bars:
-                row = {
-                    "index_symbol": index_symbol, "trade_date": str(getattr(item, "trade_date")),
-                    "open": float(getattr(item, "open")), "high": float(getattr(item, "high")),
-                    "low": float(getattr(item, "low")), "close": float(getattr(item, "close")),
-                    "pre_close": getattr(item, "pre_close"), "volume": getattr(item, "vol"),
-                    "amount": getattr(item, "amount"), "data_source": "tushare",
-                    "provenance": provenance,
-                }
-                row["content_sha256"] = _hash(row)
+    def import_index_daily(
+        self, index_symbol: str, bars: list[object], provenance: dict[str, object], *,
+        _connection=None, preserve_existing: bool = False,
+    ) -> int:
+        """Persist index bars, optionally preserving verified inputs during a repair."""
+        symbol = str(index_symbol).strip().upper()
+        if not _CANONICAL_INDEX_SYMBOL.fullmatch(symbol):
+            raise ValueError("index_symbol is invalid")
+        source = _source_provenance(provenance, endpoint="index_daily")
+        rows: list[dict[str, object]] = []
+        for item in bars:
+            if str(getattr(item, "ts_code", "")).strip().upper() != symbol:
+                raise ValueError("provider index-daily symbol does not match the request")
+            trade_date = str(getattr(item, "trade_date", ""))
+            if len(trade_date) != 8 or datetime.strptime(trade_date, "%Y%m%d").strftime("%Y%m%d") != trade_date:
+                raise ValueError("provider index-daily date is invalid")
+            row = {
+                "index_symbol": symbol, "trade_date": trade_date,
+                "open": float(getattr(item, "open")), "high": float(getattr(item, "high")),
+                "low": float(getattr(item, "low")), "close": float(getattr(item, "close")),
+                "pre_close": getattr(item, "pre_close"), "volume": getattr(item, "vol"),
+                "amount": getattr(item, "amount"), "data_source": "tushare",
+                "provenance": source,
+            }
+            if any(not math.isfinite(float(row[field])) for field in ("open", "high", "low", "close")):
+                raise ValueError("provider index-daily price is not finite")
+            if min(float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])) <= 0:
+                raise ValueError("provider index-daily price is not positive")
+            if float(row["low"]) > min(float(row["open"]), float(row["close"])) or float(row["high"]) < max(float(row["open"]), float(row["close"])):
+                raise ValueError("provider index-daily price range is inconsistent")
+            row["content_sha256"] = _hash(row)
+            rows.append(row)
+        if len({str(row["trade_date"]) for row in rows}) != len(rows):
+            raise ValueError("provider returned duplicate index-daily rows")
+
+        imported = 0
+        context = self._transaction() if _connection is None else nullcontext(_connection)
+        with context as connection:
+            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
+                    {"key": f"market-index-daily-sync.v1:{symbol}"})
+            for row in rows:
+                if preserve_existing:
+                    existing = fetch_one(connection, """SELECT index_symbol,trade_date,open,high,low,close,
+                            pre_close,volume,amount,data_source,provenance_json,content_sha256
+                        FROM market_index_daily WHERE index_symbol=:symbol AND trade_date=:trade_date FOR UPDATE""",
+                        {"symbol": symbol, "trade_date": row["trade_date"]})
+                    if existing is not None and _verified_index_daily_document(existing) is not None:
+                        continue
                 execute(connection, """INSERT INTO market_index_daily
                     (index_symbol,trade_date,open,high,low,close,pre_close,volume,amount,
                      data_source,provenance_json,content_sha256,updated_at)
@@ -950,7 +1053,155 @@ class MarketReadinessStore(PgStoreMixin):
                       pre_close=excluded.pre_close,volume=excluded.volume,amount=excluded.amount,
                       data_source=excluded.data_source,provenance_json=excluded.provenance_json,
                       content_sha256=excluded.content_sha256,updated_at=excluded.updated_at""", row)
-        return len(bars)
+                imported += 1
+        return imported
+
+    @staticmethod
+    def _bounded_missing_ranges(missing_dates: list[str], *, max_days: int) -> list[dict[str, str]]:
+        ranges: list[dict[str, str]] = []
+        first: date | None = None
+        last: date | None = None
+        for value in missing_dates:
+            current = datetime.strptime(value, "%Y%m%d").date()
+            if first is None:
+                first = last = current
+                continue
+            assert last is not None
+            if current <= last:
+                continue
+            if (current - first).days > max_days - 1:
+                ranges.append({"start_date": first.strftime("%Y%m%d"), "end_date": last.strftime("%Y%m%d")})
+                first = current
+            last = current
+        if first is not None and last is not None:
+            ranges.append({"start_date": first.strftime("%Y%m%d"), "end_date": last.strftime("%Y%m%d")})
+        return ranges
+
+    def calendar_missing_ranges(
+        self, start_date: str, end_date: str, *, max_days: int = 401,
+    ) -> list[dict[str, str]]:
+        """Find only missing or unverified calendar intervals, bounded for Tushare."""
+        first = _research_date(start_date, "start_date")
+        last = _research_date(end_date, "end_date")
+        if first > last or not 1 <= max_days <= 401:
+            raise ValueError("calendar missing-range bounds are invalid")
+        rows = self._execute(
+            """SELECT trade_date,exchange,is_open,previous_open_date,data_source,
+                      request_fingerprint,retrieved_at,content_sha256
+               FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end""",
+            {"start": first, "end": last},
+        )
+        verified: set[str] = set()
+        for row in rows:
+            if _verified_calendar_document(row) is not None:
+                verified.add(str(row["trade_date"]))
+        dates = [
+            (datetime.strptime(first, "%Y%m%d").date() + timedelta(days=offset)).strftime("%Y%m%d")
+            for offset in range((datetime.strptime(last, "%Y%m%d").date()
+                                 - datetime.strptime(first, "%Y%m%d").date()).days + 1)
+        ]
+        missing = {value for value in dates if value not in verified}
+        ranges: list[dict[str, str]] = []
+        start: date | None = None
+        previous: date | None = None
+        for value in dates:
+            current = datetime.strptime(value, "%Y%m%d").date()
+            if value not in missing:
+                if start is not None and previous is not None:
+                    ranges.append({"start_date": start.strftime("%Y%m%d"), "end_date": previous.strftime("%Y%m%d")})
+                start = previous = None
+                continue
+            if start is None:
+                start = previous = current
+                continue
+            assert previous is not None
+            if (current - start).days >= max_days:
+                ranges.append({"start_date": start.strftime("%Y%m%d"), "end_date": previous.strftime("%Y%m%d")})
+                start = current
+            previous = current
+        if start is not None and previous is not None:
+            ranges.append({"start_date": start.strftime("%Y%m%d"), "end_date": previous.strftime("%Y%m%d")})
+        return ranges
+
+    def index_daily_missing_ranges(
+        self, index_symbol: str, start_date: str, end_date: str, *, max_days: int = 401, _connection=None,
+    ) -> list[dict[str, str]]:
+        """Find missing index bars without requesting validated cached sessions again."""
+        symbol = str(index_symbol).strip().upper()
+        first = _research_date(start_date, "start_date")
+        last = _research_date(end_date, "end_date")
+        if not _CANONICAL_INDEX_SYMBOL.fullmatch(symbol) or first > last or not 1 <= max_days <= 401:
+            raise ValueError("index-daily missing-range bounds are invalid")
+        query = self._execute if _connection is None else None
+        if query is not None:
+            calendar_rows = query(
+                """SELECT trade_date,exchange,is_open,previous_open_date,data_source,
+                          request_fingerprint,retrieved_at,content_sha256
+                   FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+                {"start": first, "end": last},
+            )
+            bar_rows = query(
+                """SELECT index_symbol,trade_date,open,high,low,close,pre_close,volume,amount,
+                          data_source,provenance_json,content_sha256
+                   FROM market_index_daily WHERE index_symbol=:symbol AND trade_date BETWEEN :start AND :end
+                   ORDER BY trade_date""",
+                {"symbol": symbol, "start": first, "end": last},
+            )
+        else:
+            calendar_rows = execute(_connection,
+                """SELECT trade_date,exchange,is_open,previous_open_date,data_source,
+                          request_fingerprint,retrieved_at,content_sha256
+                   FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+                {"start": first, "end": last},
+            )
+            bar_rows = execute(_connection,
+                """SELECT index_symbol,trade_date,open,high,low,close,pre_close,volume,amount,
+                          data_source,provenance_json,content_sha256
+                   FROM market_index_daily WHERE index_symbol=:symbol AND trade_date BETWEEN :start AND :end
+                   ORDER BY trade_date""",
+                {"symbol": symbol, "start": first, "end": last},
+            )
+        calendar_documents = {
+            str(row["trade_date"]): _verified_calendar_document(row) for row in calendar_rows
+        }
+        first_day = datetime.strptime(first, "%Y%m%d").date()
+        last_day = datetime.strptime(last, "%Y%m%d").date()
+        expected_count = (last_day - first_day).days + 1
+        calendar_complete = len(calendar_rows) == expected_count and all(
+            calendar_documents.get((first_day + timedelta(days=offset)).strftime("%Y%m%d")) is not None
+            for offset in range(expected_count)
+        )
+        if calendar_complete:
+            candidate_dates = [
+                value for value, document in calendar_documents.items()
+                if document is not None and document["is_open"] is True
+            ]
+            candidate_dates.sort()
+        else:
+            candidate_dates = [
+                (first_day + timedelta(days=offset)).strftime("%Y%m%d")
+                for offset in range(expected_count)
+            ]
+        verified_bars = {
+            str(row["trade_date"]): row for row in bar_rows
+            if _verified_index_daily_document(row) is not None
+        }
+        ranges: list[dict[str, str]] = []
+        current: list[str] = []
+        for value in candidate_dates:
+            if value in verified_bars:
+                ranges.extend(self._bounded_missing_ranges(current, max_days=max_days))
+                current = []
+                continue
+            if current and (
+                datetime.strptime(value, "%Y%m%d").date()
+                - datetime.strptime(current[0], "%Y%m%d").date()
+            ).days >= max_days:
+                ranges.extend(self._bounded_missing_ranges(current, max_days=max_days))
+                current = []
+            current.append(value)
+        ranges.extend(self._bounded_missing_ranges(current, max_days=max_days))
+        return ranges
 
     def has_verified_index_month(self, index_symbol: str, period: str, *, through_date=None, _connection=None) -> bool:
         """Reuse a closed month only with intact persisted snapshot evidence."""
@@ -1352,7 +1603,225 @@ class MarketReadinessStore(PgStoreMixin):
             },
         }
 
+    def _assess_index_history(
+        self, requirement: dict[str, object], connection,
+    ) -> tuple[dict[str, object], list[dict[str, object]]]:
+        from .index_history import validate_index_history_requirement
+
+        frozen = validate_index_history_requirement(requirement)
+        first = datetime.strptime(str(frozen["start_date"]), "%Y%m%d").date()
+        last = datetime.strptime(str(frozen["end_date"]), "%Y%m%d").date()
+        expected_days = (last - first).days + 1
+        calendar_rows = execute(connection, """SELECT trade_date,exchange,is_open,previous_open_date,
+                data_source,request_fingerprint,retrieved_at,content_sha256
+            FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end ORDER BY trade_date""",
+            {"start": frozen["start_date"], "end": frozen["end_date"]})
+        calendar_documents: dict[str, dict[str, object]] = {}
+        calendar_hashes: dict[str, str] = {}
+        invalid_calendar_count = 0
+        for row in calendar_rows:
+            document = _verified_calendar_document(row)
+            if document is None:
+                invalid_calendar_count += 1
+                continue
+            trade_date = str(document["trade_date"])
+            calendar_documents[trade_date] = document
+            calendar_hashes[trade_date] = str(row["content_sha256"])
+        expected_calendar_dates = {
+            (first + timedelta(days=offset)).strftime("%Y%m%d") for offset in range(expected_days)
+        }
+        calendar_complete = (
+            len(calendar_rows) == expected_days
+            and set(calendar_documents) == expected_calendar_dates
+            and invalid_calendar_count == 0
+        )
+        session_dates = sorted(
+            trade_date for trade_date, document in calendar_documents.items()
+            if document["is_open"] is True
+        )
+        required_sessions = set(session_dates)
+        index_rows = execute(connection, """SELECT index_symbol,trade_date,open,high,low,close,
+                pre_close,volume,amount,data_source,provenance_json,content_sha256
+            FROM market_index_daily WHERE index_symbol IN
+                (SELECT jsonb_array_elements_text(:symbols))
+              AND trade_date BETWEEN :start AND :end ORDER BY index_symbol,trade_date""",
+            {"symbols": frozen["symbols"], "start": frozen["start_date"], "end": frozen["end_date"]})
+        valid_by_key: dict[tuple[str, str], dict[str, object]] = {}
+        invalid_bar_count = 0
+        for row in index_rows:
+            document = _verified_index_daily_document(row)
+            if document is None:
+                invalid_bar_count += 1
+                continue
+            key = (str(document["index_symbol"]), str(document["trade_date"]))
+            if key[0] not in frozen["symbols"] or key[1] not in required_sessions:
+                continue
+            valid_by_key[key] = row
+        missing: list[dict[str, str]] = []
+        missing_dates: set[str] = set()
+        ready_cells: list[dict[str, str]] = []
+        for symbol in frozen["symbols"]:
+            for trade_date in session_dates:
+                row = valid_by_key.get((str(symbol), trade_date))
+                if row is None:
+                    missing.append({"symbol": str(symbol), "trade_date": trade_date, "dataset": "index_daily"})
+                    missing_dates.add(trade_date)
+                else:
+                    ready_cells.append({
+                        "symbol": str(symbol), "trade_date": trade_date,
+                        "content_sha256": str(row["content_sha256"]),
+                    })
+        missing_by_dataset: dict[str, int] = {}
+        if not calendar_complete:
+            missing_by_dataset["trade_calendar"] = 1
+            missing.insert(0, {"symbol": "*", "trade_date": "*", "dataset": "trade_calendar"})
+        if missing_dates:
+            missing_by_dataset["index_daily"] = sum(
+                1 for item in missing if item["dataset"] == "index_daily"
+            )
+        missing_count = sum(1 for item in missing if item["dataset"] == "index_daily")
+        if not calendar_complete:
+            missing_count += 1
+        current_date = datetime.now(ZoneInfo("Asia/Shanghai")).date().strftime("%Y%m%d")
+        future_only = bool(missing_dates) and all(value > current_date for value in missing_dates)
+        state = (
+            "no_sessions" if calendar_complete and not session_dates
+            else "ready" if calendar_complete and not missing_dates
+            else "not_published" if calendar_complete and future_only
+            else "partial" if ready_cells
+            else "missing"
+        )
+        required_cell_count = len(frozen["symbols"]) * len(session_dates)
+        ready_identity = None
+        if state == "ready":
+            ready_identity = _hash({
+                "schema_version": "index-history-ready-input.v1",
+                "requirement_sha256": frozen["requirement_sha256"],
+                "calendar": [
+                    {"trade_date": value, "content_sha256": calendar_hashes[value]}
+                    for value in sorted(calendar_hashes)
+                ],
+                "index_daily": ready_cells,
+            })
+        assessment: dict[str, object] = {
+            "schema_version": "index-history-readiness.v1",
+            "kind": "index_history",
+            "state": state,
+            "required_session_count": len(session_dates),
+            "required_cell_count": required_cell_count,
+            "missing_count": missing_count,
+            "missing": missing[:200],
+            "missing_by_dataset": missing_by_dataset,
+            "missing_trade_dates": sorted(missing_dates),
+            "repair_plan": {"session_supplements": [], "full_sessions": []},
+            "calendar_complete": calendar_complete,
+            "ready_input_sha256": ready_identity,
+            "invalid_calendar_count": invalid_calendar_count,
+            "invalid_index_daily_count": invalid_bar_count,
+        }
+        verified_rows = [
+            valid_by_key[(str(symbol), trade_date)]
+            for symbol in frozen["symbols"] for trade_date in session_dates
+            if (str(symbol), trade_date) in valid_by_key
+        ]
+        return assessment, verified_rows
+
+    def index_history_query(
+        self, requirement: dict[str, object], *, offset: int = 0, limit: int = 200,
+        data_version: str | None = None,
+    ) -> dict[str, object]:
+        """Read a verified history page, pinned to the readiness digest across pages."""
+        from .index_history import validate_index_history_requirement
+
+        frozen = validate_index_history_requirement(requirement)
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 7_500:
+            raise ValueError("offset must be between 0 and 7500")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        if offset > 0 and data_version is None:
+            raise ValueError("data_version is required when offset is greater than zero")
+        if data_version is not None and (
+            not isinstance(data_version, str) or not _SHA256.fullmatch(data_version)
+        ):
+            raise ValueError("data_version must be a SHA-256 digest")
+        with self._transaction() as connection:
+            execute(connection, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            assessment, stored_rows = self._assess_index_history(frozen, connection)
+            ready_version = assessment.get("ready_input_sha256")
+            missing = assessment["missing"]
+            missing_dates = assessment["missing_trade_dates"]
+            response: dict[str, object] = {
+                **assessment,
+                "missing": missing[:20],
+                "missing_trade_dates": missing_dates[:20],
+                "missing_truncated": assessment["missing_count"] > 20 or len(missing_dates) > 20,
+                "requirement_sha256": frozen["requirement_sha256"],
+                "data_version": None,
+                "source": "Tushare index_daily",
+                "units": {"price": "指数点", "volume": "手", "amount": "千元"},
+                "offset": offset,
+                "limit": limit,
+                "total": 0,
+                "has_more": False,
+                "rows": [],
+                "symbol_summaries": [],
+            }
+            if assessment["state"] != "ready" or not isinstance(ready_version, str):
+                return response
+            if data_version is not None and data_version != ready_version:
+                response.update({
+                    "state": "version_changed",
+                    "requested_data_version": data_version,
+                    "current_data_version": ready_version,
+                })
+                return response
+            rows = sorted(stored_rows, key=lambda row: (str(row["index_symbol"]), str(row["trade_date"])))
+            summaries: list[dict[str, object]] = []
+            for symbol in frozen["symbols"]:
+                selected = [row for row in rows if str(row["index_symbol"]) == str(symbol)]
+                if not selected:
+                    continue
+                first_row, last_row = selected[0], selected[-1]
+                summaries.append({
+                    "symbol": str(symbol),
+                    "count": len(selected),
+                    "first_trade_date": str(first_row["trade_date"]),
+                    "first_close": float(first_row["close"]),
+                    "last_trade_date": str(last_row["trade_date"]),
+                    "last_close": float(last_row["close"]),
+                    "lowest_price": min(float(row["low"]) for row in selected),
+                    "highest_price": max(float(row["high"]) for row in selected),
+                })
+            page = rows[offset:offset + limit]
+            response.update({
+                "state": "ready",
+                "data_version": ready_version,
+                "total": len(rows),
+                "has_more": offset + len(page) < len(rows),
+                "rows": [{
+                    "symbol": str(row["index_symbol"]),
+                    "trade_date": str(row["trade_date"]),
+                    "open": float(row["open"]), "high": float(row["high"]),
+                    "low": float(row["low"]), "close": float(row["close"]),
+                    "pre_close": None if row.get("pre_close") is None else float(row["pre_close"]),
+                    "volume": None if row.get("volume") is None else float(row["volume"]),
+                    "amount": None if row.get("amount") is None else float(row["amount"]),
+                    "data_source": str(row["data_source"]),
+                    "provenance": dict(row["provenance_json"]),
+                    "content_sha256": str(row["content_sha256"]),
+                } for row in page],
+                "symbol_summaries": summaries,
+            })
+            return response
+
     def assess(self, requirement: dict[str, object]) -> dict[str, object]:
+        if requirement.get("kind") == "index_history":
+            from .index_history import validate_index_history_requirement
+            frozen = validate_index_history_requirement(requirement)
+            with self._transaction() as connection:
+                execute(connection, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                assessment, _ = self._assess_index_history(frozen, connection)
+            return assessment
         from .index_snapshot_demand import INDEX_SNAPSHOT_REQUIREMENT, assess_index_snapshot
         if requirement.get("schema_version") == INDEX_SNAPSHOT_REQUIREMENT:
             return assess_index_snapshot(self, requirement)
