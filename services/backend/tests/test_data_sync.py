@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime
 from threading import Barrier
 from zoneinfo import ZoneInfo
@@ -17,12 +18,17 @@ from app.data_provider import (
     CorporateAction,
     CorporateActionResult,
     DailyBar,
+    DailyBasicResult,
     DailyResult,
+    IndexDailyBar,
+    IndexDailyResult,
     IndexWeight,
     IndexWeightResult,
+    PriceLimitResult,
     Provenance,
     SecurityMasterResult,
     SecurityRecord,
+    SuspensionResult,
     TradingCalendarResult,
     TradingSession,
 )
@@ -911,6 +917,72 @@ def test_supplement_repair_does_not_redownload_existing_daily_bars() -> None:
     assert completeness["adjustment_complete"] is True
     assert completeness["corporate_actions_complete"] is True
     readiness.close()
+
+
+def test_full_session_repair_reuses_verified_index_daily_and_fills_missing_day() -> None:
+    class FullSessionProvider(FakeAutomationProvider, FakeSupplementProvider):
+        def __init__(self) -> None:
+            FakeAutomationProvider.__init__(self)
+            FakeSupplementProvider.__init__(self)
+            self.index_dates: list[str] = []
+
+        def fetch_trading_calendar(self, request):
+            calendar = super().fetch_trading_calendar(request)
+            return replace(calendar, provenance=replace(calendar.provenance, request_fingerprint="c" * 64))
+
+        def fetch_price_limits(self, trade_date, *, symbols):
+            return PriceLimitResult((), Provenance("tushare", "stk_limit", "limits", timestamp, False, 0))
+
+        def fetch_suspensions(self, trade_date):
+            return SuspensionResult((), Provenance("tushare", "suspend_d", "suspensions", timestamp, False, 0))
+
+        def fetch_daily_basic(self, trade_date):
+            return DailyBasicResult((), Provenance("tushare", "daily_basic", "basics", timestamp, False, 0))
+
+        def fetch_index_weights(self, symbol, start_date, end_date):
+            return IndexWeightResult((), Provenance("tushare", "index_weight", "weights", timestamp, False, 0))
+
+        def fetch_index_daily(self, symbol, start_date, end_date):
+            assert start_date == end_date
+            self.index_dates.append(start_date)
+            return IndexDailyResult(
+                (IndexDailyBar(symbol, start_date, 100.0, 102.0, 99.0, 101.0, 100.0, 1.0, 1.0, 1000.0, 100000.0),),
+                Provenance("tushare", "index_daily", "b" * 64, timestamp, False, 1),
+            )
+
+    timestamp = "2026-08-25T10:32:00+00:00"
+    cached_date, missing_date = "20260824", "20260825"
+    symbol = "000300.SH"
+    automation, readiness, market = MarketAutomationStore(), MarketReadinessStore(), MarketDataStore()
+    provider = FullSessionProvider()
+    try:
+        automation.refresh_calendar(provider, start_date=cached_date, end_date=missing_date)
+        readiness.import_index_daily(
+            symbol, [IndexDailyBar(symbol, cached_date, 100.0, 102.0, 99.0, 101.0, 100.0, 1.0, 1.0, 1000.0, 100000.0)],
+            Provenance("tushare", "index_daily", "a" * 64, timestamp, False, 1).as_dict(),
+        )
+        query = "SELECT * FROM market_index_daily WHERE index_symbol=:symbol AND trade_date=:date"
+        cached_key = {"symbol": symbol, "date": cached_date}
+        before = readiness._fetch_one(query, cached_key)
+        assert before is not None
+        assert readiness.index_daily_missing_ranges(symbol, cached_date, missing_date) == [
+            {"start_date": missing_date, "end_date": missing_date},
+        ]
+        automation.enqueue_dates([cached_date, missing_date], scheduled_by="backtest-repair", force_completed=True)
+        now = datetime(2026, 8, 26, 19, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        for trade_date in (cached_date, missing_date):
+            job = automation.claim_next_job(worker_id="test-worker", now=now)
+            assert job is not None and job["trade_date"] == trade_date
+            result = automation.execute_job(job, provider=provider, market_store=market, readiness_store=readiness)
+            assert result["status"] == "completed", result.get("error_message")
+        assert provider.index_dates == [missing_date]
+        assert readiness._fetch_one(query, cached_key) == before
+        assert readiness.index_daily_missing_ranges(symbol, cached_date, missing_date) == []
+        assert all(market.get_bar("000001.SZ", trade_date) for trade_date in (cached_date, missing_date))
+    finally:
+        automation.close()
+        readiness.close()
+        market.close()
 
 
 def test_repair_waits_for_session_jobs_and_reports_terminal_failure() -> None:

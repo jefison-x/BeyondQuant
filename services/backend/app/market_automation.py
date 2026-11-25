@@ -1165,10 +1165,13 @@ class MarketAutomationStore(PgStoreMixin):
             factors = provider.fetch_adjustment_factors(trade_date) if readiness_store is not None else None
             actions = provider.fetch_corporate_actions(trade_date) if readiness_store is not None else None
             daily_basic = provider.fetch_daily_basic(trade_date) if readiness_store is not None else None
-            benchmark = provider.fetch_index_daily(CORE_BENCHMARK, trade_date, trade_date) if readiness_store is not None else None
             weights = provider.fetch_index_weights(
                 CORE_BENCHMARK, f"{trade_date[:6]}01", trade_date,
             ) if readiness_store is not None else None
+            if readiness_store is not None:
+                _sync_missing_index_daily(
+                    CORE_BENCHMARK, trade_date, trade_date, provider=provider, readiness_store=readiness_store,
+                )
             dataset_sha = _hash([
                 {key: row[key] for key in sorted(row) if key != "provenance"}
                 for row in rows
@@ -1179,7 +1182,7 @@ class MarketAutomationStore(PgStoreMixin):
             completeness_state = "provider_snapshot_complete"
             if readiness_store is not None:
                 assert all(item is not None for item in (
-                    limits, suspensions, factors, actions, daily_basic, benchmark, weights,
+                    limits, suspensions, factors, actions, daily_basic, weights,
                 ))
                 readiness_store.import_session_status(
                     trade_date,
@@ -1202,9 +1205,6 @@ class MarketAutomationStore(PgStoreMixin):
                 )
                 readiness_store.import_daily_basic(
                     trade_date, list(daily_basic.rows), daily_basic.provenance.as_dict(),
-                )
-                readiness_store.import_index_daily(
-                    CORE_BENCHMARK, list(benchmark.bars), benchmark.provenance.as_dict(),
                 )
                 readiness_store.import_index_weights(
                     CORE_BENCHMARK, trade_date[:6], list(weights.weights), weights.provenance.as_dict(),
@@ -1552,36 +1552,42 @@ def sync_session_supplements(
     return counts
 
 
+def _sync_missing_index_daily(
+    index_symbol: str, first: str, last: str, *, provider: TushareProvider,
+    readiness_store: MarketReadinessStore,
+) -> int:
+    imported = 0
+    # Serialize the cache check, provider request and import per index.
+    with readiness_store._transaction() as connection:
+        execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
+                {"key": f"market-index-daily-sync.v1:{index_symbol}"})
+        missing_ranges = readiness_store.index_daily_missing_ranges(
+            index_symbol, first, last, max_days=401, _connection=connection,
+        )
+        for missing_range in missing_ranges:
+            result = provider.fetch_index_daily(
+                index_symbol, missing_range["start_date"], missing_range["end_date"],
+            )
+            imported += readiness_store.import_index_daily(
+                index_symbol, list(result.bars), result.provenance.as_dict(),
+                _connection=connection, preserve_existing=True,
+            )
+    return imported
+
+
 def sync_declared_inputs(
     requirement: dict[str, object], *, provider: TushareProvider,
     readiness_store: MarketReadinessStore,
 ) -> dict[str, int]:
     """Fill only the bounded optional inputs frozen by a strategy version."""
-    def sync_index_daily(index_symbol: str, first: str, last: str) -> int:
-        imported = 0
-        # A per-symbol advisory transaction lock makes overlapping repair and
-        # backtest requests re-check the shared cache before calling Tushare.
-        with readiness_store._transaction() as connection:
-            execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
-                    {"key": f"market-index-daily-sync.v1:{index_symbol}"})
-            missing_ranges = readiness_store.index_daily_missing_ranges(
-                index_symbol, first, last, max_days=401, _connection=connection,
-            )
-            for missing_range in missing_ranges:
-                result = provider.fetch_index_daily(
-                    index_symbol, missing_range["start_date"], missing_range["end_date"],
-                )
-                imported += readiness_store.import_index_daily(
-                    index_symbol, list(result.bars), result.provenance.as_dict(),
-                    _connection=connection, preserve_existing=True,
-                )
-        return imported
-
     if requirement.get("kind") == "index_history":
         from .index_history import validate_index_history_requirement
         frozen = validate_index_history_requirement(requirement)
         count = sum(
-            sync_index_daily(str(symbol), str(frozen["start_date"]), str(frozen["end_date"]))
+            _sync_missing_index_daily(
+                str(symbol), str(frozen["start_date"]), str(frozen["end_date"]),
+                provider=provider, readiness_store=readiness_store,
+            )
             for symbol in frozen["symbols"]
         )
         return {"index_history": count}
@@ -1591,8 +1597,9 @@ def sync_declared_inputs(
     counts = {"benchmark": 0, "index_weights": 0, "daily_basic": 0, "financial": 0}
     benchmark_symbol = declared.get("benchmark")
     if benchmark_symbol:
-        counts["benchmark"] += sync_index_daily(
+        counts["benchmark"] += _sync_missing_index_daily(
             str(benchmark_symbol), str(requirement["start_date"]), str(requirement["end_date"]),
+            provider=provider, readiness_store=readiness_store,
         )
     index_universe = declared.get("index_universe")
     if index_universe:

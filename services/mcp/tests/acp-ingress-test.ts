@@ -626,6 +626,29 @@ try {
   assert.equal(requests.at(-1)?.body?.outcome, "settled");
   assert.equal(requests.at(-1)?.body?.mcp_request_id, requests[beforePreparation].body?.mcp_request_id);
 
+  const indexPreparation = {
+    purpose: "research", scope_kind: "conversation_index_history", symbols: ["000300.SH", "000905.SH"],
+    start_date: "2016-11-25", end_date: "2026-11-24",
+  };
+  const beforeIndexPreparation = requests.length;
+  const correctedKey = "index_history:000300.SH-000905.SH:2016-11-25:2026-11-24";
+  for (const invalidKey of ["index history/2016-2026", "-index", `${correctedKey}\n`, "a".repeat(129)]) {
+    const invalid = await acp.value.callTool({ name: "byq_data_demand_create", arguments: {
+      ...indexPreparation, idempotency_key: invalidKey,
+    } });
+    assert.equal(invalid.isError, true);
+    assert.equal(requests.length, beforeIndexPreparation, "invalid arguments must not open a durable ingress");
+  }
+  const corrected = await acp.value.callTool({ name: "byq_data_demand_create", arguments: {
+    ...indexPreparation, idempotency_key: correctedKey,
+  } });
+  assert.equal(corrected.isError, false);
+  assert.deepEqual(requests.slice(beforeIndexPreparation).map(request => request.path), [
+    "/internal/acp/tool-ingress-observe", "/v1/agent/data-demands", "/internal/acp/tool-ingress-settle",
+  ]);
+  assert.equal(requests.at(-1)?.body?.outcome, "settled");
+  assert.equal(requests.at(-1)?.body?.mcp_request_id, requests[beforeIndexPreparation].body?.mcp_request_id);
+
   const beforeIndexRead = requests.length;
   const indexRead = await acp.value.callTool({ name: "byq_market_index_daily", arguments: {
     symbols: ["000300.SH"], start_date: "2016-11-25", end_date: "2026-11-24", data_version: "f".repeat(64),

@@ -208,6 +208,10 @@ const ACP_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "byq_market_fundamentals",
 ]);
 const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
+const dataDemandIdempotencyKey = z.string().regex(
+  /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/,
+  "Use 1 to 128 ASCII letters, digits, dots, underscores, colons or hyphens, starting with a letter or digit.",
+);
 const indexHistoryScope = {
   symbols: z.array(z.enum(["000300.SH", "000905.SH"])).min(1).max(2)
     .refine((symbols) => new Set(symbols).size === symbols.length),
@@ -1510,7 +1514,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
           daily_basic: z.array(z.string()).max(12).optional(),
           fundamentals: z.array(z.string()).max(12).optional(),
         }).strict().optional(),
-        idempotency_key: z.string().min(1).max(128),
+        idempotency_key: dataDemandIdempotencyKey,
       }).strict(),
         z.object({
           purpose: z.literal("research"),
@@ -1523,19 +1527,19 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
             daily_basic: z.array(z.string()).max(12).optional(),
             fundamentals: z.array(z.string()).max(12).optional(),
           }).strict().optional(),
-          idempotency_key: z.string().min(1).max(128),
+          idempotency_key: dataDemandIdempotencyKey,
         }).strict(),
         z.object({
           purpose: z.literal("research"),
           scope_kind: z.literal("conversation_index_history"),
           ...indexHistoryScope,
-          idempotency_key: z.string().min(1).max(128),
+          idempotency_key: dataDemandIdempotencyKey,
         }).strict(),
         z.object({ purpose: z.enum(["research", "backtest", "machine_learning"]),
           task_id: z.string().regex(/^task_[0-9a-f]{32}$/).optional(),
           scope_kind: z.literal("index_snapshot"), index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000852.SH", "000905.SH", "399006.SZ"]),
           requested_as_of: z.string().regex(/^(?:\d{8}|\d{4}-\d{2}-\d{2})$/),
-          idempotency_key: z.string().min(1).max(128),
+          idempotency_key: dataDemandIdempotencyKey,
         }).strict(),
       ]),
     },
@@ -1548,7 +1552,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: z.union([
         z.object({ demand_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) }).strict(),
         z.object({ job_id: z.string().regex(/^datademand_[0-9a-f]{32}$/) }).strict(),
-        z.object({ idempotency_key: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) }).strict(),
+        z.object({ idempotency_key: dataDemandIdempotencyKey }).strict(),
       ]),
     },
     (args) => byqDataDemandGet(args, trustedContext),
