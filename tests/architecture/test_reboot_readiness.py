@@ -1,10 +1,7 @@
 """Exercise the actual Compose probes without network or production credentials."""
-import os
 from pathlib import Path
 import re
-import sys
 import textwrap
-import types
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -55,28 +52,22 @@ class RebootReadinessTests(unittest.TestCase):
                             exec(probe('gateway'), {})
                         self.assertEqual(failure.exception.code, 1)
 
-    def test_backend_requires_live_database(self):
-        for db_ok in (True, False):
-            with self.subTest(db_ok=db_ok):
-                engine = MagicMock()
-                connection = engine.connect.return_value.__enter__.return_value
-                connection.execute.return_value.scalar.return_value = 1
-                if not db_ok:
-                    engine.connect.side_effect = OSError('private database detail')
-                create = MagicMock(return_value=engine)
-                module = types.SimpleNamespace(create_engine=create, text=lambda value: value)
-                response = MagicMock()
-                response.__enter__.return_value.status = 200
-                with patch.dict(sys.modules, sqlalchemy=module), patch.dict(os.environ, BYQ_DATABASE_URL='synthetic'), patch('urllib.request.urlopen', return_value=response):
-                    if db_ok:
+    def test_backend_probe_requires_database_readiness_endpoint(self):
+        # Backend's own tests exercise the real pooled SELECT and a database
+        # failure. The container probe must reject an unsuccessful /readyz.
+        url = 'http://127.0.0.1:8000/readyz'
+        for code in (200, 503, None):
+            with self.subTest(code=code):
+                reply = MagicMock(status=code)
+                error = OSError('private connection detail') if code is None else None
+                with patch('urllib.request.urlopen', return_value=reply, side_effect=error) as request:
+                    if code == 200:
                         exec(probe('backend'), {})
-                        connection.execute.assert_called_once_with('SELECT 1')
-                        engine.dispose.assert_called_once()
                     else:
                         with self.assertRaises(SystemExit) as failure:
                             exec(probe('backend'), {})
                         self.assertEqual(failure.exception.code, 1)
-                    self.assertEqual(create.call_args.kwargs['connect_args']['connect_timeout'], 2)
+                    request.assert_called_once_with(url, timeout=2)
 
 
 if __name__ == '__main__':
