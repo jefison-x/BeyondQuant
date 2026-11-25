@@ -25,6 +25,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ continue: [draft: string] }>();
 
 const expanded = ref(false);
+const dismissedCompletionId = ref("");
 const symbols = ref("");
 const startDate = ref("");
 const endDate = ref("");
@@ -55,6 +56,7 @@ type AutoContinuationStatus = typeof AUTO_CONTINUATION_STATUSES[number];
 
 const storageKey = computed(() => props.conversationId && props.ownerKey
   ? `byq-research-preparation:${props.ownerKey}:${props.conversationId}` : "");
+const completionStorageKey = computed(() => storageKey.value && `${storageKey.value}:dismissed-completion`);
 const parsedCurrentScope = computed(() => normalizeResearchPreparationScope({
   symbols: symbols.value.split(/[，,\s]+/).filter(Boolean),
   start_date: startDate.value,
@@ -76,15 +78,27 @@ const scopeUsable = computed(() => currentReadiness.value?.verdict === "usable" 
 const preparationMatchesCurrentScope = computed(() => Boolean(preparation.value && checkedScope.value
   && sameScope(preparation.value.scope, checkedScope.value)));
 const autoContinuationStatus = computed(() => preparation.value?.auto_continuation?.status ?? null);
+const completionId = computed(() => autoContinuationStatus.value === "succeeded"
+  ? preparation.value?.request_id ?? "succeeded" : "");
+const showCompletionNotice = computed(() => Boolean(completionId.value && completionId.value !== dismissedCompletionId.value));
+const showAutomaticStatus = computed(() => Boolean(autoContinuationStatus.value && !completionId.value));
 const automaticContinuationCanStop = computed(() => ["waiting", "dispatching"].includes(autoContinuationStatus.value ?? "")
   && Boolean(preparation.value?.request_id) && !stoppingContinuation.value);
 const automaticContinuationNeedsObservation = computed(() => ["waiting", "dispatching", "bound"].includes(autoContinuationStatus.value ?? ""));
 const preparationNeedsObservation = computed(() => ["queued", "running"].includes(preparation.value?.status ?? ""));
 const shouldObservePreparation = computed(() => preparationNeedsObservation.value || automaticContinuationNeedsObservation.value);
 const manualFallbackAvailable = computed(() => ["failed", "cancelled"].includes(autoContinuationStatus.value ?? ""));
-const manualPanelAvailable = computed(() => props.enabled || manualFallbackAvailable.value);
-const manualToolsVisible = computed(() => manualPanelAvailable.value
-  && !["waiting", "dispatching", "bound", "succeeded"].includes(autoContinuationStatus.value ?? ""));
+const manualToolsAvailable = computed(() => (props.enabled || manualFallbackAvailable.value)
+  && !automaticContinuationNeedsObservation.value && autoContinuationStatus.value !== "succeeded");
+const manualToolsVisible = computed(() => manualToolsAvailable.value && (expanded.value || Boolean(preparation.value)));
+
+function openManualTools() {
+  if (!manualToolsAvailable.value) return false;
+  expanded.value = true;
+  return true;
+}
+
+defineExpose({ manualToolsAvailable, openManualTools });
 const canPrepare = computed(() => Boolean(currentReadiness.value && checkedScope.value
   && currentReadiness.value.verdict !== "usable" && !emptyTradingScope.value
   && !preparationUncertain.value && !preparing.value
@@ -101,7 +115,6 @@ const automaticStatusLabel = computed(() => {
     : "数据准备已结束，正在等待自动复查并继续原研究。";
   if (status === "dispatching") return "数据已核验，正在原会话自动继续研究。";
   if (status === "bound") return "小巴已在原会话继续研究；如需停止当前回复，请使用会话下方的“停止本轮”。";
-  if (status === "succeeded") return "小巴已完成自动续研，请查看原会话中的最新回答。";
   if (status === "failed") return "自动续研未完成。可展开数据准备面板手动检查或准备数据。";
   if (status === "cancelled") return "自动续研已停止。可展开数据准备面板手动检查或准备数据。";
   return "";
@@ -162,6 +175,18 @@ function restoreScope() {
   } catch { /* a malformed local draft never changes the request */ }
 }
 
+function dismissCompletionNotice() {
+  if (!completionId.value) return;
+  dismissedCompletionId.value = completionId.value;
+  if (!completionStorageKey.value) return;
+  try { sessionStorage.setItem(completionStorageKey.value, completionId.value); } catch { /* storage is optional */ }
+}
+
+watch(completionStorageKey, (key) => {
+  dismissedCompletionId.value = "";
+  if (!key) return;
+  try { dismissedCompletionId.value = sessionStorage.getItem(key) ?? ""; } catch { /* storage is optional */ }
+}, { immediate: true });
 watch(storageKey, restoreScope, { immediate: true });
 watch([storageKey, () => props.observe], ([key, observe]) => {
   preparationGeneration++;
@@ -278,9 +303,11 @@ async function discoverPreparation(hydrateEmptyScope = false) {
     if (currentGeneration !== preparationGeneration || !props.observe) return;
     if (!Array.isArray(result.preparations)) throw new Error("服务端未返回会话准备记录列表。");
     const receipts = result.preparations.map(parseReceipt).filter((receipt): receipt is ConversationResearchPreparationReceipt => receipt !== null);
-    const selected = (parsedCurrentScope.value
-      ? receipts.find((receipt) => sameScope(receipt.scope, parsedCurrentScope.value!))
-      : null) ?? receipts[0] ?? null;
+    const latest = receipts[0] ?? null;
+    const savedScope = parsedCurrentScope.value;
+    const selected = latest?.auto_continuation || !savedScope
+      ? latest
+      : receipts.find((receipt) => sameScope(receipt.scope, savedScope)) ?? latest;
     preparation.value = selected;
     preparationUncertain.value = false;
     if (hydrateEmptyScope && selected && !symbols.value.trim() && !startDate.value && !endDate.value) fillScope(selected.scope);
@@ -479,12 +506,17 @@ function resumeDraft() {
 </script>
 
 <template>
-  <section v-if="conversationId && (manualPanelAvailable || autoContinuationStatus)" class="research-preparation" aria-label="研究数据准备">
+  <section v-if="conversationId && (manualToolsVisible || showCompletionNotice || showAutomaticStatus)" class="research-preparation" aria-label="研究数据准备">
     <button v-if="manualToolsVisible" class="entry-button" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
-      {{ expanded ? "收起数据准备" : "准备研究数据" }}
+      {{ expanded ? "收起数据准备" : "查看补数详情" }}
       <span v-if="preparation" class="entry-status">{{ preparationStatusLabel }}</span>
     </button>
-    <div v-if="autoContinuationStatus" class="automatic-status" role="status" aria-live="polite">
+    <div v-if="showCompletionNotice" class="completion-notice">
+      <span role="status">{{ preparationStatusLabel }}</span>
+      <button class="completion-dismiss" type="button" aria-label="关闭自动续研提示" title="关闭"
+        @click="dismissCompletionNotice">×</button>
+    </div>
+    <div v-else-if="showAutomaticStatus" class="automatic-status" role="status" aria-live="polite">
       <strong>{{ preparationStatusLabel }}</strong>
       <p>{{ automaticStatusLabel }}</p>
       <p v-if="preparation && preparationScopeLabel">研究范围：{{ preparationScopeLabel }}</p>
@@ -496,7 +528,7 @@ function resumeDraft() {
       </button>
     </div>
     <div v-if="expanded && manualToolsVisible" class="preparation-body">
-      <p class="intro">助手可根据会话需求自动补齐、复查数据并继续原研究。这里保留主动检查和手动准备入口；手动补数只会准备数据，不会自动续研。每次最多 20 只股票、180 个自然日，后台还会限制整日补数范围。</p>
+      <p class="intro">手动补齐后，可在这里复查并继续研究。每次最多选择 20 只股票和 180 个自然日。</p>
       <label class="field-label">股票代码 <small>用逗号分隔，最多 20 只；填写规范代码，如 600036.SH</small>
         <textarea v-model="symbols" rows="2" placeholder="600036.SH, 601398.SH" :disabled="checking || preparing" />
       </label>
@@ -599,6 +631,9 @@ function resumeDraft() {
 button:disabled { opacity: .6; cursor: wait; }
 .preparation-body { margin-top: .65rem; padding: 1rem; border: 1px solid var(--byq-border); border-radius: 12px; background: var(--byq-surface); display: grid; gap: .8rem; }
 .automatic-status { width: min(900px, 100%); box-sizing: border-box; margin-top: .45rem; padding: .75rem 1rem; border: 1px solid var(--byq-border); border-radius: 9px; background: var(--byq-surface); display: grid; gap: .45rem; }
+.completion-notice { display: inline-flex; align-items: center; gap: .25rem; max-width: 100%; padding: .125rem .25rem .125rem .625rem; border: 1px solid var(--byq-border); border-radius: 7px; color: var(--byq-text-muted); background: var(--byq-surface); font-size: .875rem; }
+.completion-dismiss { display: inline-grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 4px; color: inherit; background: transparent; cursor: pointer; font: inherit; font-size: 1.125rem; }
+.completion-dismiss:hover, .completion-dismiss:focus-visible { color: var(--byq-text); background: var(--el-fill-color-light); }
 .automatic-status p { margin: 0; color: var(--byq-text-muted); line-height: 1.5; }
 .intro, fieldset p, .readiness-result p, small { color: var(--byq-text-muted); line-height: 1.55; }
 .intro, fieldset p, .readiness-result p { margin: 0; }

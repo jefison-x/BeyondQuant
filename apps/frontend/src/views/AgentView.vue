@@ -31,6 +31,7 @@ const loading = ref(false);
 const initialized = ref(false);
 const requestedSessionUnavailable = ref(false);
 const activityOpen = ref(false);
+const researchPreparationPanel = ref<InstanceType<typeof ResearchDataPreparationPanel> | null>(null);
 const historyOpen = ref(false);
 const historyStatus = ref<"active" | "archived">("active");
 const historySearch = ref("");
@@ -83,6 +84,10 @@ const sessionContinuationBlocked = computed(() => Boolean(agent.activeSessionId)
   && terminalSessionId.value === agent.activeSessionId);
 const starterDisabled = computed(() => loading.value || requestedSessionUnavailable.value
   || sessionContinuationBlocked.value || busy.value || runActive.value || Boolean(prompt.value.trim()));
+
+function openResearchPreparation() {
+  if (researchPreparationPanel.value?.openManualTools()) activityOpen.value = false;
+}
 
 async function prepareStarter(draft: string) {
   if (starterDisabled.value) return;
@@ -851,6 +856,7 @@ onBeforeUnmount(() => {
     </main>
     <ResearchDataPreparationPanel
       v-if="agent.activeSessionId"
+      ref="researchPreparationPanel"
       :key="`${auth.user?.subject ?? 'user'}:${agent.activeSessionId}`"
       :conversation-id="agent.activeSessionId"
       :owner-key="auth.user?.subject ?? ''"
@@ -876,6 +882,9 @@ onBeforeUnmount(() => {
     </footer>
     <el-drawer v-model="activityOpen" title="活动与执行上下文" size="min(440px, 92vw)">
       <AgentActivityPanel :activities="activities" />
+      <el-button v-if="researchPreparationPanel?.manualToolsAvailable" text @click="openResearchPreparation">
+        准备研究数据
+      </el-button>
     </el-drawer>
     <el-drawer v-model="historyOpen" title="历史会话" size="min(520px, 94vw)">
       <div class="history-tools"><el-input v-model="historySearch" clearable placeholder="搜索标题或最近消息" />
