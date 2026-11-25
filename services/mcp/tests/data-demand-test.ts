@@ -89,6 +89,24 @@ const notPublished = await fetchByqDataDemandCreate("http://backend", conversati
 assert.equal(notPublished.isError, false);
 assert.equal(JSON.parse(notPublished.content[0].text).preparation.status, "not_published");
 
+const indexRequest = {
+  purpose: "research", scope_kind: "conversation_index_history", symbols: ["000300.SH", "000905.SH"],
+  start_date: "2016-11-25", end_date: "2026-11-24", idempotency_key: "conversation-index-1",
+};
+const indexScope = {
+  asset_type: "index", symbols: indexRequest.symbols, start_date: "20161125", end_date: "20261124",
+  use_case: "research", data_requirements: {},
+};
+const indexReady = await fetchByqDataDemandCreate("http://backend", indexRequest, async () =>
+  Response.json({ preparation: { request_id: null, status: "ready", scope: indexScope } }));
+assert.equal(JSON.parse(indexReady.content[0].text).preparation.status, "ready");
+const closedIndex = await fetchByqDataDemandCreate("http://backend", indexRequest, async () =>
+  Response.json({ preparation: { request_id: null, status: "no_sessions", scope: indexScope } }));
+assert.equal(JSON.parse(closedIndex.content[0].text).preparation.status, "no_sessions");
+const wrongIndexScope = await fetchByqDataDemandCreate("http://backend", indexRequest, async () =>
+  Response.json({ preparation: { request_id: null, status: "ready", scope: { ...indexScope, asset_type: "stock" } } }));
+assert.equal(JSON.parse(wrongIndexScope.content[0].text).status, "outcome_unknown");
+
 const mismatchedNoJobScope = await fetchByqDataDemandCreate("http://backend", conversationResearchRequest,
   async () => Response.json({ preparation: {
     request_id: null, status: "ready", scope: { ...readyScope, symbols: ["000002.SZ"] },

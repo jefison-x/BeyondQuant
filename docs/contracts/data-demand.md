@@ -59,3 +59,18 @@ frozen plan before mutable readiness planning; changed input conflicts. `byq_dat
 accepts exactly one of `demand_id` and `idempotency_key`, with owner/workspace-scoped original-key
 lookup for unknown writes. Browser access uses `/api/product/data-center/demands` and its exact
 ID/key reads only. Administrator-owned workspace requirements remain unchanged.
+
+## Conversation index history
+
+`byq_data_demand_create` accepts `purpose: research`, `scope_kind: conversation_index_history`,
+`symbols`, inclusive `start_date` and `end_date`, and `idempotency_key`. The first two supported codes
+are `000300.SH` and `000905.SH`. The maximum is ten calendar years. The authenticated root of the
+user's active personal conversation can submit one preparation under the shared workspace limit.
+Backend verifies SSE calendar coverage and index daily bars. The Data Worker imports only missing
+dates through the existing provider adapter. Backtests use the same persisted index series for
+declared benchmarks and freeze the selected inputs.
+
+`byq_market_index_daily` reads the verified range, source, summaries, and a bounded page of bars.
+Pass the returned `data_version` with the same symbols and dates for subsequent pages. Automatic
+continuation admits only the exact sealed scope and version and records a successful re-read before
+marking the continuation succeeded. See [ADR-0120](../architecture/adr/ADR-0120-conversation-index-history-preparation.md).

@@ -51,7 +51,9 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         self.assertIn("EXECUTE", feature["support"])
         self.assertIn("byq_data_demand_create", feature["agent_tools"])
         self.assertIn("byq_data_demand_get", feature["agent_tools"])
-        self.assertIn("最多涉及5个缺失交易日", feature["prerequisites"][-1])
+        self.assertIn("byq_market_index_daily", feature["agent_tools"])
+        self.assertTrue(any("5个需整日补数的交易日" in scope for scope in feature["prerequisites"]))
+        self.assertTrue(any("沪深300和中证500最长十年" in scope for scope in feature["prerequisites"]))
         self.assertTrue(any("数据源凭据、全量同步和数据中心设置仍由管理员负责" in item
                             for item in feature["limitations"]))
 
@@ -61,6 +63,7 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         ]
         self.assertNotIn("mcp__byq__byq_data_demand_create", research_delegate)
         self.assertNotIn("mcp__byq__byq_data_demand_get", research_delegate)
+        self.assertIn("mcp__byq__byq_market_index_daily", research_delegate)
         self.assertIn("may\n      prepare the exact scope", profile)
         roles = (ROOT / "plugins/dsh-byq/skills/byq-role-contracts/SKILL.md").read_text()
         guide = (ROOT / "plugins/dsh-byq/skills/byq-product-guide/references/research.md").read_text()

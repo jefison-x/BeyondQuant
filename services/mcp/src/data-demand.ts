@@ -21,7 +21,7 @@ function errorStatus(status: number): string {
 
 type ConversationResearchScope = {
   purpose: "research";
-  scope_kind: "conversation_research";
+  scope_kind: "conversation_research" | "conversation_index_history";
   symbols: string[];
   start_date: string;
   end_date: string;
@@ -32,7 +32,7 @@ function conversationResearchRequest(init: RequestInit): ConversationResearchSco
   if (init.method?.toUpperCase() !== "POST" || typeof init.body !== "string") return undefined;
   try {
     const body = JSON.parse(init.body) as Record<string, unknown>;
-    if (body.purpose !== "research" || body.scope_kind !== "conversation_research"
+    if (body.purpose !== "research" || !["conversation_research", "conversation_index_history"].includes(String(body.scope_kind))
         || !Array.isArray(body.symbols) || !body.symbols.every((symbol) => typeof symbol === "string")
         || typeof body.start_date !== "string" || typeof body.end_date !== "string") return undefined;
     return body as ConversationResearchScope;
@@ -70,19 +70,24 @@ function validNoJobPreparation(payload: Record<string, unknown>, request: Conver
   const keys = Object.keys(result).sort();
   if (!(keys.join(",") === "request_id,scope,status"
       || keys.join(",") === "error,request_id,scope,status")) return false;
-  if (result.request_id !== null || !["ready", "not_published"].includes(result.status as string)) return false;
+  const indexHistory = request.scope_kind === "conversation_index_history";
+  const states = indexHistory ? ["ready", "not_published", "no_sessions"] : ["ready", "not_published"];
+  if (result.request_id !== null || !states.includes(result.status as string)) return false;
   if (result.error !== undefined && (typeof result.error !== "string" || result.error.length > 240
       || /[\u0000-\u001f\u007f]/.test(result.error))) return false;
   const scope = result.scope;
   if (!scope || typeof scope !== "object" || Array.isArray(scope)) return false;
   const scopeValue = scope as Record<string, unknown>;
-  if (Object.keys(scopeValue).sort().join(",") !== "data_requirements,end_date,start_date,symbols,use_case"
+  const fields = `${indexHistory ? "asset_type," : ""}data_requirements,end_date,start_date,symbols,use_case`;
+  if (Object.keys(scopeValue).sort().join(",") !== fields
+      || (indexHistory && scopeValue.asset_type !== "index")
       || scopeValue.use_case !== "research"
       || canonicalDate(scopeValue.start_date) !== canonicalDate(request.start_date)
       || canonicalDate(scopeValue.end_date) !== canonicalDate(request.end_date)
       || !Array.isArray(scopeValue.symbols)
       || !scopeValue.symbols.every((symbol) => typeof symbol === "string" && /^\d{6}\.(?:SH|SZ|BJ)$/.test(symbol))
       || !validResearchRequirements(scopeValue.data_requirements)) return false;
+  if (indexHistory && Object.keys(scopeValue.data_requirements).length !== 0) return false;
   if (request.data_requirements !== undefined && (!validResearchRequirements(request.data_requirements)
       || canonicalResearchRequirements(scopeValue.data_requirements as Record<string, unknown>)
         !== canonicalResearchRequirements(request.data_requirements))) return false;

@@ -342,6 +342,11 @@ live provider refresh. A temporary trend or comparison request creates no
 ResearchTask, Experiment, or Artifact. Only save research when the user
 explicitly asks for a persistent research record.
 
+For CSI 300 or CSI 500 index price history, authorize and use
+`byq_market_index_daily`. Use its verified dates, price basis and source.
+If coverage is missing, return the exact index codes and dates to the
+coordinator so it can request preparation. The research role only reads.
+
 For “最近 N 个交易日”, distinguish trading sessions from calendar days. State
 the actual first and last trading session and the returned row count, list the
 unique sessions in descending order, and make the conclusion cutoff equal to

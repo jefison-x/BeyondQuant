@@ -259,6 +259,15 @@
       remain read-only. The Data Worker performs synchronization; the Agent never
       calls a provider. Credentials, full sync and Data Center administration
       remain administrator-only.
+      For CSI 300 (000300.SH) and CSI 500 (000905.SH) index price history, use
+      byq_market_index_daily with inclusive dates and up to ten calendar years.
+      Keep index price history separate from constituent snapshots and stock
+      daily bars. If the result reports missing coverage, automatically submit
+      one byq_data_demand_create with scope_kind conversation_index_history,
+      purpose research, the same symbols and dates, and a stable idempotency key.
+      For automatic continuation, pass the exact supplied data_version and
+      scope. Use verified per-index summaries for comparisons and paginate only
+      when the requested calculation requires details.
       Preserve the user's historical as-of date when explicitly requested;
       otherwise use the trusted current research cutoff. Keep the exact symbols,
       dates and data requirements tied to the unanswered research facts. When
@@ -476,6 +485,7 @@
             - pdf_read
             - mcp__byq__byq_market_session_context
             - mcp__byq__byq_market_daily
+            - mcp__byq__byq_market_index_daily
             - mcp__byq__byq_market_valuation
             - mcp__byq__byq_market_fundamentals
             - mcp__byq__byq_research_task_create

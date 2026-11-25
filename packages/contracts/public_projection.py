@@ -43,6 +43,7 @@ _INTERNAL_PUBLIC_TERMS = (
     (re.compile(r"\bmcp__[a-z0-9_:./-]+\b", re.IGNORECASE), "系统能力"),
     (re.compile(r"\bbyq_market_session_context\b", re.IGNORECASE), "交易日与数据截止查询"),
     (re.compile(r"\bbyq_market_daily\b", re.IGNORECASE), "日线行情查询"),
+    (re.compile(r"\bbyq_market_index_daily\b", re.IGNORECASE), "指数历史行情查询"),
     (re.compile(r"\bbyq_market_valuation\b", re.IGNORECASE), "估值数据查询"),
     (re.compile(r"\bbyq_market_fundamentals\b", re.IGNORECASE), "基本面数据查询"),
     (re.compile(r"\bbyq_[a-z0-9_]+\b", re.IGNORECASE), "系统能力"),

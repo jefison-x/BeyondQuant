@@ -78,16 +78,17 @@ const scopeUsable = computed(() => currentReadiness.value?.verdict === "usable" 
 const preparationMatchesCurrentScope = computed(() => Boolean(preparation.value && checkedScope.value
   && sameScope(preparation.value.scope, checkedScope.value)));
 const autoContinuationStatus = computed(() => preparation.value?.auto_continuation?.status ?? null);
+const isIndexHistory = computed(() => preparation.value?.scope.asset_type === "index");
 const completionId = computed(() => autoContinuationStatus.value === "succeeded"
   ? preparation.value?.request_id ?? "succeeded" : "");
 const showCompletionNotice = computed(() => Boolean(completionId.value && completionId.value !== dismissedCompletionId.value));
-const showAutomaticStatus = computed(() => Boolean(autoContinuationStatus.value && !completionId.value));
+const showAutomaticStatus = computed(() => Boolean((autoContinuationStatus.value || isIndexHistory.value) && !completionId.value));
 const automaticContinuationCanStop = computed(() => ["waiting", "dispatching"].includes(autoContinuationStatus.value ?? "")
   && Boolean(preparation.value?.request_id) && !stoppingContinuation.value);
 const automaticContinuationNeedsObservation = computed(() => ["waiting", "dispatching", "bound"].includes(autoContinuationStatus.value ?? ""));
 const preparationNeedsObservation = computed(() => ["queued", "running"].includes(preparation.value?.status ?? ""));
 const shouldObservePreparation = computed(() => preparationNeedsObservation.value || automaticContinuationNeedsObservation.value);
-const manualFallbackAvailable = computed(() => ["failed", "cancelled"].includes(autoContinuationStatus.value ?? ""));
+const manualFallbackAvailable = computed(() => !isIndexHistory.value && ["failed", "cancelled"].includes(autoContinuationStatus.value ?? ""));
 const manualToolsAvailable = computed(() => (props.enabled || manualFallbackAvailable.value)
   && !automaticContinuationNeedsObservation.value && autoContinuationStatus.value !== "succeeded");
 const manualToolsVisible = computed(() => manualToolsAvailable.value && (expanded.value || Boolean(preparation.value)));
@@ -115,6 +116,11 @@ const automaticStatusLabel = computed(() => {
     : "数据准备已结束，正在等待自动复查并继续原研究。";
   if (status === "dispatching") return "数据已核验，正在原会话自动继续研究。";
   if (status === "bound") return "小巴已在原会话继续研究；如需停止当前回复，请使用会话下方的“停止本轮”。";
+  if (isIndexHistory.value) {
+    if (status === "failed") return preparation.value?.error ?? "本次续研未能读取已核验的指数数据。";
+    if (status === "cancelled") return "已停止自动续研。";
+    return preparation.value?.error ?? "";
+  }
   if (status === "failed") return "自动续研未完成。可展开数据准备面板手动检查或准备数据。";
   if (status === "cancelled") return "自动续研已停止。可展开数据准备面板手动检查或准备数据。";
   return "";
@@ -255,7 +261,7 @@ async function checkReadiness() {
 function sameScope(left: ResearchPreparationScope, right: ResearchPreparationScope): boolean {
   const sameSet = (leftValues: string[], rightValues: string[]) => leftValues.length === rightValues.length
     && leftValues.every((value) => rightValues.includes(value));
-  return sameSet(left.symbols, right.symbols)
+  return left.asset_type === right.asset_type && sameSet(left.symbols, right.symbols)
     && left.start_date === right.start_date
     && left.end_date === right.end_date
     && left.use_case === right.use_case
@@ -266,7 +272,7 @@ function sameScope(left: ResearchPreparationScope, right: ResearchPreparationSco
 function parseReceipt(value: unknown): ConversationResearchPreparationReceipt | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
-  const scope = normalizeResearchPreparationScope(candidate.scope);
+  const scope = normalizeResearchPreparationScope(candidate.scope, { allowIndexHistory: true });
   if (!scope || typeof candidate.status !== "string"
       || !(candidate.request_id === null || (typeof candidate.request_id === "string" && Boolean(candidate.request_id)))
       || !(candidate.retry_token === undefined || candidate.retry_token === null || typeof candidate.retry_token === "string")
@@ -310,7 +316,7 @@ async function discoverPreparation(hydrateEmptyScope = false) {
       : receipts.find((receipt) => sameScope(receipt.scope, savedScope)) ?? latest;
     preparation.value = selected;
     preparationUncertain.value = false;
-    if (hydrateEmptyScope && selected && !symbols.value.trim() && !startDate.value && !endDate.value) fillScope(selected.scope);
+    if (hydrateEmptyScope && selected && !selected.scope.asset_type && !symbols.value.trim() && !startDate.value && !endDate.value) fillScope(selected.scope);
   } catch (caught) {
     if (currentGeneration === preparationGeneration) preparationError.value = caught instanceof Error ? caught.message : "无法读取当前会话的数据准备记录。";
   } finally {
@@ -518,7 +524,7 @@ function resumeDraft() {
     </div>
     <div v-else-if="showAutomaticStatus" class="automatic-status" role="status" aria-live="polite">
       <strong>{{ preparationStatusLabel }}</strong>
-      <p>{{ automaticStatusLabel }}</p>
+      <p v-if="automaticStatusLabel">{{ automaticStatusLabel }}</p>
       <p v-if="preparation && preparationScopeLabel">研究范围：{{ preparationScopeLabel }}</p>
       <p v-if="automaticStatusRefreshFailed" class="stale-note">状态暂时无法更新，页面会在稍后重试；自动研究流程不依赖此页面运行。</p>
       <p v-if="preparationError && !manualToolsVisible" class="error" role="alert">{{ preparationError }}</p>

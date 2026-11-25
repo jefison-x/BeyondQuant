@@ -35,4 +35,14 @@ describe("research preparation scope handoff", () => {
     expect(researchPreparationScopeFromHandoffQuery(query)).toEqual(normalized);
     expect(researchPreparationScopeFromHandoffQuery("{" )).toBeNull();
   });
+
+  it("accepts a ten-year index receipt without opening the manual stock handoff", () => {
+    const receipt = {
+      asset_type: "index", symbols: ["000300.SH", "000905.SH"], start_date: "20161125",
+      end_date: "20261124", use_case: "research", data_requirements: {},
+    };
+    expect(normalizeResearchPreparationScope(receipt, { allowIndexHistory: true })).toEqual(receipt);
+    expect(normalizeResearchPreparationScope(receipt)).toBeNull();
+    expect(normalizeResearchPreparationScope({ ...receipt, symbols: ["600036.SH"] }, { allowIndexHistory: true })).toBeNull();
+  });
 });
