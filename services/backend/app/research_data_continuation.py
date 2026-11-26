@@ -159,7 +159,10 @@ class ResearchDataContinuationStore(PgStoreMixin):
                 start
                 + "调用 byq_agent_authorize，action 填 byq_market_index_daily，可省略资源类型和资源标识，"
                 f"然后使用该只读工具重新读取已核验数据，参数为 {serialized}。"
-                "按工具返回的范围、来源和数据版本说明结论。需要明细时用 offset 和 limit 翻页，"
+                "工具返回 ready 时原样展示 verified_summary_markdown 的核验表格和来源，随后解释用户所问内容。"
+                "涨跌幅使用 close_to_close_return_pct。盘中极值使用 lowest_intraday_price 和 highest_intraday_price，"
+                "收盘极值使用 lowest_close 和 highest_close。仅在用户需要时补充这些指标。"
+                "描述走势顺序或最大回撤前，先读取能支持结论的按日序列。需要明细时用 offset 和 limit 翻页，"
                 "其他参数保持一致。如版本变化、读取失败或仍缺数据，说明对结论的影响。"
                 "不得扩大范围、再次补数或修改业务资产。"
             )

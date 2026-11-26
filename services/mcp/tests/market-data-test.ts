@@ -10,14 +10,18 @@ import {
 
 const indexScope = { symbols: ["000300.SH"], start_date: "2016-11-25", end_date: "2026-11-24",
   data_version: "a".repeat(64), offset: 50, limit: 25 };
+const verifiedSummaryMarkdown = "| 指数 | 区间涨跌幅 |\n| --- | ---: |\n| 沪深300 | +12.57% |";
 const indexHistory = await fetchByqMarketIndexDaily("http://backend:8000", indexScope, async (url, init) => {
   assert.equal(url, "http://backend:8000/v1/data/research/index-daily");
   assert.equal(init?.method, "POST");
   assert.deepEqual(JSON.parse(String(init?.body)), indexScope);
-  return Response.json({ state: "ready", rows: [{ ts_code: "000300.SH" }], data_version: indexScope.data_version });
+  return Response.json({ state: "ready", rows: [{ ts_code: "000300.SH" }], data_version: indexScope.data_version,
+    verified_summary_markdown: verifiedSummaryMarkdown });
 });
 assert.equal(indexHistory.isError, false);
-assert.equal(JSON.parse(indexHistory.content[0].text).data_version, indexScope.data_version);
+const indexHistoryPayload = JSON.parse(indexHistory.content[0].text);
+assert.equal(indexHistoryPayload.data_version, indexScope.data_version);
+assert.equal(indexHistoryPayload.verified_summary_markdown, verifiedSummaryMarkdown);
 
 const sessionContext = await fetchByqMarketSessionContext(
   "http://backend:8000",

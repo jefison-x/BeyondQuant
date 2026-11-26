@@ -2061,6 +2061,9 @@ def test_index_continuation_allows_only_its_verified_scope_version_and_pages():
         "role_id": "quant_orchestrator", "idempotency_key": continuation_id,
     }, separators=(",", ":")) in instruction
     assert tool in instruction and version in instruction and arguments["start_date"] in instruction
+    assert "原样展示 verified_summary_markdown" in instruction
+    assert "盘中极值使用 lowest_intraday_price 和 highest_intraday_price" in instruction
+    assert "收盘极值使用 lowest_close 和 highest_close" in instruction
     for changes in ({"symbols": ["000300.SH"]}, {"start_date": "2016-11-26"}, {"data_version": "b" * 64}):
         with pytest.raises(AgentUnauthorized):
             check(scope, tool, {**arguments, **changes}, data_version=version)

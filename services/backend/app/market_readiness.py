@@ -18,6 +18,7 @@ from packages.contracts.bars_frame import AGGREGATE_ROW_LIMIT
 
 from .data_provider import DAILY_BASIC_FIELDS, FINANCIAL_INDICATOR_FIELDS
 from .db import PgStoreMixin, execute, fetch_one
+from .index_catalog import INDEX_NAMES
 
 
 SCHEMA_VERSION = "market-data-requirement.v3"
@@ -1765,6 +1766,7 @@ class MarketReadinessStore(PgStoreMixin):
                 "has_more": False,
                 "rows": [],
                 "symbol_summaries": [],
+                "verified_summary_markdown": None,
             }
             if assessment["state"] != "ready" or not isinstance(ready_version, str):
                 return response
@@ -1777,21 +1779,51 @@ class MarketReadinessStore(PgStoreMixin):
                 return response
             rows = sorted(stored_rows, key=lambda row: (str(row["index_symbol"]), str(row["trade_date"])))
             summaries: list[dict[str, object]] = []
+            table = [
+                "| 指数 | 首个交易日 | 首日收盘（点） | 末个交易日 | 末日收盘（点） | 区间涨跌幅 | 交易日数 |",
+                "| --- | --- | ---: | --- | ---: | ---: | ---: |",
+            ]
             for symbol in frozen["symbols"]:
                 selected = [row for row in rows if str(row["index_symbol"]) == str(symbol)]
                 if not selected:
                     continue
                 first_row, last_row = selected[0], selected[-1]
+                first_day, last_day = str(first_row["trade_date"]), str(last_row["trade_date"])
+                first_close, last_close = float(first_row["close"]), float(last_row["close"])
+                close_to_close_return_pct: float | None = (last_close / first_close - 1) * 100
+                if not math.isfinite(close_to_close_return_pct):
+                    close_to_close_return_pct = None
+                formatted_return = (
+                    f"{close_to_close_return_pct:+.2f}%" if close_to_close_return_pct is not None else "无法计算"
+                )
+                lowest_intraday_price = min(float(row["low"]) for row in selected)
+                highest_intraday_price = max(float(row["high"]) for row in selected)
                 summaries.append({
                     "symbol": str(symbol),
                     "count": len(selected),
-                    "first_trade_date": str(first_row["trade_date"]),
-                    "first_close": float(first_row["close"]),
-                    "last_trade_date": str(last_row["trade_date"]),
-                    "last_close": float(last_row["close"]),
-                    "lowest_price": min(float(row["low"]) for row in selected),
-                    "highest_price": max(float(row["high"]) for row in selected),
+                    "first_trade_date": first_day,
+                    "first_close": first_close,
+                    "last_trade_date": last_day,
+                    "last_close": last_close,
+                    "close_to_close_return_pct": close_to_close_return_pct,
+                    "lowest_close": min(float(row["close"]) for row in selected),
+                    "highest_close": max(float(row["close"]) for row in selected),
+                    "lowest_intraday_price": lowest_intraday_price,
+                    "highest_intraday_price": highest_intraday_price,
+                    # Preserve the original intraday fields for existing consumers.
+                    "lowest_price": lowest_intraday_price,
+                    "highest_price": highest_intraday_price,
                 })
+                table.append(
+                    f"| {INDEX_NAMES[str(symbol)]}（{symbol}） | {date.fromisoformat(first_day).isoformat()} | "
+                    f"{first_close:,.4f} | {date.fromisoformat(last_day).isoformat()} | {last_close:,.4f} | "
+                    f"{formatted_return} | {len(selected):,} |"
+                )
+            table.extend([
+                "",
+                f"数据来自 BYQ 数据中心的 {response['source']}，核验范围内无行情缺口。"
+                "区间涨跌幅按末日收盘除以首日收盘再减 1 计算。",
+            ])
             page = rows[offset:offset + limit]
             response.update({
                 "state": "ready",
@@ -1811,6 +1843,7 @@ class MarketReadinessStore(PgStoreMixin):
                     "content_sha256": str(row["content_sha256"]),
                 } for row in page],
                 "symbol_summaries": summaries,
+                "verified_summary_markdown": "\n".join(table),
             })
             return response
 

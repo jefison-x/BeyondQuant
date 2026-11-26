@@ -71,6 +71,12 @@ dates through the existing provider adapter. Backtests use the same persisted in
 declared benchmarks and freeze the selected inputs.
 
 `byq_market_index_daily` reads the verified range, source, summaries, and a bounded page of bars.
+For a ready response, `verified_summary_markdown` formats the verified first and last trading
+dates and closes, `close_to_close_return_pct`, trading-session count and source for the answer.
+The return is `null` when the percentage cannot be represented as a finite number.
+`lowest_intraday_price` and `highest_intraday_price` use daily lows and highs respectively.
+`lowest_close` and `highest_close` use closing levels. The older `lowest_price` and
+`highest_price` fields remain aliases for the intraday values.
 Pass the returned `data_version` with the same symbols and dates for subsequent pages. Automatic
 continuation admits only the exact sealed scope and version and records a successful re-read before
 marking the continuation succeeded. See [ADR-0120](../architecture/adr/ADR-0120-conversation-index-history-preparation.md).
