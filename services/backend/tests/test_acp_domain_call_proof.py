@@ -2052,7 +2052,14 @@ def test_index_continuation_allows_only_its_verified_scope_version_and_pages():
     tool = "byq_market_index_daily"
     check(scope, tool, arguments, data_version=version)
     check(scope, "byq_agent_authorize", {"run_id": "agent_run_" + "b" * 32, "action": tool})
-    instruction = ResearchDataContinuationStore._instruction(scope, version)
+    continuation_id = "rdcontinuation_" + "c" * 32
+    instruction = ResearchDataContinuationStore._instruction(
+        scope, version, continuation_id=continuation_id,
+    )
+    assert instruction.index("byq_agent_run_start") < instruction.index("byq_agent_authorize") < instruction.index(tool)
+    assert json.dumps({
+        "role_id": "quant_orchestrator", "idempotency_key": continuation_id,
+    }, separators=(",", ":")) in instruction
     assert tool in instruction and version in instruction and arguments["start_date"] in instruction
     for changes in ({"symbols": ["000300.SH"]}, {"start_date": "2016-11-26"}, {"data_version": "b" * 64}):
         with pytest.raises(AgentUnauthorized):

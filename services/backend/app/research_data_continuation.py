@@ -137,7 +137,17 @@ class ResearchDataContinuationStore(PgStoreMixin):
         return newer is not None
 
     @staticmethod
-    def _instruction(scope: dict[str, object], data_version: str | None = None) -> str:
+    def _instruction(
+        scope: dict[str, object], data_version: str | None, *, continuation_id: str,
+    ) -> str:
+        registration = json.dumps({
+            "role_id": "quant_orchestrator", "idempotency_key": continuation_id,
+        }, separators=(",", ":"))
+        start = (
+            "继续回答本会话中原用户问题。续研是新一轮执行，第一步调用 byq_agent_run_start，"
+            f"参数为 {registration}。等待注册成功，后续授权使用此次返回的 run_id。"
+            "不要复用前一轮的 run_id，也不要传 parent_run_id。"
+        )
         if scope.get("asset_type") == "index":
             arguments = {field: scope[field] for field in ("symbols", "start_date", "end_date")}
             for field in ("start_date", "end_date"):
@@ -146,7 +156,8 @@ class ResearchDataContinuationStore(PgStoreMixin):
             arguments["data_version"] = data_version
             serialized = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             return (
-                "继续回答本会话中原用户问题。使用本轮 AgentRun 授权 byq_market_index_daily，"
+                start
+                + "调用 byq_agent_authorize，action 填 byq_market_index_daily，可省略资源类型和资源标识，"
                 f"然后使用该只读工具重新读取已核验数据，参数为 {serialized}。"
                 "按工具返回的范围、来源和数据版本说明结论。需要明细时用 offset 和 limit 翻页，"
                 "其他参数保持一致。如版本变化、读取失败或仍缺数据，说明对结论的影响。"
@@ -157,7 +168,7 @@ class ResearchDataContinuationStore(PgStoreMixin):
         ) if key in scope}
         serialized = json.dumps(public_scope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         content = (
-            "继续回答本会话中原用户问题。原问题与此前对话已在上下文中，不要替换或扩展问题。"
+            start + "原问题与此前对话已在上下文中，不要替换或扩展问题。"
             f"数据中心已持久化核验以下范围：{serialized}。请在给出研究结论前，通过只读工具重新读取该范围内需要的日线、估值和财务数据，"
             "通过本轮 AgentRun 授权精确工具名；如需填写资源类型和标识，使用 market_data 和单个证券代码。"
             "读单日涨跌幅时，优先读取该日行情记录中的昨收字段。"
@@ -231,7 +242,7 @@ class ResearchDataContinuationStore(PgStoreMixin):
                 and settlement.get("sequence") == row.get("observation_sequence"))
 
     @staticmethod
-    def _public(row, *, instruction=False) -> dict[str, object]:
+    def _public(row, *, instruction: str | None = None) -> dict[str, object]:
         result: dict[str, object] = {
             "schema_version": "research-data-continuation.v1",
             "continuation_id": row["continuation_id"], "status": row["status"],
@@ -247,10 +258,8 @@ class ResearchDataContinuationStore(PgStoreMixin):
             "requirements": list(row.get("requirements_json") or []),
             "content_sha256": row.get("dispatch_content_sha256"),
         }
-        if instruction:
-            result["instruction"] = ResearchDataContinuationStore._instruction(
-                dict(row.get("scope_json") or {}), row.get("ready_input_sha256"),
-            )
+        if instruction is not None:
+            result["instruction"] = instruction
         return result
 
     def read_index_history(self, scope, observation_id, arguments, read):
@@ -486,7 +495,9 @@ class ResearchDataContinuationStore(PgStoreMixin):
             ready_input_sha256 = self._assess_ready(row, readiness_store)
             if ready_input_sha256 is None:
                 return None
-            instruction = self._instruction(dict(row["scope_json"]), ready_input_sha256)
+            instruction = self._instruction(
+                dict(row["scope_json"]), ready_input_sha256, continuation_id=continuation_id,
+            )
             content_sha256 = _message_sha256(instruction)
             updated = fetch_one(connection, """UPDATE research_data_continuations SET status='dispatching',
                 reason='dispatch_claimed',ready_input_sha256=:ready,dispatch_boot_id=:boot,
@@ -497,7 +508,7 @@ class ResearchDataContinuationStore(PgStoreMixin):
             })
             if updated is None:
                 return None
-            return {**self._public(updated, instruction=True), "dispatch_boot_id": boot_id}
+            return {**self._public(updated, instruction=instruction), "dispatch_boot_id": boot_id}
 
     def bind(self, continuation_id: str, payload: dict[str, str]) -> dict[str, str]:
         if not isinstance(continuation_id, str) or _CONTINUATION.fullmatch(continuation_id) is None:
