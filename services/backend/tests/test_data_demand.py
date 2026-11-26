@@ -808,6 +808,10 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
     payload = {**trusted, "continuation_id": continuation, "boot_id": boot}
     claimed = client.post(f"{base}/claim", headers=private, json=payload).json()["continuation"]
     assert claimed["continuation_id"] == continuation
+    argument_blocks = re.findall(r"\{[^{}]+\}", claimed["instruction"])
+    assert json.loads(argument_blocks[0]) == {
+        "role_id": "quant_orchestrator", "idempotency_key": continuation,
+    }
     assert client.post(f"{base}/claim", headers=private, json=payload).json() == {"continuation": None}
 
     new_root = uuid4().hex
@@ -827,7 +831,8 @@ def test_conversation_preparation_watches_only_exact_acp_ingress(monkeypatch, ac
     with pytest.raises(AgentUnauthorized):
         _observe_tool(main.agent_store, context, new_identity, "byq_data_demand_create", arguments)
     if index_history:
-        read_args = json.loads(re.search(r"\{[^{}]+\}", claimed["instruction"]).group())
+        _, read_block = argument_blocks
+        read_args = json.loads(read_block)
         read = _observe_tool(main.agent_store, context, new_identity, "byq_market_index_daily", read_args)
         read_headers = {**headers, "x-byq-root-run-id": new_root, "x-byq-acp-observation-id": read["mcp_request_id"]}
         mismatched = client.post("/v1/data/research/index-daily", headers=read_headers,
