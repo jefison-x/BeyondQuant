@@ -1581,7 +1581,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_market_index_daily",
     {
-      description: "Read BYQ-verified daily index history for CSI 300 (000300.SH) or CSI 500 (000905.SH) over an inclusive range of up to ten years. Returns coverage and, when ready, date and close summaries, data version and paged bars. Use the exact same symbols, dates and data_version for subsequent pages or when instructed by automatic research continuation. Never contacts a live provider.",
+      description: "Read persisted BYQ-verified daily index history for CSI 300 (000300.SH) or CSI 500 (000905.SH) over an inclusive range of up to ten years. When ready, present verified_summary_markdown unchanged for the range, closes, return, count and source. close_to_close_return_pct is a percentage. lowest_intraday_price and highest_intraday_price are intraday extremes. lowest_close and highest_close are close extremes. Only add metrics the user needs, and use dated bars for path or drawdown claims. Use the exact same symbols, dates and data_version for subsequent pages or when instructed by automatic research continuation.",
       inputSchema: z.object({
         ...indexHistoryScope,
         data_version: z.string().regex(/^[0-9a-f]{64}$/).optional(),

@@ -74,6 +74,7 @@ class _IndexProvider:
         self.index_calls: list[tuple[str, str, str]] = []
         self.calendar_calls: list[tuple[str, str]] = []
         self.closed_dates: set[str] = set()
+        self.closes: dict[tuple[str, str], float] = {}
 
     @staticmethod
     def _dates(start: str, end: str):
@@ -102,7 +103,7 @@ class _IndexProvider:
         self.index_calls.append((symbol, start, end))
         bars = tuple(
             IndexDailyBar(
-                symbol, trade_date, 100.0, 102.0, 99.0, 101.0, 100.0,
+                symbol, trade_date, 100.0, 102.0, 99.0, self.closes.get((symbol, trade_date), 101.0), 100.0,
                 1.0, 1.0, 1000.0, 100000.0,
             )
             for trade_date in self._dates(start, end)
@@ -125,7 +126,13 @@ def test_index_history_readiness_paging_and_exact_version() -> None:
     requirement = build_index_history_requirement(
         ["000905.SH", "000300.SH"], "2039-01-01", "2039-01-03",
     )
+    provider.closes = {
+        ("000300.SH", "20390101"): 100.0,
+        ("000905.SH", "20390102"): 101.5,
+        ("000905.SH", "20390103"): 100.0,
+    }
     try:
+        assert readiness.index_history_query(requirement)["verified_summary_markdown"] is None
         automation.refresh_calendar(
             provider, start_date=requirement["start_date"], end_date=requirement["end_date"],
             only_missing=True,
@@ -145,15 +152,25 @@ def test_index_history_readiness_paging_and_exact_version() -> None:
         assert first_page["total"] == 6
         assert len(first_page["rows"]) == 2
         assert first_page["has_more"] is True
-        assert len(first_page["symbol_summaries"]) == 2
-        assert first_page["symbol_summaries"][0]["lowest_price"] == 99.0
-        assert first_page["symbol_summaries"][0]["highest_price"] == 102.0
+        csi_300, csi_500 = first_page["symbol_summaries"]
+        assert csi_300["lowest_price"] == csi_300["lowest_intraday_price"] == 99.0
+        assert csi_300["highest_price"] == csi_300["highest_intraday_price"] == 102.0
+        assert csi_300["lowest_close"] == 100.0 and csi_300["highest_close"] == 101.0
+        assert csi_300["close_to_close_return_pct"] == pytest.approx(1.0)
+        assert csi_500["lowest_close"] == 100.0 and csi_500["highest_close"] == 101.5
+        assert csi_500["close_to_close_return_pct"] == pytest.approx((100 / 101 - 1) * 100)
+        table = first_page["verified_summary_markdown"]
+        assert "| 沪深300（000300.SH） | 2039-01-01 | 100.0000 | 2039-01-03 | 101.0000 | +1.00% | 3 |" in table
+        assert "| 中证500（000905.SH） | 2039-01-01 | 101.0000 | 2039-01-03 | 100.0000 | -0.99% | 3 |" in table
+        assert "Tushare index_daily" in table and "无行情缺口" in table
 
         next_page = readiness.index_history_query(
             requirement, offset=2, limit=2, data_version=first_page["data_version"],
         )
         assert next_page["state"] == "ready"
         assert len(next_page["rows"]) == 2
+        assert next_page["verified_summary_markdown"] == table
+        assert next_page["symbol_summaries"] == first_page["symbol_summaries"]
         with pytest.raises(ValueError, match="data_version is required"):
             readiness.index_history_query(requirement, offset=2, limit=2)
 
@@ -163,6 +180,8 @@ def test_index_history_readiness_paging_and_exact_version() -> None:
         assert stale["state"] == "version_changed"
         assert stale["rows"] == []
         assert stale["data_version"] is None
+        assert stale["verified_summary_markdown"] is None
+        assert stale["symbol_summaries"] == []
 
         provider.closed_dates.add("20390104")
         automation.refresh_calendar(provider, start_date="20390104", end_date="20390104", only_missing=True)
@@ -171,6 +190,29 @@ def test_index_history_readiness_paging_and_exact_version() -> None:
         closed_page = readiness.index_history_query(closed)
         assert closed_page["state"] == "no_sessions"
         assert closed_page["data_version"] is None and closed_page["rows"] == []
+    finally:
+        readiness.close()
+        automation.close()
+
+
+@_requires_postgres
+def test_index_history_marks_unrepresentable_return_unavailable() -> None:
+    readiness = MarketReadinessStore()
+    automation = MarketAutomationStore()
+    symbol = "000300.SH"
+    first, last = "20390101", "20390102"
+    requirement = build_index_history_requirement([symbol], first, last)
+    try:
+        automation.refresh_calendar(_IndexProvider(), start_date=first, end_date=last, only_missing=True)
+        readiness.import_index_daily(symbol, [
+            IndexDailyBar(symbol, trade_date, close, close, close, close, 1.0, 0.0, 0.0, 1.0, 1.0)
+            for trade_date, close in ((first, 1.0), (last, 1e307))
+        ], _provenance("index_daily", "extreme-return", 2).as_dict())
+
+        response = readiness.index_history_query(requirement, limit=1)
+        assert response["state"] == "ready"
+        assert response["symbol_summaries"][0]["close_to_close_return_pct"] is None
+        assert "| 无法计算 | 2 |" in response["verified_summary_markdown"]
     finally:
         readiness.close()
         automation.close()
